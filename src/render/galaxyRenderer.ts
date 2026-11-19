@@ -137,10 +137,14 @@ void main() {
     trans *= absorb;
     if (trans < 0.02) break;
   }
-  col *= uGain;
+  col *= uGain * uOpacity;
+  // From inside a galaxy its light surrounds the camera: compress the brightest parts (as an eye
+  // or a camera exposing for it would) so the bulge is a glow around you, not a white-out.
+  col /= 1.0 + dot(col, vec3(0.3333)) * uCompress;
   // Small, searingly bright things are added in closed form — a march this coarse would step right
-  // over them. Each is a Gaussian whose line integral is known exactly, widened to at least a pixel
-  // (with its flux conserved) so that it shrinks to a steady point instead of twinkling.
+  // over them — and on top of the tone curve above: they are meant to dazzle. Each is a Gaussian
+  // whose line integral is known exactly, widened to at least a pixel (with its flux conserved) so
+  // that it shrinks to a steady point instead of twinkling.
   float pixel = 2.0 * uTanFov.y / uRes.y;   // radians per pixel
   if (uExtra.w > 0.0) {
     // Active nucleus: the accretion disc outshining the galaxy from a region far too small to resolve.
@@ -152,7 +156,9 @@ void main() {
     if (s > 0.0) {
       float b2 = max(rc2 - tc * tc, 0.0);
       float ahead = smoothstep(-1.0, 1.0, tc / se);
-      col += vec3(0.75, 0.85, 1.0) * (uExtra.w * 36.0 * (s / s0) * ahead * exp(-b2 / (se * se)) * (s * s) / (se * se) * mix(1.0, trans, 0.4));
+      // (Steeply brighter with activity: a quasar outshines its whole galaxy, a quiet nucleus barely shows.)
+      float power = uExtra.w * (1.0 + 6.0 * uExtra.w * uExtra.w * uExtra.w * uExtra.w);
+      col += vec3(0.75, 0.85, 1.0) * (uOpacity * power * 36.0 * (s / s0) * ahead * exp(-b2 / (se * se)) * (s * s) / (se * se) * mix(1.0, trans, 0.4));
     }
   }
   if (uJet > 0.0) {
@@ -168,13 +174,9 @@ void main() {
       float along = smoothstep(0.0, radius * 0.02, zj) * exp(-zj / (radius * 0.3)) * (1.0 - smoothstep(radius * 0.6, radius * 0.95, zj));
       float n = texture(uNoise, vec3(zj / radius * 3.1, 0.37, 0.81) + uNoiseOffset).r;
       float knots = 0.3 + 2.2 * n * n;
-      col += vec3(0.55, 0.78, 1.0) * (uJet * 2.2 * ahead * along * knots * exp(-rho2 / (we * we)) * (w / we) * min(inversesqrt(A), 3.0));
+      col += vec3(0.55, 0.78, 1.0) * (uOpacity * uJet * 2.2 * ahead * along * knots * exp(-rho2 / (we * we)) * (w / we) * min(inversesqrt(A), 3.0));
     }
   }
-  col *= uOpacity;
-  // From inside a galaxy its light surrounds the camera: compress the brightest parts (as an eye
-  // or a camera exposing for it would) so the bulge is a glow around you, not a white-out.
-  col /= 1.0 + dot(col, vec3(0.3333)) * uCompress;
   gl_FragColor = vec4(col, (1.0 - trans) * uOpacity);
 }`;
 
