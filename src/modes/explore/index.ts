@@ -26,7 +26,7 @@ import { modes } from '../registry';
 import type { ModeContext, ModeInstance } from '../types';
 import { CameraController, type CameraTarget } from './cameraController';
 import type { GalaxyEntry } from './galaxies';
-import { type DynamicLabel, Labels } from './labels';
+import { type DynamicLabel, Labels, type Occluder } from './labels';
 import { type ViewLink, decodeView, encodeView } from './links';
 import { SearchIndex, type SearchPayload, seedPosition } from './search';
 import { type WorldTarget, blockedBy, bodyTarget, galaxyTarget } from './targets';
@@ -617,6 +617,7 @@ class ExploreMode implements ModeInstance {
     const sysR = world.systems.renderer;
     const settings = appState.get().settings;
     const dynamic: DynamicLabel[] = [];
+    const occluders: Occluder[] = [];
     if (show && settings.labels && sysR.system) {
       const focal = this.ctx.engine.pixelsPerRadian;
       sysR.system.bodies.forEach((b, i) => {
@@ -624,6 +625,7 @@ class ExploreMode implements ModeInstance {
         if (!rel) return;
         const dist = rel.length();
         const px = (b.radius / Math.max(dist, 1)) * focal;
+        if (px > 12) occluders.push({ rel: rel.clone(), radius: b.radius });
         // Skip bodies that fill the view, and moons until their planet is reasonably close.
         if (px > this.ctx.engine.renderHeight * 0.2) return;
         if (b.kind === 'moon') {
@@ -641,7 +643,7 @@ class ExploreMode implements ModeInstance {
       // No ring once the object is a big disc on screen.
       if ((this.selection.radius / Math.max(marker.length(), 1)) * this.ctx.engine.pixelsPerRadian > 40) marker = null;
     }
-    this.labels.update(this.camera.pos, show && settings.labels, show && settings.constellations, dynamic, marker, world.starLayer.groups[0]!.magLimit, sysR.skyDimming);
+    this.labels.update(this.camera.pos, show && settings.labels, show && settings.constellations, dynamic, marker, world.starLayer.groups[0]!.magLimit, sysR.skyDimming, occluders);
   }
 
   private publishHud(): void {

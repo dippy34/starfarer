@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { Rng } from '../core/rng';
 import type { BeltProps, PlanetBody, StarBody } from '../universe/types';
 import { ATMO_FRAG, ATMO_VERT, BODY_VERT, CLOUD_FRAG, GIANT_FRAG, GLOW_FRAG, GLOW_VERT, RING_FRAG, RING_VERT, STAR_FRAG } from './bodyShaders';
+import { CLIP_SAFE } from './glsl';
 
 export type Uniforms = Record<string, THREE.IUniform>;
 
@@ -144,7 +145,7 @@ void main() {
   gl_PointSize = clamp(px * 2.0, 1.5, 6.0);
   // From across the system the belt is only a whisper of dust; rocks brighten as you close in.
   vColor = uColor * clamp(0.04 + px * 60.0, 0.0, 1.2) * (0.6 + 0.4 * fract(aSize * 0.37));
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE}
 }`;
 
 const BELT_FRAG = /* glsl */ `
@@ -191,7 +192,7 @@ const LINE_VERT = /* glsl */ `
 #include <logdepthbuf_pars_vertex>
 void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE}
 }`;
 
 const LINE_FRAG = /* glsl */ `
@@ -225,7 +226,7 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vRel = world.xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE}
 }`;
 
 const BEAM_FRAG = /* glsl */ `

@@ -83,6 +83,8 @@ export class GalaxyManager {
   readonly starGrid: CellGrid<StarBlock>;
   /** Current apparent-magnitude limit for procedural stars (adapts to local density). */
   starMagLimit = 7.5;
+  /** False where the real catalogue covers every star that could be seen (around the Sun): nothing procedural is drawn. */
+  proceduralStars = false;
 
   private readonly entries = new Map<string, GalaxyEntry>();
   private resolved: Array<{ entry: GalaxyEntry; px: number }> = [];
@@ -431,7 +433,10 @@ export class GalaxyManager {
       this.starAdjust = 0;
       this.starCooldown = 0;
     }
-    if (!host) return;
+    if (!host) {
+      this.proceduralStars = false;
+      return;
+    }
     const g = host.model;
     uposSub(camPos, host.center, tmp);
     const local = worldToGalaxy(g, tmp);
@@ -478,6 +483,7 @@ export class GalaxyManager {
       const k = Math.min(STAR_K - 1, Math.max(1, Math.ceil(r / (STAR_BLOCKS_PER_RADIUS * L.cell))));
       levels.push({ id: l * STAR_K + k, size: L.cell * k, radius: r });
     }
+    this.proceduralStars = levels.length > 0;
     this.starGrid.update(levels, lx, ly, lz);
   }
 

@@ -6,7 +6,7 @@
 import { formatDec, formatRa, unitToRaDec } from '../../core/astro';
 import { type UPos, uposAddInPlace, uposCopy, uposSub, uposZero } from '../../core/hp';
 import { lookbackTimeGyr } from '../../core/cosmology';
-import { AU, C, DAY, G, KPC, L_SUN, LY, M_SUN, MPC, PC, formatBig, formatDistanceSci, formatDuration, formatMass, formatRadius, formatSig, formatTemperature } from '../../core/units';
+import { AU, C, DAY, G, KPC, L_SUN, LY, M_SUN, PC, formatBig, formatDistanceSci, formatDuration, formatMass, formatRadius, formatSig, formatTemperature } from '../../core/units';
 import type { DsoRecord } from '../../data/catalog';
 import type { DataRow, SelectionInfo } from '../../state/appState';
 import { describePlanet, planetTypeLabel } from '../../universe/planet';
@@ -242,4 +242,3 @@ export function blockedBy(sys: SystemModel | null, bodyPos: Float64Array, from: 
   return 0;
 }
 
-export { MPC };

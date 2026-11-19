@@ -7,6 +7,10 @@
  *
  * Changes are rate-limited and hitches (tile uploads, shader compiles, tab
  * switches) are ignored so quality does not oscillate.
+ *
+ * It also polices the tier's draw-call budget: when a frame issues more draw
+ * calls than budgeted, `detailScale` drops and the systems that own many small
+ * draws (terrain patches above all) thin themselves out until the frame fits.
  */
 import { platform } from '../platform';
 import type { QualitySetting } from '../state/appState';
@@ -22,6 +26,9 @@ export class QualityController {
   private slowFor = 0;
   private fastFor = 0;
   private cooldown = 2;
+  /** 0.5…1: multiplier on draw-call-heavy detail (terrain patch count), lowered while over the draw-call budget. */
+  detailScale = 1;
+  private drawTimer = 0;
   private readonly listeners = new Set<(tier: QualityTier) => void>();
 
   constructor() {
@@ -55,6 +62,16 @@ export class QualityController {
     this.cooldown = 2.5;
     this.slowFor = this.fastFor = 0;
     for (const l of [...this.listeners]) l(this.tier);
+  }
+
+  /** Feed one frame's draw-call count; adjusts `detailScale` a few times per second. */
+  noteDrawCalls(calls: number, dt: number): void {
+    this.drawTimer -= dt;
+    if (this.drawTimer > 0) return;
+    this.drawTimer = 0.25;
+    const budget = this.tier.drawCallBudget;
+    if (calls > budget) this.detailScale = Math.max(0.5, this.detailScale - 0.04);
+    else if (calls < budget * 0.85) this.detailScale = Math.min(1, this.detailScale + 0.01);
   }
 
   /** Feed one frame's duration (seconds). Returns true if the render scale changed. */

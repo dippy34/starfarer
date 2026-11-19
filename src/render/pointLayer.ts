@@ -86,8 +86,9 @@ void main() {
     e = max(e, uFloor) * range;
     float soft = style > 2.5 && style < 3.5 ? 1.25 : 1.0;   // galaxies are slightly fuzzy
     // Flux is compressed for display: bright objects get both brighter and (a little) larger.
-    size = uPx * soft * min(0.8 + 0.42 * pow(e, 0.3), 30.0);
-    inten = min(0.5 * pow(e, 0.62), 14.0) / soft;
+    size = uPx * soft * min(0.72 + 0.5 * pow(e, 0.3), 30.0);
+    // (Below the reference magnitude the fall-off is steeper: the faintest stars are a fine dust, not a snowstorm.)
+    inten = min(0.5 * pow(e, e < 1.0 ? 0.9 : 0.62), 14.0) / soft;
     if (style > 3.5) inten *= 1.6;                           // quasars: piercing points
     if (style > 2.5 && uResolve > 0.0) {
       // A galaxy big enough to be drawn as a resolved sprite fades out of the point cloud.

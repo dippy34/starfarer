@@ -11,7 +11,7 @@ import {
   jName, parseJName, qGalColor, qGalMag, qGalPa, qGalRatio, qGalSize, qNameDec, qNameRa, qQsoMag, qRedshift, qStarColor, qStarDec, qStarDist, qStarMag, qStarRa, twoMassName,
 } from '../src/data/format/schema';
 import { type ColumnSpec, type Columns, type RawTile, decodeIds, decodeTile, encodeIds, encodeTile, packTile, unpackTile } from '../src/data/format/tileFormat';
-import { buildNodeIndex, nodeCube, selectNodes } from '../src/data/lod';
+import { buildNodeIndex, nodeBrightness, nodeCube, selectNodes } from '../src/data/lod';
 import { normalizeName } from '../src/data/names';
 import { decodeView, encodeView } from '../src/modes/explore/links';
 import { parseCoordinates, seedPosition } from '../src/modes/explore/search';
@@ -246,6 +246,59 @@ describe('level of detail', () => {
     expect(bright.nodes).toEqual([0]);
     // Same question, same answer.
     expect(selectNodes(nodes, 12, -7, 99, { budget: 20000, magLimit: 30, tenPc: 10 })).toEqual(selectNodes(nodes, 12, -7, 99, { budget: 20000, magLimit: 30, tenPc: 10 }));
+  });
+
+  it('loads whole levels first for surveys, so they look evenly sampled from afar', () => {
+    const nodes = buildNodeIndex(syntheticDataset());
+    // Budget for the root and all eight children, plus a little: both levels complete, then local refinement.
+    const sel = selectNodes(nodes, 300, 300, 300, { budget: 12_500, magLimit: 30, tenPc: 10, uniformFirst: true });
+    expect(sel.uniform).toBe(9);
+    expect(sel.nodes.slice(0, 9).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(sel.points).toBe(12_000);
+    // The three extra tiles are the grandchildren nearest the camera (inside octant '7').
+    for (const id of sel.nodes.slice(9)) expect(nodes[id]!.path.startsWith('7')).toBe(true);
+    // Too small for the second level: only the root is "uniform", the rest is refined best-first.
+    const small = selectNodes(nodes, 300, 300, 300, { budget: 5000, magLimit: 30, tenPc: 10, uniformFirst: true });
+    expect(small.uniform).toBe(1);
+    expect(small.nodes[0]).toBe(0);
+    // Nothing fainter than the limit is fetched around the camera.
+    const strict = selectNodes(nodes, 300, 300, 300, { budget: 1e6, magLimit: -100, tenPc: 10, uniformFirst: true });
+    expect(strict.nodes.length).toBe(73); // all three levels fit the budget, so all of them are uniform
+    expect(strict.uniform).toBe(73);
+  });
+
+  it('keeps the sky complete to one magnitude when tiles are ordered by apparent brightness', () => {
+    // A star catalogue as the pipeline writes it: every node records the brightest apparent magnitude of
+    // its stars seen from the Sun (`app`) and their median distance from the Sun (`med`).
+    const ds = syntheticDataset();
+    const rng = new Rng(5);
+    const cubes = ds.nodes.path.map((p) => nodeCube(ds.rootHalf, p));
+    // Stars of each node: somewhere inside its cube, so at least as far from the Sun as the cube is.
+    const nearest = cubes.map((c) => Math.hypot(Math.max(0, Math.abs(c.cx) - c.half), Math.max(0, Math.abs(c.cy) - c.half), Math.max(0, Math.abs(c.cz) - c.half)) + 2 + rng.next() * 40);
+    ds.nodes.med = nearest.map((d, i) => d + cubes[i]!.half * 0.6);
+    // Brightest apparent magnitude: at best the node's most luminous star at its nearest distance, usually fainter.
+    ds.nodes.app = ds.nodes.mag.map((m, i) => m + 5 * Math.log10(nearest[i]! / 10) + rng.next() * 3);
+    const nodes = buildNodeIndex(ds);
+    // From the Solar System (a few astronomical units from the Sun — 1e-5 pc).
+    const cam: [number, number, number] = [1e-5, -2e-5, 0];
+    const sel = selectNodes(nodes, ...cam, { budget: 20_000, magLimit: 30, tenPc: 10 });
+    expect(sel.points).toBe(20_000);
+    const chosen = new Set(sel.nodes);
+    const brightestLeftOut = Math.min(...nodes.filter((n) => !chosen.has(n.index)).map((n) => n.app!));
+    // The cutoff is the brightest star that had to be left out, and every tile holding a brighter one is loaded:
+    // drawing down to the cutoff shows a sky with no holes.
+    expect(sel.cutoffMag).toBeCloseTo(brightestLeftOut, 3);
+    for (const n of nodes) if (n.app! < sel.cutoffMag - 1e-6) expect(chosen.has(n.index)).toBe(true);
+    // Seen from the Sun, a tile looks exactly as bright as the catalogue says.
+    const some = nodes.find((n) => n.path === '0')!;
+    expect(nodeBrightness(some, 0, 0, 0, 10).sky).toBeCloseTo(some.app!, 6);
+    // A little way from the Sun the answer barely changes (no sudden loss of stars when you leave home)…
+    const near = selectNodes(nodes, 3, 1, -2, { budget: 20_000, magLimit: 30, tenPc: 10 });
+    expect(near.cutoffMag).toBeGreaterThan(sel.cutoffMag - 1.5);
+    // …and far away the tile around the camera matters, however faint its stars look from home.
+    const far = selectNodes(nodes, 700, 700, 700, { budget: 3000, magLimit: 30, tenPc: 10 });
+    expect(far.nodes.map((i) => nodes[i]!.path)).toContain('77');
+    expect(nodeBrightness(nodes.find((n) => n.path === '77')!, 700, 700, 700, 10).local).toBeLessThan(nodeBrightness(nodes.find((n) => n.path === '77')!, 700, 700, 700, 10).sky);
   });
 
   it('reports the cutoff magnitude where the budget ran out', () => {

@@ -14,6 +14,7 @@ import { type TerrainParams, type TerrainPatchData, cubeToSphere, terrainIndices
 import { ATMO_GLSL, LIGHT_GLSL } from './bodyShaders';
 import { NOISE_GLSL } from './noiseTexture';
 import type { QualityTier } from './qualityTiers';
+import { CLIP_SAFE } from './glsl';
 
 const VERT = /* glsl */ `
 #include <common>
@@ -40,7 +41,7 @@ void main() {
   vec4 world = modelMatrix * vec4(pos, 1.0);
   vRel = world.xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE}
 }`;
 
 const FRAG = /* glsl */ `
@@ -97,6 +98,7 @@ void main() {
 
   vec3 col;
   float spec = 0.0;
+  float seaFar = 0.0;
   vec3 emit = vec3(0.0);
   if (water > 0.5) {
     float depth = vColor.a;
@@ -110,7 +112,9 @@ void main() {
       // Sea: colour deepens with depth; small ripples roughen the reflection.
       col = mix(uOceanColor * 2.6 + vec3(0.0, 0.05, 0.05), uOceanColor, smoothstep(0.0, 0.35, depth));
       vec2 ripple = (detail(j0).yx + d1) * (0.5 + 0.5 * sin(uTime * 0.7 + dCoarse.x * 40.0));
-      n = normalize(up + (t1 * ripple.x + t2 * ripple.y) * 0.1);
+      // From far away waves are far smaller than a pixel: the glint becomes a broad, soft highlight.
+      seaFar = smoothstep(2.0e4, 1.5e6, dist);
+      n = normalize(up + (t1 * ripple.x + t2 * ripple.y) * 0.1 * (1.0 - seaFar));
       spec = 1.0;
     }
   } else {
@@ -141,7 +145,7 @@ void main() {
     if (spec > 0.0) {
       vec3 hv = normalize(ld + v);
       float fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
-      specCol += sun * vis * (pow(max(dot(n, hv), 0.0), 320.0) * 9.0 + fres * 0.08);
+      specCol += sun * vis * (pow(max(dot(n, hv), 0.0), mix(320.0, 48.0, seaFar)) * mix(9.0, 1.3, seaFar) + fres * 0.08);
     }
   }
   // Skylight on the day side, faint starlight everywhere.
@@ -280,8 +284,9 @@ export class TerrainBody {
    * @param centerRel  body centre relative to the camera (world axes)
    * @param rot        body-fixed → world rotation
    * @param focal      pixels per radian
+   * @param detailScale 0.5…1, from the quality controller's draw-call budget
    */
-  update(camLocal: THREE.Vector3, centerRel: THREE.Vector3, rot: THREE.Quaternion, rotM: THREE.Matrix3, focal: number, tier: QualityTier, time: number): void {
+  update(camLocal: THREE.Vector3, centerRel: THREE.Vector3, rot: THREE.Quaternion, rotM: THREE.Matrix3, focal: number, tier: QualityTier, time: number, detailScale = 1): void {
     this.frame++;
     const R = this.params.radius;
     const camDist = camLocal.length();
@@ -293,7 +298,8 @@ export class TerrainBody {
     const cz = camLocal.z / camDist;
     const splitK = focal / ((this.res - 1) * tier.terrainSplitPx);
     this.visible.length = 0;
-    const budget = tier.terrainMaxPatches;
+    // `detailScale` < 1 means the frame is over its draw-call budget: show fewer, coarser patches.
+    const budget = Math.max(12, Math.round(tier.terrainMaxPatches * detailScale));
 
     const visit = (node: Node): void => {
       node.lastUsed = this.frame;

@@ -10,6 +10,7 @@
  *   - lights and shadow casters are given relative to the body centre
  */
 import { NOISE_GLSL } from './noiseTexture';
+import { CLIP_SAFE, CLIP_SAFE_BILLBOARD } from './glsl';
 
 /** Vertex shader for sphere-based bodies. */
 export const BODY_VERT = /* glsl */ `
@@ -25,7 +26,7 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vRel = world.xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE}
 }`;
 
 /**
@@ -147,7 +148,7 @@ void main() {
   vec4 c = viewMatrix * vec4(uCenter, 1.0);
   c.xy += position.xy * uSize;
   gl_Position = projectionMatrix * c;
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE_BILLBOARD}
 }`;
 
 export const GLOW_FRAG = /* glsl */ `
@@ -291,7 +292,7 @@ void main() {
   vRel = world.xyz;
   vBody = mat3(modelMatrix) * position;
   gl_Position = projectionMatrix * viewMatrix * world;
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE}
 }`;
 
 export const RING_FRAG = /* glsl */ `
@@ -341,7 +342,7 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vRel = world.xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
-  #include <logdepthbuf_vertex>
+  #include <logdepthbuf_vertex>${CLIP_SAFE}
 }`;
 
 export const ATMO_GLSL = /* glsl */ `
@@ -527,7 +528,8 @@ void main() {
   }
   float shade = mix(0.78 + 0.22 * dense, 0.95 - 0.5 * dense, below);
   vec3 col = uColor * lit * shade;
-  float alpha = a * 0.96;
+  // From the ground, let the far deck thin out so the horizon shows sky rather than a white wall.
+  float alpha = a * 0.96 * mix(1.0, 0.18, below * smoothstep(3.0e4, 4.0e5, dist));
   if (uHasAtmo > 0.5) {
     // The air between the eye and the cloud: distant cloud melts into the haze of the horizon.
     vec4 s = scatter(-v, dist, 4, 0.5);

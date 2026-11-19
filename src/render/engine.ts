@@ -213,6 +213,7 @@ export class Engine {
     r.render(this.scene, this.camera);
     this.post.render(dt, this.camera, this.quality.tier);
     this.stats.drawCalls = r.info.render.calls;
+    this.quality.noteDrawCalls(r.info.render.calls, dt);
     this.stats.triangles = r.info.render.triangles;
     this.stats.points = r.info.render.points;
   }

@@ -26,6 +26,12 @@ interface Candidate {
   limit: number;
 }
 
+/** A body that hides the sky behind it: centre relative to the camera (metres) and radius. */
+export interface Occluder {
+  rel: THREE.Vector3;
+  radius: number;
+}
+
 export interface DynamicLabel {
   text: string;
   /** Position relative to the camera (world axes, metres). */
@@ -133,8 +139,9 @@ export class Labels {
    * Lay out this frame's labels.
    * @param dynamic  labels supplied by the mode (bodies of the current system…)
    * @param selected camera-relative position of the selection marker, or null
+   * @param occluders nearby bodies big enough on screen to hide the sky behind them
    */
-  update(camPos: UPos, showNames: boolean, showConstellations: boolean, dynamic: DynamicLabel[], selected: THREE.Vector3 | null, starLimit: number, dim: number): void {
+  update(camPos: UPos, showNames: boolean, showConstellations: boolean, dynamic: DynamicLabel[], selected: THREE.Vector3 | null, starLimit: number, dim: number, occluders: readonly Occluder[] = []): void {
     if (!this.built) this.build();
     const engine = this.engine;
     const cam = engine.camera;
@@ -168,6 +175,16 @@ export class Labels {
       (this.lines.material as THREE.ShaderMaterial).uniforms.uAlpha!.value = 0.5 * conFade;
     }
 
+    // Screen discs of nearby bodies: a star or galaxy behind a planet gets no label floating on the planet.
+    const discs: Array<[number, number, number]> = [];
+    const focalPx = h / (2 * tanY);
+    for (const o of occluders) {
+      const p = project(o.rel);
+      const d = o.rel.length();
+      if (p && d > o.radius) discs.push([p[0], p[1], (o.radius / Math.sqrt(d * d - o.radius * o.radius)) * focalPx]);
+    }
+    const hidden = (p: [number, number]): boolean => discs.some((c) => (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 < c[2] * c[2]);
+
     const items: Array<{ text: string; x: number; y: number; priority: number; cls: string }> = [];
     for (const d of dynamic) {
       const p = project(d.rel);
@@ -182,14 +199,14 @@ export class Labels {
         // Named stars are labelled while clearly visible; relax the limit as the sky gets deeper.
         if (mag > c.limit + Math.max(0, starLimit - 7.6)) continue;
         const p = project(v.set(tmp.x, tmp.y, tmp.z).clone());
-        if (p) items.push({ text: c.text, x: p[0], y: p[1], priority: 50 + mag, cls: '' });
+        if (p && !hidden(p)) items.push({ text: c.text, x: p[0], y: p[1], priority: 50 + mag, cls: '' });
       }
     }
     if (conFade > 0.3) {
       for (const c of this.constellations) {
         uposSub(c.centroid, camPos, tmp);
         const p = project(v.set(tmp.x, tmp.y, tmp.z).clone());
-        if (p) items.push({ text: c.name, x: p[0], y: p[1], priority: 200, cls: 'sf-const' });
+        if (p && !hidden(p)) items.push({ text: c.name, x: p[0], y: p[1], priority: 200, cls: 'sf-const' });
       }
     }
     items.sort((a, b) => a.priority - b.priority);

@@ -124,7 +124,11 @@ export class ExploreWorld {
         const unit = s.ds.manifest.unit;
         const lod = DATASET_LOD[s.ds.manifest.id]!;
         // Around the camera, only galaxies bright enough to be drawn are worth loading (plus a margin for the fade).
-        s.update(this.rel.x / unit, this.rel.y / unit, this.rel.z / unit, lod.share(tier), 0.2, lod.magLimit ?? GALAXY_MAG_LIMIT[tier.name] + 1);
+        let budget = lod.share(tier);
+        // Real and procedural stars share one allowance: whatever the procedural field is not using
+        // (all of it near the Sun, where the catalogue is the whole sky) goes to catalogue stars.
+        if (s.ds.manifest.kind === 'stars') budget += Math.floor(Math.max(0, tier.proceduralStars - this.galaxies.starGrid.points) / 16384) * 16384;
+        s.update(this.rel.x / unit, this.rel.y / unit, this.rel.z / unit, budget, 0.2, lod.magLimit ?? GALAXY_MAG_LIMIT[tier.name] + 1);
       }
     }
 
@@ -136,9 +140,9 @@ export class ExploreWorld {
     this.starMagLimit += (starCut - this.starMagLimit) * k;
     this.galaxyMagLimit += (galCut - this.galaxyMagLimit) * k;
     this.galaxies.update(camPos, dt);
-    // Catalogue stars and procedural stars share one limit, so the real neighbourhood of the Sun
-    // blends into the procedural galaxy around it.
-    const starLimit = Math.min(this.starMagLimit, this.galaxies.current ? this.galaxies.starMagLimit : this.starMagLimit);
+    // Where both exist, catalogue stars and procedural stars share one limit, so the real neighbourhood
+    // of the Sun blends into the procedural galaxy around it.
+    const starLimit = this.galaxies.proceduralStars ? Math.min(this.starMagLimit, this.galaxies.starMagLimit) : this.starMagLimit;
     for (const g of this.starLayer.groups) g.magLimit = starLimit;
     // Far from any galaxy the real surveys stay visible as faint "survey dots" whatever their magnitude.
     const deep = Math.min(1, Math.max(0, (this.galaxies.nearestRatio - 1.5) / 6));

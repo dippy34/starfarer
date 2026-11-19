@@ -164,7 +164,9 @@ function hud(root: HTMLElement): void {
 
   const update = (s: AppState): void => {
     cls(node, 'sf-hidden', s.screen !== 'explore');
-    const loc = s.location;
+    // Drop repeats (a star and its own system share a name) and, on narrow screens, keep the end of the trail.
+    let loc = s.location.filter((n, i, all) => i === 0 || n !== all[i - 1]);
+    if (loc.length > 2 && root.clientWidth < 520) loc = loc.slice(-2);
     crumbs.innerHTML = loc.length ? loc.map((n, i) => (i === loc.length - 1 ? esc(n) : `<span>${esc(n)} › </span>`)).join('') : '<span>Deep space</span>';
     const idx = SCALE_ORDER.indexOf(s.scale);
     scaleBars.forEach((b, i) => cls(b, 'sf-on', i === idx));
@@ -230,13 +232,14 @@ function infoCard(root: HTMLElement): void {
       el('div', { class: 'sf-type' }, [sel.type, el('span', { class: `sf-badge ${sel.real ? 'sf-real' : 'sf-proc'}`, text: sel.real ? 'Real' : 'Imagined' })]),
       el('h2', { text: sel.name }),
       el('p', { text: sel.description }),
-      dl,
+      // Actions come before the numbers so they never scroll out of reach on a small screen.
       el('div', { class: 'sf-actions' }, [
         el('button', { class: 'sf-btn sf-primary', text: '🚀 Fly there', onClick: () => { tap(); actions.flyToSelection(); } }),
         sel.canLand ? el('button', { class: 'sf-btn', text: '🛬 Land', onClick: () => { tap(); actions.landOnSelection(); } }) : null,
         el('button', { class: 'sf-btn', text: '⭐ Save', onClick: () => { tap(); actions.bookmarkSelection(); } }),
         el('button', { class: 'sf-btn', text: '🔗 Share', onClick: () => { tap(); actions.shareView(); } }),
       ]),
+      dl,
       s.settings.showData ? el('div', { class: 'sf-source', text: sel.pending ? `${sel.source} · loading details…` : sel.source }) : null,
     ]);
   };

@@ -200,8 +200,6 @@ export interface SurfaceProps {
   /** Noise layout seed and continent frequency. */
   seed: number;
   continentScale: number;
-  /** Optional real albedo / height maps (Solar System bodies). */
-  textureKey?: string;
 }
 
 export interface BodyBase {

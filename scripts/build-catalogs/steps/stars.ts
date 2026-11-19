@@ -352,6 +352,7 @@ export function writeStars(store: StarStore, names: NameRegistry): DatasetManife
   const y = new Float64Array(n);
   const z = new Float64Array(n);
   const lodMag = new Float32Array(n);
+  const appMag = new Float32Array(n);
   const data = { ra: new Uint32Array(n), dec: new Uint32Array(n), dist: new Uint16Array(n), mag: new Uint16Array(n), color: new Uint8Array(n), flags: new Uint8Array(n) };
   const nameId = new Int32Array(n);
   for (let i = 0; i < n; i++) {
@@ -368,7 +369,8 @@ export function writeStars(store: StarStore, names: NameRegistry): DatasetManife
     x[i] = d * Math.cos(dec) * Math.cos(ra);
     y[i] = d * Math.cos(dec) * Math.sin(ra);
     z[i] = d * Math.sin(dec);
-    lodMag[i] = dqStarMag(data.mag[i]!) - 5 * Math.log10(d / 10);
+    appMag[i] = dqStarMag(data.mag[i]!);
+    lodMag[i] = appMag[i]! - 5 * Math.log10(d / 10);
     nameId[i] = names.finalId(store.nameHandle[i]!);
     // Named stars carry their photometry codes in the names table too, so search can build the
     // star's system directly — identical to what the tile would give — without waiting for a tile.
@@ -379,6 +381,7 @@ export function writeStars(store: StarStore, names: NameRegistry): DatasetManife
   }
   return writeDataset({
     id: 'stars', kind: 'stars', title: 'Gaia DR3 + Hipparcos stars', unit: PC, rootHalf: 2 ** 18, capacity: 4096,
-    count: n, x, y, z, lodMag, columns: STAR_COLUMNS, data, nameId, ids: store.id.subarray(0, n),
+    // Tiles are ordered by apparent brightness in our sky (see lib/octree.ts).
+    count: n, x, y, z, lodMag, orderKey: appMag, tenPc: 10, columns: STAR_COLUMNS, data, nameId, ids: store.id.subarray(0, n),
   });
 }

@@ -26,9 +26,9 @@ const SGR_A = raDecToUnit(266.41684, -29.00781);
 export const MILKY_WAY_CENTER: UPos = uposFromMeters(SGR_A.x * R0_PC * PC, SGR_A.y * R0_PC * PC, SGR_A.z * R0_PC * PC);
 
 /**
- * Galaxy-local axes in ICRS: x points from the Galactic Centre away from… the
- * Sun-to-centre direction (so the Sun sits at x ≈ −R₀), y along Galactic
- * rotation (l = 90°), z to the north Galactic pole.
+ * Galaxy-local axes expressed in ICRS (rows = the local x, y, z axes): the usual Galactic frame
+ * moved to the centre — x along l = 0° (from the Sun toward the Galactic Centre, so the Sun sits
+ * at x ≈ −R₀), y along Galactic rotation (l = 90°), z to the north Galactic pole.
  */
 const BASIS: Mat3 = [
   GAL_TO_ICRS[0], GAL_TO_ICRS[3], GAL_TO_ICRS[6],

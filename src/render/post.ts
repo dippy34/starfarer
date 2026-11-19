@@ -171,7 +171,10 @@ void main() {
   col = mix(col * 12.92, 1.055 * pow(max(col, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), col));
   // Film grain (stronger in the mid-tones) + ordered-ish dither to kill banding in dark gradients.
   float n = hash12(gl_FragCoord.xy + fract(uTime) * 91.7);
-  col += (n - 0.5) * (uGrain * (0.35 + 0.65 * (1.0 - abs(luma * 2.0 - 1.0))) + 1.5 / 255.0);
+  // (luma is measured before tone mapping and can be far above 1 on a star's disc: clamp it, or the grain
+  // would grow with brightness and speckle everything that is over-exposed.)
+  float mid = 1.0 - abs(clamp(luma, 0.0, 1.0) * 2.0 - 1.0);
+  col += (n - 0.5) * (uGrain * (0.35 + 0.65 * mid) + 1.5 / 255.0);
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 

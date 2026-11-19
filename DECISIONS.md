@@ -67,13 +67,18 @@ Targets were ≥ 1 M (aim 2 M+), ≥ 1 M stars, ≥ 300 k galaxies, ~750 k quasa
 - **VizieR is read through the CfA mirror** (`vizier.cfa.harvard.edu`) because
   the Strasbourg host was not reachable from the build sandbox. Same data;
   override with `VIZIER_HOST=vizier.cds.unistra.fr`.
-- **HyperLEDA is not used.** Its bulk interface was not reachable and it has no
-  mirror with a stable machine interface. Galaxies come from 2MRS (uniform,
-  all-sky, 43 533 with redshifts), the Updated Nearby Galaxy Catalog
-  (redshift-independent distances for 868 neighbours, which matter because
-  nearby redshifts are dominated by peculiar motion), OpenNGC (names, sizes,
-  Hubble types for the NGC/IC/Messier galaxies) and SDSS. The 300 k target is
-  exceeded nine times over by SDSS alone.
+- **HyperLEDA is not used** (I did not attempt a bulk download from it).
+  The procedural fill has to know *which* galaxies a catalogue would have
+  contained, or the two overlap and leave seams. 2MRS (K < 11.75 over the whole
+  sky outside the Galactic plane) and the SDSS main sample (r < 17.77 inside a
+  footprint) have clean selection functions; HyperLEDA is a compilation of
+  many surveys and has none. Galaxies therefore come from 2MRS (43 533 with
+  redshifts), the Updated Nearby Galaxy Catalog (redshift-independent
+  distances for 868 neighbours, which matter because nearby redshifts are
+  dominated by peculiar motion), OpenNGC (names, sizes, Hubble types for the
+  NGC/IC/Messier galaxies) and SDSS. The 300 k target is exceeded nine times
+  over. The natural next catalogue is 6dFGS, which has a clean K limit over the
+  southern sky.
 - **SDSS galaxies are DR17, quasars DR16Q**, as requested for quasars; DR17 is
   the final SDSS-IV spectroscopic release for galaxies.
 - **Galaxy distances are Hubble-flow distances** from the redshift corrected to
@@ -118,6 +123,20 @@ Targets were ≥ 1 M (aim 2 M+), ≥ 1 M stars, ≥ 300 k galaxies, ~750 k quasa
   MOLA data streamed like the catalogue tiles).
 - **Constellations:** IAU names plus the stick figures of Stellarium's "modern"
   sky culture; lines are drawn between the real Hipparcos stars.
+  **Licensing note:** that figure list ships with Stellarium under
+  GPL-2.0-or-later. Which stars a constellation joins is arguably a fact, not
+  a creative work, but if you plan a closed-source store release, replace
+  `constellations.bin` with your own figure list (88 short lists of HIP
+  numbers; the builder is `buildConstellations` in
+  `scripts/build-catalogs/steps/misc.ts`). Likewise the deep-sky and galaxy
+  files contain OpenNGC data and inherit CC BY-SA 4.0 (attribution +
+  share-alike for those data files).
+- **Galaxies show what was measured.** Named galaxies carry their catalogued
+  heliocentric radial velocity, Hubble type and — for the nearest ones — how
+  their distance was measured (Cepheids, tip of the red-giant branch, …).
+  Nearby galaxies are *placed* by those measured distances, so their stored
+  "redshift" is only that distance re-expressed; the card shows a redshift
+  only beyond z = 0.003, where it really is the measurement.
 
 ### 2.3 Stable ids
 
@@ -183,8 +202,8 @@ Every object has a stable id shown in Show data and accepted by search.
   piecewise mass–luminosity relation. The same function serves real and
   procedural stars.
 - **Planets:** mass–radius relation after Chen & Kipping (2017); equilibrium
-  temperature from stellar luminosity; conservative/optimistic habitable-zone
-  edges after Kopparapu et al. (2013); types (rocky, desert, ocean, ice, lava,
+  temperature from stellar luminosity; habitable zone 0.95–1.68 AU × √L (the
+  Sun's conservative zone of Kopparapu et al. 2013, scaled by luminosity); types (rocky, desert, ocean, ice, lava,
   gas giant, ice giant) from mass, temperature and volatile budget.
 - **Multiplicity** rises with stellar mass (26 % for red dwarfs to 75 % for
   O/B stars); close pairs get circumbinary planets, wide pairs planets around
@@ -193,8 +212,13 @@ Every object has a stable id shown in Show data and accepted by search.
 ### 3.4 Deliberate exaggerations (for spectacle or visibility)
 
 - **Cosmic-web glow.** Besides individual galaxies, soft "glow" particles carry
-  unresolved light on ten nested scales. Their brightness is scaled so the web
-  stays visible at every zoom level; physically it would fade to nothing.
+  the unresolved light of the web on three nested scales (cells of 32, 64 and
+  128 Mpc), each drawn in its own shell of distances and tinted by local
+  density (violet-blue outskirts, warm bright knots). Physically this light is
+  far too faint to see; it is there so the web reads as a web. Beyond a few
+  hundred megaparsecs a sight line crosses so many structures that the glow
+  would be a featureless haze, so only the real surveys remain visible there,
+  as faint "survey dots".
 - **Compact objects are easier to find than in reality.** Isolated neutron
   stars and black holes are given a faint glow and a signature tint in the star
   field, and about 0.5 % of faint stars are compact objects (the real fraction
@@ -202,16 +226,19 @@ Every object has a stable id shown in Show data and accepted by search.
 - **Pulsar beams sweep slowly.** A 30 Hz pulsar rendered at its true rate is a
   flicker (and a photosensitivity hazard); beams turn at a watchable rate and
   the true period is in Show data.
-- **Black holes always have a visible accretion disk** (at least 14 % of the
-  full brightness) so there is something to be lensed. The lensing itself is a
-  real Schwarzschild geodesic integration per pixel — not a screen-space warp —
-  with Doppler beaming and gravitational redshift of the disk; spin (Kerr) is
-  not modelled.
+- **Every black hole has an accretion disk** (faint for quiet ones such as
+  Sgr A*, blazing for X-ray binaries and quasars) so there is something to be
+  lensed. The lensing itself is a real Schwarzschild geodesic integration per
+  pixel — not a screen-space warp — with Doppler beaming and gravitational
+  redshift of the disk; spin (Kerr) is not modelled.
 - **Time dilation readout** is the static-observer Schwarzschild factor
   1/√(1 − r_s/r); it does not change how fast the simulation runs.
-- **Exposure adapts.** Star and galaxy brightness use real magnitudes, but the
-  faintest magnitude drawn follows the quality tier and the sky dims next to a
-  bright sun or under a day sky, as a camera (or eye) would.
+- **Exposure adapts.** Star brightness is anchored to real magnitudes (a
+  sixth-magnitude star always looks the same; higher quality tiers add fainter
+  stars rather than brightening everything), but the sky dims when a nearby
+  sun is in the frame or under a day sky, and inside a galaxy the exposure of
+  its diffuse glow follows the local star density — the eye would adapt to the
+  blaze of a galactic nucleus just as it does to the faint Milky Way.
 - **Quasars with no catalogued magnitude** are drawn at a nominal i = 20.5 so
   they remain visible as points; the card shows no magnitude for them.
 
@@ -265,7 +292,7 @@ Full table (shader steps, terrain patches, bloom levels …) in
 ### 4.3 Compression: DEFLATE, not Brotli
 
 Tiles are zlib streams decoded by `fflate` in a Web Worker. Brotli would be
-~12 % smaller but has no synchronous JS decoder of acceptable size, and relying
+somewhat smaller but has no synchronous JS decoder of acceptable size, and relying
 on HTTP `Content-Encoding: br` would require server configuration — the build
 output must work from any static host and inside a Capacitor bundle. Column
 byte-planes + delta-coded right ascension recover most of the difference
@@ -274,20 +301,28 @@ byte-planes + delta-coded right ascension recover most of the difference
 ### 4.4 Black-hole lensing as a post-process
 
 The lensing pass runs only while a black hole is on screen and covers more than
-a couple of pixels; integration steps scale with the tier (24 / 40 / 64) and
-the pass renders at reduced resolution on the low tier. Far from the hole a
-closed-form weak-field deflection replaces the integration.
+a couple of pixels; integration steps scale with the tier (24 / 40 / 64). Far
+from the hole a closed-form weak-field deflection replaces the integration.
 
 ### 4.5 Atmospheres and terrain (approximations)
 
-- Single scattering with an analytic (Chapman) optical depth toward the sun, a
-  few samples along the view ray; no multiple scattering, no volumetric cloud
-  shadows. Terrain gets matching aerial perspective, so the sky and the
-  horizon agree during descent.
+- Single scattering with an analytic (Chapman) optical depth toward the sun.
+  Samples along the view ray are bunched where the air is densest and each
+  segment is integrated analytically, so 4–8 samples give a noise-free sky.
+  There is no multiple scattering (a constant factor stands in for the skylight
+  it would add) and no volumetric cloud shadows. Terrain and the cloud deck get
+  matching aerial perspective, so sky and horizon agree during descent. The
+  scale height is inflated to at least 0.22 % of the radius so that a thin
+  atmosphere is still a visible rim from orbit.
+- Clouds are one shell of animated fractal cover, not volumes.
 - Terrain is a cube-sphere quadtree built in workers, down to ~1 m cells.
-  Elevation is noise-based with biome colouring by height, latitude and
-  temperature; no erosion simulation, no vegetation or water rendering beyond
-  a specular ocean surface.
+  Elevation is noise-based (continents, ridged mountains, crater fields with
+  realistic depth-to-diameter ratios); colour follows height, latitude and
+  climate; steep slopes show bare rock. No erosion simulation, no vegetation,
+  no water rendering beyond a specular sea surface.
+- **"Land"** flies to a spot where the sun stands about 35° high, levels out
+  along the horizon and settles a few hundred metres above the ground; you can
+  fly lower by hand (the camera is kept 2 m above the terrain).
 - Eclipse shadows: up to four occluding spheres per body with penumbrae; ring
   shadows on the planet and planet shadows on rings are analytic.
 
@@ -307,11 +342,32 @@ else. Swapping to Capacitor is `setPlatform({...})` before boot.
 ### 4.7 Offline
 
 The service worker precaches the app shell. Data tiles are cached by the app
-itself in IndexedDB (keyed by the catalogue build stamp, with a size cap and
-least-recently-used eviction), falling back to memory when IndexedDB is
-unavailable (private browsing). Everything you have flown through works
-offline; places you have never visited show their procedural content and
-whatever tiles are cached, with an "Offline" chip.
+itself in IndexedDB, keyed by the catalogue build stamp (a new data build
+purges the old one), capped at 128 MB with least-recently-used eviction, and
+falling back to a 24 MB in-memory cache when IndexedDB is unavailable (private
+browsing). Everything you have flown through works offline; places you have
+never visited show their procedural content and whatever tiles are cached,
+with an "Offline" chip.
+
+### 4.8 Star tiles are ordered by apparent brightness in our sky
+
+Galaxy and quasar tiles are ordered by luminosity (the root tile holds the most
+luminous objects, visible from across the universe), and whole levels are
+loaded before refining locally, so a survey looks evenly sampled from anywhere.
+Star data, though, only reaches a few kiloparsecs and is almost always seen
+from near the Sun. Ordering star tiles by luminosity made the home sky patchy
+(deep tiles in one direction, shallow in another), so star tiles are ordered by
+*apparent magnitude as seen from the Sun*, and each tile records the brightest
+star it holds and the median distance of its stars. Near the Sun this gives an
+exact rule — load tiles brightest-first, draw down to the brightest star left
+out — and a sky complete to the same magnitude in every direction: about
+G = 7.5 / 8.5 / 9.3 on the low / medium / high tiers. Further from the Sun the
+same numbers give an estimate rather than a guarantee, and small tiles around
+the camera are added for the faint neighbours that look bright up close.
+
+Real and procedural stars share one point allowance: near the Sun, where the
+catalogue is the whole sky, all of it goes to catalogue stars; inside another
+galaxy all of it goes to procedural ones.
 
 ---
 
@@ -333,11 +389,11 @@ whatever tiles are cached, with an "Offline" chip.
 
 ## 6. Housekeeping
 
-- Raw downloads live in `scripts/build-catalogs/.raw/` (git-ignored, ~1.5 GB).
+- Raw downloads live in `scripts/build-catalogs/.raw/` (git-ignored, ~0.7 GB).
   It contains a few truncated files from early Gaia attempts
   (`gaia/bright_*.csv`) that the pipeline no longer reads; the sandbox would
   not let me delete them. They are harmless and can be removed by hand.
-- The built catalogue (`public/data/`, 67 MB in ~4 600 files) **is committed**
+- The built catalogue (`public/data/`, 67 MB in ~6 300 files) **is committed**
   so the app runs straight after `npm install` without a 10-minute download
   from the archives. Remove it from git and build in CI if the repository size
   matters more to you.

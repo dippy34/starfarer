@@ -1,14 +1,17 @@
 /**
  * Brightness-ordered LOD octree builder + tile writer.
  *
- * Objects are inserted from intrinsically brightest to faintest. Each node
- * keeps the first `capacity` objects that reach it and passes the rest down to
- * its children, so:
- *   - the root holds the most luminous objects of the whole catalogue (the
- *     ones visible from farthest away),
- *   - every child holds only fainter objects than its parent,
- * which lets the runtime load "what could be seen from here" by walking the
- * tree with a magnitude limit and never touching distant faint data.
+ * Objects are inserted from brightest to faintest. Each node keeps the first
+ * `capacity` objects that reach it and passes the rest down to its children,
+ * so the root holds the brightest objects of the whole catalogue and every
+ * child holds only fainter ones than its parent. The runtime can then load
+ * "what could be seen from here" without ever touching distant faint data.
+ *
+ * "Brightest" is intrinsic luminosity for galaxies and quasars (seen from
+ * anywhere in the universe) and apparent brightness from the Sun for stars
+ * (`orderKey`): star data only reaches a few kiloparsecs, so the Sun's sky is
+ * the view that matters, and ordering by it makes that sky complete to a
+ * uniform magnitude at every level of detail.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -30,8 +33,15 @@ export interface DatasetInput {
   x: Float64Array;
   y: Float64Array;
   z: Float64Array;
-  /** Intrinsic brightness used for LOD ordering (smaller = brighter). */
+  /** Intrinsic (absolute) brightness, smaller = brighter. Also the insertion order unless `orderKey` is given. */
   lodMag: Float32Array;
+  /** Insertion order key (smaller first), when it should differ from `lodMag` — e.g. apparent magnitude from the Sun. */
+  orderKey?: Float32Array;
+  /**
+   * Position units per 10 parsecs. When given, each node also records the brightest apparent magnitude
+   * of its objects as seen from the Sun and their median distance from it (see `NodeTable.app`).
+   */
+  tenPc?: number;
   columns: ColumnSpec[];
   /** Quantised column values for all objects (global arrays indexed by object). */
   data: Record<string, ColumnArray>;
@@ -43,17 +53,21 @@ export interface DatasetInput {
 
 interface Node {
   rows: number[];
+  /** Brightest absolute magnitude and brightest apparent magnitude from the Sun. */
   brightest: number;
+  app: number;
 }
 
 const MAX_DEPTH = 24;
 
 export function buildOctree(input: DatasetInput): Map<string, Node> {
   const { count, x, y, z, lodMag, rootHalf, capacity } = input;
+  const key = input.orderKey ?? lodMag;
+  const tenPc = input.tenPc ?? 0;
   const order = new Uint32Array(count);
   for (let i = 0; i < count; i++) order[i] = i;
   // Brightest first; ties broken by index so the build is fully deterministic.
-  order.sort((a, b) => lodMag[a]! - lodMag[b]! || a - b);
+  order.sort((a, b) => key[a]! - key[b]! || a - b);
 
   const nodes = new Map<string, Node>();
   let outside = 0;
@@ -74,11 +88,16 @@ export function buildOctree(input: DatasetInput): Map<string, Node> {
     for (let depth = 0; ; depth++) {
       let node = nodes.get(path);
       if (!node) {
-        node = { rows: [], brightest: lodMag[i]! };
+        node = { rows: [], brightest: Infinity, app: Infinity };
         nodes.set(path, node);
       }
       if (node.rows.length < capacity || depth >= MAX_DEPTH) {
         node.rows.push(i);
+        node.brightest = Math.min(node.brightest, lodMag[i]!);
+        if (tenPc > 0) {
+          const d = Math.max(Math.sqrt(px * px + py * py + pz * pz), 1e-9);
+          node.app = Math.min(node.app, lodMag[i]! + 5 * Math.log10(d / tenPc));
+        }
         break;
       }
       half /= 2;
@@ -109,6 +128,10 @@ export function writeDataset(input: DatasetInput): DatasetManifest {
   const sortData = sortCol ? input.data[sortCol.name]! : null;
   const paths = [...nodes.keys()].sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0));
   const table: DatasetManifest['nodes'] = { path: [], count: [], mag: [], bytes: [] };
+  if (input.tenPc) {
+    table.app = [];
+    table.med = [];
+  }
   let total = 0;
   let totalBytes = 0;
   let idBytes = 0;
@@ -149,6 +172,12 @@ export function writeDataset(input: DatasetInput): DatasetManifest {
     table.path.push(path);
     table.count.push(n);
     table.mag.push(Math.round(node.brightest * 100) / 100);
+    if (table.app && table.med) {
+      // Rounded toward "brighter", so the runtime's bound stays a true bound.
+      table.app.push(Math.floor(node.app * 100) / 100);
+      const dist = rows.map((r) => Math.hypot(input.x[r]!, input.y[r]!, input.z[r]!)).sort((a, b) => a - b);
+      table.med.push(Number(dist[dist.length >> 1]!.toPrecision(4)));
+    }
     table.bytes.push(bytes.byteLength);
     total += n;
     totalBytes += bytes.byteLength;

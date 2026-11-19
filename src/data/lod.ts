@@ -24,6 +24,9 @@ export interface LodNode {
   count: number;
   /** Brightest LOD magnitude in the node. */
   mag: number;
+  /** Brightest apparent magnitude seen from the Sun, and median distance from the Sun (datasets that record them). */
+  app?: number;
+  med?: number;
   bytes: number;
   parent: number;
   children: number[];
@@ -50,7 +53,10 @@ export function buildNodeIndex(ds: DatasetManifest): LodNode[] {
   const byPath = new Map<string, number>();
   const nodes: LodNode[] = ds.nodes.path.map((path, index) => {
     byPath.set(path, index);
-    return { index, path, level: path.length, ...nodeCube(ds.rootHalf, path), count: ds.nodes.count[index]!, mag: ds.nodes.mag[index]!, bytes: ds.nodes.bytes[index]!, parent: -1, children: [] };
+    return {
+      index, path, level: path.length, ...nodeCube(ds.rootHalf, path), count: ds.nodes.count[index]!, mag: ds.nodes.mag[index]!, bytes: ds.nodes.bytes[index]!,
+      app: ds.nodes.app?.[index], med: ds.nodes.med?.[index], parent: -1, children: [],
+    };
   });
   for (const n of nodes) {
     if (n.path.length === 0) continue;
@@ -113,9 +119,71 @@ export function nodeApparentMag(n: LodNode, x: number, y: number, z: number, ten
   return n.mag + 5 * Math.log10(d / tenPc);
 }
 
+/** Cubes this small (dataset units; ~0.5 kpc for stars) are filled by their objects, so local density means something. */
+const LOCAL_HALF = 512;
+
+/**
+ * How bright a node of an apparent-brightness-ordered dataset looks from (x, y, z) — as an
+ * apparent magnitude (smaller = brighter).
+ *
+ * `sky`: what our own sky says. An object of apparent magnitude g at distance d from the Sun, seen
+ * from a point D from the Sun, is at least |d − D| away, so it looks no brighter than
+ * g + 5·log10|1 − D/d|. With the node's brightest g (`app`) and the typical d of its objects (`med`)
+ * this is exact at the Sun and a fair estimate for the bulk of the node elsewhere — a little brighter
+ * while the camera is among those objects, fainter once it has left them behind. (The few objects
+ * that happen to lie right next to the camera are the business of `local`, not of this estimate,
+ * which exists to keep the sky evenly deep.) It can never beat what the node's cube allows.
+ *
+ * `local`: close to the camera an intrinsically faint object can outshine everything, so small
+ * cubes around the camera are also judged by "the nearest neighbour is a fraction of the mean
+ * spacing away".
+ */
+export function nodeBrightness(n: LodNode, x: number, y: number, z: number, tenPc: number): { sky: number; local: number } {
+  const fromSun = Math.sqrt(x * x + y * y + z * z);
+  let sky = n.app! + 5 * Math.log10(Math.max(Math.abs(1 - fromSun / n.med!), 0.7));
+  const dc = cubeDistance(n, x, y, z);
+  if (dc > 0) sky = Math.max(sky, n.mag + 5 * Math.log10(dc / tenPc));
+  let local = Infinity;
+  // (Only once the camera has moved a fair way toward the node's objects: at home, `sky` is the exact answer.)
+  if (n.half <= LOCAL_HALF && fromSun > 0.25 * n.med!) {
+    const spacing = (2 * n.half) / Math.cbrt(Math.max(1, n.count));
+    local = n.mag + 5 * Math.log10(Math.max(dc, 0.4 * spacing) / tenPc);
+  }
+  return { sky, local };
+}
+
+/**
+ * Selection for datasets ordered by apparent brightness (stars): tiles hold disjoint objects, so the
+ * tree need not be walked top-down — the tiles that look brightest from here are simply taken until
+ * the budget is spent. `cutoffMag` is the brightest `sky` value left out: drawing down to it shows a
+ * sky that is complete to one magnitude in every direction (exactly so near the Sun).
+ */
+function selectByBrightness(nodes: LodNode[], x: number, y: number, z: number, opts: LodOptions): LodSelection {
+  const keyed = nodes.map((n) => {
+    const b = nodeBrightness(n, x, y, z, opts.tenPc);
+    return { id: n.index, count: n.count, key: Math.min(b.sky, b.local), sky: b.sky };
+  });
+  keyed.sort((a, b) => a.key - b.key || a.id - b.id);
+  const out: number[] = [];
+  let points = 0;
+  let cutoff = opts.magLimit;
+  let full = false;
+  for (const k of keyed) {
+    if (!full && k.key <= opts.magLimit && (points === 0 || points + k.count <= opts.budget)) {
+      out.push(k.id);
+      points += k.count;
+    } else {
+      full = true;
+      cutoff = Math.min(cutoff, k.sky);
+    }
+  }
+  return { nodes: out, uniform: 0, points, cutoffMag: cutoff };
+}
+
 export function selectNodes(nodes: LodNode[], x: number, y: number, z: number, opts: LodOptions): LodSelection {
   const out: number[] = [];
   if (nodes.length === 0) return { nodes: out, uniform: 0, points: 0, cutoffMag: opts.magLimit };
+  if (nodes[0]!.app !== undefined && nodes[0]!.med !== undefined) return selectByBrightness(nodes, x, y, z, opts);
   // Binary min-heap of [key, nodeIndex] pairs, ordered by apparent magnitude (smaller = brighter).
   const keys: number[] = [];
   const ids: number[] = [];

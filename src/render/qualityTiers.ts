@@ -105,6 +105,10 @@ export const DATASET_LOD: Record<string, { share: (t: QualityTier) => number; ma
   quasars: { share: (t) => Math.round(t.catalogGalaxies * 0.25), magLimit: null, uniformFirst: true },
 };
 
-/** Faintest apparent magnitude drawn for stars and for galaxies on each tier. */
-export const STAR_MAG_LIMIT: Record<TierName, number> = { low: 6.6, medium: 7.6, high: 8.6 };
+/**
+ * Faintest apparent magnitude drawn for stars and for galaxies on each tier. The star limits are what
+ * the star budgets hold of the real sky near the Sun (roughly 25, 70 and 150 thousand stars); the
+ * streamer lowers the limit by itself wherever fewer tiles fit.
+ */
+export const STAR_MAG_LIMIT: Record<TierName, number> = { low: 7.6, medium: 8.6, high: 9.4 };
 export const GALAXY_MAG_LIMIT: Record<TierName, number> = { low: 13.2, medium: 14.2, high: 15.2 };

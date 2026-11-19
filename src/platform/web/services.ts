@@ -117,7 +117,9 @@ export class WebAssets implements Assets {
   }
 
   async fetchData(path: string, signal?: AbortSignal): Promise<Uint8Array> {
-    const res = await fetch(this.dataUrl + path, { signal, cache: 'force-cache' });
+    // Tiles never change for a given build (the manifest names the build), so the HTTP cache may serve them
+    // without asking; the manifest itself is always revalidated so that a new data build is noticed.
+    const res = await fetch(this.dataUrl + path, { signal, cache: path.startsWith('manifest.json') ? 'no-cache' : 'force-cache' });
     if (!res.ok) throw new Error(`HTTP ${res.status} for data/${path}`);
     // Static hosts with single-page-app fallbacks answer missing files with index.html and status 200.
     if ((res.headers.get('content-type') ?? '').includes('text/html')) throw new Error(`data/${path} is missing (got an HTML page)`);

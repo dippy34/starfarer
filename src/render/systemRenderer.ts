@@ -412,7 +412,7 @@ export class SystemRenderer {
     void starMagLimit;
     const e = Math.pow(10, 0.4 * Math.min(STAR_MAG_REF - m, 30));
     const pxScale = Math.max(1.1, this.engine.renderHeight / 720);
-    const glarePx = pxScale * Math.min(0.8 + 0.42 * Math.pow(e, 0.3), 30) * 2.2;
+    const glarePx = pxScale * Math.min(0.72 + 0.5 * Math.pow(e, 0.3), 30) * 2.2;
     const discPx = v.px;
     // Once the disc itself is big, the glare gives way to the corona.
     const coronaPx = discPx * (p.type === 'whitedwarf' || p.type === 'neutron' || p.type === 'pulsar' ? 9 : 3.4);
@@ -564,7 +564,7 @@ export class SystemRenderer {
     if (v.terrain) {
       // Camera in the body-fixed frame.
       tmpA.copy(v.rel).multiplyScalar(-1).applyQuaternion(tmpQ.copy(v.rot).invert());
-      v.terrain.update(tmpA, v.rel, v.rot, v.rotM, focal, this.engine.tier, this.time);
+      v.terrain.update(tmpA, v.rel, v.rot, v.rotM, focal, this.engine.tier, this.time, this.engine.quality.detailScale);
     }
     if (v.ring) {
       v.ring.position.copy(v.rel);

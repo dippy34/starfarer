@@ -1,5 +1,5 @@
 {
- "built": "2026-11-19T08:14:22.874Z",
+ "built": "2026-11-19T10:48:20.479Z",
  "stars": {
   "gaiaBright": 1902847,
   "gcns": 330881,
@@ -72,16 +72,16 @@
   "constellations": 88,
   "all": 5672908
  },
- "totalBytes": 67396534,
+ "totalBytes": 67203840,
  "firstLaunch": {
-  "bytes": 2708722,
-  "files": 36,
+  "bytes": 2671918,
+  "files": 35,
   "tiles": {
-   "stars": 22,
+   "stars": 21,
    "galaxies": 2,
    "sdss": 4,
    "quasars": 2
   }
  },
- "seconds": 464
+ "seconds": 500
 }

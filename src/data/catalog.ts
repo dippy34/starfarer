@@ -64,6 +64,11 @@ export class Catalog {
     for (const ds of manifest.datasets) this.datasets.set(ds.id, { manifest: ds, nodes: buildNodeIndex(ds) });
   }
 
+  /** Short token identifying this data build (for cache-busting URLs). */
+  private get version(): string {
+    return this.manifest.built.replace(/[^0-9]/g, '').slice(0, 14);
+  }
+
   /** Cache key prefix for this data build. */
   private get stamp(): string {
     return `d${this.manifest.built}/`;
@@ -80,7 +85,8 @@ export class Catalog {
         const key = this.stamp + path;
         const cached = await platform.blobs.get(key);
         if (cached) return cached;
-        const bytes = await platform.assets.fetchData(path);
+        // The build stamp in the URL keeps HTTP caches from serving a tile of an older data build.
+        const bytes = await platform.assets.fetchData(`${path}?v=${this.version}`);
         // Store a copy: the original buffer is usually transferred to a worker right after.
         void platform.blobs.put(key, bytes.slice());
         return bytes;

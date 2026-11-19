@@ -17,8 +17,16 @@ export interface NodeTable {
   path: string[];
   /** Number of objects in each node. */
   count: number[];
-  /** Brightest (smallest) LOD magnitude in each node. */
+  /** Brightest (smallest) absolute LOD magnitude in each node. */
   mag: number[];
+  /**
+   * Star datasets only (tiles ordered by apparent brightness in our sky): the brightest apparent
+   * magnitude in each node as seen from the Sun, and the median distance of its objects from the
+   * Sun (position units). They tell the runtime how bright the node looks from near the Sun
+   * (exactly) and from further afield (approximately).
+   */
+  app?: number[];
+  med?: number[];
   /** Compressed size in bytes (for download accounting). */
   bytes: number[];
 }

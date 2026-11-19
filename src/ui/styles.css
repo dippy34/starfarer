@@ -133,9 +133,9 @@
 .sf-badge.sf-proc { background: rgba(255, 210, 124, 0.16); color: var(--sf-accent-2); }
 .sf-card p { margin: 7px 0 10px; color: #dfe5fa; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .sf-card .sf-close { position: absolute; top: 9px; right: 9px; width: 36px; height: 36px; border-radius: 50% !important; background: rgba(255, 255, 255, 0.1) !important; font-size: 16px; }
-.sf-rows { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 2px 0 11px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.sf-rows { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 11px 0 2px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .sf-rows dt { color: var(--sf-dim); }
-.sf-rows dd { margin: 0; text-align: right; }
+.sf-rows dd { margin: 0; text-align: right; overflow-wrap: anywhere; min-width: 0; }
 .sf-rows dd em { color: var(--sf-accent-2); font-style: normal; font-size: 11px; margin-left: 5px; }
 .sf-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .sf-btn { flex: 1 1 0; min-width: 88px; min-height: 46px; border-radius: 14px !important; background: rgba(255, 255, 255, 0.1) !important; font-weight: 700; padding: 0 12px; transition: transform 0.12s, background 0.2s; white-space: nowrap; }
