@@ -1,0 +1,8 @@
+node_modules
+dist
+.cache
+*.log
+.DS_Store
+coverage
+# Raw catalog downloads (hundreds of MB; reproducible via `npm run build:catalogs`)
+scripts/build-catalogs/.raw
