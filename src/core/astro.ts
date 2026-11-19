@@ -25,7 +25,7 @@ export function unitToRaDec(v: V3): { ra: number; dec: number } {
 /** ICRS → Galactic rotation (ESA Hipparcos & Tycho Catalogues, Vol. 1, eq. 1.5.11). */
 export const ICRS_TO_GAL: Mat3 = [
   -0.0548755604162154, -0.873437090234885, -0.4838350155487132,
-  0.4941094278755837, -0.4448296299600112, 0.7469822444972189,
+  0.4941094278755837, -0.4448296299600112, 0.746982244497219,
   -0.8676661490190047, -0.1980763734312015, 0.4559837761750669,
 ];
 export const GAL_TO_ICRS: Mat3 = mat3Transpose(ICRS_TO_GAL);

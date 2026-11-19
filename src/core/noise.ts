@@ -70,6 +70,51 @@ export class Noise3 {
     return nxy0 + w * (nxy1 - nxy0);
   }
 
+  /**
+   * Gradient noise that repeats exactly every `period` lattice cells on each
+   * axis (period ≤ 256) — used to bake seamlessly tiling 3D noise textures.
+   */
+  noisePeriodic(x: number, y: number, z: number, period: number): number {
+    const p = this.perm;
+    const fx = Math.floor(x);
+    const fy = Math.floor(y);
+    const fz = Math.floor(z);
+    const wrap = (v: number): number => ((v % period) + period) % period;
+    const X0 = wrap(fx);
+    const Y0 = wrap(fy);
+    const Z0 = wrap(fz);
+    const X1 = wrap(fx + 1);
+    const Y1 = wrap(fy + 1);
+    const Z1 = wrap(fz + 1);
+    x -= fx;
+    y -= fy;
+    z -= fz;
+    const u = x * x * x * (x * (x * 6 - 15) + 10);
+    const v = y * y * y * (y * (y * 6 - 15) + 10);
+    const w = z * z * z * (z * (z * 6 - 15) + 10);
+    const h = (xi: number, yi: number, zi: number): number => p[p[p[xi]! + yi]! + zi]!;
+    const g = (hash: number, dx: number, dy: number, dz: number): number => {
+      const i = (hash & 15) * 3;
+      return GRAD[i]! * dx + GRAD[i + 1]! * dy + GRAD[i + 2]! * dz;
+    };
+    const x1 = x - 1;
+    const y1 = y - 1;
+    const z1 = z - 1;
+    const n000 = g(h(X0, Y0, Z0), x, y, z);
+    const n100 = g(h(X1, Y0, Z0), x1, y, z);
+    const n010 = g(h(X0, Y1, Z0), x, y1, z);
+    const n110 = g(h(X1, Y1, Z0), x1, y1, z);
+    const n001 = g(h(X0, Y0, Z1), x, y, z1);
+    const n101 = g(h(X1, Y0, Z1), x1, y, z1);
+    const n011 = g(h(X0, Y1, Z1), x, y1, z1);
+    const n111 = g(h(X1, Y1, Z1), x1, y1, z1);
+    const nx00 = n000 + u * (n100 - n000);
+    const nx10 = n010 + u * (n110 - n010);
+    const nx01 = n001 + u * (n101 - n001);
+    const nx11 = n011 + u * (n111 - n011);
+    return nx00 + v * (nx10 - nx00) + w * (nx01 + v * (nx11 - nx01) - (nx00 + v * (nx10 - nx00)));
+  }
+
   /** Fractal Brownian motion: sum of `octaves` noise layers. Output roughly [−1, 1]. */
   fbm(x: number, y: number, z: number, octaves: number, lacunarity = 2, gain = 0.5): number {
     let amp = 1;

@@ -44,6 +44,8 @@ export interface ExoPlanetData {
 export interface ExoHostData {
   name: string;
   key: [number, number, number];
+  /** Host star photometry codes [mag, colour, flags]. */
+  star: [number, number, number];
   teff?: number;
   rad?: number;
   mass?: number;
@@ -74,6 +76,10 @@ export interface SystemInput {
   lineOfSight?: V3;
   exo?: ExoHostData;
   companion?: CompanionData;
+  /** Measured properties of a real compact object (catalogued pulsar or black hole) that override the generated ones. */
+  compact?: { massSun?: number; periodSec?: number; accretion?: number; jet?: boolean };
+  /** Real object without known planets for which none should be invented (e.g. a galaxy's central black hole). */
+  noPlanets?: boolean;
 }
 
 const TWO_PI = 2 * Math.PI;
@@ -281,6 +287,15 @@ export function generateSystem(input: SystemInput): SystemModel {
   const exo = input.exo;
   const primary = makeStar(input.star.absMag, input.star.teff, input.star.type, input.seed, input.star.real);
   if (input.star.spectral) primary.spectral = input.star.spectral;
+  if (input.compact) {
+    const c = input.compact;
+    if (c.massSun !== undefined) {
+      primary.mass = c.massSun * M_SUN;
+      if (primary.type === 'blackhole') primary.radius = primary.schwarzschildRadius = (2 * G * primary.mass) / (299_792_458 * 299_792_458);
+    }
+    if (c.periodSec !== undefined) primary.rotationPeriod = c.periodSec;
+    if (c.accretion !== undefined) primary.accretion = c.accretion;
+  }
   if (exo) {
     // Prefer measured stellar parameters from the Exoplanet Archive over photometric estimates.
     if (exo.teff) primary.teff = exo.teff;
@@ -334,7 +349,7 @@ export function generateSystem(input: SystemInput): SystemModel {
     b.orbit = { a: (sep * primary.mass) / (mass + primary.mass), e: 0.02, i: 0.4, node, peri: Math.PI, m0, period };
     bodies.push(b);
     outerLimit = 0; // no invented planets in this real system
-  } else if (!input.star.real && !exo) {
+  } else if (!input.star.real && !exo && !input.compact) {
     const mSun = primary.mass / M_SUN;
     const pBinary = compact ? 0.4 : primary.type === 'whitedwarf' ? 0.25 : mSun > 8 ? 0.75 : mSun > 1.3 ? 0.55 : mSun > 0.6 ? 0.44 : 0.26;
     if (rng.chance(pBinary)) {
@@ -385,7 +400,7 @@ export function generateSystem(input: SystemInput): SystemModel {
 
   // ---- Planets.
   if (exo) addExoplanets(sys, input, exo, primary.mass, lumPrimary);
-  else if (outerLimit > 0) addProceduralPlanets(sys, input, planetParent, hostMass, lumTotal, innerLimit, outerLimit, input.name, input.id);
+  else if (outerLimit > 0 && !input.noPlanets) addProceduralPlanets(sys, input, planetParent, hostMass, lumTotal, innerLimit, outerLimit, input.name, input.id);
 
   let extent = Math.max(primary.radius * 30, 0.5 * AU);
   for (const b of bodies) if (b.orbit && b.parent < 0) extent = Math.max(extent, b.orbit.a * (1 + b.orbit.e));

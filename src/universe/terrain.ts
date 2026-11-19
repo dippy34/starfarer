@@ -240,9 +240,10 @@ export class TerrainFunction {
       c = mix(c, [0.93, 0.95, 0.98], ice);
     }
     const depth = elev < 0 && s.oceanLevel > 0 ? Math.max(1, Math.min(255, Math.round((-elev / (this.amp * 0.7)) * 254) + 1)) : 0;
-    out[at] = Math.max(0, Math.min(255, Math.round(c[0] * 255)));
-    out[at + 1] = Math.max(0, Math.min(255, Math.round(c[1] * 255)));
-    out[at + 2] = Math.max(0, Math.min(255, Math.round(c[2] * 255)));
+    // Stored gamma-encoded (square root) so dark surfaces keep their precision in 8 bits.
+    out[at] = Math.max(0, Math.min(255, Math.round(Math.sqrt(Math.max(0, c[0])) * 255)));
+    out[at + 1] = Math.max(0, Math.min(255, Math.round(Math.sqrt(Math.max(0, c[1])) * 255)));
+    out[at + 2] = Math.max(0, Math.min(255, Math.round(Math.sqrt(Math.max(0, c[2])) * 255)));
     out[at + 3] = depth;
   }
 }

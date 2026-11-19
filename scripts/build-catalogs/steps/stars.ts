@@ -370,6 +370,12 @@ export function writeStars(store: StarStore, names: NameRegistry): DatasetManife
     z[i] = d * Math.sin(dec);
     lodMag[i] = dqStarMag(data.mag[i]!) - 5 * Math.log10(d / 10);
     nameId[i] = names.finalId(store.nameHandle[i]!);
+    // Named stars carry their photometry codes in the names table too, so search can build the
+    // star's system directly — identical to what the tile would give — without waiting for a tile.
+    if (store.nameHandle[i]! >= 0) {
+      const e = names.get(store.nameHandle[i]!);
+      e.extra = { ...(e.extra ?? {}), q: `${data.mag[i]},${data.color[i]},${data.flags[i]}` };
+    }
   }
   return writeDataset({
     id: 'stars', kind: 'stars', title: 'Gaia DR3 + Hipparcos stars', unit: PC, rootHalf: 2 ** 18, capacity: 4096,

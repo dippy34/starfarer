@@ -445,6 +445,11 @@ export function buildGalaxies(names: NameRegistry, notable: Notable, finalizeNam
       d.ratio[i] = qGalRatio(g.ratio);
       d.pa[i] = qGalPa(g.pa);
       nameId[i] = names.finalId(nearHandles[i]!);
+      // Same idea as for stars: enough codes in the names table to rebuild the galaxy model from a search hit.
+      if (nearHandles[i]! >= 0) {
+        const e = names.get(nearHandles[i]!);
+        e.extra = { ...(e.extra ?? {}), q: `${d.mag[i]},${d.color[i]},${d.flags[i]},${d.size[i]},${d.ratio[i]},${d.pa[i]}` };
+      }
     });
     const p = positions(n, d.ra, d.dec, d.z, (i, dm) => galaxyLodMag(dqGalMag(d.mag[i]!), d.flags[i]! & 3, dm));
     manifests.push(writeDataset({ id: 'galaxies', kind: 'galaxies', title: '2MRS + UNGC + OpenNGC galaxies', unit: MPC, rootHalf: ROOT_HALF_MPC, capacity: 4096, count: n, ...p, columns: GALAXY_COLUMNS, data: d, nameId }));

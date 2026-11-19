@@ -11,7 +11,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { zlibSync } from 'fflate';
 import { teffToBpRp } from '../../../src/core/color';
-import { STAR_FLAG_PLANETS, STAR_SRC_EXO, qStarDec, qStarDist, qStarRa } from '../../../src/data/format/schema';
+import { STAR_FLAG_PLANETS, STAR_SRC_EXO, qStarColor, qStarDec, qStarDist, qStarMag, qStarRa } from '../../../src/data/format/schema';
 import { OUT_DIR, rawPath } from '../lib/http';
 import type { NameRegistry } from '../lib/names';
 import { num, readCsv } from '../lib/tables';
@@ -49,6 +49,8 @@ export interface ExoHostRecord {
   name: string;
   /** Star position codes [ra, dec, dist] — the key that links to the star tile object. */
   key: [number, number, number];
+  /** Star photometry codes [mag, colour, flags] as stored in its tile. */
+  star: [number, number, number];
   teff?: number;
   /** Stellar radius / mass in solar units, log10 luminosity (solar). */
   rad?: number;
@@ -151,6 +153,7 @@ export function buildExoplanets(store: StarStore, names: NameRegistry): { stats:
       .sort((p, q) => (p.a ?? p.per ?? 1e9) - (q.a ?? q.per ?? 1e9) || (p.name < q.name ? -1 : 1));
     out.push({
       name: hostname, key: [qStarRa(store.ra[idx]!), qStarDec(store.dec[idx]!), qStarDist(store.dist[idx]!)],
+      star: [qStarMag(store.mag[idx]!), qStarColor(Number.isFinite(store.color[idx]!) ? store.color[idx]! : null), store.flags[idx]!],
       teff: opt(teff, 5), rad: opt(num(r0[c.st_rad!]), 4), mass: opt(num(r0[c.st_mass!]), 4), lum: opt(num(r0[c.st_lum!]), 4),
       spt: r0[c.st_spectype!] || undefined, age: opt(num(r0[c.st_age!]), 3), stars: num(r0[c.sy_snum!]) || 1, cb: num(r0[c.cb_flag!]) === 1, planets,
     });

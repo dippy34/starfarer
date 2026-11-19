@@ -105,8 +105,8 @@ export function packTile(specs: ColumnSpec[], tile: RawTile): Uint8Array {
   view.setUint32(0, MAGIC, true);
   view.setUint32(4, tile.count, true);
   view.setUint32(8, refCount, true);
-  let off = writeColumns(out, 12, specs, tile.columns, tile.count);
-  off = writeColumns(out, off, REF_SPECS, { row: tile.refRows, id: tile.refIds }, refCount);
+  const off = writeColumns(out, 12, specs, tile.columns, tile.count);
+  writeColumns(out, off, REF_SPECS, { row: tile.refRows, id: tile.refIds }, refCount);
   return out;
 }
 

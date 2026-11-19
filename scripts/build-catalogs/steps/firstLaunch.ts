@@ -24,7 +24,7 @@ export function measureFirstLaunch(manifest: Manifest): { bytes: number; files: 
     const lod = DATASET_LOD[ds.id];
     if (!lod) continue;
     const nodes = buildNodeIndex(ds);
-    const tenPc = (10 * 3.0856775814913673e16) / ds.unit;
+    const tenPc = (10 * 3.085677581491367e16) / ds.unit;
     const sel = selectNodes(nodes, 0, 0, 0, { budget: lod.share(TIERS.medium), magLimit: lod.magLimit, tenPc });
     tiles[ds.id] = sel.nodes.length;
     for (const i of sel.nodes) {

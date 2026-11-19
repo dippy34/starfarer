@@ -119,6 +119,8 @@ export class WebAssets implements Assets {
   async fetchData(path: string, signal?: AbortSignal): Promise<Uint8Array> {
     const res = await fetch(this.dataUrl + path, { signal, cache: 'force-cache' });
     if (!res.ok) throw new Error(`HTTP ${res.status} for data/${path}`);
+    // Static hosts with single-page-app fallbacks answer missing files with index.html and status 200.
+    if ((res.headers.get('content-type') ?? '').includes('text/html')) throw new Error(`data/${path} is missing (got an HTML page)`);
     return new Uint8Array(await res.arrayBuffer());
   }
 }

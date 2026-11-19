@@ -91,10 +91,18 @@ function cubeDistance(n: LodNode, x: number, y: number, z: number): number {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-/** Best possible apparent magnitude of anything in the node, seen from (x, y, z). */
+/**
+ * Estimated apparent magnitude of the brightest object in a node, seen from (x, y, z).
+ *
+ * The distance used is the distance to the node's cube, but never less than a
+ * fraction of the mean spacing between the node's own objects: a cube that
+ * touches the camera does not mean one of its (sparse) objects does. This keeps
+ * the many octants that meet at the Sun from all looking infinitely important.
+ */
 export function nodeApparentMag(n: LodNode, x: number, y: number, z: number, tenPc: number): number {
-  const d = cubeDistance(n, x, y, z);
-  return d <= 0 ? -Infinity : n.mag + 5 * Math.log10(d / tenPc);
+  const spacing = (2 * n.half) / Math.cbrt(Math.max(1, n.count));
+  const d = Math.max(cubeDistance(n, x, y, z), 0.3 * spacing);
+  return n.mag + 5 * Math.log10(d / tenPc);
 }
 
 export function selectNodes(nodes: LodNode[], x: number, y: number, z: number, opts: LodOptions): LodSelection {
@@ -140,6 +148,7 @@ export function selectNodes(nodes: LodNode[], x: number, y: number, z: number, o
     return [topKey, topId];
   };
 
+  // The root is always taken: it holds the most luminous objects of the whole catalogue.
   push(-Infinity, 0);
   let points = 0;
   let cutoff = opts.magLimit;
@@ -148,7 +157,7 @@ export function selectNodes(nodes: LodNode[], x: number, y: number, z: number, o
     if (key > opts.magLimit) break;
     const node = nodes[id]!;
     if (points > 0 && points + node.count > opts.budget) {
-      // Budget exhausted: everything still queued is fainter than `key`.
+      // Budget exhausted: everything still queued is (estimated to be) fainter than `key`.
       cutoff = Math.min(cutoff, key);
       break;
     }

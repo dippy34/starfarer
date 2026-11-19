@@ -98,7 +98,9 @@ export function pointBudget(t: QualityTier): number {
  */
 export const DATASET_LOD: Record<string, { share: (t: QualityTier) => number; magLimit: number }> = {
   stars: { share: (t) => t.catalogStars, magLimit: 13.5 },
-  galaxies: { share: (t) => Math.round(t.catalogGalaxies * 0.3), magLimit: 21 },
-  sdss: { share: (t) => Math.round(t.catalogGalaxies * 0.45), magLimit: 21 },
-  quasars: { share: (t) => Math.round(t.catalogGalaxies * 0.25), magLimit: 23 },
+  // Galaxy datasets are budget-limited only: whatever the scale of the view, the apparently
+  // brightest N objects are loaded (so the real surveys stay visible from across the universe).
+  galaxies: { share: (t) => Math.round(t.catalogGalaxies * 0.3), magLimit: 60 },
+  sdss: { share: (t) => Math.round(t.catalogGalaxies * 0.45), magLimit: 60 },
+  quasars: { share: (t) => Math.round(t.catalogGalaxies * 0.25), magLimit: 60 },
 };

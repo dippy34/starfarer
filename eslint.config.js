@@ -21,6 +21,11 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    // Service-worker template: runs in a ServiceWorkerGlobalScope.
+    files: ['src/platform/web/sw.template.js'],
+    languageOptions: { globals: { self: 'readonly', caches: 'readonly', fetch: 'readonly', URL: 'readonly', Response: 'readonly' } },
+  },
+  {
     // Architecture guard: platform services (storage, share, haptics, audio…) are only
     // reachable through src/platform so they can be swapped for Capacitor plugins later.
     files: ['src/**/*.ts'],
