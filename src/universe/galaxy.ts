@@ -28,7 +28,12 @@ function pickType(rng: Rng, absMag: number, hints: GalaxyHints): GalaxyType {
     case Morph.Sb:
     case Morph.Sc:
     case Morph.Sd:
-      return rng.chance(0.45) ? 'barred' : 'spiral';
+    {
+      // The bar is in the catalogued class when there is one (SB…, SAB…); otherwise seeded.
+      const seeded = rng.chance(0.45);
+      const known = hints.hubbleClass ? /^SA?B/.test(hints.hubbleClass) : null;
+      return (known ?? seeded) ? 'barred' : 'spiral';
+    }
     case Morph.Irr:
     case Morph.Peculiar:
       return 'irregular';
@@ -153,7 +158,7 @@ export function makeGalaxy(id: string, seed: number, absMag: number, hints: Gala
 
   const sub = arms ? (bulgeFrac > 0.25 ? 'a' : bulgeFrac > 0.14 ? 'b' : bulgeFrac > 0.07 ? 'c' : 'd') : '';
   const hubble =
-    type === 'elliptical' ? `E${Math.round((1 - flatten) * 10)}` : type === 'lenticular' ? 'S0' : type === 'barred' ? `SB${sub}` : type === 'spiral' ? `S${sub}` : type === 'irregular' ? 'Irr' : type === 'ring' ? 'Ring' : absMag > -13 ? 'dSph' : 'dE';
+    hints.hubbleClass ? hints.hubbleClass : type === 'elliptical' ? `E${Math.round((1 - flatten) * 10)}` : type === 'lenticular' ? 'S0' : type === 'barred' ? `SB${sub}` : type === 'spiral' ? `S${sub}` : type === 'irregular' ? 'Irr' : type === 'ring' ? 'Ring' : absMag > -13 ? 'dSph' : 'dE';
 
   let companion: GalaxyModel['companion'] = null;
   if (interacting) {

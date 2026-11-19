@@ -45,11 +45,25 @@ export interface FlightPlan {
   arriveDistance: number;
   /** Orbit the target on arrival. */
   focusOnArrival: boolean;
+  /**
+   * Preferred final direction from the target to the camera (unit vector, world axes; re-evaluated
+   * every frame because bodies move). The approach swings round to it as it closes in. Null = none.
+   */
+  approach?: (out: THREE.Vector3) => THREE.Vector3 | null;
+  /**
+   * Landing: level out at the end of the flight and look along the horizon. The callback gives the
+   * direction of the sun (from the target), and the view is turned side-on to it so the terrain is modelled by light.
+   */
+  levelOut?: (out: THREE.Vector3) => THREE.Vector3 | null;
+  /** Landing: after the flight, sink gently to this height above the actual ground (metres). */
+  settleAltitude?: number;
   onArrive?: () => void;
 }
 
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
+const tmpV3 = new THREE.Vector3();
+const tmpV4 = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 const tmpQ2 = new THREE.Quaternion();
 const tmpM = new THREE.Matrix4();
@@ -75,6 +89,8 @@ export class CameraController {
   private flight: (FlightPlan & { t: number; duration: number; start: UPos; startQuat: THREE.Quaternion; startDist: number; side: THREE.Vector3; bump: number }) | null = null;
   private focusDistance = 1;
   private pendingZoom = 1;
+  /** Height above the ground a finished landing is still sinking toward, or null. */
+  private settle: number | null = null;
   private readonly velocity = new THREE.Vector3();
   private readonly lookVel = new THREE.Vector2();
   private rollVel = 0;
@@ -129,7 +145,10 @@ export class CameraController {
 
   /** Pinch / wheel: factor > 1 moves toward what is ahead, < 1 away. */
   zoom(factor: number): void {
-    if (!this.flight) this.pendingZoom *= factor;
+    if (!this.flight) {
+      this.pendingZoom *= factor;
+      this.settle = null;
+    }
   }
 
   /** Stop orbiting and stay where we are. */
@@ -155,12 +174,13 @@ export class CameraController {
     plan.target.position(this.targetPos);
     const d = uposSub(this.pos, this.targetPos);
     const startDist = Math.max(1, Math.hypot(d.x, d.y, d.z));
-    const arrive = Math.max(plan.arriveDistance, plan.target.radius * 1.02);
+    const arrive = Math.max(plan.arriveDistance, plan.target.radius * (plan.settleAltitude ? 1.0005 : 1.02));
     // Duration grows with the number of powers of ten crossed.
     const decades = Math.abs(Math.log10(startDist / arrive));
     const duration = Math.min(9, 2.2 + 0.42 * decades);
     // A sideways arc keeps the path from clipping through whatever we are leaving.
     const side = tmpV.set(d.x, d.y, d.z).normalize().cross(tmpV2.set(0.31, 0.87, 0.38)).normalize().clone();
+    this.settle = null;
     this.flight = { ...plan, arriveDistance: arrive, t: 0, duration, start: uposClone(this.pos), startQuat: this.quat.clone(), startDist, side, bump: 0 };
     this.focus = null;
     this.throttle = 0;
@@ -178,6 +198,15 @@ export class CameraController {
     else if (this.focus) this.updateOrbit(dt, env);
     else this.updateFree(dt, env, heldKeys);
 
+    if (!this.flight && this.settle !== null) {
+      // Final descent of a landing: ease down to the settle height above the terrain under us.
+      const excess = env.up ? env.nearest - this.settle : 0;
+      if (!env.up || this.throttle !== 0 || excess < this.settle * 0.04) this.settle = null;
+      else {
+        const step = excess * (1 - Math.exp(-dt * 1.4));
+        uposAddInPlace(this.pos, -env.up.x * step, -env.up.y * step, -env.up.z * step);
+      }
+    }
     if (!this.flight && env.collide(this.pos)) this.velocity.multiplyScalar(0.5);
     const moved = uposSub(this.pos, before);
     const inst = Math.hypot(moved.x, moved.y, moved.z) / Math.max(dt, 1e-4);
@@ -259,7 +288,8 @@ export class CameraController {
       const tilt = right.dot(env.up);
       // Skip when looking straight up/down, where "level" is undefined.
       if (Math.abs(fwd.dot(env.up)) < 0.97) {
-        tmpQ.setFromAxisAngle(fwd, -Math.asin(Math.max(-1, Math.min(1, tilt))) * Math.min(1, dt * 4 * env.levelling));
+        // A positive turn about the forward axis swings the right vector downward, so it cancels an upward tilt.
+        tmpQ.setFromAxisAngle(fwd, Math.asin(Math.max(-1, Math.min(1, tilt))) * Math.min(1, dt * 4 * env.levelling));
         this.quat.premultiply(tmpQ);
       }
     }
@@ -309,9 +339,16 @@ export class CameraController {
     const len0 = Math.max(1, Math.hypot(d0.x, d0.y, d0.z));
     // Remaining distance shrinks geometrically from startDist to arriveDistance.
     const remaining = f.startDist * Math.pow(f.arriveDistance / f.startDist, s);
-    const scale = remaining / len0;
+    const dir = tmpV3.set(d0.x / len0, d0.y / len0, d0.z / len0);
+    const want = f.approach ? f.approach(tmpV4) : null;
+    if (want) {
+      // Swing from the straight-line approach to the preferred side during the second half of the flight.
+      const w = smoother(Math.min(1, Math.max(0, (s - 0.45) / 0.55)));
+      tmpQ.setFromUnitVectors(dir, want);
+      dir.applyQuaternion(tmpQ2.identity().slerp(tmpQ, w));
+    }
     uposCopy(this.pos, this.targetPos);
-    uposAddInPlace(this.pos, d0.x * scale, d0.y * scale, d0.z * scale);
+    uposAddInPlace(this.pos, dir.x * remaining, dir.y * remaining, dir.z * remaining);
     if (f.bump > 0) {
       const b = f.bump * Math.sin(Math.PI * Math.min(1, u * 2.5)) * (1 - s);
       uposAddInPlace(this.pos, f.side.x * b, f.side.y * b, f.side.z * b);
@@ -325,12 +362,24 @@ export class CameraController {
     tmpM.lookAt(ORIGIN, tmpV, up);
     tmpQ2.setFromRotationMatrix(tmpM);
     this.quat.copy(f.startQuat).slerp(tmpQ2, smoother(Math.min(1, u * 3.2)));
+    const sun = f.levelOut ? f.levelOut(tmpV4) : null;
+    if (sun) {
+      // Final seconds of a landing: pitch up from "straight down" to a view along the horizon.
+      const zenith = tmpV3.set(-toTarget.x, -toTarget.y, -toTarget.z).normalize();
+      const ahead = tmpV2.crossVectors(zenith, sun);
+      if (ahead.lengthSq() < 1e-6) ahead.crossVectors(zenith, X);
+      ahead.normalize().multiplyScalar(0.985).addScaledVector(zenith, -0.17).normalize();
+      tmpM.lookAt(ORIGIN, ahead, zenith);
+      tmpQ2.setFromRotationMatrix(tmpM);
+      this.quat.slerp(tmpQ2, smoother(Math.min(1, Math.max(0, (u - 0.72) / 0.28))));
+    }
 
     if (f.t >= f.duration) {
       const plan = f;
       this.flight = null;
       this.velocity.set(0, 0, 0);
       if (plan.focusOnArrival) this.setFocus(plan.target);
+      this.settle = plan.settleAltitude ?? null;
       plan.onArrive?.();
     }
   }

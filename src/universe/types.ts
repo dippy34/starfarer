@@ -29,6 +29,8 @@ export interface GalaxyHints {
   name?: string;
   /** Morphology class code (see data/format/schema Morph), 0 = unknown. */
   morph?: number;
+  /** Catalogued Hubble type (e.g. "SABc"), shown as is; a leading SB / SAB also gives the model its bar. */
+  hubbleClass?: string;
   /** Colour index (g−r for SDSS, J−K for 2MRS) and which one it is. */
   color?: number | null;
   colorBand?: 'gr' | 'jk';

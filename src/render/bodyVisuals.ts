@@ -111,6 +111,7 @@ export function atmosphereMesh(noise: THREE.Data3DTexture, atmo: Uniforms, cover
   return mesh;
 }
 
+/** `shared` must hold both the lighting and the atmosphere uniforms of the body (the cloud deck sits inside its air). */
 export function cloudMesh(shared: Uniforms, planet: PlanetBody): THREE.Mesh {
   const s = planet.surface;
   const material = new THREE.ShaderMaterial({
@@ -118,7 +119,7 @@ export function cloudMesh(shared: Uniforms, planet: PlanetBody): THREE.Mesh {
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     uniforms: {
       ...shared, uBodyRot: { value: new THREE.Matrix3() }, uColor: { value: new THREE.Color().setRGB(s.cloudColor[0], s.cloudColor[1], s.cloudColor[2]) }, uCover: { value: s.clouds },
-      uTime: { value: 0 }, uSeed: { value: (s.seed % 977) / 977 }, uRadius: { value: planet.radius }, uDetail: { value: 1 },
+      uTime: { value: 0 }, uSeed: { value: (s.seed % 977) / 977 }, uDetail: { value: 1 }, uCloudRadius: { value: planet.radius },
     },
   });
   const mesh = new THREE.Mesh(unitSphere(), material);
@@ -141,7 +142,8 @@ void main() {
   // Rocks are far below a pixel: draw each as a faint dot whose brightness falls with distance.
   float px = aSize / d * uFocal;
   gl_PointSize = clamp(px * 2.0, 1.5, 6.0);
-  vColor = uColor * clamp(0.25 + px * 60.0, 0.0, 1.2) * (0.6 + 0.4 * fract(aSize * 0.37));
+  // From across the system the belt is only a whisper of dust; rocks brighten as you close in.
+  vColor = uColor * clamp(0.04 + px * 60.0, 0.0, 1.2) * (0.6 + 0.4 * fract(aSize * 0.37));
   #include <logdepthbuf_vertex>
 }`;
 

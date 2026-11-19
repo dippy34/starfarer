@@ -19,7 +19,7 @@ import { CatalogStreamer } from '../../data/catalogStreamer';
 import type { WorkerPool } from '../../data/workerPool';
 import type { Engine } from '../../render/engine';
 import { PointLayer } from '../../render/pointLayer';
-import { DATASET_LOD } from '../../render/qualityTiers';
+import { DATASET_LOD, GALAXY_MAG_LIMIT, STAR_MAG_LIMIT } from '../../render/qualityTiers';
 import type { Surroundings } from './cameraController';
 import { DSO_KEY, DsoManager } from './dso';
 import { GalaxyManager } from './galaxies';
@@ -29,6 +29,10 @@ import { SystemManager } from './systems';
 /** Point-layer brightness groups. */
 export const GROUP_CATALOG = 0;
 export const GROUP_PROCEDURAL = 1;
+/** Cosmic-web glow (galaxy layer only): its group `floor` is the glow's overall visibility. */
+export const GROUP_GLOW = 2;
+/** Evenly sampled levels of the real galaxy surveys (galaxy layer only): stay visible as faint dots from afar. */
+export const GROUP_SURVEY = 3;
 
 export class ExploreWorld {
   /** Stars (unit = parsec): catalogue tiles + procedural cells. */
@@ -49,6 +53,7 @@ export class ExploreWorld {
   private starMagLimit = 7.5;
   private galaxyMagLimit = 14;
   private surveyFloor = 0;
+  private webGlow = 0;
   private nearestDistance = PC;
   private starGain = 1;
   private readonly tmpV = new THREE.Vector3();
@@ -61,7 +66,7 @@ export class ExploreWorld {
     for (const [id, ds] of catalog.datasets) {
       const lod = DATASET_LOD[id];
       if (!lod) continue;
-      this.streams.push(new CatalogStreamer(ds, catalog, pool, ds.manifest.kind === 'stars' ? this.starLayer : this.galaxyLayer, lod.magLimit, GROUP_CATALOG));
+      this.streams.push(new CatalogStreamer(ds, catalog, pool, ds.manifest.kind === 'stars' ? this.starLayer : this.galaxyLayer, lod.magLimit ?? GALAXY_MAG_LIMIT.high, GROUP_CATALOG, lod.uniformFirst ? GROUP_SURVEY : null));
     }
     this.galaxies = new GalaxyManager(engine, catalog, pool, this.galaxyLayer, this.starLayer, this.streams);
     this.systems = new SystemManager(engine, pool, catalog, this.starLayer, this.streams.find((s) => s.ds.manifest.kind === 'stars'), this.galaxies);
@@ -118,13 +123,14 @@ export class ExploreWorld {
       for (const s of this.streams) {
         const unit = s.ds.manifest.unit;
         const lod = DATASET_LOD[s.ds.manifest.id]!;
-        s.update(this.rel.x / unit, this.rel.y / unit, this.rel.z / unit, lod.share(tier), 0.2);
+        // Around the camera, only galaxies bright enough to be drawn are worth loading (plus a margin for the fade).
+        s.update(this.rel.x / unit, this.rel.y / unit, this.rel.z / unit, lod.share(tier), 0.2, lod.magLimit ?? GALAXY_MAG_LIMIT[tier.name] + 1);
       }
     }
 
     // Fade limits: never fainter than the tier's limit, never fainter than what streaming has actually delivered.
-    let starCut = tier.name === 'low' ? 6.6 : tier.name === 'medium' ? 7.6 : 8.6;
-    const galCut = tier.name === 'low' ? 13.2 : tier.name === 'medium' ? 14.2 : 15.2;
+    let starCut = STAR_MAG_LIMIT[tier.name];
+    const galCut = GALAXY_MAG_LIMIT[tier.name];
     for (const s of this.streams) if (s.ds.manifest.kind === 'stars') starCut = Math.min(starCut, s.cutoffMag);
     const k = Math.min(1, dt * 2);
     this.starMagLimit += (starCut - this.starMagLimit) * k;
@@ -137,10 +143,16 @@ export class ExploreWorld {
     // Far from any galaxy the real surveys stay visible as faint "survey dots" whatever their magnitude.
     const deep = Math.min(1, Math.max(0, (this.galaxies.nearestRatio - 1.5) / 6));
     this.surveyFloor += (deep * 0.45 - this.surveyFloor) * k;
-    this.galaxyLayer.groups[GROUP_CATALOG]!.magLimit = this.galaxyMagLimit;
-    this.galaxyLayer.groups[GROUP_CATALOG]!.floor = this.surveyFloor;
-    this.galaxyLayer.groups[GROUP_PROCEDURAL]!.magLimit = this.galaxyMagLimit;
-    this.galaxyLayer.groups[GROUP_PROCEDURAL]!.floor = 0;
+    for (const g of this.galaxyLayer.groups) {
+      g.magLimit = this.galaxyMagLimit;
+      // Exposure for the deep sky: a galaxy one magnitude above the faintest drawn is a clear dot.
+      g.magRef = 12;
+      g.floor = 0;
+    }
+    this.galaxyLayer.groups[GROUP_SURVEY]!.floor = this.surveyFloor;
+    // The web's glow belongs to intergalactic space: inside a galaxy its own light drowns it out.
+    this.webGlow += (deep - this.webGlow) * k;
+    this.galaxyLayer.groups[GROUP_GLOW]!.floor = this.webGlow;
 
     this.dso.update(camPos, dt);
 
@@ -223,6 +235,16 @@ export class ExploreWorld {
   }
 
   /**
+   * A catalogued deep-sky object as a destination. Pulsars and black holes are places you can go
+   * right up to, so they resolve to their (single-body) system; nebulae and clusters to their extent.
+   */
+  dsoTarget(index: number): WorldTarget | null {
+    const input = this.dso.systemInput(index);
+    if (input) return bodyTarget(this.systems.build(input), 0, () => this.simTime);
+    return this.dso.target(index);
+  }
+
+  /**
    * What is under a tap? Bodies of the current system first, then stars, deep-sky objects and galaxies.
    * @param ndcX,ndcY normalised device coordinates (−1…1, y up)
    */
@@ -242,13 +264,13 @@ export class ExploreWorld {
     const gal = this.galaxyLayer.pick(cam, ndcX, ndcY, engine.renderWidth, engine.renderHeight, tolerance);
     // A star and a galaxy under the same finger: take whichever is closer to the tap.
     if (star && (!gal || star.pixels <= gal.pixels + 4)) {
-      if (star.key === DSO_KEY) return this.dso.target(star.index);
-      if (star.key.startsWith('dsoc:')) return this.dso.target(Number(star.key.slice(5)));
+      if (star.key === DSO_KEY) return this.dsoTarget(star.index);
+      if (star.key.startsWith('dsoc:')) return this.dsoTarget(Number(star.key.slice(5)));
       const input = this.systems.inputFor(star.key, star.index);
       if (input) return bodyTarget(this.systems.build(input), 0, () => this.simTime, { key: star.key, index: star.index });
     }
     if (gal) {
-      if (gal.key === DSO_KEY) return this.dso.target(gal.index);
+      if (gal.key === DSO_KEY) return this.dsoTarget(gal.index);
       const entry = this.galaxies.entryFor(gal.key, gal.index);
       if (entry) return galaxyTarget(entry);
     }

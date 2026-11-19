@@ -55,10 +55,12 @@ uniform vec3 uEmission;       // lava glow colour (zero if none)
 uniform float uIsLava;
 uniform float uTime;
 uniform float uPixelAngle;    // radians per pixel
-uniform vec3 uDetailOff[6];   // per-patch noise offsets for six consecutive detail octaves
+uniform vec3 uDetailOff[7];   // per-patch noise offsets for seven consecutive detail octaves
 uniform float uDetailBase;    // log2 wavelength (metres) of the first of those octaves
 uniform float uDetailStrength;
 uniform float uSamples;
+uniform vec4 uSlopeTint;      // rgb = colour of steep ground, a = how quickly slopes take it on
+uniform float uSlopeMax;
 varying vec4 vColor;
 varying vec3 vNormalW;
 varying vec3 vRel;
@@ -83,12 +85,12 @@ void main() {
   float water = step(0.5 / 255.0, vColor.a);
 
   // Distance-adaptive detail: pick the two octaves whose wavelength is a few pixels here and blend between them.
-  float jf = clamp(log2(max(dist * uPixelAngle * 24.0, 1e-3)) - uDetailBase, 0.0, 4.99);
+  float jf = clamp(log2(max(dist * uPixelAngle * 14.0, 1e-3)) - uDetailBase, 0.0, 4.99);
   int j0 = int(floor(jf));
   float fr = jf - float(j0);
   vec2 d0 = detail(j0), d1 = detail(j0 + 1);
   vec2 dd = mix(d0, d1, fr);
-  vec2 dCoarse = detail(min(j0 + 2, 5));
+  vec2 dCoarse = detail(j0 + 2);
   // Tangent frame from the local vertical.
   vec3 t1 = normalize(cross(up, vec3(0.31, 0.57, 0.76)));
   vec3 t2 = cross(up, t1);
@@ -112,9 +114,13 @@ void main() {
       spec = 1.0;
     }
   } else {
+    // Steep ground shows bare rock / darker regolith. Taken from the mesh normal, which morphs
+    // between levels of detail, so neighbouring patches always agree.
+    float steep = clamp((1.0 - dot(n, up)) * uSlopeTint.a, 0.0, uSlopeMax);
+    albedo = mix(albedo, uSlopeTint.rgb, steep);
     // Land: break up the vertex colours with fine albedo variation and a bumpy normal.
-    col = albedo * (1.0 + (dd.x * 0.3 + dCoarse.x * 0.22) * uDetailStrength);
-    n = normalize(n + (t1 * (dd.x + dCoarse.x * 0.6) + t2 * (dd.y + dCoarse.y * 0.6)) * 0.55 * uDetailStrength);
+    col = albedo * (1.0 + (dd.x * 0.16 + dCoarse.x * 0.1) * uDetailStrength);
+    n = normalize(n + (t1 * (dd.x + dCoarse.x * 0.5) + t2 * (dd.y + dCoarse.y * 0.5)) * 0.34 * uDetailStrength);
   }
 
   vec3 lit = vec3(0.0);
@@ -195,7 +201,8 @@ export class TerrainBody {
       uNoise: { value: noise }, uBodyRot: { value: new THREE.Matrix3() }, uMorph: { value: new THREE.Vector2(1e30, 2e30) }, uPatchOrigin: { value: new THREE.Vector3() },
       uOceanColor: { value: new THREE.Color().setRGB(...params.surface.oceanColor) }, uEmission: { value: new THREE.Color().setRGB(...params.surface.emissionColor).multiplyScalar(params.surface.emission * 6) },
       uIsLava: { value: params.type === 'lava' ? 1 : 0 }, uTime: { value: 0 }, uPixelAngle: { value: 0.001 },
-      uDetailOff: { value: Array.from({ length: 6 }, () => new THREE.Vector3()) }, uDetailBase: { value: 0 }, uDetailStrength: { value: params.type === 'ice' ? 0.55 : 1 }, uSamples: { value: tier.atmosphereSteps },
+      uDetailOff: { value: Array.from({ length: 7 }, () => new THREE.Vector3()) }, uDetailBase: { value: 0 }, uDetailStrength: { value: params.type === 'ice' ? 0.55 : 1 }, uSamples: { value: tier.atmosphereSteps },
+      uSlopeTint: { value: new THREE.Vector4(...(params.type === 'ocean' ? params.surface.palette[2] : params.surface.palette[0]), params.type === 'ocean' ? 2.2 : 1.5) }, uSlopeMax: { value: params.type === 'ocean' ? 1 : 0.6 },
     };
     this.base = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: this.uniforms, toneMapped: false });
     for (let face = 0; face < 6; face++) this.roots.push(this.makeNode(face, 0, 0, 0));
@@ -231,6 +238,8 @@ export class TerrainBody {
         for (const key of Object.keys(this.uniforms)) {
           if (key !== 'uMorph' && key !== 'uPatchOrigin' && key !== 'uDetailOff' && key !== 'uDetailBase') material.uniforms[key] = this.uniforms[key]!;
         }
+        // Material.clone() copies uniform arrays shallowly: give this patch its own offset vectors.
+        material.uniforms.uDetailOff = { value: Array.from({ length: 7 }, () => new THREE.Vector3()) };
         (material.uniforms.uPatchOrigin!.value as THREE.Vector3).set(data.origin[0], data.origin[1], data.origin[2]);
         const mesh = new THREE.Mesh(geo, material);
         mesh.visible = false;
@@ -291,7 +300,7 @@ export class TerrainBody {
       const cosA = Math.max(-1, Math.min(1, node.dir[0] * cx + node.dir[1] * cy + node.dir[2] * cz));
       const ang = Math.acos(cosA);
       if (node.level > 0 && ang - node.angRadius > horizon) return;
-      if (node.state === 'empty') this.request(node, 2 + node.level * 0.3);
+      if (node.state === 'empty') this.request(node, 0.5 + node.level * 0.05);
       if (node.state !== 'ready') return;
       // Distance from the camera to the nearest part of the patch (great-circle distance + altitude).
       const arc = Math.max(0, ang - node.angRadius * 0.9) * R;
@@ -305,7 +314,7 @@ export class TerrainBody {
         }
         let ready = true;
         for (const c of node.children) {
-          if (c.state === 'empty') this.request(c, 2 + c.level * 0.3 + dist / (size * splitK));
+          if (c.state === 'empty') this.request(c, 0.5 + c.level * 0.05 + Math.min(1, dist / (size * splitK)));
           if (c.state !== 'ready') ready = false;
           c.lastUsed = this.frame;
         }
@@ -338,10 +347,10 @@ export class TerrainBody {
       (u.uMorph!.value as THREE.Vector2).set(node.level === 0 ? 1e30 : takeover * 0.62, node.level === 0 ? 2e30 : takeover * 0.92);
       // Detail octaves for this patch: start two octaves below the pixel footprint at its nearest point.
       const near = Math.max(mesh.position.length() - data.boundRadius, alt * 0.5, 0.5);
-      const base = Math.floor(Math.log2(Math.max(near * pixelAngle * 24, 1e-3)));
+      const base = Math.floor(Math.log2(Math.max(near * pixelAngle * 14, 1e-3)));
       u.uDetailBase!.value = base;
       const offs = u.uDetailOff!.value as THREE.Vector3[];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 7; i++) {
         const period = 2 ** (base + i) * 8;
         // fract(origin / period) in float64 keeps fine noise aligned across patches without float32 loss.
         offs[i]!.set(frac(data.origin[0] / period), frac(data.origin[1] / period), frac(data.origin[2] / period));

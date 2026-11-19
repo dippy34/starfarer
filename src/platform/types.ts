@@ -91,6 +91,8 @@ export interface DeviceInfo {
   readonly cores: number;
   readonly prefersReducedMotion: boolean;
   readonly pixelRatio: number;
+  /** JavaScript heap in use, MB (0 where the runtime does not report it) — shown in the performance HUD. */
+  heapUsedMb(): number;
 }
 
 export interface Lifecycle {

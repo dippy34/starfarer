@@ -69,11 +69,19 @@ export interface LodOptions {
   magLimit: number;
   /** Dataset units per 10 parsecs (converts distance to a distance modulus). */
   tenPc: number;
+  /**
+   * Take whole octree levels first, as many as fit in the budget, before refining around the
+   * camera. A complete level samples the catalogue evenly over its whole volume, which is what
+   * a survey seen from afar needs (best-first alone over-samples whichever octants are nearest).
+   */
+  uniformFirst?: boolean;
 }
 
 export interface LodSelection {
   /** Selected node indices, brightest-first. */
   nodes: number[];
+  /** How many of the leading entries of `nodes` belong to completely loaded levels (0 unless `uniformFirst`). */
+  uniform: number;
   points: number;
   /**
    * Apparent magnitude at which the selection stopped. Points fainter than
@@ -107,7 +115,7 @@ export function nodeApparentMag(n: LodNode, x: number, y: number, z: number, ten
 
 export function selectNodes(nodes: LodNode[], x: number, y: number, z: number, opts: LodOptions): LodSelection {
   const out: number[] = [];
-  if (nodes.length === 0) return { nodes: out, points: 0, cutoffMag: opts.magLimit };
+  if (nodes.length === 0) return { nodes: out, uniform: 0, points: 0, cutoffMag: opts.magLimit };
   // Binary min-heap of [key, nodeIndex] pairs, ordered by apparent magnitude (smaller = brighter).
   const keys: number[] = [];
   const ids: number[] = [];
@@ -148,10 +156,35 @@ export function selectNodes(nodes: LodNode[], x: number, y: number, z: number, o
     return [topKey, topId];
   };
 
-  // The root is always taken: it holds the most luminous objects of the whole catalogue.
-  push(-Infinity, 0);
   let points = 0;
   let cutoff = opts.magLimit;
+  let uniform = 0;
+  if (opts.uniformFirst) {
+    // Whole levels, shallowest first, while they fit. Nodes are stored parents-before-children,
+    // so a level is a contiguous run of equal path length… as long as the table is sorted by level.
+    const taken = new Set<number>();
+    for (let level = 0; ; level++) {
+      const ids: number[] = [];
+      let count = 0;
+      for (const n of nodes) {
+        if (n.level !== level) continue;
+        ids.push(n.index);
+        count += n.count;
+      }
+      if (ids.length === 0 || (level > 0 && points + count > opts.budget)) break;
+      for (const id of ids) {
+        out.push(id);
+        taken.add(id);
+      }
+      points += count;
+    }
+    uniform = out.length;
+    // Refinement continues best-first from the children of the last complete level.
+    for (const id of out) for (const c of nodes[id]!.children) if (!taken.has(c)) push(nodeApparentMag(nodes[c]!, x, y, z, opts.tenPc), c);
+  } else {
+    // The root is always taken: it holds the most luminous objects of the whole catalogue.
+    push(-Infinity, 0);
+  }
   while (keys.length > 0) {
     const [key, id] = pop();
     if (key > opts.magLimit) break;
@@ -165,5 +198,5 @@ export function selectNodes(nodes: LodNode[], x: number, y: number, z: number, o
     points += node.count;
     for (const c of node.children) push(nodeApparentMag(nodes[c]!, x, y, z, opts.tenPc), c);
   }
-  return { nodes: out, points, cutoffMag: cutoff };
+  return { nodes: out, uniform, points, cutoffMag: cutoff };
 }

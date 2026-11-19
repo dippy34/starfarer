@@ -35,6 +35,7 @@ uniform vec3 uNoiseOffset;
 uniform float uSteps;
 uniform float uGain;
 uniform float uOpacity;
+uniform float uCompress;
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -138,6 +139,9 @@ void main() {
     if (trans < 0.02) break;
   }
   col *= uGain * uOpacity;
+  // From inside a galaxy its light surrounds the camera: compress the brightest parts (as an eye
+  // or a camera exposing for it would) so the bulge is a glow around you, not a white-out.
+  col /= 1.0 + dot(col, vec3(0.3333)) * uCompress;
   gl_FragColor = vec4(col, (1.0 - trans) * uOpacity);
 }`;
 
@@ -147,7 +151,9 @@ uniform float uRadiusM;     // bounding radius (metres)
 void main() {
   // Camera-facing quad that covers the bounding sphere (with margin for perspective).
   vec3 pos = uCenterView + vec3(position.xy * uRadiusM * 1.3, 0.0);
-  gl_Position = projectionMatrix * vec4(pos, 1.0);
+  // Scale the quad toward the eye (which leaves its projection unchanged) so that clip
+  // coordinates stay small: galaxies are up to 10^26 m away and this layer has no depth test.
+  gl_Position = projectionMatrix * vec4(pos * (1000.0 / max(length(uCenterView), 1.0)), 1.0);
 }`;
 
 const FULL_VERT = /* glsl */ `
@@ -169,7 +175,7 @@ function makeUniforms(noise: THREE.Data3DTexture): Record<string, THREE.IUniform
     uNoise: { value: noise }, uRes: { value: new THREE.Vector2(2, 2) }, uTanFov: { value: new THREE.Vector2(1, 1) }, uViewToLocal: { value: new THREE.Matrix3() },
     uCamLocal: { value: new THREE.Vector3() }, uShape: { value: new THREE.Vector4() }, uBulge: { value: new THREE.Vector4() }, uArms: { value: new THREE.Vector4() },
     uExtra: { value: new THREE.Vector4() }, uColorOld: { value: new THREE.Color() }, uColorYoung: { value: new THREE.Color() }, uNoiseOffset: { value: new THREE.Vector3() },
-    uSteps: { value: 16 }, uGain: { value: 1 }, uOpacity: { value: 1 }, uCenterView: { value: new THREE.Vector3() }, uRadiusM: { value: 1 },
+    uSteps: { value: 16 }, uGain: { value: 1 }, uOpacity: { value: 1 }, uCompress: { value: 0 }, uCenterView: { value: new THREE.Vector3() }, uRadiusM: { value: 1 },
   };
 }
 
@@ -316,6 +322,16 @@ export class GalaxyRenderer {
     }
     setViewUniforms(u, hero, camera, w, h);
     u.uSteps!.value = tier.galaxySteps;
+    // Inside the galaxy, expose for where we are: the eye adapts to the blaze of a galactic nucleus
+    // just as it does to the faint band seen from the outskirts.
+    const g = hero.model;
+    const depth = hero.rel.length() / (g.radius * KPC);
+    const inside = 1 - Math.min(1, Math.max(0, (depth - 0.7) / 0.7));
+    const cam = u.uCamLocal!.value as THREE.Vector3;
+    const ambient = gainFor(g) * galaxyDensity(g, cam.x, cam.y, cam.z, 2) * 2; // ≈ surface brightness of the surrounding glow
+    const exposure = Math.min(2.5, 0.2 / Math.max(ambient, 1e-6));
+    u.uGain!.value = gainFor(g) * (1 + (exposure - 1) * inside);
+    u.uCompress!.value = 1.5 * inside;
     const prev = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.heroTarget);
     this.renderer.setClearColor(0x000000, 0);

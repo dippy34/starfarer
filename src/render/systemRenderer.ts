@@ -9,6 +9,7 @@
  * costs anything.
  */
 import * as THREE from 'three';
+import { STAR_MAG_REF } from './pointLayer';
 import { type UPos, uposAddInPlace, uposSub } from '../core/hp';
 import { AU, L_SUN, PC } from '../core/units';
 import type { WorkerPool } from '../data/workerPool';
@@ -234,7 +235,7 @@ export class SystemRenderer {
       this.group.add(v.shell);
     }
     if (planet.surface.clouds > 0.03 && !isGiant(body)) {
-      v.clouds = cloudMesh(light, planet);
+      v.clouds = cloudMesh({ ...light, ...v.atmo }, planet);
       this.group.add(v.clouds);
     }
   }
@@ -408,9 +409,10 @@ export class SystemRenderer {
     // Apparent brightness → glare size, with the same law as the point sprites so the hand-over is seamless.
     const dPc = v.distance / PC;
     const m = p.absMag + 5 * Math.log10(Math.max(dPc, 1e-12) / 10);
-    const e = Math.pow(10, 0.4 * Math.min(starMagLimit - m, 30));
+    void starMagLimit;
+    const e = Math.pow(10, 0.4 * Math.min(STAR_MAG_REF - m, 30));
     const pxScale = Math.max(1.1, this.engine.renderHeight / 720);
-    const glarePx = pxScale * Math.min(0.95 + 0.58 * Math.pow(e, 0.27), 34) * 2.2;
+    const glarePx = pxScale * Math.min(0.8 + 0.42 * Math.pow(e, 0.3), 30) * 2.2;
     const discPx = v.px;
     // Once the disc itself is big, the glare gives way to the corona.
     const coronaPx = discPx * (p.type === 'whitedwarf' || p.type === 'neutron' || p.type === 'pulsar' ? 9 : 3.4);
@@ -421,7 +423,7 @@ export class SystemRenderer {
     gu.uSize!.value = size;
     gu.uDisc!.value = Math.min(0.999, discPx / quadPx);
     gu.uCorona!.value = Math.min(1, discPx / 3) * (p.type === 'giant' || p.type === 'supergiant' ? 0.6 : 1) * (p.type === 'neutron' || p.type === 'pulsar' ? 2.5 : 1);
-    gu.uGlare!.value = Math.min(e * 0.55, 14) * Math.max(0, 1 - discPx / Math.max(glarePx * 0.45, 1e-3)) * (glarePx / quadPx) ** 2 + (discPx > glarePx * 0.2 ? 0.5 : 0);
+    gu.uGlare!.value = Math.min(0.5 * Math.pow(e, 0.62), 14) * Math.max(0, 1 - discPx / Math.max(glarePx * 0.45, 1e-3)) * (glarePx / quadPx) ** 2 + (discPx > glarePx * 0.2 ? 0.5 : 0);
     gu.uTime!.value = this.time;
 
     if (v.sphere) {
@@ -451,7 +453,10 @@ export class SystemRenderer {
       this.flare.rel.copy(v.rel);
       this.flare.color.setRGB(p.color[0], p.color[1], p.color[2]);
     }
-    this.skyDimming = Math.max(this.skyDimming, Math.min(1, Math.max(0, (-9 - m) / 12)));
+    // A blazing sun in (or near) the frame washes out the stars; with it behind you they come back.
+    const toward = v.distance > 0 ? tmpA.copy(v.rel).multiplyScalar(1 / v.distance).dot(tmpB.set(0, 0, -1).applyQuaternion(camera.quaternion)) : 1;
+    const inView = Math.min(1, Math.max(0, (toward - 0.25) / 0.65));
+    this.skyDimming = Math.max(this.skyDimming, Math.min(1, Math.max(0, (-9 - m) / 12)) * (0.22 + 0.78 * inView * inView * (3 - 2 * inView)));
     void simTime;
   }
 
@@ -537,7 +542,7 @@ export class SystemRenderer {
     if (atmo) {
       // Keep at least a visible sliver of air from orbit: real scale heights are a fraction of a pixel.
       const H = Math.max(atmo.scaleHeight, planet.radius * 0.0022);
-      const tau = 0.3 * atmo.density;
+      const tau = 0.22 * atmo.density;
       a.uScaleHeight!.value = H;
       a.uAtmoRadius!.value = planet.radius + H * 9;
       const maxR = Math.max(atmo.rayleigh[0], atmo.rayleigh[1], atmo.rayleigh[2], 1e-3);
@@ -600,7 +605,7 @@ export class SystemRenderer {
       const u = (v.clouds.material as THREE.ShaderMaterial).uniforms;
       (u.uBodyRot!.value as THREE.Matrix3).copy(v.rotM);
       u.uTime!.value = this.time + simTime * 2e-5;
-      u.uRadius!.value = cloudR;
+      u.uCloudRadius!.value = cloudR;
       u.uDetail!.value = this.engine.tier.surfaceOctaves / 5;
     }
     void camera;

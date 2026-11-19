@@ -5,6 +5,7 @@
  */
 import { formatDec, formatRa, unitToRaDec } from '../../core/astro';
 import { type UPos, uposAddInPlace, uposCopy, uposSub, uposZero } from '../../core/hp';
+import { lookbackTimeGyr } from '../../core/cosmology';
 import { AU, C, DAY, G, KPC, L_SUN, LY, M_SUN, MPC, PC, formatBig, formatDistanceSci, formatDuration, formatMass, formatRadius, formatSig, formatTemperature } from '../../core/units';
 import type { DsoRecord } from '../../data/catalog';
 import type { DataRow, SelectionInfo } from '../../state/appState';
@@ -54,7 +55,7 @@ function starInfo(sys: SystemModel, body: StarBody): Omit<SelectionInfo, 'distan
   if (p.type === 'blackhole') {
     rows.push(row('Mass', formatMass(p.mass)), row('Event horizon', `${formatSig(p.schwarzschildRadius / 1000)} km`), row('Schwarzschild radius', formatDistanceSci(p.schwarzschildRadius)));
   } else {
-    rows.push(row('Spectral class', p.spectral), row('Temperature', formatTemperature(p.teff), est), row('Mass', formatMass(p.mass), est), row('Radius', formatRadius(p.radius), est));
+    rows.push(row('Spectral class', p.spectral), row('Temperature', formatTemperature(p.teff), est), row('Mass', formatMass(p.mass), est), row('Radius', formatRadius(p.radius, true), est));
     rows.push(row('Luminosity', `${formatSig(p.luminosity / L_SUN)} × Sun`, est), row('Surface gravity', `${formatSig((G * p.mass) / (p.radius * p.radius) / 9.80665)} g`, est), row('Absolute magnitude', p.absMag.toFixed(2)));
     if (p.type === 'pulsar') rows.push(row('Spin period', formatDuration(p.rotationPeriod)));
     if (p.magneticField > 0) rows.push(row('Magnetic field', `${p.magneticField.toExponential(1)} T`, true));
@@ -125,6 +126,13 @@ export function bodyTarget(sys: SystemModel, index: number, simTime: () => numbe
   };
 }
 
+/** Distance-method codes of the Updated Nearby Galaxy Catalog (Karachentsev et al. 2013). */
+const DIST_METHOD: Record<string, string> = {
+  Cep: 'Cepheid variable stars', TRGB: 'tip of the red-giant branch', SBF: 'surface-brightness fluctuations', TF: 'Tully–Fisher relation', mem: 'membership of a group',
+  BS: 'brightest stars', HB: 'horizontal-branch stars', CMD: 'colour–magnitude diagram', h: 'redshift (Hubble flow)', "h'": 'redshift (Hubble flow)', txt: 'published measurement',
+  SN: 'supernova', RR: 'RR Lyrae stars', PNLF: 'planetary-nebula luminosity function', FP: 'fundamental plane',
+};
+
 const GALAXY_TYPE: Record<GalaxyModel['type'], [string, string]> = {
   spiral: ['Spiral galaxy', 'A grand pinwheel of stars, gas and dust, with bright young stars lighting up its arms.'],
   barred: ['Barred spiral galaxy', 'A spiral galaxy whose arms unwind from the ends of a central bar of stars.'],
@@ -145,7 +153,15 @@ export function galaxyTarget(entry: GalaxyEntry): WorldTarget {
     info() {
       const rows: DataRow[] = [row('Class', g.hubble), row('Diameter', `${formatSig((g.radius * 2 * KPC) / LY / 1000)} thousand light-years`, g.real && g.id !== 'mw'), row('Stars', `about ${formatBig(g.starCount)}`, true)];
       rows.push(row('Absolute magnitude', g.absMag.toFixed(1)), row('Central black hole', `${formatBig(g.smbhMassSun)} × Sun`, g.id !== 'mw'));
-      if (entry.redshift !== undefined) rows.push(row('Redshift', `z = ${entry.redshift.toFixed(entry.redshift < 0.01 ? 5 : 4)}`), row('Recession velocity', `${formatSig(entry.redshift * (C / 1000), 4)} km/s`));
+      if (entry.velocity !== undefined) rows.push(row('Radial velocity', `${formatSig(entry.velocity, 4)} km/s (${entry.velocity < 0 ? 'approaching us' : 'receding'})`));
+      // Very nearby galaxies are placed by measured distances, not by redshift: their stored redshift is just that distance re-expressed.
+      const z = entry.redshift;
+      if (z !== undefined && z >= 0.003) {
+        rows.push(row('Redshift', `z = ${z.toFixed(z < 0.1 ? 4 : 3)}`));
+        if (entry.velocity === undefined && z < 0.3) rows.push(row('Recession velocity', `${formatSig(z * (C / 1000), 4)} km/s`));
+        if (z >= 0.01) rows.push(row('Light left it', `${formatSig(lookbackTimeGyr(z) * (z < 0.07 ? 1000 : 1))} ${z < 0.07 ? 'million' : 'billion'} years ago`));
+      }
+      if (g.real && g.id !== 'mw') rows.push(row('Distance from', entry.distMethod ? (DIST_METHOD[entry.distMethod] ?? 'published measurement') : 'redshift (Hubble flow)'));
       if (entry.designation && entry.designation !== g.name) rows.push(row('Catalogue', entry.designation));
       if (g.id !== 'mw') rows.push(...skyRows(entry.center, true));
       const active = g.activity > 0.8 ? ' Its core is a quasar: a supermassive black hole swallowing matter and outshining the entire galaxy.' : g.activity > 0.25 ? ' Its core is active — a feeding supermassive black hole.' : '';

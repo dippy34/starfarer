@@ -8,9 +8,12 @@
  *                    luminosity function per level. Selectable, flyable-into,
  *                    each with a stable id.
  *   glow levels    — soft particles that carry the unresolved light of the
- *                    web at ever larger scales (cells from 32 Mpc up to the
- *                    whole observable universe), so filaments and voids stay
- *                    visible however far you zoom out.
+ *                    web beyond the reach of individual galaxies: three
+ *                    levels (cells of 32, 64 and 128 Mpc), each drawn in its
+ *                    own shell of distances, trace the filaments and knots
+ *                    out to a few hundred megaparsecs. Farther away a sight
+ *                    line crosses so many structures that the web averages
+ *                    to a blank haze, and only the real surveys remain.
  *
  * Real catalogues override the procedural field: a procedural galaxy that
  * would have been bright enough to be in 2MRS or in the SDSS main sample
@@ -180,7 +183,7 @@ export function blendedDensity(x: number, y: number, z: number, detail: number, 
 export interface WebLevel {
   /** True for glow (aggregate) levels, false for individual galaxies. */
   glow: boolean;
-  /** Absolute r-magnitude slice (galaxies) or effective magnitude of a glow particle. */
+  /** Absolute r-magnitude slice (galaxies); a nominal value for glow particles. */
   magLo: number;
   magHi: number;
   /** Cell edge, Mpc. */
@@ -196,9 +199,11 @@ function schechter(m: number): number {
 }
 
 export const GALAXY_LEVELS = 12;
-export const GLOW_LEVELS = 10;
-/** Effective absolute magnitude of a glow particle on glow level 0; each level is 1.505 mag brighter. */
-const GLOW_MAG0 = -21.25;
+export const GLOW_LEVELS = 3;
+/** Mean glow particles per cell: enough to draw a filament as a continuous thread of small soft dots. */
+const GLOW_PER_CELL = 560;
+/** Nominal absolute magnitude recorded for glow particles (they are drawn by surface brightness, not by magnitude). */
+const GLOW_MAG = -22;
 
 function buildLevels(): WebLevel[] {
   const out: WebLevel[] = [];
@@ -210,16 +215,15 @@ function buildLevels(): WebLevel[] {
     const cell = ideal > 256 ? 512 : ideal > 48 ? 64 : ideal > 22 ? 32 : ideal > 12 ? 16 : 8;
     out.push({ glow: false, magLo, magHi: magLo + 1, cell, density });
   }
-  // Glow levels: 48 particles per cell on average, cells doubling from 32 Mpc.
+  // Glow levels: cells doubling from 32 Mpc.
   for (let a = 0; a < GLOW_LEVELS; a++) {
     const cell = 32 * 2 ** a;
-    const mag = GLOW_MAG0 - 1.505 * a;
-    out.push({ glow: true, magLo: mag, magHi: mag, cell, density: 48 / (cell * cell * cell) });
+    out.push({ glow: true, magLo: GLOW_MAG, magHi: GLOW_MAG, cell, density: GLOW_PER_CELL / (cell * cell * cell) });
   }
   return out;
 }
 
-/** Level table: indices 0…11 are galaxy levels, 12…21 glow levels. */
+/** Level table: indices 0…11 are galaxy levels, 12…14 glow levels. */
 export const WEB_LEVELS: WebLevel[] = buildLevels();
 
 export interface GalaxyCell {
@@ -234,7 +238,10 @@ export interface GalaxyCell {
   /** Candidate index within the cell (stable part of the id). */
   index: Uint32Array;
   seed: Uint32Array;
-  /** Per-object flags: bit 0 = quasar, bit 1 = red (quiescent) galaxy. */
+  /**
+   * Galaxies: bit 0 = quasar, bit 1 = red (quiescent) galaxy.
+   * Glow particles: the local density on a log scale (64 = cosmic mean, +48 per doubling), used to tint them.
+   */
   flags: Uint8Array;
 }
 
@@ -251,7 +258,7 @@ export function parseGalaxyId(id: string): { level: number; ix: number; iy: numb
 }
 
 const SUB = 6; // sub-cells per axis used to shape the density inside a cell
-const MAX_PER_CELL = 3500;
+const MAX_PER_CELL = 9000;
 const H0_OVER_C = 67.66 / 299_792.458; // per Mpc
 
 /**
@@ -304,7 +311,8 @@ export function generateGalaxyCell(level: number, ix: number, iy: number, iz: nu
           const seed = hashCombine(cellSeed, c);
           let m = L.magLo;
           let flag = 0;
-          if (!L.glow) {
+          if (L.glow) flag = Math.max(0, Math.min(255, Math.round(64 + 159.45 * dlog10(Math.max(rho, 0.01)))));
+          else {
             m = L.magLo + um;
             const h = mix32(seed ^ 0x9e37);
             // Luminous galaxies are mostly red-sequence; faint ones mostly blue. Dense regions redden them.

@@ -98,6 +98,8 @@ export class TerrainFunction {
   private readonly n2: Noise3;
   private readonly n3: Noise3;
   private readonly seaThreshold: number;
+  /** No sea level: heights are spread around the mean radius instead of rising from a shoreline. */
+  private readonly dry: boolean;
   private readonly roughGain: number;
   private readonly ridge: number;
   private readonly craterSeed: number;
@@ -114,14 +116,17 @@ export class TerrainFunction {
     this.baseFreq = s.continentScale;
     this.amp = s.relief / 2;
     // The continent field is roughly normal with σ ≈ 0.27; pick the level that floods the requested fraction.
-    this.seaThreshold = s.oceanLevel > 0 ? 0.27 * invNorm(s.oceanLevel) : -10;
+    this.dry = s.oceanLevel <= 0;
+    this.seaThreshold = this.dry ? 0 : 0.27 * invNorm(s.oceanLevel);
     this.roughGain = p.type === 'ice' ? 0.42 : p.type === 'desert' ? 0.47 : 0.5;
     this.ridge = p.type === 'ice' ? 0.15 : p.type === 'rocky' ? 0.35 : p.type === 'lava' ? 0.7 : 0.6;
   }
 
   /** Highest useful octave for a given angular sample spacing (radians). */
   octavesFor(spacing: number): number {
-    return Math.max(1, Math.min(20, Math.floor(Math.log2(Math.PI / (this.baseFreq * spacing)))));
+    // Octave i has a wavelength of 1 / (baseFreq · 2^i) radians; keep those at least 2.5 samples long,
+    // so the mesh never carries detail it cannot represent (which would shimmer and pop between levels).
+    return Math.max(1, Math.min(20, Math.floor(Math.log2(1 / (this.baseFreq * spacing * 2.5)))));
   }
 
   /**
@@ -143,9 +148,9 @@ export class TerrainFunction {
       freq *= 2;
     }
     cont = cont / norm - this.seaThreshold;
-    const land = cont > 0 ? 1 : 0;
-    // Shelf profile: gentle coasts, flat abyssal plains.
-    let h = cont > 0 ? Math.pow(cont, 0.85) * 0.55 : -Math.pow(-cont, 0.7) * 0.7;
+    const land = this.dry || cont > 0 ? 1 : 0;
+    // Worlds with seas: gentle coasts, flat abyssal plains. Dry worlds: broad highlands and basins around the mean radius.
+    let h = this.dry ? cont * 1.7 : cont > 0 ? Math.pow(cont, 0.85) * 0.55 : -Math.pow(-cont, 0.7) * 0.7;
 
     // Mountain belts: ridged noise, only where a slowly varying mask allows (and mostly on land).
     const mask = Math.max(0, this.n2.noise(x * f0 * 1.3 + 5.5, y * f0 * 1.3 + 1.5, z * f0 * 1.3 + 8.5) * 1.6 + 0.25);
@@ -165,7 +170,7 @@ export class TerrainFunction {
       amp *= this.roughGain;
       freq *= 2;
     }
-    const landWeight = land ? 0.35 + 0.65 * Math.min(1, cont * 5) : 0.25;
+    const landWeight = this.dry ? 0.7 + 0.3 * Math.min(1, Math.max(0, cont * 2 + 0.5)) : land ? 0.35 + 0.65 * Math.min(1, cont * 5) : 0.25;
     const hi = h + detail * landWeight;
     const lo = h + (detail - last) * landWeight;
     h = hi;
@@ -174,14 +179,20 @@ export class TerrainFunction {
     out[1] = (lo + crater) * this.amp;
   }
 
-  /** Impact craters: several size classes of bowl-with-rim profiles scattered on a jittered grid. */
+  /**
+   * Impact craters: several size classes of bowl-with-rim profiles scattered on a jittered grid.
+   * Depth follows the observed depth-to-diameter trend — under one per cent for giant basins,
+   * rising to ~15 % for small bowl craters — so they read clearly in grazing light.
+   */
   private craters(x: number, y: number, z: number, octaves: number): number {
     const density = this.p.surface.craters;
     let sum = 0;
     let freq = 3;
-    let depth = 0.32;
     const classes = Math.min(6, Math.max(1, Math.floor(octaves / 2)));
+    // Converts a depth in units of the body radius into units of `amp` (what `height` returns).
+    const toAmp = this.p.radius / this.amp;
     for (let c = 0; c < classes; c++) {
+      const ratio = Math.min(0.18, 0.004 * 2.1 ** c);
       const px = x * freq;
       const py = y * freq;
       const pz = z * freq;
@@ -199,24 +210,29 @@ export class TerrainFunction {
             const rad = 0.18 + 0.3 * ((mix32(h) & 0xff) / 255);
             const d = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2) / rad;
             if (d >= 1.6) continue;
+            // Crater depth in units of amp: ratio × diameter, with the diameter 2·rad/freq body radii.
+            const depth = ratio * ((2 * rad) / freq) * toAmp;
             // Bowl inside, raised rim at d = 1, ejecta blanket fading to 1.6.
-            sum += d < 1 ? depth * (d * d * 1.25 - 1) * rad : depth * 0.25 * rad * (1 - (d - 1) / 0.6) ** 2;
+            sum += d < 1 ? depth * (d * d * 1.25 - 1) : depth * 0.25 * (1 - (d - 1) / 0.6) ** 2;
           }
         }
       }
       freq *= 2.3;
-      depth *= 0.62;
     }
     return sum;
   }
 
-  /** Ground colour + water depth byte for a point, from elevation, latitude and slope. */
-  color(x: number, y: number, z: number, elev: number, slope: number, out: Uint8Array, at: number): void {
+  /**
+   * Ground colour + water depth byte for a point, from elevation and latitude. Callers pass a
+   * smooth, level-independent elevation so that patches of different detail agree on colour;
+   * the darkening of steep slopes is done per pixel in the shader, from the actual normal.
+   */
+  color(x: number, y: number, z: number, elev: number, out: Uint8Array, at: number): void {
     const s = this.p.surface;
     const pal = s.palette;
     const type = this.p.type;
-    // Normalised elevation 0…1 over the land range.
-    const t = Math.max(0, Math.min(1, elev / (this.amp * 0.9)));
+    // Normalised elevation 0…1 over the land range (dry worlds: from the deepest basins to the highest ground).
+    const t = Math.max(0, Math.min(1, this.dry ? 0.5 + elev / (this.amp * 2) : elev / (this.amp * 0.9)));
     const sinLat = Math.abs(z);
     const moisture = 0.5 + 0.5 * this.n2.noise(x * 3.1 + 40, y * 3.1 + 40, z * 3.1 + 40);
     let c: RGB;
@@ -227,15 +243,13 @@ export class TerrainFunction {
       // Dry interiors and hot low latitudes lose their vegetation tint; steep slopes show bare rock.
       const dry = Math.max(0, Math.min(1, (0.42 - moisture) * 3 + (0.35 - sinLat) * (1 - s.vegetation)));
       c = mix(c, [0.62, 0.52, 0.34], dry * 0.8 * (1 - t));
-      c = mix(c, pal[2], Math.min(1, slope * 2.2));
     } else if (type !== 'gasgiant' && type !== 'icegiant') {
-      c = mix(c, pal[0], Math.min(0.6, slope * 1.5));
       // Large-scale albedo patches (maria, dust regions).
       c = mix(c, pal[0], Math.max(0, moisture - 0.55) * 0.9);
     }
     // Ice: polar caps that creep further on high ground.
     if (s.iceCap > 0 && s.iceCap < 1) {
-      const edge = 1 - s.iceCap + 0.06 * (moisture - 0.5) - t * 0.25;
+      const edge = 1 - s.iceCap + 0.06 * (moisture - 0.5) - t * 0.05;
       const ice = Math.max(0, Math.min(1, (sinLat - edge) / 0.04));
       c = mix(c, [0.93, 0.95, 0.98], ice);
     }
@@ -266,7 +280,7 @@ export function terrainFor(params: TerrainParams): TerrainFunction {
 }
 
 /** Surface elevation (metres, sea clamped to 0) under a unit direction — used for altitude and collision. */
-export function surfaceElevation(params: TerrainParams, x: number, y: number, z: number, octaves = 12): number {
+export function surfaceElevation(params: TerrainParams, x: number, y: number, z: number, octaves = 16): number {
   const out: [number, number] = [0, 0];
   terrainFor(params).height(x, y, z, octaves, out);
   return params.surface.oceanLevel > 0 ? Math.max(0, out[0]) : out[0];
@@ -323,6 +337,7 @@ export function buildTerrainPatch(req: TerrainPatchRequest): TerrainPatchData {
   const normalsCoarse = new Int8Array(nVert * 4);
   const colors = new Uint8Array(nVert * 4);
   const raw = new Uint8Array(4);
+  const tmpN = new Int8Array(4);
 
   // World-space position of grid sample (i, j) (grid indices include the border) for a given height field.
   const px = new Float64Array(3);
@@ -412,14 +427,40 @@ export function buildTerrainPatch(req: TerrainPatchRequest): TerrainPatchData {
       morph[v * 3 + 1] = my / count - origin[1] - y;
       morph[v * 3 + 2] = mz / count - origin[2] - z;
 
-      const slope = normalAt(fine, gi, gj, 1, normals, v * 4);
-      // Parent normals: differences two samples apart on the coarse field, taken at the nearest even vertex.
-      normalAt(coarse, gi - oi, gj - oj, 2, normalsCoarse, v * 4);
+      normalAt(fine, gi, gj, 1, normals, v * 4);
+      // Parent normals, exactly as the parent patch would interpolate them: its own vertex normal at
+      // even vertices, the average of the neighbouring parent vertices elsewhere (same pattern as positions).
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      const accN = (di: number, dj: number): void => {
+        normalAt(coarse, gi + di, gj + dj, 2, tmpN, 0);
+        nx += tmpN[0]!;
+        ny += tmpN[1]!;
+        nz += tmpN[2]!;
+      };
+      if (!oi && !oj) accN(0, 0);
+      else if (oi && !oj) {
+        accN(-1, 0);
+        accN(1, 0);
+      } else if (!oi && oj) {
+        accN(0, -1);
+        accN(0, 1);
+      } else {
+        accN(1, -1);
+        accN(-1, 1);
+      }
+      const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      normalsCoarse[v * 4] = Math.round((nx / nl) * 127);
+      normalsCoarse[v * 4 + 1] = Math.round((ny / nl) * 127);
+      normalsCoarse[v * 4 + 2] = Math.round((nz / nl) * 127);
       const k = gj * g + gi;
       const h0: [number, number] = [0, 0];
       fn.height(dirs[k * 3]!, dirs[k * 3 + 1]!, dirs[k * 3 + 2]!, Math.min(octaves, 6), h0);
-      // Water depth uses the smooth large-scale height so the sea floor shading is stable across LODs.
-      fn.color(dirs[k * 3]!, dirs[k * 3 + 1]!, dirs[k * 3 + 2]!, hasSea && fine[k]! <= 0 ? Math.min(h0[0], -1) : fine[k]!, slope, raw, 0);
+      // Colour comes from the smooth large-scale height, so that patches of different levels agree on it
+      // (and sea-floor shading is stable); only the land / water decision follows the detailed surface.
+      const sea = hasSea && fine[k]! <= 0;
+      fn.color(dirs[k * 3]!, dirs[k * 3 + 1]!, dirs[k * 3 + 2]!, sea ? Math.min(h0[0], -1) : hasSea ? Math.max(h0[0], 1) : h0[0], raw, 0);
       colors.set(raw, v * 4);
     }
   }

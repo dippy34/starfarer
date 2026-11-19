@@ -37,7 +37,9 @@ function sig(x: number, digits = 3): string {
   const a = Math.abs(x);
   if (a >= 1000) return Math.round(x).toLocaleString('en-US');
   const s = x.toPrecision(digits);
-  return s.includes('e') ? Number(s).toString() : s.replace(/\.?0+$/, '');
+  if (s.includes('e')) return Number(s).toString();
+  // Trim trailing zeros of the fraction only ("1.50" → "1.5"), never of an integer ("140" stays "140").
+  return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 }
 
 const BIG: Array<[number, string]> = [
@@ -117,10 +119,14 @@ export function formatMass(kg: number): string {
   return `${kg.toExponential(2)} kg`;
 }
 
-export function formatRadius(m: number): string {
+/**
+ * Radius relative to the most natural reference body. `stellar` keeps stars in
+ * solar units down to white-dwarf sizes, while planets are compared with Jupiter or Earth.
+ */
+export function formatRadius(m: number, stellar = false): string {
   if (!Number.isFinite(m) || m <= 0) return '—';
-  if (m > 0.05 * R_SUN && m < 1e4 * R_SUN) return `${sig(m / R_SUN)} × Sun`;
   if (m >= 1e4 * R_SUN) return formatDistance(m);
+  if (m > (stellar ? 0.02 : 0.25) * R_SUN) return `${sig(m / R_SUN)} × Sun`;
   if (m > 3 * R_EARTH) return `${sig(m / R_JUP)} × Jupiter`;
   if (m > 0.02 * R_EARTH) return `${sig(m / R_EARTH)} × Earth`;
   return `${sig(m / 1000)} km`;

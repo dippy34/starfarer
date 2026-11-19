@@ -133,6 +133,10 @@ export class WebDevice implements DeviceInfo {
   get pixelRatio(): number {
     return window.devicePixelRatio || 1;
   }
+  heapUsedMb(): number {
+    const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
+    return mem ? mem.usedJSHeapSize / 1048576 : 0;
+  }
 }
 
 export class WebLifecycle implements Lifecycle {

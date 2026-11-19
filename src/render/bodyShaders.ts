@@ -40,13 +40,19 @@ uniform vec4 uOccluder[4];     // xyz = centre relative to the body centre, w = 
 uniform vec3 uRingNormal;      // world axes
 uniform vec4 uRing;            // inner radius, outer radius, opacity, seed  (outer = 0 → no rings)
 
-float ringProfile(float r, vec4 ring) {
+// Ring density at radius r. 'fw' is the pixel footprint in units of the ring width: ringlets finer
+// than a pixel are averaged out instead of shimmering when the rings are seen from afar.
+float ringProfile(float r, vec4 ring, float fw) {
   float x = (r - ring.x) / (ring.y - ring.x);
   if (x <= 0.0 || x >= 1.0) return 0.0;
   // Ringlets and gaps from stacked 1D noise; a couple of wide divisions.
   float s = ring.w;
-  float n = texture(uNoise, vec3(x * 1.7 + s, s * 0.37, 0.5)).r * 0.55 + texture(uNoise, vec3(x * 9.0 + s, 0.21, s * 0.61)).r * 0.3 + texture(uNoise, vec3(x * 41.0, s, 0.77)).g * 0.15;
-  float gaps = smoothstep(0.02, 0.05, abs(x - (0.35 + 0.3 * fract(s * 7.1)))) * smoothstep(0.008, 0.02, abs(x - (0.72 + 0.2 * fract(s * 3.3))));
+  float w1 = 1.0 - smoothstep(0.3, 0.9, fw * 9.0 * 64.0);
+  float w2 = 1.0 - smoothstep(0.3, 0.9, fw * 41.0 * 64.0);
+  float n = texture(uNoise, vec3(x * 1.7 + s, s * 0.37, 0.5)).r * 0.55;
+  n += mix(0.5, texture(uNoise, vec3(x * 9.0 + s, 0.21, s * 0.61)).r, w1) * 0.3;
+  n += mix(0.5, texture(uNoise, vec3(x * 41.0, s, 0.77)).g, w2) * 0.15;
+  float gaps = smoothstep(0.02, 0.05 + fw, abs(x - (0.35 + 0.3 * fract(s * 7.1)))) * smoothstep(0.008, 0.02 + fw, abs(x - (0.72 + 0.2 * fract(s * 3.3))));
   float edge = smoothstep(0.0, 0.04, x) * smoothstep(1.0, 0.96, x);
   return clamp((0.25 + 1.3 * n) * gaps * edge, 0.0, 1.0) * ring.z;
 }
@@ -83,7 +89,8 @@ float ringShadow(vec3 p, int i) {
   float t = -dot(p, uRingNormal) / denom;
   if (t <= 0.0) return 1.0;
   float r = length(p + sd * t);
-  return 1.0 - ringProfile(r, uRing) * 0.85;
+  // The shadow is soft (the sun is not a point), so only the broad structure matters.
+  return 1.0 - ringProfile(r, uRing, 0.004) * 0.85;
 }
 `;
 
@@ -109,8 +116,10 @@ void main() {
   vec3 p = normalize(vLocal);
   float t = uTime;
   // Granulation: convection cells that slowly churn (two cellular layers drifting through each other).
-  float g1 = cell3(p * uCells + vec3(0.0, t * 0.02, 0.0));
-  float g2 = uDetail > 0.4 ? cell3(p * uCells * 2.7 + vec3(t * 0.03, 0.0, 0.1)) : 0.5;
+  // (Cells smaller than a pixel are averaged out, so a distant star is a calm disc, not a sparkle.)
+  float fw = length(fwidth(p));
+  float g1 = mix(0.45, cell3(p * uCells + vec3(0.0, t * 0.02, 0.0)), 1.0 - smoothstep(0.3, 0.9, fw * uCells * 64.0));
+  float g2 = uDetail > 0.4 ? mix(0.45, cell3(p * uCells * 2.7 + vec3(t * 0.03, 0.0, 0.1)), 1.0 - smoothstep(0.3, 0.9, fw * uCells * 2.7 * 64.0)) : 0.45;
   float gran = 0.72 + 0.34 * g1 + 0.16 * g2;
   // Large-scale mottling and dark spot groups near active latitudes.
   float big = n3(p * 0.35 + vec3(0.0, 0.0, t * 0.004));
@@ -199,18 +208,26 @@ varying vec3 vRel;
 
 vec3 bandColor(float lat, vec3 p) {
   float seed = uBands.w;
+  // Pixel footprint in latitude: detail finer than a pixel is averaged out, so a distant
+  // giant shows clean bands instead of sparkling noise.
+  float fw = fwidth(lat) + 1e-6;
+  float lon = atan(p.y, p.x) / 6.2831853;   // one unit per turn: integer multiples wrap without a seam
   // Jet streams shear the turbulence east-west; latitude gets warped so bands waver.
   float flow = uTime * 0.004;
   float warp = (texture(uNoise, vec3(p.xy * 0.9, p.z * 0.9) + vec3(flow, 0.0, seed)).r - 0.5) * 0.09;
-  float turb = uDetail > 0.3 ? (texture(uNoise, vec3(atan(p.y, p.x) * 0.5 + flow * 6.0 * sign(sin(lat * uBands.x)), lat * 3.0, seed)).g - 0.5) * 0.05 : 0.0;
+  float turb = uDetail > 0.3 ? (texture(uNoise, vec3(lon * 3.0 + flow * 6.0 * sign(sin(lat * uBands.x)), lat * 3.0, seed)).g - 0.5) * 0.05 : 0.0;
   float l = lat + warp + turb;
   float b = texture(uNoise, vec3(l * uBands.x * 0.045 + seed, seed * 0.73, 0.31)).r;
-  float b2 = texture(uNoise, vec3(l * uBands.x * 0.17, 0.57, seed)).g;
+  float fine = 1.0 - smoothstep(0.3, 0.9, fw * uBands.x * 0.17 * 64.0);
+  float b2 = mix(0.5, texture(uNoise, vec3(l * uBands.x * 0.17, 0.57, seed)).g, fine);
   float t = clamp(0.5 + (b - 0.5) * 2.2 * uBands.y + (b2 - 0.5) * 0.5 * uBands.y, 0.0, 1.0);
   vec3 c = mix(uPalette[0], uPalette[1], smoothstep(0.0, 0.55, t));
   c = mix(c, uPalette[2], smoothstep(0.5, 1.0, t));
   // Fine filaments along band edges.
-  if (uDetail > 0.6) c *= 0.92 + 0.16 * texture(uNoise, vec3(atan(p.y, p.x) * 1.5 + flow * 9.0, l * 14.0, seed)).r;
+  if (uDetail > 0.6) {
+    float w = 1.0 - smoothstep(0.3, 0.9, fw * 14.0 * 64.0);
+    c *= mix(1.0, 0.92 + 0.16 * texture(uNoise, vec3(lon * 9.0 + flow * 9.0, l * 14.0, seed)).r, w);
+  }
   return c;
 }
 
@@ -289,7 +306,8 @@ varying vec3 vRel;
 void main() {
   #include <logdepthbuf_fragment>
   float r = length(vBody);
-  float dens = ringProfile(r, uRing);
+  float fr = fwidth(r);
+  float dens = ringProfile(r, uRing, fr / max(uRing.y - uRing.x, 1.0));
   if (dens < 0.004) discard;
   vec3 v = normalize(-vRel);
   vec3 lit = vec3(0.0);
@@ -306,7 +324,7 @@ void main() {
     float fwd = pow(max(dot(-ld, v), 0.0), 8.0) * 1.5 * (1.0 - dens);
     lit += uLightColor[i] * shadow * (0.35 + 0.65 * abs(dot(ld, uRingNormal))) * (phase + fwd) * sunVisibility(vBody, i);
   }
-  float grain = 0.9 + 0.2 * texture(uNoise, vec3(r / uPlanetRadius * 27.0, 0.3, uRing.w)).g;
+  float grain = mix(1.0, 0.9 + 0.2 * texture(uNoise, vec3(r / uPlanetRadius * 27.0, 0.3, uRing.w)).g, 1.0 - smoothstep(0.3, 0.9, fr / uPlanetRadius * 27.0 * 64.0));
   gl_FragColor = vec4(uColor * grain * lit * dens, dens);
 }`;
 
@@ -353,6 +371,11 @@ float chapman(float h, float cosz) {
 }
 
 // In-scattered light and transmittance along a ray from the camera (origin) in direction rd, up to distance tMax.
+//
+// The air is densest where the ray passes closest to the ground (at the camera when standing on the
+// surface, at the tangent point when grazing the limb from space), so samples are bunched there with a
+// quadratic warp; each segment is then integrated analytically (its own extinction included), which keeps
+// colours right even with a handful of samples. No per-pixel jitter is needed, so the sky is free of noise.
 vec4 scatter(vec3 rd, float tMax, int samples, float jitter) {
   vec3 oc = -uPlanetPos;                     // camera relative to the planet centre
   float b = dot(oc, rd);
@@ -363,30 +386,40 @@ vec4 scatter(vec3 rd, float tMax, int samples, float jitter) {
   float t0 = max(-b - sq, 0.0);
   float t1 = min(-b + sq, tMax);
   if (t1 <= t0) return vec4(0.0);
-  float dt = (t1 - t0) / float(samples);
+  float len = t1 - t0;
+  float tp = clamp(-b, t0, t1);              // closest approach to the planet centre along the ray
+  float sA = -sqrt((tp - t0) / len);
+  float sB = sqrt((t1 - tp) / len);
+  float ds = (sB - sA) / float(samples);
+  vec3 sigma = uBetaR + uBetaM * 1.1;
   vec3 sumR = vec3(0.0), sumM = vec3(0.0);
   float od = 0.0;
   for (int i = 0; i < 12; i++) {
     if (i >= samples) break;
-    vec3 p = oc + rd * (t0 + (float(i) + jitter) * dt);
+    float sv = sA + (float(i) + jitter) * ds;
+    float dt = 2.0 * abs(sv) * len * ds;      // dt/ds of t = tp + len · s|s|
+    vec3 p = oc + rd * (tp + len * sv * abs(sv));
     float r = length(p);
     float dens = exp(-(max(r, uRadius) - uRadius) / uScaleHeight);
-    od += dens * dt;
+    // ∫ T ρ dτ over the segment, for light entering at its near end.
+    vec3 seg = (1.0 - exp(-sigma * dens * dt)) / sigma;
     vec3 up = p / r;
     for (int s = 0; s < 2; s++) {
       float odSun = chapman(r, dot(up, uSunDir[s]));
       if (odSun > 1e8) continue;
-      vec3 tr = exp(-(uBetaR + uBetaM * 1.1) * (od + odSun));
+      vec3 tr = exp(-sigma * (od + odSun));
       float mu = dot(rd, uSunDir[s]);
       float pr = 0.0596831 * (1.0 + mu * mu);
       float g = uMieG;
       float pm = 0.0795775 * (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5);
-      sumR += tr * dens * dt * pr * uSunColor[s];
-      sumM += tr * dens * dt * pm * uSunColor[s];
+      sumR += tr * seg * pr * uSunColor[s];
+      sumM += tr * seg * pm * uSunColor[s];
     }
+    od += dens * dt;
   }
-  vec3 inscatter = (sumR * uBetaR + sumM * uBetaM) * 15.0;
-  vec3 trans = exp(-(uBetaR + uBetaM * 1.1) * od);
+  // Single scattering only: the factor stands in for the multiply-scattered skylight that fills a real sky.
+  vec3 inscatter = (sumR * uBetaR + sumM * uBetaM) * 16.0;
+  vec3 trans = exp(-sigma * od);
   return vec4(inscatter, 1.0 - dot(trans, vec3(0.333)));
 }
 `;
@@ -400,11 +433,6 @@ uniform vec4 uAurora;        // xyz = magnetic axis (world), w = strength
 uniform float uTime;
 ${NOISE_GLSL}
 varying vec3 vRel;
-float hash12(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
 void main() {
   #include <logdepthbuf_fragment>
   vec3 rd = normalize(vRel);
@@ -414,7 +442,7 @@ void main() {
   float c = dot(oc, oc) - uRadius * uRadius;
   float h = b * b - c;
   float tGround = (h > 0.0 && -b - sqrt(h) > 0.0) ? -b - sqrt(h) : 1e30;
-  vec4 s = scatter(rd, tGround, int(uSamples), hash12(gl_FragCoord.xy));
+  vec4 s = scatter(rd, tGround, int(uSamples), 0.5);
   vec3 col = s.rgb;
   if (uAurora.w > 0.0) {
     // Aurora: a glowing oval around each magnetic pole, on the night side, in a thin shell above the surface.
@@ -439,18 +467,23 @@ void main() {
   gl_FragColor = vec4(col, s.a);
 }`;
 
-/** Cloud layer: a slightly larger sphere with drifting fractal cover, lit by the suns. */
+/**
+ * Cloud layer: a slightly larger sphere with drifting fractal cover, lit by the suns. Seen from
+ * below it is part of the sky, so it gets the same aerial perspective as the terrain.
+ */
 export const CLOUD_FRAG = /* glsl */ `
 #include <common>
 #include <logdepthbuf_pars_fragment>
 ${NOISE_GLSL}
 ${LIGHT_GLSL}
+${ATMO_GLSL}
+uniform float uHasAtmo;
 uniform vec3 uColor;
 uniform float uCover;
 uniform float uTime;
 uniform float uSeed;
-uniform float uRadius;
 uniform float uDetail;
+uniform float uCloudRadius;   // radius of the cloud deck (uRadius is the ground)
 varying vec3 vLocal;
 varying vec3 vWorldN;
 varying vec3 vRel;
@@ -458,17 +491,31 @@ void main() {
   #include <logdepthbuf_fragment>
   vec3 p = normalize(vLocal);
   float t = uTime * 0.0012;
-  // Weather systems: big swirls broken up by finer billows; bands follow latitude like real circulation cells.
-  vec3 q = p * 0.42 + vec3(uSeed, t, 0.0);
-  float w = texture(uNoise, q).r * 0.55 + texture(uNoise, q * 2.3 + vec3(t * 1.7, 0.0, uSeed)).r * 0.3;
-  if (uDetail > 0.3) w += texture(uNoise, q * 6.1 + vec3(0.0, t * 3.0, 0.0)).a * 0.15; else w += 0.075;
-  float belts = 0.06 * cos(asin(clamp(p.z, -1.0, 1.0)) * 6.0);
+  // Pixel footprint on the unit sphere: octaves finer than a pixel are faded out.
+  float fw = length(fwidth(p));
+  // Weather systems: large swirls (a domain warp) broken up by ever finer billows.
+  vec3 q = p * 0.55 + vec3(uSeed, t, 0.0);
+  vec3 swirl = vec3(texture(uNoise, q * 0.6 + vec3(0.0, 0.0, t)).r, texture(uNoise, q * 0.6 + vec3(5.2, 1.3, 0.0)).g, texture(uNoise, q * 0.6 + vec3(2.7, 8.1, t)).r) - 0.5;
+  q += swirl * 0.5;
+  float w = texture(uNoise, q).r * 0.5 + texture(uNoise, q * 2.3 + vec3(t * 1.7, 0.0, uSeed)).r * 0.26;
+  float f3 = 1.0 - smoothstep(0.3, 0.9, fw * 0.55 * 5.1 * 64.0);
+  float f4 = uDetail > 0.3 ? 1.0 - smoothstep(0.3, 0.9, fw * 0.55 * 11.7 * 64.0) : 0.0;
+  float f5 = uDetail > 0.6 ? 1.0 - smoothstep(0.3, 0.9, fw * 0.55 * 27.0 * 64.0) : 0.0;
+  w += mix(0.5, texture(uNoise, q * 5.1 + vec3(0.0, t * 3.0, 0.0)).g, f3) * 0.13;
+  w += mix(0.5, texture(uNoise, q * 11.7 + vec3(t * 5.0, 0.3, 0.0)).a, f4) * 0.07;
+  w += mix(0.5, texture(uNoise, q * 27.0 + vec3(0.7, t * 8.0, 0.0)).a, f5) * 0.04;
+  float belts = 0.05 * cos(asin(clamp(p.z, -1.0, 1.0)) * 6.0);
   // The noise sum averages 0.5: shift the threshold so that roughly 'uCover' of the sky is cloudy.
-  float th = 0.5 + (0.5 - uCover) * 0.6;
-  float a = smoothstep(th, th + 0.13, w + belts);
+  float th = 0.5 + (0.5 - uCover) * 0.55;
+  float a = smoothstep(th, th + 0.16, w + belts);
   if (a < 0.01) discard;
   vec3 n = normalize(vWorldN);
-  vec3 pw = n * uRadius;
+  vec3 pw = n * uCloudRadius;
+  float dist = length(vRel);
+  vec3 v = -vRel / dist;
+  // Seen from underneath, a cloud is lit through its own thickness: thick parts go grey.
+  float below = step(dot(n, v), 0.0);
+  float dense = smoothstep(th, th + 0.4, w + belts);
   vec3 lit = vec3(0.0);
   for (int i = 0; i < 2; i++) {
     vec3 ld = normalize(uLightPos[i] - pw);
@@ -478,6 +525,13 @@ void main() {
     vec3 tint = mix(vec3(1.0, 0.55, 0.35), vec3(1.0), smoothstep(0.0, 0.3, ndl));
     lit += uLightColor[i] * day * tint * sunVisibility(pw, i);
   }
-  float thick = 0.75 + 0.25 * a;
-  gl_FragColor = vec4(uColor * lit * thick * a, a * 0.96);
+  float shade = mix(0.78 + 0.22 * dense, 0.95 - 0.5 * dense, below);
+  vec3 col = uColor * lit * shade;
+  float alpha = a * 0.96;
+  if (uHasAtmo > 0.5) {
+    // The air between the eye and the cloud: distant cloud melts into the haze of the horizon.
+    vec4 s = scatter(-v, dist, 4, 0.5);
+    col = col * (1.0 - s.a) + s.rgb;
+  }
+  gl_FragColor = vec4(col * alpha, alpha);
 }`;

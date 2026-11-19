@@ -203,7 +203,10 @@ function infoCard(root: HTMLElement): void {
   let shownId = '';
   const render = (s: AppState): void => {
     const sel = s.selection;
-    cls(card, 'sf-show', Boolean(sel) && s.screen === 'explore' && s.panel === 'none');
+    const visible = Boolean(sel) && s.screen === 'explore' && s.panel === 'none';
+    cls(card, 'sf-show', visible);
+    // The card takes over the corner that normally shows speed and time controls.
+    cls(root, 'sf-has-card', visible);
     if (!sel) {
       shownId = '';
       return;

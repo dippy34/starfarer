@@ -1,0 +1,343 @@
+# Decisions
+
+You asked me not to ask questions, so every judgment call is written down here:
+what I decided, why, and what it costs. Sections are ordered roughly from
+"things you would notice" to "things only a maintainer cares about".
+
+---
+
+## 1. Scope and product decisions
+
+| Decision | Why |
+| --- | --- |
+| **Working title kept: "Starfarer".** | Used in the UI, manifest and package name; one string to change in `index.html`, `public/manifest.webmanifest`, `src/ui/shell.ts` and `package.json`. |
+| **Explore is the only playable mode. Play is a registered, disabled entry ("Coming soon").** | `src/modes/registry.ts` is a small state machine (`idle → entering → active → exiting`). A mode is one `modes.register({...})` call plus a class with `enter / update / exit`; the start screen builds its cards from the registry, so adding a mode needs no restructuring. `src/modes/play/index.ts` is the only intentional placeholder in the codebase. |
+| **"Show data" is a setting (off by default), not a mode.** | Off: the info card shows name, type, one friendly sentence and the distance. On: the same card gains the real numbers (mass, radius, gravity, temperature, orbital period, spectral class, redshift, catalogue id, …), the time-dilation readout near black holes, and each value that is an estimate rather than a measurement is tagged "est.". |
+| **After "Fly there" the camera orbits the target** (drag circles around it, pinch changes distance) **until you touch the throttle or press ✕ on the chip.** | Casual players lose a planet instantly in free flight. Orbit-focus keeps it centred; the camera is also carried along by the body, so a planet does not drift away at 30 km/s while you look at it. |
+| **The universe is drawn "as it is now" (a comoving snapshot), not as light reaches us.** | A galaxy at redshift 2 is placed at its comoving distance (Planck 2018 flat ΛCDM, `src/core/cosmology.ts`) and looks like a present-day galaxy when you arrive. Drawing look-back-time evolution would make "fly there" meaningless. Redshift and look-back time are still shown in Show data. |
+| **Radius of the playable universe: 14 260 Mpc comoving** (≈ 46.5 billion light-years). Nothing is generated beyond it. |  The particle horizon for the adopted cosmology. |
+| **Time control: pause, 1×, 1 hour/s, 1 day/s, 30 days/s.** | "Fast" and "very fast" were not specified; these make a day/night cycle, a moon orbit and a planetary year each watchable. |
+| **Sound is synthesised, not sampled.** | No audio assets to licence or download. `AudioEngine` (in `src/platform/types.ts`) is the simple sound-manager interface that was asked for: ambient scene, warp, black-hole rumble (low, rising with proximity), one-shot effects. The Web Audio implementation can be replaced by a native one. |
+
+---
+
+## 2. Real data: what is in, what is not, and what I refused to invent
+
+**Rule followed throughout: no catalogue value is fabricated.** Where a source
+lacks a value the object is either left out (and counted in
+`public/data/BUILD_REPORT.json`) or the value is shown as unknown. Where a
+*derived* value is displayed (a star's radius from its brightness and colour)
+it is labelled "est.".
+
+### 2.1 What the build produced (last run)
+
+| Dataset | Objects | Source |
+| --- | ---: | --- |
+| Stars | 2 256 935 | Gaia DR3 (G < 11.5 complete) + Gaia Catalogue of Nearby Stars (all 331 k within 100 pc) + Hipparcos (bright stars Gaia lacks) + exoplanet hosts |
+| Galaxies (nearby, with shapes) | 46 237 | 2MRS + Updated Nearby Galaxy Catalog + OpenNGC |
+| Galaxies (SDSS spectroscopic) | 2 606 101 | SDSS DR17 SpecPhoto, class GALAXY |
+| Quasars | 750 402 | SDSS DR16Q |
+| Exoplanets | 6 161 (4 564 host stars) | NASA Exoplanet Archive, composite parameters |
+| Deep-sky objects | 7 072 | OpenNGC non-galaxies, Harris globulars, Hunt & Reffert clusters, PN distances, ATNF pulsars, a small curated list |
+| **Total** | **5 672 908** | 67.4 MB on disk; 2.7 MB fetched before the Start button enables |
+
+Targets were ≥ 1 M (aim 2 M+), ≥ 1 M stars, ≥ 300 k galaxies, ~750 k quasars,
+< 10 MB initial, < 100 MB total: all met.
+
+### 2.2 Source-by-source decisions
+
+- **Gaia DR3 is fetched from the ESA archive in ~90 magnitude slices.**
+  Anonymous TAP jobs are killed after 60 s and results are silently capped at
+  50 000 rows unless `MAXREC` is raised. The downloader sizes slices with the
+  star-count law N(<G) ∝ 10^0.43G, bisects any slice that still times out, and
+  finally checks the row total against the archive's own `COUNT(*)`
+  (`gaia/COMPLETE.json`). A partial download fails the build rather than
+  shipping a sky with holes.
+- **Magnitude limit G < 11.5** (≈ 1.9 M stars) rather than the full 1.8 billion:
+  it is the deepest limit that keeps the star tiles near 35 MB with ids. Fainter
+  stars are procedural (see 3.2).
+- **Distances are computed in the build, not joined from Bailer-Jones et al.**
+  The join does not finish within the anonymous time limit. Instead:
+  parallax zero-point +0.017 mas; if parallax S/N ≥ 5 the distance is 1/ϖ;
+  otherwise the mode of the exponentially-decreasing-space-density posterior
+  (Bailer-Jones 2015, L = 1.35 kpc), and the star is flagged "distance is a
+  prior-based estimate" (25 459 stars). 15 609 Gaia stars without a parallax
+  are dropped (they cannot be placed in 3-D) — except Hipparcos stars, which
+  fall back to the Hipparcos parallax (1 387 rescued).
+- **VizieR is read through the CfA mirror** (`vizier.cfa.harvard.edu`) because
+  the Strasbourg host was not reachable from the build sandbox. Same data;
+  override with `VIZIER_HOST=vizier.cds.unistra.fr`.
+- **HyperLEDA is not used.** Its bulk interface was not reachable and it has no
+  mirror with a stable machine interface. Galaxies come from 2MRS (uniform,
+  all-sky, 43 533 with redshifts), the Updated Nearby Galaxy Catalog
+  (redshift-independent distances for 868 neighbours, which matter because
+  nearby redshifts are dominated by peculiar motion), OpenNGC (names, sizes,
+  Hubble types for the NGC/IC/Messier galaxies) and SDSS. The 300 k target is
+  exceeded nine times over by SDSS alone.
+- **SDSS galaxies are DR17, quasars DR16Q**, as requested for quasars; DR17 is
+  the final SDSS-IV spectroscopic release for galaxies.
+- **Galaxy distances are Hubble-flow distances** from the redshift corrected to
+  the Local Group frame (Karachentsev & Makarov 1996), except where UNGC gives
+  a measured distance. No peculiar-velocity model and no K-corrections are
+  applied; "fingers of God" are therefore visible in clusters, exactly as in
+  the published survey cone plots.
+- **Exoplanets: only real planets orbit real hosts.** A catalogued system gets
+  exactly its catalogued planets — no invented siblings, moons or rings — and
+  orbital elements the archive does not give (often inclination or the node)
+  are filled from the system seed and tagged "est.". 309 planets whose host has
+  no usable distance are left out. Planet *appearance* (colours, clouds) is
+  procedural from mass, radius and equilibrium temperature, since nobody has
+  seen these worlds.
+- **Real stars without known planets get procedural planets**, clearly marked
+  "Imagined" on the card while the star itself says "Real".
+- **Deep-sky objects need a distance to exist in a 3-D universe.** 796 OpenNGC
+  non-galaxies, 61 pulsars and 273 OpenNGC galaxies without one are left out
+  rather than placed at a guess. Cluster distances come from Harris (globulars)
+  and Hunt & Reffert 2023 (their own reliability cut: CST ≥ 5 and CMD class
+  ≥ 0.5; 3 163 candidates rejected by it).
+- **A small hand-curated file** (`scripts/build-catalogs/curated/notable.json`)
+  holds literature values the catalogues above do not carry, each with its
+  reference in the file: distances of famous nebulae, Sgr A* and M87*, a few
+  stellar-mass black holes (Cygnus X-1, V404 Cyg, A0620-00, GRO J1655-40, Gaia
+  BH1–BH3), supernova remnants, 3C 273. These are published measurements typed
+  in by hand, not generated numbers.
+- **Cluster member stars and nebula shapes are procedural.** The catalogues
+  give a cluster's position, distance, size and age, not its members; the
+  rendered stars and the gas of a nebula are generated from those real
+  parameters and the object's id.
+- **Solar System:** orbits are mean elements fitted to JPL Horizons osculating
+  elements sampled over 2020–2040 (a single osculating snapshot drifts by
+  degrees within years; the fit gives Earth a 365.2564-day year and the Moon a
+  27.3217-day month). Masses, radii, rotation, tilts and ring sizes are
+  hand-entered from NASA fact sheets. **Surfaces are high-quality procedural
+  versions, not NASA textures**: an equirectangular Earth at the resolution the
+  terrain reaches would be hundreds of megabytes, and a low-resolution texture
+  would break the seamless descent to the ground. Earth therefore has
+  plausible, *not real*, continents. This is the largest fidelity gap in the
+  project and the first thing I would revisit (tiled NASA Blue Marble / LOLA /
+  MOLA data streamed like the catalogue tiles).
+- **Constellations:** IAU names plus the stick figures of Stellarium's "modern"
+  sky culture; lines are drawn between the real Hipparcos stars.
+
+### 2.3 Stable ids
+
+Every object has a stable id shown in Show data and accepted by search.
+
+- Catalogue stars: `star:<ra>-<dec>-<dist>` from the quantised position (what
+  the tile actually stores). The Gaia DR3 `source_id` / HIP number lives in a
+  per-tile sidecar (`.id`, 12.8 MB in total) fetched only when a star is
+  selected — storing it inline would have doubled the first-launch download.
+- Catalogue galaxies and quasars: their IAU position designation
+  (`sdss:J122906.69+020308.5`), which is exactly how SDSS and 2MASS name them.
+  Positions are stored *truncated* the way the designations are, so the
+  official name is regenerated from the coordinates with no id storage at all.
+- Procedural galaxies: `g:<level>:<ix>:<iy>:<iz>:<n>`; procedural stars:
+  `<galaxy id>/s<level>.<ix>.<iy>.<iz>.<n>`; bodies: `<system id>/p3`, `…/p3/m1`.
+
+---
+
+## 3. The procedural universe
+
+### 3.1 Determinism
+
+- One universe seed (`UNIVERSE_SEED` in `src/core/hash.ts`). Everything
+  procedural is a pure function of that seed and integer coordinates — nothing
+  procedural is stored, cached to disk or dependent on the order of visits.
+- Generators use `src/core/dmath.ts` (log, exp, pow, sin, cos, atan2 built from
+  + − × ÷ and sqrt only). `Math.sin` and friends are allowed to differ in the
+  last bit between JavaScript engines; a last-bit difference in a density test
+  can add or remove a star and shift every id after it. With `dmath` the same
+  coordinates give bit-identical results on every device.
+- A snapshot test pins a sample of the universe so that an accidental change to
+  a generator fails CI.
+
+### 3.2 Real overrides procedural, without seams
+
+- **Stars.** In the Milky Way the generator skips any star that would have been
+  in the catalogue (apparent G < 11.5 from the Sun, or within the 100 pc
+  volume-complete sphere). Real and procedural stars therefore tile the galaxy
+  with no gap and no double counting; a unit test checks it.
+- **Galaxies.** A procedural galaxy that 2MRS (K < 11.75, |b| > 8°) or the SDSS
+  main sample (r < 17.77, inside the footprint mask) would have catalogued is
+  not generated. Within ~240 Mpc the procedural density field is blended with
+  the real 2MRS density field (`lss.bin`), so faint procedural galaxies gather
+  around the real clusters and walls. Outside the SDSS footprint and beyond the
+  survey depths the procedural field carries on with the same statistics.
+- **The Milky Way itself** is a hand-set model (Sun 8.277 kpc from the centre,
+  four arms of 12.8° pitch, a 4.5 kpc bar, Sgr A* 4.297 × 10⁶ M☉) so that the
+  real stars sit in a matching procedural galaxy.
+
+### 3.3 Statistical choices
+
+- **Cosmic web:** a ridged-noise field whose zero-sets form sheets, filaments
+  and knots, with galaxies shared ≈ 8 % voids / 20 % walls / 45 % filaments /
+  27 % knots (after Cautun et al. 2014, shifted toward dense phases because
+  galaxies cluster more than mass). The field has unit mean at every level of
+  detail (tested), so counts follow the luminosity function below.
+- **Galaxy luminosity function:** Schechter, r band, φ* = 0.005 Mpc⁻³,
+  M* = −21.2, α = −1.25, generated from M = −24 to −12.
+- **Stellar luminosity function:** Jahreiß & Wielen / GCNS, 24 one-magnitude
+  levels from M = −8.5 to +15.5.
+- **Stellar properties** come from absolute G magnitude and temperature through
+  the Gaia bolometric correction (Andrae et al. 2018), Stefan–Boltzmann and a
+  piecewise mass–luminosity relation. The same function serves real and
+  procedural stars.
+- **Planets:** mass–radius relation after Chen & Kipping (2017); equilibrium
+  temperature from stellar luminosity; conservative/optimistic habitable-zone
+  edges after Kopparapu et al. (2013); types (rocky, desert, ocean, ice, lava,
+  gas giant, ice giant) from mass, temperature and volatile budget.
+- **Multiplicity** rises with stellar mass (26 % for red dwarfs to 75 % for
+  O/B stars); close pairs get circumbinary planets, wide pairs planets around
+  the primary, 18 % of binaries a distant third star.
+
+### 3.4 Deliberate exaggerations (for spectacle or visibility)
+
+- **Cosmic-web glow.** Besides individual galaxies, soft "glow" particles carry
+  unresolved light on ten nested scales. Their brightness is scaled so the web
+  stays visible at every zoom level; physically it would fade to nothing.
+- **Compact objects are easier to find than in reality.** Isolated neutron
+  stars and black holes are given a faint glow and a signature tint in the star
+  field, and about 0.5 % of faint stars are compact objects (the real fraction
+  is similar, but they would be invisible).
+- **Pulsar beams sweep slowly.** A 30 Hz pulsar rendered at its true rate is a
+  flicker (and a photosensitivity hazard); beams turn at a watchable rate and
+  the true period is in Show data.
+- **Black holes always have a visible accretion disk** (at least 14 % of the
+  full brightness) so there is something to be lensed. The lensing itself is a
+  real Schwarzschild geodesic integration per pixel — not a screen-space warp —
+  with Doppler beaming and gravitational redshift of the disk; spin (Kerr) is
+  not modelled.
+- **Time dilation readout** is the static-observer Schwarzschild factor
+  1/√(1 − r_s/r); it does not change how fast the simulation runs.
+- **Exposure adapts.** Star and galaxy brightness use real magnitudes, but the
+  faintest magnitude drawn follows the quality tier and the sky dims next to a
+  bright sun or under a day sky, as a camera (or eye) would.
+- **Quasars with no catalogued magnitude** are drawn at a nominal i = 20.5 so
+  they remain visible as points; the card shows no magnitude for them.
+
+---
+
+## 4. Engine
+
+### 4.1 Coordinates and precision
+
+- Positions are `UPos`: three integer sector indices (sector = 2⁴⁰ m) plus a
+  float64 offset in metres. Sub-millimetre precision is kept to the edge of
+  the observable universe (unit-tested at 4.4 × 10²⁶ m).
+- World axes are ICRS, origin at the Sun.
+- Rendering is camera-relative: the three.js camera never leaves the origin.
+  Point clouds pass the camera position as a high + low float pair and subtract
+  on the GPU; meshes are positioned by float64 subtraction on the CPU.
+- Logarithmic depth buffer for everything that is depth-tested (planets,
+  moons, rings, terrain); stars, galaxies and nebulae are drawn in a separate
+  background scene with no depth test, so there is nothing to z-fight.
+- Travel speed scales with the distance to the nearest object (star, galaxy
+  edge, nebula, planet surface), so the throttle feels the same at 2 m altitude
+  and between superclusters.
+
+### 4.2 Budgets and adaptive quality
+
+| Tier | Points on GPU | Draw calls | Max pixel ratio |
+| --- | ---: | ---: | ---: |
+| low | 90 000 | 140 | 1.25 |
+| medium | 220 000 | 240 | 1.75 |
+| high | 520 000 | 420 | 2 |
+
+Full table (shader steps, terrain patches, bloom levels …) in
+`src/render/qualityTiers.ts`.
+
+- "Auto" measures frame time; it first trades render resolution inside a tier
+  (down to 50–70 %), then changes tier.
+- **Point budgets are enforced, not hoped for.** Catalogue tiles are selected
+  brightest-first up to their share of the budget. Procedural stars and the
+  cosmic web each run a small feedback loop on the number of points actually
+  on the GPU (lowering the magnitude limit / the web's reach when over).
+- **Draw calls.** Catalogue tiles cost one call each (frustum-culled).
+  Procedural cells are packed into one buffer per level-of-detail level
+  ("batches", `src/render/pointLayer.ts`), re-packed around the camera whenever
+  it has drifted a fraction of the level's visibility radius; that caps the
+  procedural star field and cosmic web at 46 draw calls regardless of how many
+  cells are loaded, and sends only currently visible points to the GPU.
+- **No pop-in:** every point fades by apparent magnitude at the LOD limit and
+  by distance at the edge of its cell range; new cells fade in; terrain patches
+  morph between levels (CDLOD-style) and have skirts.
+
+### 4.3 Compression: DEFLATE, not Brotli
+
+Tiles are zlib streams decoded by `fflate` in a Web Worker. Brotli would be
+~12 % smaller but has no synchronous JS decoder of acceptable size, and relying
+on HTTP `Content-Encoding: br` would require server configuration — the build
+output must work from any static host and inside a Capacitor bundle. Column
+byte-planes + delta-coded right ascension recover most of the difference
+(stars: 10 bytes each on disk from 14 raw).
+
+### 4.4 Black-hole lensing as a post-process
+
+The lensing pass runs only while a black hole is on screen and covers more than
+a couple of pixels; integration steps scale with the tier (24 / 40 / 64) and
+the pass renders at reduced resolution on the low tier. Far from the hole a
+closed-form weak-field deflection replaces the integration.
+
+### 4.5 Atmospheres and terrain (approximations)
+
+- Single scattering with an analytic (Chapman) optical depth toward the sun, a
+  few samples along the view ray; no multiple scattering, no volumetric cloud
+  shadows. Terrain gets matching aerial perspective, so the sky and the
+  horizon agree during descent.
+- Terrain is a cube-sphere quadtree built in workers, down to ~1 m cells.
+  Elevation is noise-based with biome colouring by height, latitude and
+  temperature; no erosion simulation, no vegetation or water rendering beyond
+  a specular ocean surface.
+- Eclipse shadows: up to four occluding spheres per body with penumbrae; ring
+  shadows on the planet and planet shadows on rings are analytic.
+
+### 4.6 Platform boundary (how "no browser-only APIs outside src/platform" was read)
+
+The DOM, canvas, WebGL, pointer/keyboard events and Web Workers are the app's
+presentation substrate — they are identical inside a Capacitor WebView — and
+are used directly by `src/ui`, `src/render`, `src/input` and the label layer.
+Everything that *differs* between a browser tab and a native shell goes through
+the interfaces in `src/platform/types.ts`: key-value storage, blob cache,
+share / clipboard / save-file, haptics, audio, wake lock, URL hash, service
+worker, connectivity, visibility, device info. An ESLint rule
+(`eslint.config.js`) rejects `localStorage`, `indexedDB`, `AudioContext`,
+`navigator.share`, `navigator.vibrate`, `history`, `location`, etc. anywhere
+else. Swapping to Capacitor is `setPlatform({...})` before boot.
+
+### 4.7 Offline
+
+The service worker precaches the app shell. Data tiles are cached by the app
+itself in IndexedDB (keyed by the catalogue build stamp, with a size cap and
+least-recently-used eviction), falling back to memory when IndexedDB is
+unavailable (private browsing). Everything you have flown through works
+offline; places you have never visited show their procedural content and
+whatever tiles are cached, with an "Offline" chip.
+
+---
+
+## 5. Verification, and what could not be verified
+
+- `npm run check` = typecheck (app + scripts), lint, unit tests, production
+  build. All pass.
+- The app was exercised end-to-end in headless Chromium driven by Playwright.
+  **The sandbox has no GPU**: WebGL ran on SwiftShader (software) at well under
+  1 fps. Functionality, layout and the look of each scale were checked from
+  screenshots, but **real-device frame rates could not be measured** — the
+  60 fps target rests on the budgets above, not on a measurement. The first
+  thing to do on a phone is turn on the performance HUD (Settings) and watch
+  the tier the auto controller settles on.
+- Touch gestures were exercised through synthesised pointer events, not on a
+  physical touchscreen.
+
+---
+
+## 6. Housekeeping
+
+- Raw downloads live in `scripts/build-catalogs/.raw/` (git-ignored, ~1.5 GB).
+  It contains a few truncated files from early Gaia attempts
+  (`gaia/bright_*.csv`) that the pipeline no longer reads; the sandbox would
+  not let me delete them. They are harmless and can be removed by hand.
+- The built catalogue (`public/data/`, 67 MB in ~4 600 files) **is committed**
+  so the app runs straight after `npm install` without a 10-minute download
+  from the archives. Remove it from git and build in CI if the repository size
+  matters more to you.

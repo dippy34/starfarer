@@ -93,14 +93,18 @@ export function pointBudget(t: QualityTier): number {
 }
 
 /**
- * How the real-catalogue budgets are split between datasets, and the faintest
- * apparent magnitude worth drawing in each.
+ * How the real-catalogue budgets are split between datasets, and how each is refined.
+ * `magLimit` is the faintest apparent magnitude worth loading around the camera (null = the
+ * tier's deep-sky limit, supplied at run time). `uniformFirst` datasets load whole octree levels
+ * before refining locally, so a survey looks evenly sampled from anywhere in the universe.
  */
-export const DATASET_LOD: Record<string, { share: (t: QualityTier) => number; magLimit: number }> = {
-  stars: { share: (t) => t.catalogStars, magLimit: 13.5 },
-  // Galaxy datasets are budget-limited only: whatever the scale of the view, the apparently
-  // brightest N objects are loaded (so the real surveys stay visible from across the universe).
-  galaxies: { share: (t) => Math.round(t.catalogGalaxies * 0.3), magLimit: 60 },
-  sdss: { share: (t) => Math.round(t.catalogGalaxies * 0.45), magLimit: 60 },
-  quasars: { share: (t) => Math.round(t.catalogGalaxies * 0.25), magLimit: 60 },
+export const DATASET_LOD: Record<string, { share: (t: QualityTier) => number; magLimit: number | null; uniformFirst: boolean }> = {
+  stars: { share: (t) => t.catalogStars, magLimit: 13.5, uniformFirst: false },
+  galaxies: { share: (t) => Math.round(t.catalogGalaxies * 0.3), magLimit: null, uniformFirst: true },
+  sdss: { share: (t) => Math.round(t.catalogGalaxies * 0.45), magLimit: null, uniformFirst: true },
+  quasars: { share: (t) => Math.round(t.catalogGalaxies * 0.25), magLimit: null, uniformFirst: true },
 };
+
+/** Faintest apparent magnitude drawn for stars and for galaxies on each tier. */
+export const STAR_MAG_LIMIT: Record<TierName, number> = { low: 6.6, medium: 7.6, high: 8.6 };
+export const GALAXY_MAG_LIMIT: Record<TierName, number> = { low: 13.2, medium: 14.2, high: 15.2 };

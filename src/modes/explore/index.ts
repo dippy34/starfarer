@@ -7,8 +7,8 @@
  */
 import * as THREE from 'three';
 import { hashString } from '../../core/hash';
-import { type UPos, uposAdd, uposClone, uposDistance, uposFromMeters, uposSub, uposZero } from '../../core/hp';
-import { J2000_UNIX, KPC, MPC, PC } from '../../core/units';
+import { type UPos, uposClone, uposCopy, uposDistance, uposFromMeters, uposSub, uposZero } from '../../core/hp';
+import { J2000_UNIX, MPC, PC } from '../../core/units';
 import { Catalog } from '../../data/catalog';
 import { STAR_SRC_HIP, STAR_SRC_MASK } from '../../data/format/schema';
 import { WorkerPool } from '../../data/workerPool';
@@ -19,7 +19,7 @@ import { type SearchResult, setActions } from '../../ui/actions';
 import { WEB_LEVELS, galaxyId, parseGalaxyId } from '../../universe/cosmicWeb';
 import { makeGalaxy } from '../../universe/galaxy';
 import { solarSystem } from '../../universe/solarSystem';
-import { STAR_LEVEL_TABLE, STAR_TYPE_CODES, parseStarId } from '../../universe/starfield';
+import { STAR_TYPE_CODES, parseStarId } from '../../universe/starfield';
 import { starName } from '../../universe/names';
 import { bodyPositions } from '../../universe/system';
 import { modes } from '../registry';
@@ -294,10 +294,14 @@ class ExploreMode implements ModeInstance {
     // Make sure the destination exists in full before we get there.
     if (target.system) world.systems.pin(target.system, target.source ?? null);
     if (target.galaxy) world.galaxies.pin(target.galaxy);
-    const arrive = land ? target.radius + Math.min(12_000, Math.max(1500, target.radius * 0.0012)) : target.arrive;
+    // Landing: fly to just above the highest ground the world can have, then settle onto the real terrain.
+    const body = land && target.system && target.bodyIndex !== undefined ? target.system.bodies[target.bodyIndex] : undefined;
+    const relief = body && body.kind !== 'star' ? body.surface.relief : 0;
+    const arrive = land ? target.radius + relief * 0.75 + Math.min(8000, Math.max(800, target.radius * 0.001)) : target.arrive;
     this.focusTarget = land ? null : target;
     this.camera.flyTo({
-      target, arriveDistance: arrive, focusOnArrival: !land,
+      target, arriveDistance: arrive, focusOnArrival: !land, approach: this.sunlitApproach(target, land), levelOut: land ? this.sunlitApproach(target, land, true) : undefined,
+      settleAltitude: land ? Math.min(900, Math.max(120, target.radius * 0.0004)) : undefined,
       onArrive: () => {
         platform.audio.playEffect('flyArrive');
         if (appState.get().settings.haptics) platform.haptics.fire('arrive');
@@ -315,6 +319,44 @@ class ExploreMode implements ModeInstance {
     platform.audio.playEffect('flyStart');
     if (appState.get().settings.haptics) platform.haptics.fire('warp');
     appState.set({ throttle: 0 });
+  }
+
+  /**
+   * For planets and moons: the direction (from the body) the flight should end in, so that we arrive
+   * over the day side with the terminator in view — or, when landing, come down in daylight.
+   * With `sunOnly` the callback returns the plain direction of the sun instead.
+   */
+  private sunlitApproach(target: WorldTarget, land: boolean, sunOnly = false): ((out: THREE.Vector3) => THREE.Vector3 | null) | undefined {
+    const sys = target.system;
+    const index = target.bodyIndex;
+    if (!sys || index === undefined || sys.bodies[index]!.kind === 'star') return undefined;
+    const scratch = new Float64Array(sys.bodies.length * 3);
+    const up = new THREE.Vector3(sys.basis[6], sys.basis[7], sys.basis[8]);
+    const side = new THREE.Vector3();
+    return (out) => {
+      bodyPositions(sys, this.world.simTime, scratch);
+      // Brightest star as seen from the body.
+      let best = -1;
+      let bestFlux = 0;
+      for (let i = 0; i < sys.bodies.length; i++) {
+        const b = sys.bodies[i]!;
+        if (b.kind !== 'star') continue;
+        const d2 = (scratch[i * 3]! - scratch[index * 3]!) ** 2 + (scratch[i * 3 + 1]! - scratch[index * 3 + 1]!) ** 2 + (scratch[i * 3 + 2]! - scratch[index * 3 + 2]!) ** 2;
+        const flux = b.star.luminosity / Math.max(d2, 1);
+        if (flux > bestFlux) {
+          bestFlux = flux;
+          best = i;
+        }
+      }
+      if (best < 0) return null;
+      out.set(scratch[best * 3]! - scratch[index * 3]!, scratch[best * 3 + 1]! - scratch[index * 3 + 1]!, scratch[best * 3 + 2]! - scratch[index * 3 + 2]!).normalize();
+      side.crossVectors(up, out);
+      if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+      side.normalize();
+      if (sunOnly) return out;
+      // Landing: come down where the sun stands about 35° above the horizon, so shadows model the ground.
+      return land ? out.multiplyScalar(0.57).addScaledVector(side, 0.82).normalize() : out.multiplyScalar(0.72).addScaledVector(side, 0.62).addScaledVector(up, 0.3).normalize();
+    };
   }
 
   private async openResult(result: SearchResult): Promise<void> {
@@ -337,7 +379,7 @@ class ExploreMode implements ModeInstance {
         return bodyTarget(solarSystem(), p.body, time);
       case 'name': {
         const r = p.record;
-        if (r.kind === 'd') return world.dso.target(r.a);
+        if (r.kind === 'd') return world.dsoTarget(r.a);
         if (r.kind === 'g') return galaxyTarget(world.galaxies.entryFromRecord(r));
         if (r.kind === 's') {
           const q = typeof r.extra?.q === 'string' ? r.extra.q.split(',').map(Number) : null;
@@ -388,14 +430,9 @@ class ExploreMode implements ModeInstance {
         const { cell } = await this.pool.run('starCell', { galaxy: host.model, level: s.level, ix: s.ix, iy: s.iy, iz: s.iz, suppress: null }, { priority: 1 }).promise;
         const k = Array.from(cell.index).indexOf(s.index);
         if (k < 0) return null;
-        const size = STAR_LEVEL_TABLE[s.level]!.cell * PC;
-        const b = host.model.basis;
-        const lx = (s.ix + 0.5) * size;
-        const ly = (s.iy + 0.5) * size;
-        const lz = (s.iz + 0.5) * size;
-        const anchor = uposAdd(host.center, { x: b[0] * lx + b[3] * ly + b[6] * lz, y: b[1] * lx + b[4] * ly + b[7] * lz, z: b[2] * lx + b[5] * ly + b[8] * lz });
         const sys = world.systems.build({
-          id: p.id, name: starName(cell.seed[k]!), seed: cell.seed[k]!, origin: uposAdd(anchor, { x: cell.pos[k * 3]! * PC, y: cell.pos[k * 3 + 1]! * PC, z: cell.pos[k * 3 + 2]! * PC }),
+          id: p.id, name: starName(cell.seed[k]!), seed: cell.seed[k]!,
+          origin: world.galaxies.starPosition(host, s.level, s.ix, s.iy, s.iz, cell.pos[k * 3]!, cell.pos[k * 3 + 1]!, cell.pos[k * 3 + 2]!),
           star: { absMag: cell.absMag[k]!, teff: cell.teff[k]!, type: STAR_TYPE_CODES[cell.type[k]!]!, real: false },
         });
         return bodyTarget(sys, 0, time);
@@ -423,7 +460,7 @@ class ExploreMode implements ModeInstance {
     const radius = Math.max(0.02 * PC, d * 2e-4);
     return {
       id: `point:${name}`, kind: 'structure', name, real: false, radius, arrive: radius * 3, canLand: false,
-      position: (out) => Object.assign(out, pos),
+      position: (out) => uposCopy(out, pos),
       info: () => ({ id: `point:${name}`, name, type: 'A place in space', description: 'Nothing in particular is charted here — which makes it yours to explore.', real: false, source: 'Coordinates', rows: [], pending: false, canLand: false }),
     };
   }
@@ -643,7 +680,6 @@ class ExploreMode implements ModeInstance {
       platform.audio.setAmbient(SCENE_FOR_SCALE[scale]);
     }
     if (this.selection) this.publishSelection();
-    const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
     appState.set({
       scale, location, speed: this.camera.speed, throttle: this.camera.throttle, simTime: (world.simTime + J2000_UNIX) * 1000,
       altitude: body && body.kind !== 'star' && ratio < 2 ? Math.max(0, sysR.nearestAltitude) : null,
@@ -651,7 +687,7 @@ class ExploreMode implements ModeInstance {
       timeDilation: sysR.blackHoleProximity > 0 ? sysR.timeDilation : null,
       perf: {
         fps: engine.stats.fps, frameMs: engine.stats.frameMs, drawCalls: engine.stats.drawCalls, points: world.pointCount, triangles: engine.stats.triangles, tier: engine.tier.name,
-        renderScale: engine.quality.renderScale, tilesLoaded: world.tilesLoaded, tilesPending: world.tilesPending, memoryMb: mem ? mem.usedJSHeapSize / 1048576 : 0,
+        renderScale: engine.quality.renderScale, tilesLoaded: world.tilesLoaded, tilesPending: world.tilesPending, memoryMb: platform.device.heapUsedMb(),
       },
     });
   }
@@ -678,4 +714,3 @@ modes.register({
   create: (ctx) => new ExploreMode(ctx),
 });
 
-export { KPC };

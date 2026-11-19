@@ -7,7 +7,7 @@ import { MILKY_WAY, SUN_LOCAL_PC, milkyWaySuppression } from '../src/universe/mi
 import { equilibriumTemperature, massFromRadius, radiusFromMass } from '../src/universe/planet';
 import { solarSystem } from '../src/universe/solarSystem';
 import { classifyByPhotometry, makeStar, mainSequenceTeff } from '../src/universe/star';
-import { STAR_LEVELS, STAR_LEVEL_TABLE, generateStarCell, parseStarId, starId } from '../src/universe/starfield';
+import { STAR_LEVELS, STAR_LEVEL_TABLE, generateStarBlock, generateStarCell, parseStarId, starId } from '../src/universe/starfield';
 import { bodyPositions, generateSystem } from '../src/universe/system';
 import { buildTerrainPatch, cubeToSphere, surfaceElevation, terrainIndices } from '../src/universe/terrain';
 import type { PlanetBody, StarBody, StarType } from '../src/universe/types';
@@ -49,6 +49,53 @@ describe('determinism: same coordinates, same universe', () => {
       expect(Array.from(p1.positions)).toEqual(Array.from(p2.positions));
       expect(Array.from(p1.colors)).toEqual(Array.from(p2.colors));
     }
+  });
+
+  it('star blocks hold exactly the stars of their cells, whatever the block size', () => {
+    const g = makeGalaxy('g:blocks', 4711, -21);
+    const level = 13;
+    const size = STAR_LEVEL_TABLE[level]!.cell;
+    // A patch of disc a few kiloparsecs from the centre: cells 384…387 on x, 0…3 on y and z.
+    const base = 384;
+    const cells = new Map<string, ReturnType<typeof generateStarCell>>();
+    const cellAt = (ix: number, iy: number, iz: number): ReturnType<typeof generateStarCell> => {
+      const key = `${ix},${iy},${iz}`;
+      let c = cells.get(key);
+      if (!c) cells.set(key, (c = generateStarCell(g, level, ix, iy, iz, null)));
+      return c;
+    };
+    const b = g.basis;
+    const idsByBlockSize: string[][] = [];
+    // The same 4 × 4 × 4 cells generated as one block, as eight blocks and as sixty-four.
+    for (const k of [4, 2, 1]) {
+      const ids: string[] = [];
+      const n = 4 / k;
+      for (let bx = 0; bx < n; bx++) for (let by = 0; by < n; by++) for (let bz = 0; bz < n; bz++) {
+        const block = generateStarBlock(g, level, k, base / k + bx, by, bz, null);
+        for (let i = 0; i < block.count; i++) {
+          const [ix, iy, iz] = [block.cell[i * 3]!, block.cell[i * 3 + 1]!, block.cell[i * 3 + 2]!];
+          const cell = cellAt(ix, iy, iz);
+          const j = Array.from(cell.index).indexOf(block.index[i]!);
+          expect(j).toBeGreaterThanOrEqual(0);
+          expect(block.seed[i]).toBe(cell.seed[j]);
+          expect(block.absMag[i]).toBe(cell.absMag[j]);
+          // The canonical offset is the cell's own, bit for bit.
+          expect([block.local[i * 3], block.local[i * 3 + 1], block.local[i * 3 + 2]]).toEqual([cell.pos[j * 3], cell.pos[j * 3 + 1], cell.pos[j * 3 + 2]]);
+          // Drawing position = cell centre relative to the block centre (galaxy frame → world axes) + that offset.
+          const centre = (c: number, bc: number): number => (c + 0.5) * size - (bc + 0.5) * k * size;
+          const [cx, cy, cz] = [centre(ix, block.bx), centre(iy, block.by), centre(iz, block.bz)];
+          expect(block.pos[i * 3]).toBeCloseTo(b[0] * cx + b[3] * cy + b[6] * cz + cell.pos[j * 3]!, 3);
+          expect(block.pos[i * 3 + 1]).toBeCloseTo(b[1] * cx + b[4] * cy + b[7] * cz + cell.pos[j * 3 + 1]!, 3);
+          expect(block.pos[i * 3 + 2]).toBeCloseTo(b[2] * cx + b[5] * cy + b[8] * cz + cell.pos[j * 3 + 2]!, 3);
+          ids.push(starId(g.id, level, ix, iy, iz, block.index[i]!));
+        }
+      }
+      idsByBlockSize.push(ids.sort());
+    }
+    expect(idsByBlockSize[0]!.length).toBeGreaterThan(20);
+    expect(new Set(idsByBlockSize[0]).size).toBe(idsByBlockSize[0]!.length);
+    expect(idsByBlockSize[1]).toEqual(idsByBlockSize[0]);
+    expect(idsByBlockSize[2]).toEqual(idsByBlockSize[0]);
   });
 
   it('stable ids round-trip', () => {

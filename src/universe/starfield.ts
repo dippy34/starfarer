@@ -234,6 +234,84 @@ export function generateStarCell(g: GalaxyModel, level: number, ix: number, iy: 
   return { level, ix, iy, iz, count: n, pos: pos.subarray(0, n * 3), absMag: absMag.subarray(0, n), teff: teff.subarray(0, n), type: type.subarray(0, n), index: index.subarray(0, n), seed: seed.subarray(0, n) };
 }
 
+/**
+ * A block of k × k × k neighbouring cells of one level, merged for transport
+ * and drawing. Bright levels are needed out to many cell widths, so the
+ * runtime asks for whole blocks sized to the visibility radius instead of
+ * thousands of single cells. The stars themselves are exactly those of the
+ * individual cells: ids and canonical positions do not depend on the block size.
+ */
+export interface StarBlock {
+  level: number;
+  /** Block edge in cells; block (bx, by, bz) covers cells [bx·k, bx·k + k) on each axis. */
+  k: number;
+  bx: number;
+  by: number;
+  bz: number;
+  count: number;
+  /** World-axis offsets from the block centre, parsecs — used for drawing and picking. */
+  pos: Float32Array;
+  /** Cell of each star (ix, iy, iz): with `index` it forms the stable id… */
+  cell: Int32Array;
+  /** …and with this world-axis offset from the cell centre (parsecs, exactly as generated) its canonical position. */
+  local: Float32Array;
+  absMag: Float32Array;
+  teff: Float32Array;
+  type: Uint8Array;
+  index: Uint16Array;
+  seed: Uint32Array;
+}
+
+export function generateStarBlock(g: GalaxyModel, level: number, k: number, bx: number, by: number, bz: number, suppress: CatalogSuppression | null): StarBlock {
+  const size = STAR_LEVEL_TABLE[level]!.cell;
+  const cells: StarCell[] = [];
+  let total = 0;
+  for (let dz = 0; dz < k; dz++) {
+    for (let dy = 0; dy < k; dy++) {
+      for (let dx = 0; dx < k; dx++) {
+        const c = generateStarCell(g, level, bx * k + dx, by * k + dy, bz * k + dz, suppress);
+        if (c.count > 0) {
+          cells.push(c);
+          total += c.count;
+        }
+      }
+    }
+  }
+  const out: StarBlock = {
+    level, k, bx, by, bz, count: total, pos: new Float32Array(total * 3), cell: new Int32Array(total * 3), local: new Float32Array(total * 3),
+    absMag: new Float32Array(total), teff: new Float32Array(total), type: new Uint8Array(total), index: new Uint16Array(total), seed: new Uint32Array(total),
+  };
+  const b = g.basis;
+  const mid = (k - 1) / 2;
+  let n = 0;
+  for (const c of cells) {
+    // Cell centre relative to the block centre: galaxy-local parsecs, then world axes.
+    const lx = (c.ix - bx * k - mid) * size;
+    const ly = (c.iy - by * k - mid) * size;
+    const lz = (c.iz - bz * k - mid) * size;
+    const wx = b[0] * lx + b[3] * ly + b[6] * lz;
+    const wy = b[1] * lx + b[4] * ly + b[7] * lz;
+    const wz = b[2] * lx + b[5] * ly + b[8] * lz;
+    for (let i = 0; i < c.count; i++, n++) {
+      out.pos[n * 3] = c.pos[i * 3]! + wx;
+      out.pos[n * 3 + 1] = c.pos[i * 3 + 1]! + wy;
+      out.pos[n * 3 + 2] = c.pos[i * 3 + 2]! + wz;
+      out.local[n * 3] = c.pos[i * 3]!;
+      out.local[n * 3 + 1] = c.pos[i * 3 + 1]!;
+      out.local[n * 3 + 2] = c.pos[i * 3 + 2]!;
+      out.cell[n * 3] = c.ix;
+      out.cell[n * 3 + 1] = c.iy;
+      out.cell[n * 3 + 2] = c.iz;
+      out.absMag[n] = c.absMag[i]!;
+      out.teff[n] = c.teff[i]!;
+      out.type[n] = c.type[i]!;
+      out.index[n] = c.index[i]!;
+      out.seed[n] = c.seed[i]!;
+    }
+  }
+  return out;
+}
+
 /** Visibility radius (pc) of a level for a given apparent-magnitude limit. */
 export function levelRadius(level: number, magLimit: number): number {
   return 10 * dpow(10, (magLimit - STAR_LEVEL_TABLE[level]!.magLo) / 5);

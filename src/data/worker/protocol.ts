@@ -2,7 +2,7 @@
  * Message protocol between the main thread and the data workers.
  * Each request carries a numeric id; the worker answers with the same id.
  */
-import type { CatalogSuppression, StarCell } from '../../universe/starfield';
+import type { CatalogSuppression, StarBlock, StarCell } from '../../universe/starfield';
 import type { GalaxyCell } from '../../universe/cosmicWeb';
 import type { GalaxyModel } from '../../universe/types';
 import type { TerrainPatchData, TerrainPatchRequest } from '../../universe/terrain';
@@ -19,7 +19,9 @@ export interface JobMap {
   json: { in: { bytes: Uint8Array }; out: unknown };
   /** Install large-scale-structure data + catalogue limits used by galaxy generation (sent to every worker). */
   setLss: { in: { bytes: Uint8Array; twoMrsLimit: number; avoidanceDeg: number; sdssLimit: number }; out: true };
-  /** Generate one procedural star cell of a galaxy. */
+  /** Generate a block of k³ procedural star cells of a galaxy (what the star field is drawn from). */
+  starBlock: { in: { galaxy: GalaxyModel; level: number; k: number; bx: number; by: number; bz: number; suppress: CatalogSuppression | null }; out: { cell: StarBlock; chunk: PointChunkData } };
+  /** Generate one procedural star cell of a galaxy (used to look a star up by its id). */
   starCell: { in: { galaxy: GalaxyModel; level: number; ix: number; iy: number; iz: number; suppress: CatalogSuppression | null }; out: { cell: StarCell; chunk: PointChunkData } };
   /** Generate one cosmic-web cell (galaxies or glow particles). */
   galaxyCell: { in: { level: number; ix: number; iy: number; iz: number; real: boolean }; out: { cell: GalaxyCell; chunk: PointChunkData } };

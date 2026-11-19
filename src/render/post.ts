@@ -223,7 +223,7 @@ export class PostFX {
     this.up = fsMaterial(UP_FRAG, { uSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uWeight: { value: 1 } }, true);
     this.composite = fsMaterial(COMPOSITE_FRAG, {
       uScene: { value: null }, uBloom: { value: null }, uResolution: { value: new THREE.Vector2(2, 2) }, uTime: { value: 0 }, uExposure: { value: 1 },
-      uBloomStrength: { value: 0.9 }, uWarp: { value: 0 }, uChroma: { value: 0 }, uGrain: { value: 0.035 }, uVignette: { value: 0.35 }, uFade: { value: 0 }, uFlash: { value: 0 },
+      uBloomStrength: { value: 0.9 }, uWarp: { value: 0 }, uChroma: { value: 0 }, uGrain: { value: 0.014 }, uVignette: { value: 0.35 }, uFade: { value: 0 }, uFlash: { value: 0 },
       uFlarePos: { value: new THREE.Vector3(0.5, 0.5, 0) }, uFlareColor: { value: new THREE.Color(1, 1, 1) }, uFancy: { value: 1 },
     });
     this.blackHole = new BlackHolePass(noise);
@@ -263,7 +263,7 @@ export class PostFX {
     }
     (this.composite.uniforms.uResolution!.value as THREE.Vector2).set(w, h);
     this.composite.uniforms.uFancy!.value = tier.fancyPost ? 1 : 0;
-    this.composite.uniforms.uGrain!.value = tier.fancyPost ? 0.035 : 0.0;
+    this.composite.uniforms.uGrain!.value = tier.fancyPost ? 0.014 : 0.0;
   }
 
   private pass(material: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null): void {

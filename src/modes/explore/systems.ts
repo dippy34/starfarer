@@ -6,7 +6,7 @@
  */
 import { raDecToUnit } from '../../core/astro';
 import { hashInts } from '../../core/hash';
-import { type UPos, uposAdd, uposDistance, uposFromMeters, uposZero } from '../../core/hp';
+import { type UPos, uposDistance, uposFromMeters, uposZero } from '../../core/hp';
 import { AU, PC } from '../../core/units';
 import type { Catalog } from '../../data/catalog';
 import type { CatalogStreamer } from '../../data/catalogStreamer';
@@ -69,14 +69,15 @@ export class SystemManager {
     const chunk = this.starLayer.getChunk(key);
     if (!chunk) return null;
     if (this.galaxies.starGrid.owns(key)) {
-      const cell = this.galaxies.starGrid.cell(key);
-      const host = this.galaxies.current;
-      if (!cell || !host) return null;
-      const c = cell.extra;
+      const block = this.galaxies.starGrid.cell(key);
+      const host = this.galaxies.starHost;
+      if (!block || !host) return null;
+      const c = block.extra;
       const seed = c.seed[index]!;
+      const [ix, iy, iz] = [c.cell[index * 3]!, c.cell[index * 3 + 1]!, c.cell[index * 3 + 2]!];
       return {
-        id: starId(host.model.id, cell.level, cell.ix, cell.iy, cell.iz, c.index[index]!), name: starName(seed), seed,
-        origin: uposAdd(chunk.anchor, { x: c.pos[index * 3]! * PC, y: c.pos[index * 3 + 1]! * PC, z: c.pos[index * 3 + 2]! * PC }),
+        id: starId(host.model.id, c.level, ix, iy, iz, c.index[index]!), name: starName(seed), seed,
+        origin: this.galaxies.starPosition(host, c.level, ix, iy, iz, c.local[index * 3]!, c.local[index * 3 + 1]!, c.local[index * 3 + 2]!),
         star: { absMag: c.absMag[index]!, teff: c.teff[index]!, type: STAR_TYPE_CODES[c.type[index]!]!, real: false },
       };
     }

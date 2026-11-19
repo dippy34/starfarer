@@ -6,7 +6,10 @@ import { hashCell, hashInts, hashString, mix32 } from '../src/core/hash';
 import { SECTOR, uposAdd, uposAddInPlace, uposDecode, uposDistance, uposEncode, uposFromMeters, uposLerp, uposSub, uposZero } from '../src/core/hp';
 import { Noise3 } from '../src/core/noise';
 import { Rng } from '../src/core/rng';
-import { AU, LY, MPC, UNIVERSE_RADIUS } from '../src/core/units';
+import {
+  AU, LY, MPC, M_EARTH, M_JUP, M_SUN, R_EARTH, R_JUP, R_SUN, UNIVERSE_RADIUS,
+  formatBig, formatDistance, formatDistanceSci, formatDuration, formatMass, formatRadius, formatSig, formatSpeed, formatTemperature,
+} from '../src/core/units';
 
 describe('hashing & RNG determinism', () => {
   it('produces fixed, known values (guards against accidental algorithm changes)', () => {
@@ -179,5 +182,49 @@ describe('noise', () => {
       expect(a.noisePeriodic(x, y, z, 8)).toBeCloseTo(a.noisePeriodic(x + 8, y - 16, z + 24, 8), 10);
     }
     expect(differs).toBe(true);
+  });
+});
+
+describe('number formatting', () => {
+  it('keeps the zeros that matter', () => {
+    // Regression: trailing zeros of whole numbers were once stripped ("140 million" became "14 million").
+    expect(formatSig(140)).toBe('140');
+    expect(formatSig(100)).toBe('100');
+    expect(formatSig(20)).toBe('20');
+    expect(formatSig(1.5)).toBe('1.5');
+    expect(formatSig(1.0)).toBe('1');
+    expect(formatSig(0.25)).toBe('0.25');
+    expect(formatSig(12345.6)).toBe('12,346');
+    expect(formatSig(0)).toBe('0');
+    expect(formatSig(NaN)).toBe('—');
+    expect(formatBig(1.4e8)).toBe('140 million');
+    expect(formatBig(2e11)).toBe('200 billion');
+    expect(formatBig(950)).toBe('950');
+  });
+
+  it('picks natural units', () => {
+    expect(formatDistance(120)).toBe('120 m');
+    expect(formatDistance(384_400_000)).toBe('384,400 km');
+    expect(formatDistance(AU)).toBe('1 AU');
+    expect(formatDistance(4.2465 * LY)).toBe('4.25 light-years');
+    expect(formatDistance(2.5e6 * LY)).toBe('2.5 million light-years');
+    expect(formatDistance(46.5e9 * LY)).toBe('46.5 billion light-years');
+    expect(formatDistanceSci(10 * 3.0857e16)).toBe('10 pc');
+    expect(formatMass(M_SUN)).toBe('1 × Sun');
+    expect(formatMass(M_JUP)).toBe('1 × Jupiter');
+    expect(formatMass(M_EARTH)).toBe('1 × Earth');
+    expect(formatMass(4.3e6 * M_SUN)).toBe('4.3 million × Sun');
+    expect(formatRadius(R_SUN, true)).toBe('1 × Sun');
+    expect(formatRadius(0.12 * R_SUN, true)).toBe('0.12 × Sun');
+    expect(formatRadius(58_232_000)).toBe('0.833 × Jupiter');
+    expect(formatRadius(R_JUP)).toBe('1 × Jupiter');
+    expect(formatRadius(R_EARTH)).toBe('1 × Earth');
+    expect(formatSpeed(0)).toBe('Stopped');
+    expect(formatSpeed(7660)).toBe('7.66 km/s');
+    expect(formatSpeed(299_792_458 * 20)).toBe('20× light speed');
+    expect(formatDuration(90)).toBe('90 s');
+    expect(formatDuration(86_400 * 365.25 * 30)).toBe('30 years');
+    expect(formatTemperature(288)).toBe('288 K (15 °C)');
+    expect(formatTemperature(5772)).toBe('5,772 K');
   });
 });

@@ -37,6 +37,7 @@ export class CatalogStreamer {
   private readonly states = new Map<number, NodeState>();
   private readonly tenPc: number;
   private wanted: number[] = [];
+  private readonly uniformNodes = new Set<number>();
   private clock = 0;
   private active = 0;
   private disposed = false;
@@ -50,6 +51,11 @@ export class CatalogStreamer {
     private readonly magLimit: number,
     /** Brightness group of the layer this dataset's points belong to. */
     private readonly group = 0,
+    /**
+     * Load whole octree levels before refining locally (see `LodOptions.uniformFirst`), and put the
+     * tiles of those complete levels in this brightness group (the evenly sampled "survey" view).
+     */
+    private readonly uniformGroup: number | null = null,
   ) {
     this.tenPc = (10 * 3.085677581491367e16) / ds.manifest.unit;
     this.cutoffMag = magLimit;
@@ -58,6 +64,10 @@ export class CatalogStreamer {
       if (!online) return;
       for (const s of this.states.values()) if (s.status === 'failed') s.retryAt = 0;
     });
+  }
+
+  private groupOf(index: number): number {
+    return this.uniformGroup !== null && this.uniformNodes.has(index) ? this.uniformGroup : this.group;
   }
 
   key(node: LodNode): string {
@@ -92,9 +102,15 @@ export class CatalogStreamer {
   update(x: number, y: number, z: number, budget: number, dt: number, magLimit = this.magLimit): void {
     if (this.disposed) return;
     this.clock += dt;
-    const sel = selectNodes(this.ds.nodes, x, y, z, { budget, magLimit, tenPc: this.tenPc });
+    const sel = selectNodes(this.ds.nodes, x, y, z, { budget, magLimit, tenPc: this.tenPc, uniformFirst: this.uniformGroup !== null });
     this.wanted = sel.nodes;
     this.cutoffMag = sel.cutoffMag;
+    if (this.uniformGroup !== null) {
+      // Tiles move between the two groups as levels complete or the budget shrinks.
+      this.uniformNodes.clear();
+      for (let k = 0; k < sel.uniform; k++) this.uniformNodes.add(sel.nodes[k]!);
+      for (const [i, s] of this.states) if (s.status === 'ready') this.layer.setChunkGroup(this.key(this.ds.nodes[i]!), this.groupOf(i));
+    }
     for (const i of sel.nodes) {
       const s = this.states.get(i);
       if (s) s.lastWanted = this.clock;
@@ -128,12 +144,12 @@ export class CatalogStreamer {
     const m = this.ds.manifest;
     this.catalog
       .fetchBytes(tilePath(m.id, node.path))
-      .then((bytes) => this.pool.run('tile', { kind: m.kind, specs: m.columns, bytes, cx: node.cx, cy: node.cy, cz: node.cz, half: node.half }, { priority: 3 + Math.min(4, node.level * 0.5), transfer: [bytes.buffer as ArrayBuffer] }).promise)
+      .then((bytes) => this.pool.run('tile', { kind: m.kind, specs: m.columns, bytes, cx: node.cx, cy: node.cy, cz: node.cz, half: node.half }, { priority: 2 + Math.min(1.5, node.level * 0.25), transfer: [bytes.buffer as ArrayBuffer] }).promise)
       .then((data) => {
         if (this.disposed || this.states.get(index) !== state) return; // evicted while loading
         state.status = 'ready';
         state.data = data;
-        this.layer.addChunk(this.key(node), this.anchor(node), data, { group: this.group });
+        this.layer.addChunk(this.key(node), this.anchor(node), data, { group: this.groupOf(index) });
         this.loadedTiles++;
         this.loadedPoints += data.count;
       })
