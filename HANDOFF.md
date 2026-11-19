@@ -303,3 +303,31 @@ installed Chromium when Playwright's own download is not available.
 
 Gaia DR3 supplement (`public/data/stars-gaia/`) is CC BY-NC: drop it for a paid store app. AT-HYG
 tiles are CC BY-SA 4.0; OPAL maps CC BY 4.0; NASA/USGS/NOAA public domain. See `CREDITS.md`.
+
+## Clean-up pass (ground up, one part at a time)
+
+Each part is gone through file by file: bugs fixed, tests added, and the unit tests and browser
+suites run again before the next part starts. Nothing is rewritten for its own sake; the engine
+above is validated against JPL Horizons and stays as it is unless something is wrong.
+
+1. **Foundation (`src/core`, `src/astro`): done.**
+   - `UPos`: the double-double sums no longer allocate (they return through two module variables);
+     results are bit-for-bit the same (`tests/astro.test.ts`).
+   - `Ephemeris`: a chunk that failed to download was requested again every frame; it is now retried
+     after a pause that doubles up to a minute and reported once (`tests/ephemeris.test.ts`).
+   - `formatDistance`: plain numbers ("21,660 km", "10.490 million km") instead of "2.166×10^4 km",
+     independent of the browser locale (`tests/units.test.ts`).
+   - Black-hole scale row: stellar holes read "the horizon is 125 km across; Earth is 102 times
+     wider" instead of "0 Earths would fit inside the horizon".
+2. **Data streaming** (star tiles, map uploads, elevation, catalogue): next. Known from a run in
+   which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
+   throws an uncaught error; whether it is ever retried needs checking.
+3. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
+4. App core: `app/App.ts` is 2,000 lines doing exposure, picking, labels, navigation and the frame
+   loop; to be split into modules behind the same behaviour.
+5. Stars and sky. 6. Deep space (galaxies, nebulae, black holes, exoplanets). 7. Terrain, landing,
+   walking. 8. Game mode. 9. VR. 10. HUD, search, and touch controls for phones.
+
+To look at when their part comes (seen in the scenario screenshots): Pluto's lit side washes out to
+white from 12 radii; 51 Peg b shows a flat black disc on its cloud deck; the Sun's glare hides the
+labels of the inner planets from 2.8 AU.

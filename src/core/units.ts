@@ -27,12 +27,16 @@ export const SUN_ABS_MAG = 4.831;
 export const SUN_TEFF = 5772; // K, IAU 2015 nominal
 export const SUN_RADIUS = 695_700e3; // m, IAU 2015 nominal
 
+/** Whole numbers with thousands separators, the same in every browser locale ("384,400"). */
+const GROUPED = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
 /** Human readable distance with automatic units. */
 export function formatDistance(m: number): string {
   const a = Math.abs(m);
   if (a < 1e3) return `${m.toFixed(1)} m`;
-  if (a < 1e7) return `${(m / 1e3).toFixed(a < 1e5 ? 2 : 0)} km`;
-  if (a < 0.1 * AU) return `${(m / 1e3).toExponential(3).replace('e+', '×10^')} km`;
+  if (a < 1e5) return `${(m / 1e3).toFixed(2)} km`;
+  if (a < 1e9) return `${GROUPED.format(m / 1e3)} km`;
+  if (a < 0.1 * AU) return `${(m / 1e9).toFixed(3)} million km`;
   if (a < 0.05 * LY) return `${(m / AU).toFixed(a < 10 * AU ? 4 : 2)} AU`;
   if (a < 1e3 * LY) return `${(m / LY).toFixed(a < 10 * LY ? 3 : 1)} ly`;
   if (a < 1e6 * PC) return `${(m / KPC).toFixed(2)} kpc`;

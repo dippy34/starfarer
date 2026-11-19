@@ -76,6 +76,12 @@ describe('scale readout', () => {
     expect(rows[0][0]).toBe('Shadow from here');
     expect(rows.some((r) => /Earths would fit inside the horizon/.test(r[1]))).toBe(true);
   });
+  it('a stellar black hole is compared with the Earth the other way round', () => {
+    // Cygnus X-1: 21.2 solar masses, a horizon 62.6 km in radius
+    const scale = scaleRows(62.6e3, 1.9e6, 50, true).find((r) => r[0] === 'Scale')![1];
+    expect(scale).toBe('the horizon is 125 km across; Earth is 102 times wider');
+    expect(scale).not.toMatch(/^0 /);
+  });
   it('formats angles', () => {
     expect(formatAngle(Math.PI / 2)).toBe('90.0°');
     expect(formatAngle(1e-4)).toMatch(/″$/);

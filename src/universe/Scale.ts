@@ -72,7 +72,10 @@ export function scaleRows(radius: number, dist: number, fovYDeg: number, blackHo
   rows.push([blackHole ? 'Shadow from here' : 'Angular size', `${formatAngle(a)}${view}`]);
   if (blackHole) {
     rows.push(['Shadow diameter', formatLength(radius * 3 * Math.sqrt(3))]);
-    rows.push(['Scale', `${formatCount(earthsInside(radius))} Earths would fit inside the horizon`]);
+    // (a stellar black hole's horizon is the size of a city: "0 Earths would fit inside" says nothing)
+    rows.push(['Scale', radius > 1.5 * R_EARTH_M
+      ? `${formatCount(earthsInside(radius))} Earths would fit inside the horizon`
+      : `the horizon is ${formatLength(2 * radius)} across; Earth is ${formatCount(R_EARTH_M / radius)} times wider`]);
   } else if (radius > 1.5 * R_EARTH_M) {
     rows.push(['Scale', `${formatCount(earthsInside(radius))} Earths would fit inside`]);
   } else if (radius > 0.02 * R_EARTH_M) {
