@@ -183,6 +183,13 @@ void main() {
   gl_Position = projectionMatrix * vec4(uCenterView + vec3(position.xy * uRadiusM * 1.3, 0.0), 1.0);
 }`;
 
+/**
+ * Gentle shoulder applied to every galaxy seen from outside: an edge-on disc is several times
+ * brighter per pixel than the same disc face-on, and without it such views burn out to a white bar.
+ * (Inside a galaxy the roll-off is much stronger — see the hero pass.)
+ */
+const HIGHLIGHT_ROLLOFF = 0.3;
+
 /** Distance (scene units) at which impostor quads are drawn. */
 const QUAD_DISTANCE = 1000;
 
@@ -218,7 +225,7 @@ function makeUniforms(noise: THREE.Data3DTexture): Record<string, THREE.IUniform
 function gainFor(g: GalaxyModel): number {
   const dwarf = Math.min(1.3, Math.max(0.12, Math.pow(10, -0.12 * (g.absMag + 20.5))));
   // Irregulars have no bulge to speak of: their light is the disc itself, so that is what gets exposed for.
-  if (g.type === 'irregular') return (0.9 * dwarf) / Math.max(2 * g.hz, 1e-6);
+  if (g.type === 'irregular') return (0.7 * dwarf) / Math.max(2 * g.hz, 1e-6);
   const column = g.bulgeFrac >= 1 ? galaxyDensity(g, 0, 0, 0, 2) * g.bulgeR * 2.2 : 2 * g.hz + galaxyDensity(g, 0, 0, 0, 2) * g.bulgeR * 0.9;
   return (1.35 * dwarf) / Math.max(column, 1e-6);
 }
@@ -349,7 +356,7 @@ export class GalaxyRenderer {
       (u.uCenterView!.value as THREE.Vector3).copy(tmp).multiplyScalar(toQuad);
       u.uRadiusM!.value = view.model.radius * KPC * toQuad;
       u.uSteps!.value = Math.max(8, Math.round(tier.galaxySteps * 0.5));
-      u.uCompress!.value = 1.5 * inside;
+      u.uCompress!.value = HIGHLIGHT_ROLLOFF + (1.5 - HIGHLIGHT_ROLLOFF) * inside;
       slot.mesh.visible = tmp.z < view.model.radius * KPC; // skip galaxies entirely behind the camera
     }
 
@@ -375,7 +382,7 @@ export class GalaxyRenderer {
     const ambient = gainFor(g) * galaxyDensity(g, cam.x, cam.y, cam.z, 2) * 2; // ≈ surface brightness of the surrounding glow
     const exposure = Math.min(2.5, 0.2 / Math.max(ambient, 1e-6));
     u.uGain!.value = gainFor(g) * (1 + (exposure - 1) * inside);
-    u.uCompress!.value = 1.5 * inside;
+    u.uCompress!.value = HIGHLIGHT_ROLLOFF + (1.5 - HIGHLIGHT_ROLLOFF) * inside;
     const prev = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.heroTarget);
     this.renderer.setClearColor(0x000000, 0);
