@@ -35,11 +35,11 @@ it is labelled "est.".
 | --- | ---: | --- |
 | Stars | 2 256 935 | Gaia DR3 (G < 11.5 complete) + Gaia Catalogue of Nearby Stars (all 331 k within 100 pc) + Hipparcos (bright stars Gaia lacks) + exoplanet hosts |
 | Galaxies (nearby, with shapes) | 46 237 | 2MRS + Updated Nearby Galaxy Catalog + OpenNGC |
-| Galaxies (SDSS spectroscopic) | 2 606 101 | SDSS DR17 SpecPhoto, class GALAXY |
+| Galaxies (SDSS spectroscopic) | 2 604 181 | SDSS DR17 SpecPhoto, class GALAXY |
 | Quasars | 750 402 | SDSS DR16Q |
 | Exoplanets | 6 161 (4 564 host stars) | NASA Exoplanet Archive, composite parameters |
-| Deep-sky objects | 7 072 | OpenNGC non-galaxies, Harris globulars, Hunt & Reffert clusters, PN distances, ATNF pulsars, a small curated list |
-| **Total** | **5 672 908** | 67.4 MB on disk; 2.7 MB fetched before the Start button enables |
+| Deep-sky objects | 7 071 | OpenNGC non-galaxies, Harris globulars, Hunt & Reffert clusters, PN distances, ATNF pulsars, a small curated list |
+| **Total** | **5 670 987** | 67.7 MB on disk; 3.0 MB fetched before the Start button enables |
 
 Targets were ≥ 1 M (aim 2 M+), ≥ 1 M stars, ≥ 300 k galaxies, ~750 k quasars,
 < 10 MB initial, < 100 MB total: all met.
@@ -86,6 +86,33 @@ Targets were ≥ 1 M (aim 2 M+), ≥ 1 M stars, ≥ 300 k galaxies, ~750 k quasa
   a measured distance. No peculiar-velocity model and no K-corrections are
   applied; "fingers of God" are therefore visible in clusters, exactly as in
   the published survey cone plots.
+- **SDSS rows with impossible luminosities are dropped.** 1 920 SpecPhoto rows
+  pair a galaxy spectrum (z ≈ 0.5–0.8) with photometry of r ≈ 10–13: an
+  implied absolute magnitude of −25 to −34, i.e. a bright star or a blend on
+  the fibre, not a galaxy a thousand times more luminous than any known. Left
+  in, they were "the most luminous galaxies in the universe": first in every
+  level of detail, visible from everywhere, and modelled as monsters half a
+  megaparsec across. The cut is M_r < −24.5 with no K-correction (brightest
+  cluster galaxies reach about −24); the count is in `BUILD_REPORT.json`.
+  This is the only cleaning of that kind. The quasar catalogue is used as
+  published.
+- **A quasar's host is not sized from the quasar's light.** A catalogued
+  quasar's magnitude is its nucleus, which can outshine the galaxy a
+  hundredfold. The point you see from afar uses the catalogued brightness; the
+  galaxy you find on arrival is an ordinary massive host (seeded between
+  M_r = −21.8 and −23.2) with a blazing core, and the 2MASS "extent" of a
+  quasar (the glare of the nucleus) is ignored.
+- **3C 273 is one object.** It is in 2MRS as an extended 2MASS source; the
+  curated file attaches its quasar nature, its jet and its black-hole mass
+  (GRAVITY Collaboration 2018) to that entry instead of adding a second object
+  at a slightly different distance.
+- **Real stars: a catalogued spectral type outranks colour.** Where Hipparcos
+  or the exoplanet archive give a spectral type, temperature and luminosity
+  class come from it. Gaia colours of very bright, saturated or reddened stars
+  can be badly off (from colour alone the O9.7 supergiant that feeds Cygnus X-1
+  came out as a cool giant). Mass and radius stay estimates, labelled "est.".
+- **Searching "Cygnus X-1" or "Gaia BH3" takes you to the black hole**, not to
+  the visible star it orbits; the star is in the same system, one tap away.
 - **Exoplanets: only real planets orbit real hosts.** A catalogued system gets
   exactly its catalogued planets — no invented siblings, moons or rings — and
   orbital elements the archive does not give (often inclination or the node)
@@ -241,6 +268,22 @@ Every object has a stable id shown in Show data and accepted by search.
   blaze of a galactic nucleus just as it does to the faint Milky Way.
 - **Quasars with no catalogued magnitude** are drawn at a nominal i = 20.5 so
   they remain visible as points; the card shows no magnitude for them.
+- **Jets of active galaxies are drawn at galaxy scale.** M87, Centaurus A,
+  Perseus A and 3C 273 (flagged in the curated file) and the seeded active
+  galaxies get twin, knotty jets about 0.6 galaxy radii long. M87's optical
+  jet is really 1.5 kpc, a twentieth of that; the radio structures are tens
+  of kiloparsecs long, but no eye would see them.
+- **Galaxies have a surface brightness; only stars dazzle.** Once a galaxy's
+  disc is wider than a pixel its dot stops brightening and grows instead, so
+  Andromeda in our sky is a soft smudge rather than a searchlight. Dwarfs are
+  drawn fainter per unit area than giants (about 0.3 mag per magnitude of
+  luminosity, as observed), and Magellanic irregulars are clumpy discs rather
+  than spheroids. Inside a galaxy, other galaxies are exposed for eyes adapted
+  to its stars (2.5 mag less sensitive than out in intergalactic space).
+- **Nebulae light up as you approach.** From a dozen radii away a nebula is
+  drawn at a seventh of its close-up brightness, rising to the full
+  "long-exposure" view within 3.5 radii. Without this the Vela supernova
+  remnant (8° across, invisible to the eye) was a white disc in the home sky.
 
 ---
 
@@ -255,6 +298,13 @@ Every object has a stable id shown in Show data and accepted by search.
 - Rendering is camera-relative: the three.js camera never leaves the origin.
   Point clouds pass the camera position as a high + low float pair and subtract
   on the GPU; meshes are positioned by float64 subtraction on the CPU.
+- **Metres are never squared on the GPU.** 32-bit floats end at 3.4 × 10³⁸ —
+  the square of 600 parsecs in metres — and a plain GLSL `length()` of a
+  camera-relative position quietly returns infinity beyond that. (This made
+  every galaxy sprite collapse to zero size until a screenshot of the home
+  sky showed no Magellanic Clouds.) Distant things are handled in their
+  layer's own unit (parsecs, kiloparsecs, megaparsecs) or scaled on the CPU,
+  and the shared clip-space helper uses an overflow-safe length.
 - Logarithmic depth buffer for everything that is depth-tested (planets,
   moons, rings, terrain); stars, galaxies and nebulae are drawn in a separate
   background scene with no depth test, so there is nothing to z-fight.
@@ -279,6 +329,10 @@ Full table (shader steps, terrain patches, bloom levels …) in
   brightest-first up to their share of the budget. Procedural stars and the
   cosmic web each run a small feedback loop on the number of points actually
   on the GPU (lowering the magnitude limit / the web's reach when over).
+- **Idle allowances are lent out.** Out between the galaxies no stars are
+  drawn, so the procedural stars' points and half of the catalogue stars' go
+  to the cosmic web, and the other half to the real galaxies around the
+  camera (see 4.8). The total stays within the tier's budget.
 - **Draw calls.** Catalogue tiles cost one call each (frustum-culled).
   Procedural cells are packed into one buffer per level-of-detail level
   ("batches", `src/render/pointLayer.ts`), re-packed around the camera whenever
@@ -349,21 +403,51 @@ browsing). Everything you have flown through works offline; places you have
 never visited show their procedural content and whatever tiles are cached,
 with an "Offline" chip.
 
-### 4.8 Star tiles are ordered by apparent brightness in our sky
+### 4.8 Which catalogue tiles get loaded
 
-Galaxy and quasar tiles are ordered by luminosity (the root tile holds the most
-luminous objects, visible from across the universe), and whole levels are
-loaded before refining locally, so a survey looks evenly sampled from anywhere.
-Star data, though, only reaches a few kiloparsecs and is almost always seen
-from near the Sun. Ordering star tiles by luminosity made the home sky patchy
-(deep tiles in one direction, shallow in another), so star tiles are ordered by
-*apparent magnitude as seen from the Sun*, and each tile records the brightest
-star it holds and the median distance of its stars. Near the Sun this gives an
-exact rule — load tiles brightest-first, draw down to the brightest star left
-out — and a sky complete to the same magnitude in every direction: about
-G = 7.5 / 8.5 / 9.3 on the low / medium / high tiers. Further from the Sun the
-same numbers give an estimate rather than a guarantee, and small tiles around
-the camera are added for the faint neighbours that look bright up close.
+Tiles hold disjoint objects, so any set of them is a valid picture; the only
+question is which matter most from where the camera is. Two orderings are
+used, decided when the tiles are built.
+
+**Our own sky is ordered by apparent brightness.** Stars, and the bright /
+nearby galaxies (2MRS + UNGC + OpenNGC), are tiled by *apparent magnitude as
+seen from the Sun*, and each tile records the brightest object it holds and
+the median distance of its objects. Near the Sun this gives an exact rule —
+load tiles brightest-first — and, for stars, a sky complete to the same
+magnitude in every direction: about G = 7.5 / 8.5 / 9.3 on the low / medium /
+high tiers (the shader fades at the brightest star left out). Further away
+the same numbers give an estimate rather than a guarantee, and small tiles
+around the camera are added for faint neighbours that look bright up close.
+For galaxies it means the root tile is simply "the thousand brightest
+galaxies of the sky": Andromeda, the Magellanic Clouds and every Messier
+galaxy are loaded on every tier, wherever the camera is. (They were first
+ordered by luminosity, like the deep surveys. The showpieces then sat in deep
+tiles that were never selected, and flying to Andromeda without the search
+box found empty space.)
+
+**The deep surveys are ordered by luminosity.** SDSS galaxies and quasars are
+seen from everywhere, mostly from afar. Whole tree levels are loaded first —
+each is an even sample of the survey's most luminous members, drawn as faint
+"survey dots" from intergalactic space — and the rest of the budget goes to
+the tiles around the camera, ranked by how bright their brightest member
+could look from there (distance to the tile's cube, floored at 0.4 of the
+mean spacing of its objects). That selects the chain of nested tiles the
+camera is in, then their neighbours: 300 Mpc from home inside the SDSS
+volume, the medium tier holds about 600 real galaxies within 30 Mpc of the
+camera. Completeness around the camera is limited by the budget, not
+guaranteed: real galaxies beyond the loaded neighbourhood that would be
+bright enough to draw are missing until approached, because the procedural
+generator never stands in for a catalogued galaxy.
+
+**Tile shape.** Galaxy tiles hold 1 024 objects — the chain around the camera
+costs (tree depth × tile size) points, so small tiles are what make a real
+neighbourhood affordable. Branches holding less than one tile's worth are
+folded into their parent, which may then hold up to 2 048. The root cube of
+each galaxy tree is shifted by a third of its half-size on every axis: a
+Sun-centred tree puts the Sun on a corner shared by eight cells at every
+level, so our own neighbourhood would cost eight tiles per level instead of
+one; with the shift the Sun is a third of a cell from the nearest wall at
+every level (unit-tested).
 
 Real and procedural stars share one point allowance: near the Sun, where the
 catalogue is the whole sky, all of it goes to catalogue stars; inside another
@@ -384,6 +468,16 @@ galaxy all of it goes to procedural ones.
   the tier the auto controller settles on.
 - Touch gestures were exercised through synthesised pointer events, not on a
   physical touchscreen.
+- What the screenshots covered: start screen and tutorial; HUD in portrait and
+  landscape; the home sky (constellations, labels, the Magellanic Clouds and
+  Andromeda as real galaxies); Earth, Moon and Mars from orbit and from the
+  ground; Jupiter, Saturn and Enceladus; Sirius, Betelgeuse; the Orion Nebula,
+  the Crab pulsar, Cygnus X-1 and Sagittarius A* (lensing); the Milky Way from
+  outside; the Large Magellanic Cloud, Andromeda from outside and from its
+  core (procedural stars, a procedural star system); M87, Centaurus A and
+  3C 273 with their jets; the Virgo cluster; the cosmic web from inside and
+  outside the SDSS volume; search, coordinates, bookmarks, share links, photo
+  mode, settings.
 
 ---
 
@@ -393,7 +487,7 @@ galaxy all of it goes to procedural ones.
   It contains a few truncated files from early Gaia attempts
   (`gaia/bright_*.csv`) that the pipeline no longer reads; the sandbox would
   not let me delete them. They are harmless and can be removed by hand.
-- The built catalogue (`public/data/`, 67 MB in ~6 300 files) **is committed**
+- The built catalogue (`public/data/`, 68 MB in ~8 700 files) **is committed**
   so the app runs straight after `npm install` without a 10-minute download
   from the archives. Remove it from git and build in CI if the repository size
   matters more to you.

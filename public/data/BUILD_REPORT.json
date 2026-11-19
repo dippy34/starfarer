@@ -1,5 +1,5 @@
 {
- "built": "2026-11-19T11:53:25.281Z",
+ "built": "2026-11-19T12:29:16.899Z",
  "stars": {
   "gaiaBright": 1902847,
   "gcns": 330881,
@@ -40,7 +40,6 @@
   "dso_oc": 3989,
   "dso_pn": 407,
   "dso_psr": 2475,
-  "dso_qso": 1,
   "dso_rn": 1,
   "dso_snr": 11
  },
@@ -69,13 +68,13 @@
   "galaxies": 2650418,
   "quasars": 750402,
   "exoplanets": 6161,
-  "deepSky": 7072,
+  "deepSky": 7071,
   "constellations": 88,
-  "all": 5670988
+  "all": 5670987
  },
- "totalBytes": 67666667,
+ "totalBytes": 67666795,
  "firstLaunch": {
-  "bytes": 2966056,
+  "bytes": 2966212,
   "files": 63,
   "tiles": {
    "stars": 21,
@@ -84,5 +83,5 @@
    "quasars": 10
   }
  },
- "seconds": 606
+ "seconds": 618
 }

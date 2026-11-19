@@ -49,8 +49,7 @@
     { "names": ["A0620-00", "V616 Monocerotis"], "type": "bh", "ra": 95.68542, "dec": -0.34583, "distPc": 1060, "extra": { "massSun": 6.61, "periodDays": 0.323 }, "ref": "Cantrell et al. 2010, ApJ 710, 1127" },
     { "names": ["GRO J1655-40", "V1033 Scorpii"], "type": "bh", "ra": 253.50058, "dec": -39.84581, "distPc": 3200, "extra": { "massSun": 6.3, "periodDays": 2.622 }, "ref": "Hjellming & Rupen 1995, Nature 375, 464; Greene et al. 2001" },
     { "names": ["Gaia BH1"], "type": "bh", "ra": 262.17121, "dec": -0.58109, "distPc": 480, "extra": { "massSun": 9.62, "periodDays": 185.59 }, "ref": "El-Badry et al. 2023, MNRAS 518, 1057" },
-    { "names": ["Gaia BH2"], "type": "bh", "ra": 207.56972, "dec": -59.23901, "distPc": 1160, "extra": { "massSun": 8.94, "periodDays": 1276.7 }, "ref": "El-Badry et al. 2023, MNRAS 521, 4323" },
-    { "names": ["3C 273"], "type": "qso", "ra": 187.27792, "dec": 2.05239, "z": 0.158339, "extra": { "vmag": 12.9, "jet": 1 }, "ref": "Schmidt 1963, Nature 197, 1040; redshift from NED" }
+    { "names": ["Gaia BH2"], "type": "bh", "ra": 207.56972, "dec": -59.23901, "distPc": 1160, "extra": { "massSun": 8.94, "periodDays": 1276.7 }, "ref": "El-Badry et al. 2023, MNRAS 521, 4323" }
   ],
   "starCompanions": [
     { "star": "HIP 98298", "aliases": ["Cygnus X-1", "Cyg X-1"], "companion": { "type": "bh", "name": "Cygnus X-1 black hole", "massSun": 21.2, "periodDays": 5.599829, "semiMajorAxisAu": 0.244 }, "ref": "Miller-Jones et al. 2021, Science 371, 1046" },
@@ -61,7 +60,8 @@
     { "match": "NGC 5128", "aliases": ["Centaurus A"], "smbhMassSun": 55000000, "jet": 1, "ref": "Cappellari et al. 2009, MNRAS 394, 660" },
     { "match": "NGC 224", "aliases": [], "smbhMassSun": 140000000, "jet": 0, "ref": "Bender et al. 2005, ApJ 631, 280" },
     { "match": "NGC 4594", "aliases": [], "smbhMassSun": 1000000000, "jet": 0, "ref": "Kormendy et al. 1996, ApJ 473, L91" },
-    { "match": "NGC 1275", "aliases": ["Perseus A"], "smbhMassSun": 800000000, "jet": 1, "ref": "Scharwächter et al. 2013, MNRAS 429, 2315" }
+    { "match": "NGC 1275", "aliases": ["Perseus A"], "smbhMassSun": 800000000, "jet": 1, "ref": "Scharwächter et al. 2013, MNRAS 429, 2315" },
+    { "match": "3C 273", "aliases": ["3C273", "PG 1226+023"], "smbhMassSun": 260000000, "jet": 1, "quasar": 1, "ref": "Schmidt 1963, Nature 197, 1040 (the first quasar identified); black-hole mass from GRAVITY Collaboration 2018, Nature 563, 657" }
   ],
   "pulsarNames": {
     "J0534+2200": ["Crab Pulsar", "PSR B0531+21"],

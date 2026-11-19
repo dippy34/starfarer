@@ -91,7 +91,8 @@ void main() {
     inten = min(0.5 * pow(e, e < 1.0 ? 0.9 : 0.62), 14.0) / soft;
     if (style > 3.5) inten *= 1.6;                           // quasars: piercing points
     if (style > 2.5 && uResolve > 0.0) {
-      float kpc = 14.0 * pow(10.0, -0.133 * (aMag + 21.0));
+      // Radius of the galaxy from its luminosity (a quasar's brightness says nothing about its host: nominal 22 kpc).
+      float kpc = style > 3.5 ? 22.0 : 14.0 * pow(10.0, -0.133 * (aMag + 21.0));
       float px = kpc * 1e-3 / d * uFocal;
       if (style < 3.5) {
         // A galaxy's light is spread over its disc: once that disc is wider than a pixel the dot stops

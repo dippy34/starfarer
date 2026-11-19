@@ -38,7 +38,7 @@ export interface ConstellationRecord {
 
 export interface NotableData {
   starCompanions: Array<{ key: [number, number, number]; aliases: string[]; companion: CompanionData; ref: string }>;
-  galaxyNotes: Array<{ key: [number, number, number]; smbhMassSun: number; jet: number; ref: string }>;
+  galaxyNotes: Array<{ key: [number, number, number]; smbhMassSun: number; jet: number; quasar?: number; ref: string }>;
 }
 
 export interface CatalogDataset {

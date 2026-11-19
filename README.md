@@ -100,9 +100,9 @@ Every info card carries a **Real** or **Imagined** badge.
 | Real (from catalogues, at their measured positions) | Imagined (procedural, deterministic) |
 | --- | --- |
 | 2 256 935 stars: all of Gaia DR3 brighter than G = 11.5, every known star within 100 pc, Hipparcos for the brightest | stars fainter than the catalogue limit, and all stars of other galaxies |
-| 2 652 338 galaxies (2MRS, Updated Nearby Galaxy Catalog, OpenNGC, SDSS DR17) and 750 402 SDSS DR16Q quasars | galaxies the surveys did not reach, the cosmic web between them, and how every galaxy looks up close |
+| 2 650 418 galaxies (2MRS, Updated Nearby Galaxy Catalog, OpenNGC, SDSS DR17) and 750 402 SDSS DR16Q quasars | galaxies the surveys did not reach, the cosmic web between them, and how every galaxy looks up close |
 | 6 161 confirmed exoplanets around 4 564 stars: orbits, masses, radii | what those planets look like; planets of stars with no known planets |
-| 7 072 nebulae, clusters, pulsars and black holes with measured distances | the gas of nebulae and the member stars of clusters |
+| 7 071 nebulae, clusters, pulsars and black holes with measured distances | the gas of nebulae and the member stars of clusters |
 | The Solar System's orbits, sizes, masses, spins and rings | its surfaces (procedural; see DECISIONS.md) |
 | 88 constellations | — |
 
@@ -131,7 +131,7 @@ catalogues, quantises them and writes:
 public/data/
   manifest.json          datasets, octree node tables, file sizes, catalogue limits
   stars/ galaxies/ sdss/ quasars/
-      r<octants>.bin     one tile: ≤ 4096 objects, columnar, delta-coded, DEFLATE
+      r<octants>.bin     one tile: ≤ 4096 stars or ≤ 2048 galaxies, columnar, delta-coded, DEFLATE
       r<octants>.id      (stars) Gaia DR3 / Hipparcos ids, fetched only when a star is selected
   names/n0.bin …         searchable names; n0 (the famous ones) is part of the first download
   exoplanets.bin  dso.bin  constellations.bin  notable.json
@@ -144,7 +144,7 @@ row total with the archive's own count and fails rather than ship a partial
 sky. If a source is unreachable the build stops with the failing URL; nothing
 is ever substituted or invented.
 
-Last build: 5 672 908 objects, 67.4 MB in total, 2.7 MB fetched before the
+Last build: 5 670 987 objects, 67.7 MB in total, 3.0 MB fetched before the
 Start button enables.
 
 ---
@@ -181,10 +181,14 @@ Some things worth knowing before changing anything:
   never leaves the origin; everything is rendered relative to it.
 - **Everything heavy runs in workers** (`src/data/worker/dataWorker.ts`): tile
   decompression, star and galaxy cell generation, terrain meshing.
-- **Level of detail.** Catalogue tiles form a brightness-ordered octree; the
-  streamer loads what can be seen from the camera within the tier's point
-  budget and evicts the rest. Procedural content lives in level-of-detail
-  cells keyed by integer coordinates. Terrain is a cube-sphere quadtree.
+- **Level of detail.** Catalogue tiles form brightness-ordered octrees. Our own
+  sky (stars, bright and nearby galaxies) is ordered by apparent brightness,
+  so the showpieces are always loaded; the deep surveys are ordered by
+  luminosity, evenly sampled from afar and refined around the camera. The
+  streamer loads what matters from where the camera is within the tier's
+  point budget and evicts the rest (`src/data/lod.ts`, DECISIONS.md §4.8).
+  Procedural content lives in level-of-detail cells keyed by integer
+  coordinates. Terrain is a cube-sphere quadtree.
 - **Budgets** for points, draw calls and shader work per quality tier are in
   `src/render/qualityTiers.ts`; `src/render/quality.ts` moves between tiers
   from measured frame time.
@@ -202,13 +206,13 @@ Some things worth knowing before changing anything:
 npm test
 ```
 
-54 unit tests cover determinism (same coordinates → same galaxies, stars,
+60 unit tests cover determinism (same coordinates → same galaxies, stars,
 systems and terrain; a pinned snapshot guards against accidental generator
 changes), physical sanity of generated stars, planets, systems and galaxies,
 the real Solar System, coordinate precision at the edge of the universe, tile
 and id round trips, quantisation bounds, regeneration of IAU designations,
-level-of-detail selection, share links, coordinate parsing and number
-formatting.
+the catalogue octree builder, level-of-detail selection, spectral-type
+parsing, share links, coordinate parsing and number formatting.
 
 ---
 

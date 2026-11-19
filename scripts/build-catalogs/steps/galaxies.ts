@@ -177,6 +177,8 @@ export interface GalaxyNote {
   key: [number, number, number];
   smbhMassSun: number;
   jet: number;
+  /** 1 when the galaxy's nucleus is a quasar (its catalogued brightness is then mostly the nucleus). */
+  quasar?: number;
   ref: string;
 }
 
@@ -429,7 +431,7 @@ export function buildGalaxies(names: NameRegistry, notable: Notable, finalizeNam
     }
     g.names = [...g.names, ...note.aliases];
     g.priority = 0;
-    notes.push({ key: [qNameRa(g.ra), qNameDec(g.dec), Math.max(1, qRedshift(g.z))], smbhMassSun: note.smbhMassSun, jet: note.jet, ref: note.ref });
+    notes.push({ key: [qNameRa(g.ra), qNameDec(g.dec), Math.max(1, qRedshift(g.z))], smbhMassSun: note.smbhMassSun, jet: note.jet, ...(note.quasar ? { quasar: 1 } : {}), ref: note.ref });
   }
 
   // ---- Names for the bright/nearby set, then quantise and write everything.

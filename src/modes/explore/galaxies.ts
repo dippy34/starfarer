@@ -68,6 +68,8 @@ const STAR_BLOCKS_PER_RADIUS = 1.25;
 
 /** Angular-size proxy used to rank galaxies: physical radius (kpc) from luminosity, as in the point shader. */
 const radiusFromMag = (absMag: number): number => 14 * Math.pow(10, -0.133 * (absMag + 21));
+/** Nominal radius of a quasar's host galaxy for the same purpose (matches the point shader). */
+const QUASAR_HOST_KPC = 22;
 
 export class GalaxyManager {
   readonly renderer: GalaxyRenderer;
@@ -252,7 +254,7 @@ export class GalaxyManager {
         // Angular size → physical size at the galaxy's (angular-diameter) distance.
         diameterKpc: sizeArcmin ? ((sizeArcmin / 60) * DEG * dMpc * 1000) / (1 + z) : null,
         axisRatio: col.ratio ? dqGalRatio(col.ratio[index]!) : null, positionAngle: col.pa ? dqGalPa(col.pa[index]!) : null, lineOfSight: los,
-        agn: (flags & GAL_FLAG_AGN) !== 0, starburst: (flags & GAL_FLAG_STARBURST) !== 0, quasar,
+        agn: (flags & GAL_FLAG_AGN) !== 0, starburst: (flags & GAL_FLAG_STARBURST) !== 0, quasar: quasar || note?.quasar === 1,
         smbhMassSun: note?.smbhMassSun, jet: note ? note.jet === 1 : undefined,
       });
       entry = { model, key, index, center: uposFromMeters(x * MPC, y * MPC, zz * MPC), designation, redshift: z, velocity: facts.velocity, distMethod: facts.distMethod };
@@ -278,7 +280,7 @@ export class GalaxyManager {
     const model = makeGalaxy(`galaxies:J${jName(record.a, record.b)}`, hashInts(0x9a1, record.a, record.b, record.c), galaxyAbsMag(magCode, flags, record.c), {
       real: true, name: record.names[0], morph: (flags >> GAL_MORPH_SHIFT) & GAL_MORPH_MASK, hubbleClass: facts.hubbleClass, color: dqGalColor(colorCode), colorBand: (flags & GAL_BAND_MASK) === GAL_BAND_K ? 'jk' : 'gr',
       diameterKpc: sizeArcmin ? ((sizeArcmin / 60) * DEG * dMpc * 1000) / (1 + z) : null, axisRatio: dqGalRatio(ratioCode), positionAngle: dqGalPa(paCode),
-      lineOfSight: raDecToUnit(dqNameRa(record.a), dqNameDec(record.b)), agn: (flags & GAL_FLAG_AGN) !== 0, starburst: (flags & GAL_FLAG_STARBURST) !== 0,
+      lineOfSight: raDecToUnit(dqNameRa(record.a), dqNameDec(record.b)), agn: (flags & GAL_FLAG_AGN) !== 0, starburst: (flags & GAL_FLAG_STARBURST) !== 0, quasar: note?.quasar === 1,
       smbhMassSun: note?.smbhMassSun, jet: note ? note.jet === 1 : undefined,
     });
     const entry: GalaxyEntry = { model, key: '', index: -1, center: uposFromMeters(x * MPC, y * MPC, zz * MPC), designation: `2MASX J${twoMassName(record.a, record.b)}`, redshift: z, velocity: facts.velocity, distMethod: facts.distMethod };
@@ -349,7 +351,8 @@ export class GalaxyManager {
           const st = style[i * 4 + 3]!;
           if (st !== 3 && st !== 4) continue;
           const d = Math.hypot(pos[i * 3]! - cam[0], pos[i * 3 + 1]! - cam[1], pos[i * 3 + 2]! - cam[2]);
-          const rKpc = radiusFromMag(mag[i]!);
+          // (A quasar's brightness says nothing about the size of the galaxy around it.)
+          const rKpc = st === 4 ? QUASAR_HOST_KPC : radiusFromMag(mag[i]!);
           const px = ((rKpc * 1e-3) / Math.max(d, 1e-9)) * focal;
           if (px >= minPx) found.push({ key, index: i, px, ratio: (d * 1000) / rKpc });
         }

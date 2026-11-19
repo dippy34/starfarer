@@ -36,6 +36,7 @@ uniform float uSteps;
 uniform float uGain;
 uniform float uOpacity;
 uniform float uCompress;
+uniform float uJet;           // strength of the relativistic jets along the spin axis (0 = none)
 
 // Interleaved gradient noise (Jimenez 2014): a ray-start jitter whose error is spread evenly over
 // neighbouring pixels, so it averages out when the low-resolution result is filtered up — unlike white noise,
@@ -51,7 +52,7 @@ void main() {
   float hR = uShape.x, hz = uShape.y, radius = uShape.z;
   bool spheroid = uBulge.w >= 0.999;
   // Bounding ellipsoid: squash z so that it becomes a sphere of the galaxy's radius.
-  float H = spheroid ? radius * uBulge.y : max(hz * 7.0, uBulge.x * uBulge.y * 3.0);
+  float H = uJet > 0.0 ? radius : spheroid ? radius * uBulge.y : max(hz * 7.0, uBulge.x * uBulge.y * 3.0);
   vec3 sc = vec3(1.0, 1.0, radius / H);
   vec3 o = ro * sc, d = rd * sc;
   float a = dot(d, d), b = dot(o, d), c = dot(o, o) - radius * radius;
@@ -127,10 +128,7 @@ void main() {
     float m2 = (dot(p.xy, p.xy) + p.z * p.z / (q * q)) / (uBulge.x * uBulge.x);
     float core = uBulge.z / ((1.0 + m2) * (1.0 + m2) * sqrt(1.0 + m2));
     emOld += core;
-    // Active nucleus: a tiny, intensely bright core.
-    float agn = uExtra.w * exp(-dot(p, p) / (hR * hR * 0.0009)) * 400.0;
-
-    vec3 em = uColorOld * emOld + uColorYoung * emYoung + vec3(0.75, 0.85, 1.0) * agn;
+    vec3 em = uColorOld * emOld + uColorYoung * emYoung;
     // Star-forming regions glow pink (H-alpha).
     em += vec3(1.0, 0.35, 0.45) * emYoung * 0.18;
     float absorb = exp(-dust * dt);
@@ -139,7 +137,35 @@ void main() {
     trans *= absorb;
     if (trans < 0.02) break;
   }
-  col *= uGain * uOpacity;
+  col *= uGain;
+  // Small, searingly bright things are added in closed form — a march this coarse would step right
+  // over them. Each is a Gaussian whose line integral is known exactly, widened to at least a pixel
+  // (with its flux conserved) so that it shrinks to a steady point instead of twinkling.
+  float pixel = 2.0 * uTanFov.y / uRes.y;   // radians per pixel
+  if (uExtra.w > 0.0) {
+    // Active nucleus: the accretion disc outshining the galaxy from a region far too small to resolve.
+    float tc = -dot(ro, rd);
+    if (tc > 0.0) {
+      float s = hR * 0.03, se = max(s, 0.8 * pixel * tc);
+      float b2 = max(dot(ro, ro) - tc * tc, 0.0);
+      col += vec3(0.75, 0.85, 1.0) * (uExtra.w * 36.0 * exp(-b2 / (se * se)) * (s * s) / (se * se) * mix(1.0, trans, 0.4));
+    }
+  }
+  if (uJet > 0.0) {
+    // Relativistic jets: two thin, gently flaring, knotty beams along the spin axis.
+    float A = max(dot(rd.xy, rd.xy), 1e-4);
+    float ta = -dot(ro.xy, rd.xy) / A;      // where the ray passes closest to the axis
+    if (ta > 0.0) {
+      float zj = abs(ro.z + ta * rd.z);
+      float rho2 = max(dot(ro.xy, ro.xy) - ta * ta * A, 0.0);
+      float w = radius * 0.008 + zj * 0.035, we = max(w, 0.7 * pixel * ta);
+      float along = smoothstep(0.0, radius * 0.02, zj) * exp(-zj / (radius * 0.3)) * (1.0 - smoothstep(radius * 0.6, radius * 0.95, zj));
+      float n = texture(uNoise, vec3(zj / radius * 3.1, 0.37, 0.81) + uNoiseOffset).r;
+      float knots = 0.3 + 2.2 * n * n;
+      col += vec3(0.55, 0.78, 1.0) * (uJet * 2.2 * along * knots * exp(-rho2 / (we * we)) * (w / we) * min(inversesqrt(A), 3.0));
+    }
+  }
+  col *= uOpacity;
   // From inside a galaxy its light surrounds the camera: compress the brightest parts (as an eye
   // or a camera exposing for it would) so the bulge is a glow around you, not a white-out.
   col /= 1.0 + dot(col, vec3(0.3333)) * uCompress;
@@ -179,7 +205,7 @@ function makeUniforms(noise: THREE.Data3DTexture): Record<string, THREE.IUniform
     uNoise: { value: noise }, uRes: { value: new THREE.Vector2(2, 2) }, uTanFov: { value: new THREE.Vector2(1, 1) }, uViewToLocal: { value: new THREE.Matrix3() },
     uCamLocal: { value: new THREE.Vector3() }, uShape: { value: new THREE.Vector4() }, uBulge: { value: new THREE.Vector4() }, uArms: { value: new THREE.Vector4() },
     uExtra: { value: new THREE.Vector4() }, uColorOld: { value: new THREE.Color() }, uColorYoung: { value: new THREE.Color() }, uNoiseOffset: { value: new THREE.Vector3() },
-    uSteps: { value: 16 }, uGain: { value: 1 }, uOpacity: { value: 1 }, uCompress: { value: 0 }, uCenterView: { value: new THREE.Vector3() }, uRadiusM: { value: 1 },
+    uSteps: { value: 16 }, uGain: { value: 1 }, uOpacity: { value: 1 }, uCompress: { value: 0 }, uJet: { value: 0 }, uCenterView: { value: new THREE.Vector3() }, uRadiusM: { value: 1 },
   };
 }
 
@@ -209,6 +235,7 @@ function setModelUniforms(u: Record<string, THREE.IUniform>, g: GalaxyModel): vo
   (u.uColorYoung!.value as THREE.Color).setRGB(g.colorYoung[0], g.colorYoung[1], g.colorYoung[2]);
   (u.uNoiseOffset!.value as THREE.Vector3).set(((g.seed >>> 0) % 997) / 997, ((g.seed >>> 8) % 991) / 991, ((g.seed >>> 16) % 983) / 983);
   u.uGain!.value = gainFor(g);
+  u.uJet!.value = g.jet ? 0.55 + 0.45 * g.activity : 0;
 }
 
 const tmpM = new THREE.Matrix4();

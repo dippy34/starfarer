@@ -44,7 +44,7 @@ export interface Notable {
   nebulaDistances: Array<{ match: string; distPc: number; ref: string }>;
   extraObjects: Array<{ names: string[]; type: DsoType; ra: number; dec: number; distPc?: number; z?: number; extra?: Record<string, string | number>; ref: string }>;
   starCompanions: Array<{ star: string; aliases: string[]; companion: Record<string, string | number>; ref: string }>;
-  galaxyNotes: Array<{ match: string; aliases: string[]; smbhMassSun: number; jet: number; ref: string }>;
+  galaxyNotes: Array<{ match: string; aliases: string[]; smbhMassSun: number; jet: number; quasar?: number; ref: string }>;
   pulsarNames: Record<string, string[]>;
 }
 

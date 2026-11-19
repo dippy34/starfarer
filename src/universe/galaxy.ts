@@ -8,7 +8,7 @@
  */
 import { blackbodyLinear, type RGB } from '../core/color';
 import { datan2, dcos, dexp, dlog, dpow, dsin } from '../core/dmath';
-import { hashCombine } from '../core/hash';
+import { hashCombine, hashToUnit } from '../core/hash';
 import { type Mat3, type V3, basisFromZX, vCross, vDot, vNorm, vScale, vAdd, vPerp } from '../core/math';
 import { Noise3 } from '../core/noise';
 import { Rng } from '../core/rng';
@@ -90,8 +90,12 @@ function randomBasis(rng: Rng): Mat3 {
 }
 
 /** Build the full model of a galaxy. `seed` must come from the galaxy's stable id or cell hash. */
-export function makeGalaxy(id: string, seed: number, absMag: number, hints: GalaxyHints = { real: false }): GalaxyModel {
+export function makeGalaxy(id: string, seed: number, totalMag: number, hints: GalaxyHints = { real: false }): GalaxyModel {
   const rng = new Rng(hashCombine(seed, 0x6a1a));
+  // A catalogued quasar's brightness is its nucleus, which can outshine the galaxy around it a
+  // hundredfold. The host is modelled as what quasar hosts are — a massive but ordinary galaxy —
+  // and everything structural below (size, mass, star count) follows the host, not the beacon.
+  const absMag = hints.real && hints.quasar ? Math.max(totalMag, -23.2 + 1.4 * hashToUnit(hashCombine(seed, 0x4057))) : totalMag;
   const type = pickType(rng, absMag, hints);
   const isDisc = type === 'spiral' || type === 'barred' || type === 'lenticular' || type === 'ring' || type === 'irregular';
 
@@ -110,7 +114,8 @@ export function makeGalaxy(id: string, seed: number, absMag: number, hints: Gala
     hR = Math.max(0.25, 3.0 * dpow(10, -0.133 * (absMag + 21)) * scatter);
     radius = hR * 4.6;
   }
-  if (hints.diameterKpc && hints.diameterKpc > 0.2) {
+  // (A quasar's catalogued "extent" is the glare of its nucleus, not the size of its host.)
+  if (hints.diameterKpc && hints.diameterKpc > 0.2 && !(hints.real && hints.quasar)) {
     radius = Math.min(150, (hints.diameterKpc / 2) * 1.15);
     hR = radius / (type === 'elliptical' ? 4.5 : type === 'dwarf' ? 3.5 : 4.6);
   }
@@ -167,7 +172,7 @@ export function makeGalaxy(id: string, seed: number, absMag: number, hints: Gala
   }
 
   return {
-    id, seed, type, hubble, real: hints.real, absMag, starCount, massSun, radius, hR, hz, bulgeR, bulgeQ: flatten, bulgeFrac,
+    id, seed, type, hubble, real: hints.real, absMag: totalMag, starCount, massSun, radius, hR, hz, bulgeR, bulgeQ: flatten, bulgeFrac,
     name: hints.name ?? galaxyName(seed),
     arms, pitch, armPhase: rng.range(0, 2 * Math.PI), armContrast: arms ? (quenched ? rng.range(0.15, 0.35) : rng.range(0.55, 0.95)) : 0,
     barLength: type === 'barred' ? hR * rng.range(0.6, 1.3) : 0,
