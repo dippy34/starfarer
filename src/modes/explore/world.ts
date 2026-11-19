@@ -19,7 +19,7 @@ import { CatalogStreamer } from '../../data/catalogStreamer';
 import type { WorkerPool } from '../../data/workerPool';
 import type { Engine } from '../../render/engine';
 import { PointLayer } from '../../render/pointLayer';
-import { DATASET_LOD, GALAXY_MAG_LIMIT, STAR_MAG_LIMIT } from '../../render/qualityTiers';
+import { DATASET_LOD, GALAXY_MAG_LIMIT, STAR_MAG_LIMIT, datasetLodOptions } from '../../render/qualityTiers';
 import type { Surroundings } from './cameraController';
 import { DSO_KEY, DsoManager } from './dso';
 import { GalaxyManager } from './galaxies';
@@ -52,6 +52,7 @@ export class ExploreWorld {
   private streamTimer = 0;
   private starMagLimit = 7.5;
   private galaxyMagLimit = 14;
+  private galaxyMagRef = 9.5;
   private surveyFloor = 0;
   private webGlow = 0;
   private nearestDistance = PC;
@@ -66,7 +67,7 @@ export class ExploreWorld {
     for (const [id, ds] of catalog.datasets) {
       const lod = DATASET_LOD[id];
       if (!lod) continue;
-      this.streams.push(new CatalogStreamer(ds, catalog, pool, ds.manifest.kind === 'stars' ? this.starLayer : this.galaxyLayer, lod.magLimit ?? GALAXY_MAG_LIMIT.high, GROUP_CATALOG, lod.uniformFirst ? GROUP_SURVEY : null));
+      this.streams.push(new CatalogStreamer(ds, catalog, pool, ds.manifest.kind === 'stars' ? this.starLayer : this.galaxyLayer, lod.magLimit ?? GALAXY_MAG_LIMIT.high, GROUP_CATALOG, lod.surveyDots ? GROUP_SURVEY : null));
     }
     this.galaxies = new GalaxyManager(engine, catalog, pool, this.galaxyLayer, this.starLayer, this.streams);
     this.systems = new SystemManager(engine, pool, catalog, this.starLayer, this.streams.find((s) => s.ds.manifest.kind === 'stars'), this.galaxies);
@@ -121,14 +122,12 @@ export class ExploreWorld {
       this.streamTimer = 0.2;
       uposSub(camPos, this.sun, this.rel);
       for (const s of this.streams) {
-        const unit = s.ds.manifest.unit;
-        const lod = DATASET_LOD[s.ds.manifest.id]!;
-        // Around the camera, only galaxies bright enough to be drawn are worth loading (plus a margin for the fade).
-        let budget = lod.share(tier);
+        const m = s.ds.manifest;
+        const lod = datasetLodOptions(m.id, tier, m.capacity, this.galaxies.deepSpace)!;
         // Real and procedural stars share one allowance: whatever the procedural field is not using
         // (all of it near the Sun, where the catalogue is the whole sky) goes to catalogue stars.
-        if (s.ds.manifest.kind === 'stars') budget += Math.floor(Math.max(0, tier.proceduralStars - this.galaxies.starGrid.points) / 16384) * 16384;
-        s.update(this.rel.x / unit, this.rel.y / unit, this.rel.z / unit, budget, 0.2, lod.magLimit ?? GALAXY_MAG_LIMIT[tier.name] + 1);
+        if (m.kind === 'stars') lod.budget += Math.floor(Math.max(0, tier.proceduralStars - this.galaxies.starGrid.points) / 16384) * 16384;
+        s.update(this.rel.x / m.unit, this.rel.y / m.unit, this.rel.z / m.unit, 0.2, lod);
       }
     }
 
@@ -147,10 +146,13 @@ export class ExploreWorld {
     // Far from any galaxy the real surveys stay visible as faint "survey dots" whatever their magnitude.
     const deep = Math.min(1, Math.max(0, (this.galaxies.nearestRatio - 1.5) / 6));
     this.surveyFloor += (deep * 0.45 - this.surveyFloor) * k;
+    // Exposure for the deep sky: out between the galaxies, one a magnitude above the faintest drawn is
+    // a clear dot. Inside a galaxy the eye is adapted to its stars, and other galaxies are the faint
+    // smudges they are in our own sky (still a few magnitudes kinder than the stars' scale, so they can be found).
+    this.galaxyMagRef += (9.5 + 2.5 * deep - this.galaxyMagRef) * k;
     for (const g of this.galaxyLayer.groups) {
       g.magLimit = this.galaxyMagLimit;
-      // Exposure for the deep sky: a galaxy one magnitude above the faintest drawn is a clear dot.
-      g.magRef = 12;
+      g.magRef = this.galaxyMagRef;
       g.floor = 0;
     }
     this.galaxyLayer.groups[GROUP_SURVEY]!.floor = this.surveyFloor;

@@ -14,7 +14,7 @@ import type { PointLayer } from '../render/pointLayer';
 import type { Catalog, CatalogDataset } from './catalog';
 import type { CatalogChunkData } from './decode';
 import { tilePath } from './format/schema';
-import { type LodNode, selectNodes } from './lod';
+import { type LodNode, type LodOptions, selectNodes } from './lod';
 import { JobCancelled, type WorkerPool } from './workerPool';
 
 const MAX_PARALLEL = 5;
@@ -38,6 +38,7 @@ export class CatalogStreamer {
   private readonly tenPc: number;
   private wanted: number[] = [];
   private readonly uniformNodes = new Set<number>();
+  private byPath: Map<string, LodNode> | null = null;
   private clock = 0;
   private active = 0;
   private disposed = false;
@@ -48,12 +49,12 @@ export class CatalogStreamer {
     private readonly catalog: Catalog,
     private readonly pool: WorkerPool,
     readonly layer: PointLayer,
-    private readonly magLimit: number,
+    magLimit: number,
     /** Brightness group of the layer this dataset's points belong to. */
     private readonly group = 0,
     /**
-     * Load whole octree levels before refining locally (see `LodOptions.uniformFirst`), and put the
-     * tiles of those complete levels in this brightness group (the evenly sampled "survey" view).
+     * Brightness group for the tiles that sample the dataset evenly (see `LodSelection.uniform`):
+     * the "survey" view that stays visible from afar. Null = no such distinction.
      */
     private readonly uniformGroup: number | null = null,
   ) {
@@ -82,8 +83,11 @@ export class CatalogStreamer {
 
   /** Decoded data of a loaded tile by layer key. */
   chunk(key: string): { node: LodNode; data: CatalogChunkData } | undefined {
-    const path = key.slice(this.ds.manifest.id.length + 1);
-    const node = this.ds.nodes.find((n) => n.path === path);
+    if (!this.byPath) {
+      this.byPath = new Map();
+      for (const n of this.ds.nodes) this.byPath.set(n.path, n);
+    }
+    const node = this.byPath.get(key.slice(this.ds.manifest.id.length + 1));
     const state = node ? this.states.get(node.index) : undefined;
     return node && state?.data ? { node, data: state.data } : undefined;
   }
@@ -95,14 +99,13 @@ export class CatalogStreamer {
 
   /**
    * Re-evaluate the selection.
-   * @param x,y,z   camera position in dataset units relative to the Sun
-   * @param budget  maximum points for this dataset
-   * @param magLimit optional override of the faintest magnitude worth drawing
+   * @param x,y,z camera position in dataset units relative to the Sun
+   * @param lod   point budget and limits for this dataset (see `datasetLodOptions`)
    */
-  update(x: number, y: number, z: number, budget: number, dt: number, magLimit = this.magLimit): void {
+  update(x: number, y: number, z: number, dt: number, lod: Omit<LodOptions, 'tenPc'>): void {
     if (this.disposed) return;
     this.clock += dt;
-    const sel = selectNodes(this.ds.nodes, x, y, z, { budget, magLimit, tenPc: this.tenPc, uniformFirst: this.uniformGroup !== null });
+    const sel = selectNodes(this.ds.nodes, x, y, z, { ...lod, tenPc: this.tenPc });
     this.wanted = sel.nodes;
     this.cutoffMag = sel.cutoffMag;
     if (this.uniformGroup !== null) {

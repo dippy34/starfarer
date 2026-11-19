@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import type { Manifest } from '../../../src/data/format/schema';
 import { tilePath } from '../../../src/data/format/schema';
 import { buildNodeIndex, selectNodes } from '../../../src/data/lod';
-import { DATASET_LOD, GALAXY_MAG_LIMIT, TIERS } from '../../../src/render/qualityTiers';
+import { TIERS, datasetLodOptions } from '../../../src/render/qualityTiers';
 import { OUT_DIR } from '../lib/http';
 
 export function measureFirstLaunch(manifest: Manifest): { bytes: number; files: number; tiles: Record<string, number> } {
@@ -21,11 +21,11 @@ export function measureFirstLaunch(manifest: Manifest): { bytes: number; files: 
   }
   const tiles: Record<string, number> = {};
   for (const ds of manifest.datasets) {
-    const lod = DATASET_LOD[ds.id];
+    const lod = datasetLodOptions(ds.id, TIERS.medium, ds.capacity);
     if (!lod) continue;
     const nodes = buildNodeIndex(ds);
     const tenPc = (10 * 3.085677581491367e16) / ds.unit;
-    const sel = selectNodes(nodes, 0, 0, 0, { budget: lod.share(TIERS.medium), magLimit: lod.magLimit ?? GALAXY_MAG_LIMIT.medium + 1, tenPc, uniformFirst: lod.uniformFirst });
+    const sel = selectNodes(nodes, 0, 0, 0, { ...lod, tenPc });
     tiles[ds.id] = sel.nodes.length;
     for (const i of sel.nodes) {
       bytes += statSync(join(OUT_DIR, tilePath(ds.id, nodes[i]!.path))).size;

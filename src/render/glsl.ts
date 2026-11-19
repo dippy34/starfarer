@@ -15,16 +15,24 @@
  *     components by one positive number per object does not change the projection, so everything is
  *     scaled by the inverse distance of the object's origin (its model matrix translation; the camera
  *     sits at the world origin).
+ *
+ * The distance is computed overflow-safe: a plain length() squares its argument, and 32-bit floats
+ * run out at 3.4·10^38 — the square of a mere 600 parsecs in metres.
  */
+const safeScale = (v: string): string => /* glsl */ `
+  {
+    vec3 o_ = ${v};
+    float m_ = max(max(abs(o_.x), abs(o_.y)), max(abs(o_.z), 1.0));
+    gl_Position *= 1.0 / max(m_ * length(o_ / m_), 1.0);
+  }`;
+
 export const CLIP_SAFE = /* glsl */ `
   #ifdef USE_LOGDEPTHBUF
     gl_Position.z = 0.0;
-  #endif
-  gl_Position *= 1.0 / max(length(modelMatrix[3].xyz), 1.0);`;
+  #endif${safeScale('modelMatrix[3].xyz')}`;
 
 /** Same, for billboards placed by a `uCenter` uniform instead of a model matrix. */
 export const CLIP_SAFE_BILLBOARD = /* glsl */ `
   #ifdef USE_LOGDEPTHBUF
     gl_Position.z = 0.0;
-  #endif
-  gl_Position *= 1.0 / max(length(uCenter), 1.0);`;
+  #endif${safeScale('uCenter')}`;

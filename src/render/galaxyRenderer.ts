@@ -37,10 +37,11 @@ uniform float uGain;
 uniform float uOpacity;
 uniform float uCompress;
 
+// Interleaved gradient noise (Jimenez 2014): a ray-start jitter whose error is spread evenly over
+// neighbouring pixels, so it averages out when the low-resolution result is filtered up — unlike white noise,
+// which shows as blotchy grain.
 float hash12(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
 void main() {
@@ -146,15 +147,18 @@ void main() {
 }`;
 
 const QUAD_VERT = /* glsl */ `
-uniform vec3 uCenterView;   // galaxy centre in view space (metres)
-uniform float uRadiusM;     // bounding radius (metres)
+uniform vec3 uCenterView;   // galaxy centre in view space, brought to a distance of QUAD_DISTANCE units
+uniform float uRadiusM;     // bounding radius at that distance
 void main() {
-  // Camera-facing quad that covers the bounding sphere (with margin for perspective).
-  vec3 pos = uCenterView + vec3(position.xy * uRadiusM * 1.3, 0.0);
-  // Scale the quad toward the eye (which leaves its projection unchanged) so that clip
-  // coordinates stay small: galaxies are up to 10^26 m away and this layer has no depth test.
-  gl_Position = projectionMatrix * vec4(pos * (1000.0 / max(length(uCenterView), 1.0)), 1.0);
+  // Camera-facing quad that covers the bounding sphere (with margin for perspective). Galaxies are
+  // up to 10^26 m away and this layer has no depth test, so the quad is drawn at a fixed, comfortable
+  // distance along the same line of sight (which leaves its projection unchanged). The scaling is done
+  // on the CPU: in a shader, metres at these distances overflow 32-bit floats as soon as they are squared.
+  gl_Position = projectionMatrix * vec4(uCenterView + vec3(position.xy * uRadiusM * 1.3, 0.0), 1.0);
 }`;
+
+/** Distance (scene units) at which impostor quads are drawn. */
+const QUAD_DISTANCE = 1000;
 
 const FULL_VERT = /* glsl */ `
 void main() {
@@ -179,17 +183,26 @@ function makeUniforms(noise: THREE.Data3DTexture): Record<string, THREE.IUniform
   };
 }
 
-/** Surface-brightness normalisation: makes a face-on galaxy's centre land at a pleasant HDR level whatever its size. */
+/**
+ * Surface-brightness normalisation: makes a face-on galaxy's centre land at a pleasant HDR level
+ * whatever its size — a little brighter for giants and distinctly fainter for dwarfs, whose stars
+ * really are spread thinner (central surface brightness falls by roughly 0.3 mag per magnitude of
+ * luminosity; a dwarf spheroidal is a ghost next to a spiral).
+ */
 function gainFor(g: GalaxyModel): number {
+  const dwarf = Math.min(1.3, Math.max(0.12, Math.pow(10, -0.12 * (g.absMag + 20.5))));
+  // Irregulars have no bulge to speak of: their light is the disc itself, so that is what gets exposed for.
+  if (g.type === 'irregular') return (0.9 * dwarf) / Math.max(2 * g.hz, 1e-6);
   const column = g.bulgeFrac >= 1 ? galaxyDensity(g, 0, 0, 0, 2) * g.bulgeR * 2.2 : 2 * g.hz + galaxyDensity(g, 0, 0, 0, 2) * g.bulgeR * 0.9;
-  return 1.35 / Math.max(column, 1e-6);
+  return (1.35 * dwarf) / Math.max(column, 1e-6);
 }
 
 function setModelUniforms(u: Record<string, THREE.IUniform>, g: GalaxyModel): void {
   const bulgeAmp =
     g.bulgeFrac >= 1 ? 1.15 : (g.bulgeFrac / (1 - g.bulgeFrac)) * ((4 * Math.PI * g.hR * g.hR * g.hz) / ((4 / 3) * Math.PI * g.bulgeR ** 3 * g.bulgeQ)) * 1.25;
   (u.uShape!.value as THREE.Vector4).set(g.hR, g.hz, g.radius, g.clumpiness);
-  (u.uBulge!.value as THREE.Vector4).set(g.bulgeR, g.bulgeQ, g.bulgeFrac > 0 ? bulgeAmp : 0, g.bulgeFrac);
+  // (An irregular's few-percent "bulge" is drawn as a modest central knot, not a blazing nucleus.)
+  (u.uBulge!.value as THREE.Vector4).set(g.bulgeR, g.bulgeQ, g.bulgeFrac > 0 ? bulgeAmp * (g.type === 'irregular' ? 0.3 : 1) : 0, g.bulgeFrac);
   (u.uArms!.value as THREE.Vector4).set(g.arms, 1 / Math.tan(Math.max(g.pitch, 0.05)), g.armPhase, g.armContrast);
   (u.uExtra!.value as THREE.Vector4).set(g.barLength, g.ringR, g.dust, g.activity);
   (u.uColorOld!.value as THREE.Color).setRGB(g.colorOld[0], g.colorOld[1], g.colorOld[2]);
@@ -284,6 +297,10 @@ export class GalaxyRenderer {
    * `impostors` are drawn as small quads. Call before the engine renders the scene.
    */
   update(hero: GalaxyView | null, impostors: GalaxyView[], camera: THREE.PerspectiveCamera, sceneW: number, sceneH: number, tier: QualityTier): void {
+    // How deep inside the hero galaxy the camera is (1 = well inside, 0 = outside). In there the view is
+    // exposed for the galaxy's own glow, and its neighbours in the sky are seen through the same eyes.
+    const inside = hero ? 1 - Math.min(1, Math.max(0, (hero.rel.length() / (hero.model.radius * KPC) - 0.7) / 0.7)) : 0;
+
     // ---- Impostors
     const tmp = new THREE.Vector3();
     for (let i = 0; i < Math.max(impostors.length, this.pool.length); i++) {
@@ -301,9 +318,11 @@ export class GalaxyRenderer {
       setViewUniforms(u, view, camera, sceneW, sceneH);
       // Centre in view space: rotate the world-axis offset by the inverse camera rotation.
       tmp.copy(view.rel).applyQuaternion(camera.quaternion.clone().invert());
-      (u.uCenterView!.value as THREE.Vector3).copy(tmp);
-      u.uRadiusM!.value = view.model.radius * KPC;
+      const toQuad = QUAD_DISTANCE / Math.max(tmp.length(), 1);
+      (u.uCenterView!.value as THREE.Vector3).copy(tmp).multiplyScalar(toQuad);
+      u.uRadiusM!.value = view.model.radius * KPC * toQuad;
       u.uSteps!.value = Math.max(8, Math.round(tier.galaxySteps * 0.5));
+      u.uCompress!.value = 1.5 * inside;
       slot.mesh.visible = tmp.z < view.model.radius * KPC; // skip galaxies entirely behind the camera
     }
 
@@ -325,8 +344,6 @@ export class GalaxyRenderer {
     // Inside the galaxy, expose for where we are: the eye adapts to the blaze of a galactic nucleus
     // just as it does to the faint band seen from the outskirts.
     const g = hero.model;
-    const depth = hero.rel.length() / (g.radius * KPC);
-    const inside = 1 - Math.min(1, Math.max(0, (depth - 0.7) / 0.7));
     const cam = u.uCamLocal!.value as THREE.Vector3;
     const ambient = gainFor(g) * galaxyDensity(g, cam.x, cam.y, cam.z, 2) * 2; // ≈ surface brightness of the surrounding glow
     const exposure = Math.min(2.5, 0.2 / Math.max(ambient, 1e-6));

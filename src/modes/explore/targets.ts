@@ -111,7 +111,8 @@ export function bodyTarget(sys: SystemModel, index: number, simTime: () => numbe
     const t = star.star.type;
     arrive = t === 'blackhole' ? body.radius * 45 : t === 'neutron' || t === 'pulsar' ? 150_000 : t === 'whitedwarf' ? body.radius * 8 : body.radius * 5.5;
     // In a close binary, stand back far enough to take in both stars.
-    for (const other of sys.bodies) if (other !== body && other.kind === 'star' && other.orbit && other.orbit.a < AU * 2) arrive = Math.max(arrive, other.orbit.a * 3.5);
+    // (Not for black holes: the point of visiting one is to be close enough to see it.)
+    if (t !== 'blackhole') for (const other of sys.bodies) if (other !== body && other.kind === 'star' && other.orbit && other.orbit.a < AU * 2) arrive = Math.max(arrive, other.orbit.a * 3.5);
   } else arrive = body.radius * ((body as PlanetBody).rings ? 6.5 : 3.6);
   return {
     id: body.id, kind: star ? (star.star.type === 'blackhole' ? 'blackhole' : star.star.type === 'pulsar' ? 'pulsar' : 'star') : body.kind, name: body.name, real: body.real, radius: body.radius, arrive,

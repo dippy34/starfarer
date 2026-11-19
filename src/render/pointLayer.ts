@@ -91,9 +91,16 @@ void main() {
     inten = min(0.5 * pow(e, e < 1.0 ? 0.9 : 0.62), 14.0) / soft;
     if (style > 3.5) inten *= 1.6;                           // quasars: piercing points
     if (style > 2.5 && uResolve > 0.0) {
-      // A galaxy big enough to be drawn as a resolved sprite fades out of the point cloud.
       float kpc = 14.0 * pow(10.0, -0.133 * (aMag + 21.0));
       float px = kpc * 1e-3 / d * uFocal;
+      if (style < 3.5) {
+        // A galaxy's light is spread over its disc: once that disc is wider than a pixel the dot stops
+        // getting brighter and grows instead (a galaxy has a surface brightness; only a star can dazzle).
+        float wide = smoothstep(0.7, 2.5, px);
+        size = mix(size, max(2.2 * px, uPx), wide);
+        inten = mix(inten, min(inten, 1.3), wide);
+      }
+      // A galaxy big enough to be drawn as a resolved sprite fades out of the point cloud.
       inten *= 1.0 - smoothstep(uResolve * 0.6, uResolve * 1.6, px);
     }
   }

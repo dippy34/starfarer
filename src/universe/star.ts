@@ -81,6 +81,29 @@ export function teffFromPhotometry(absMag: number, bpRp: number | null): number 
   return bpRp === null ? mainSequenceTeff(absMag) : bpRpToTeff(bpRp);
 }
 
+/** Effective temperature (K) at the start of each spectral class, O through M (Pecaut & Mamajek 2013, dwarfs). */
+const CLASS_TEFF: Record<string, [number, number]> = {
+  O: [45000, 31400], B: [31400, 9700], A: [9700, 7220], F: [7220, 5930], G: [5930, 5270], K: [5270, 3850], M: [3850, 2300],
+};
+
+/**
+ * What a catalogued spectral type says about a star: its temperature (from the class and subclass)
+ * and luminosity class. Preferred over colour, which interstellar dust reddens — a distant B
+ * supergiant can look as red as a K star. Returns null for types this simple reader does not understand.
+ */
+export function parseSpectralType(sp: string): { teff: number; type: StarType | null } | null {
+  const m = /^\s*(?:sd|d|g)?([OBAFGKM])\s*(\d(?:\.\d)?)?\s*(Ia\+?|Iab|Ib|II|III|IV|V)?/.exec(sp);
+  if (!m) return null;
+  const [hot, cool] = CLASS_TEFF[m[1]!]!;
+  const sub = m[2] !== undefined ? Math.min(9.5, Number(m[2])) : 5;
+  let teff = hot + ((cool - hot) * sub) / 10;
+  const lum = m[3];
+  const type: StarType | null = !lum ? null : lum.startsWith('Ia') || lum === 'Ib' ? 'supergiant' : lum === 'II' || lum === 'III' ? 'giant' : lum === 'IV' ? 'subgiant' : 'main';
+  // G and K giants and supergiants are some 10 % cooler than dwarfs of the same class.
+  if ((type === 'giant' || type === 'supergiant') && (m[1] === 'G' || m[1] === 'K')) teff *= 0.9;
+  return { teff, type };
+}
+
 /** Main-sequence mass (solar) from luminosity (solar), piecewise mass–luminosity relation. */
 function massFromLuminosity(l: number): number {
   if (l < 0.033) return dpow(l / 0.23, 1 / 2.3);

@@ -26,10 +26,11 @@ uniform float uSteps;
 uniform float uOpacity;
 uniform float uTime;
 
+// Interleaved gradient noise (Jimenez 2014): a ray-start jitter whose error is spread evenly over
+// neighbouring pixels, so it averages out when the low-resolution result is filtered up — unlike white noise,
+// which shows as blotchy grain.
 float hash12(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
 void main() {

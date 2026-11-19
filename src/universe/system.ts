@@ -19,7 +19,7 @@ import { Rng } from '../core/rng';
 import { AU, DAY, G, L_SUN, M_EARTH, M_SUN, R_EARTH, R_SUN } from '../core/units';
 import { componentName, moonName, planetName } from './names';
 import { type PlanetInput, makePlanet, radiusFromMass } from './planet';
-import { mainSequenceTeff, makeStar } from './star';
+import { mainSequenceTeff, makeStar, parseSpectralType } from './star';
 import type { BeltProps, Body, PlanetBody, StarBody, StarProps, StarType, SystemModel } from './types';
 
 /** Confirmed-planet record (subset of the Exoplanet Archive columns; see scripts/build-catalogs/steps/exoplanets.ts). */
@@ -285,7 +285,11 @@ function addExoplanets(sys: { bodies: Body[] }, input: SystemInput, exo: ExoHost
 export function generateSystem(input: SystemInput): SystemModel {
   const rng = new Rng(hashCombine(input.seed, 0x5157));
   const exo = input.exo;
-  const primary = makeStar(input.star.absMag, input.star.teff, input.star.type, input.seed, input.star.real);
+  // A catalogued spectral type outranks colour for temperature and luminosity class: interstellar dust
+  // reddens colours, so a distant blue supergiant would otherwise be modelled as a cool giant.
+  const normal = input.star.type === 'main' || input.star.type === 'subgiant' || input.star.type === 'giant' || input.star.type === 'supergiant';
+  const typed = input.star.real && normal && input.star.spectral ? parseSpectralType(input.star.spectral) : null;
+  const primary = makeStar(input.star.absMag, typed?.teff ?? input.star.teff, typed?.type ?? input.star.type, input.seed, input.star.real);
   if (input.star.spectral) primary.spectral = input.star.spectral;
   if (input.compact) {
     const c = input.compact;

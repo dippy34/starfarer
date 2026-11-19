@@ -1,5 +1,5 @@
 {
- "built": "2026-11-19T10:48:20.479Z",
+ "built": "2026-11-19T11:53:25.281Z",
  "stars": {
   "gaiaBright": 1902847,
   "gcns": 330881,
@@ -54,34 +54,35 @@
   "nearDroppedNoDistance": 38,
   "near": 46237,
   "sdssRows": 2615951,
-  "sdss": 2606101,
+  "sdss": 2604181,
   "sdssDuplicatesOfNear": 9850,
+  "sdssDroppedImplausibleLuminosity": 1920,
   "quasars": 750402,
   "quasarsSkippedBadRedshift": 12
  },
  "lss": {
   "lssGalaxiesUsed": 43437,
-  "sdssFootprintSqDeg": 8576
+  "sdssFootprintSqDeg": 8575
  },
  "totals": {
   "stars": 2256935,
-  "galaxies": 2652338,
+  "galaxies": 2650418,
   "quasars": 750402,
   "exoplanets": 6161,
   "deepSky": 7072,
   "constellations": 88,
-  "all": 5672908
+  "all": 5670988
  },
- "totalBytes": 67203840,
+ "totalBytes": 67666667,
  "firstLaunch": {
-  "bytes": 2671918,
-  "files": 35,
+  "bytes": 2966056,
+  "files": 63,
   "tiles": {
    "stars": 21,
-   "galaxies": 2,
-   "sdss": 4,
-   "quasars": 2
+   "galaxies": 10,
+   "sdss": 16,
+   "quasars": 10
   }
  },
- "seconds": 500
+ "seconds": 606
 }

@@ -20,10 +20,10 @@ export interface NodeTable {
   /** Brightest (smallest) absolute LOD magnitude in each node. */
   mag: number[];
   /**
-   * Star datasets only (tiles ordered by apparent brightness in our sky): the brightest apparent
-   * magnitude in each node as seen from the Sun, and the median distance of its objects from the
-   * Sun (position units). They tell the runtime how bright the node looks from near the Sun
-   * (exactly) and from further afield (approximately).
+   * Datasets whose tiles are ordered by apparent brightness in our sky (stars, and the bright /
+   * nearby galaxies): the brightest apparent magnitude in each node as seen from the Sun, and the
+   * median distance of its objects from the Sun (position units). They tell the runtime how bright
+   * the node looks from near the Sun (exactly) and from further afield (approximately).
    */
   app?: number[];
   med?: number[];
@@ -38,8 +38,15 @@ export interface DatasetManifest {
   title: string;
   /** Metres per position unit used by decoded chunks (parsec for stars, megaparsec for galaxies). */
   unit: number;
-  /** Half edge length of the root octree cube, in units, centred on the Sun. */
+  /** Half edge length of the root octree cube, in units. */
   rootHalf: number;
+  /**
+   * Centre of the root cube relative to the Sun, in units (default: the Sun itself). The galaxy
+   * trees are shifted by a third of `rootHalf` on every axis: that keeps the Sun a third of a cell
+   * away from the nearest cell wall on *every* level, so our own neighbourhood lives in one chain
+   * of nested tiles instead of straddling eight tiles per level.
+   */
+  center?: [number, number, number];
   capacity: number;
   count: number;
   /** True if `<path>.id` sidecars with 64-bit catalogue ids exist. */

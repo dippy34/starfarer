@@ -6,7 +6,7 @@ import { galaxyDensity, galaxyDensityBound, makeGalaxy } from '../src/universe/g
 import { MILKY_WAY, SUN_LOCAL_PC, milkyWaySuppression } from '../src/universe/milkyWay';
 import { equilibriumTemperature, massFromRadius, radiusFromMass } from '../src/universe/planet';
 import { solarSystem } from '../src/universe/solarSystem';
-import { classifyByPhotometry, makeStar, mainSequenceTeff } from '../src/universe/star';
+import { classifyByPhotometry, makeStar, mainSequenceTeff, parseSpectralType } from '../src/universe/star';
 import { STAR_LEVELS, STAR_LEVEL_TABLE, generateStarBlock, generateStarCell, parseStarId, starId } from '../src/universe/starfield';
 import { bodyPositions, generateSystem } from '../src/universe/system';
 import { buildTerrainPatch, cubeToSphere, surfaceElevation, terrainIndices } from '../src/universe/terrain';
@@ -264,6 +264,39 @@ describe('stars', () => {
     expect(classifyByPhotometry(0.6, 1.2, false)).toBe('giant');
     expect(classifyByPhotometry(4.7, 0.82, false)).toBe('main');
     expect(classifyByPhotometry(-6, 0.1, false)).toBe('supergiant');
+  });
+});
+
+describe('catalogued spectral types', () => {
+  it('give temperature and luminosity class, whatever dust has done to the colour', () => {
+    expect(parseSpectralType('G2V')).toEqual({ teff: 5798, type: 'main' });
+    expect(parseSpectralType('B0Ib')!.type).toBe('supergiant');
+    expect(parseSpectralType('B0Ib')!.teff).toBeGreaterThan(28000);
+    expect(parseSpectralType('M2Iab')!.type).toBe('supergiant');
+    expect(parseSpectralType('M2Iab')!.teff).toBeCloseTo(3540, -1);
+    const arcturus = parseSpectralType('K1.5III')!;
+    expect(arcturus.type).toBe('giant');
+    expect(arcturus.teff).toBeGreaterThan(4200);
+    expect(arcturus.teff).toBeLessThan(4700);
+    expect(parseSpectralType('A0m...')).toEqual({ teff: 9700, type: null });
+    expect(parseSpectralType('sdB5')!.teff).toBeCloseTo(20550, -1);
+    expect(parseSpectralType('DA2')).toBeNull();
+    expect(parseSpectralType('')).toBeNull();
+  });
+
+  it('are used for real stars: a reddened blue supergiant is modelled as one', () => {
+    // Colour alone says "cool giant" (as for the donor star of Cygnus X-1, seen through 2 kpc of dust).
+    const byColour = generateSystem({ ...sysInput(1, -3.15, 4692, 'giant'), star: { absMag: -3.15, teff: 4692, type: 'giant', real: true } });
+    const byType = generateSystem({ ...sysInput(1, -3.15, 4692, 'giant'), star: { absMag: -3.15, teff: 4692, type: 'giant', real: true, spectral: 'B0Ib' } });
+    const a = (byColour.bodies[0] as StarBody).star;
+    const b = (byType.bodies[0] as StarBody).star;
+    expect(a.type).toBe('giant');
+    expect(b.type).toBe('supergiant');
+    expect(b.teff).toBeGreaterThan(28000);
+    expect(b.spectral).toBe('B0Ib');
+    // Procedural stars are never second-guessed.
+    const proc = generateSystem({ ...sysInput(1, -3.15, 4692, 'giant'), star: { absMag: -3.15, teff: 4692, type: 'giant', real: false, spectral: 'B0Ib' } });
+    expect((proc.bodies[0] as StarBody).star.type).toBe('giant');
   });
 });
 

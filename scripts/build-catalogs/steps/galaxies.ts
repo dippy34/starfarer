@@ -28,7 +28,31 @@ import { num, readCsv, readVizierTsv, sexToDeg } from '../lib/tables';
 import { join } from 'node:path';
 
 const C_KMS = 299_792.458;
-const ROOT_HALF_MPC = 16_384;
+/** Objects per tile. Small tiles keep the chain of tiles around the camera (one per tree level) cheap. */
+const TILE_CAPACITY = 1024;
+/**
+ * No real galaxy is this luminous (r-band absolute magnitude, no K-correction; the brightest cluster
+ * galaxies reach about −24). SDSS rows beyond it pair a galaxy spectrum with the photometry of a
+ * bright star or a blend, and would otherwise shine across the whole universe.
+ */
+const SDSS_MAX_LUMINOSITY_MAG = -24.5;
+
+/**
+ * Root cube for a set of positions: the smallest power-of-two half-size that holds them all once
+ * the cube is shifted by a third of that half-size on each axis (see `DatasetManifest.center`).
+ */
+function rootCube(x: Float64Array, y: Float64Array, z: Float64Array): { rootHalf: number; center: [number, number, number] } {
+  let lo = 0;
+  let hi = 0;
+  for (let i = 0; i < x.length; i++) {
+    lo = Math.min(lo, x[i]!, y[i]!, z[i]!);
+    hi = Math.max(hi, x[i]!, y[i]!, z[i]!);
+  }
+  // The shifted cube spans [−2h/3, +4h/3] on each axis.
+  let rootHalf = 64;
+  while ((2 * rootHalf) / 3 < -lo * 1.02 || (4 * rootHalf) / 3 < hi * 1.02) rootHalf *= 2;
+  return { rootHalf, center: [rootHalf / 3, rootHalf / 3, rootHalf / 3] };
+}
 
 /** Heliocentric velocity → Local Group frame (Karachentsev & Makarov 1996). */
 export function localGroupVelocity(vHel: number, raDeg: number, decDeg: number): number {
@@ -320,6 +344,7 @@ export function buildGalaxies(names: NameRegistry, notable: Notable, finalizeNam
   let ns = 0;
   let sdssDup = 0;
   let sdssRows = 0;
+  let sdssImplausible = 0;
   for (const file of sdssFiles) {
     const t = readCsv(rawPath(`gal/${file}`));
     if (t.rows.length === 0) continue;
@@ -347,6 +372,10 @@ export function buildGalaxies(names: NameRegistry, notable: Notable, finalizeNam
       const mg = num(r[c.g]);
       // Extinction-corrected Petrosian r (falls back to model r); colour from model magnitudes.
       const mag = petro > 5 && petro < 26 ? petro - e : mr > 5 && mr < 26 ? mr - e : null;
+      if (mag !== null && mag - distanceModulus(z) < SDSS_MAX_LUMINOSITY_MAG) {
+        sdssImplausible++;
+        continue;
+      }
       const color = mg > 5 && mg < 30 && mr > 5 && mr < 30 ? mg - mr - 0.379 * e : null;
       const sub = r[c.sub] ?? '';
       s.ra[ns] = qNameRa(ra);
@@ -361,6 +390,7 @@ export function buildGalaxies(names: NameRegistry, notable: Notable, finalizeNam
   stats.sdssRows = sdssRows;
   stats.sdss = ns;
   stats.sdssDuplicatesOfNear = sdssDup;
+  stats.sdssDroppedImplausibleLuminosity = sdssImplausible;
 
   // ---- SDSS DR16Q quasars (Lyke et al. 2020).
   const qsoFiles = readdirSync(join(RAW_DIR, 'qso')).filter((f) => f.endsWith('.tsv')).sort();
@@ -452,17 +482,25 @@ export function buildGalaxies(names: NameRegistry, notable: Notable, finalizeNam
       }
     });
     const p = positions(n, d.ra, d.dec, d.z, (i, dm) => galaxyLodMag(dqGalMag(d.mag[i]!), d.flags[i]! & 3, dm));
-    manifests.push(writeDataset({ id: 'galaxies', kind: 'galaxies', title: '2MRS + UNGC + OpenNGC galaxies', unit: MPC, rootHalf: ROOT_HALF_MPC, capacity: 4096, count: n, ...p, columns: GALAXY_COLUMNS, data: d, nameId }));
+    // These are the galaxies of our own sky, so their tiles are ordered by how bright they look from
+    // here (like the stars'): the root tile then holds Andromeda, the Magellanic Clouds and every
+    // other showpiece, whatever the quality tier and wherever the camera is.
+    const apparent = new Float32Array(n);
+    for (let i = 0; i < n; i++) apparent[i] = p.lodMag[i]! + 5 * Math.log10(Math.max(Math.hypot(p.x[i]!, p.y[i]!, p.z[i]!), 1e-9) / 1e-5);
+    manifests.push(writeDataset({
+      id: 'galaxies', kind: 'galaxies', title: '2MRS + UNGC + OpenNGC galaxies', unit: MPC, ...rootCube(p.x, p.y, p.z), capacity: TILE_CAPACITY, count: n, ...p,
+      orderKey: apparent, tenPc: 1e-5, mergeSparse: true, columns: GALAXY_COLUMNS, data: d, nameId,
+    }));
   }
   {
     const d = { ra: s.ra.subarray(0, ns), dec: s.dec.subarray(0, ns), z: s.z.subarray(0, ns), mag: s.mag.subarray(0, ns), color: s.color.subarray(0, ns), flags: s.flags.subarray(0, ns) };
     const p = positions(ns, d.ra, d.dec, d.z, (i, dm) => galaxyLodMag(dqGalMag(d.mag[i]!), GAL_BAND_R, dm));
-    manifests.push(writeDataset({ id: 'sdss', kind: 'galaxies', title: 'SDSS DR17 spectroscopic galaxies', unit: MPC, rootHalf: ROOT_HALF_MPC, capacity: 4096, count: ns, ...p, columns: SDSS_COLUMNS, data: d, nameId: new Int32Array(ns).fill(-1) }));
+    manifests.push(writeDataset({ id: 'sdss', kind: 'galaxies', title: 'SDSS DR17 spectroscopic galaxies', unit: MPC, ...rootCube(p.x, p.y, p.z), capacity: TILE_CAPACITY, count: ns, ...p, mergeSparse: true, columns: SDSS_COLUMNS, data: d, nameId: new Int32Array(ns).fill(-1) }));
   }
   {
     const d = { ra: q.ra.subarray(0, nq), dec: q.dec.subarray(0, nq), z: q.z.subarray(0, nq), mag: q.mag.subarray(0, nq) };
     const p = positions(nq, d.ra, d.dec, d.z, (i, dm) => (dqQsoMag(d.mag[i]!) ?? 20.5) - dm);
-    manifests.push(writeDataset({ id: 'quasars', kind: 'quasars', title: 'SDSS DR16Q quasars', unit: MPC, rootHalf: ROOT_HALF_MPC, capacity: 4096, count: nq, ...p, columns: QUASAR_COLUMNS, data: d, nameId: new Int32Array(nq).fill(-1) }));
+    manifests.push(writeDataset({ id: 'quasars', kind: 'quasars', title: 'SDSS DR16Q quasars', unit: MPC, ...rootCube(p.x, p.y, p.z), capacity: TILE_CAPACITY, count: nq, ...p, mergeSparse: true, columns: QUASAR_COLUMNS, data: d, nameId: new Int32Array(nq).fill(-1) }));
   }
   return { manifests, stats, sdss: { ra: s.ra, dec: s.dec, z: s.z, mag: s.mag, count: ns }, notes };
 }

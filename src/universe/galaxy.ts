@@ -36,9 +36,9 @@ function pickType(rng: Rng, absMag: number, hints: GalaxyHints): GalaxyType {
     }
     case Morph.Irr:
     case Morph.Peculiar:
+    case Morph.DwarfIrr: // Magellanic irregulars (the Clouds, NGC 6822…): small, but gas-rich clumpy discs, not spheroids
       return 'irregular';
     case Morph.DwarfE:
-    case Morph.DwarfIrr:
       return 'dwarf';
     default:
       break;

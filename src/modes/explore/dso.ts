@@ -217,7 +217,15 @@ export class DsoManager {
       v.seed = hashString(d.n);
       // Fade in as it grows on screen, so the marker point hands over to the volume smoothly.
       const px = (v.radius / Math.max(v.rel.length(), v.radius * 0.1)) * engine.pixelsPerRadian;
-      v.opacity = this.nebulaFade * Math.min(1, Math.max(0, (px - 5) / 14));
+      // Seen from within, the gas is all around: thin it so it glows instead of fogging the whole view.
+      const depth = v.rel.length() / v.radius;
+      const within = 0.42 + 0.58 * Math.min(1, Math.max(0, (depth - 0.3) / 0.9));
+      // Nebulae are faint things: from far off (a dozen radii — the Vela remnant or the Orion Nebula in
+      // our own sky) only a ghost of the glow shows. Closing in is like opening the shutter: within a few
+      // radii it is the long-exposure view.
+      const far = Math.min(1, Math.max(0, (depth - 3.5) / 8.5));
+      const exposure = 1 - 0.86 * far * far * (3 - 2 * far);
+      v.opacity = this.nebulaFade * Math.min(1, Math.max(0, (px - 5) / 14)) * within * exposure;
       this.nebula.update(v.opacity > 0.01 ? v : null, engine.camera, engine.renderWidth, engine.renderHeight, engine.tier, dt);
     } else this.nebula.update(null, engine.camera, engine.renderWidth, engine.renderHeight, engine.tier, dt);
   }

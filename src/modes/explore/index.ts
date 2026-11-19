@@ -385,7 +385,10 @@ class ExploreMode implements ModeInstance {
           const q = typeof r.extra?.q === 'string' ? r.extra.q.split(',').map(Number) : null;
           if (!q || q.length < 3) return null;
           const input = world.systems.inputFromCodes(r.a, r.b, r.c, q[0]!, q[1]!, q[2]!, r.names[0], typeof r.extra?.sp === 'string' ? r.extra.sp : undefined);
-          return bodyTarget(world.systems.build(input), 0, time);
+          const sys = world.systems.build(input);
+          // A star catalogued for its famous black-hole companion (Cygnus X-1, Gaia BH3): go to the black hole.
+          const hole = input.companion ? sys.bodies.findIndex((b) => b.kind === 'star' && b.star.type === 'blackhole') : -1;
+          return bodyTarget(sys, hole > 0 ? hole : 0, time);
         }
         return null;
       }

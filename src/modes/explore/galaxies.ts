@@ -174,6 +174,14 @@ export class GalaxyManager {
     });
   }
 
+  /**
+   * How far out in intergalactic space the camera is: 0 inside or next to a galaxy, 1 from a few
+   * galaxy radii out. Out there no stars are drawn, and their point allowance is lent to the deep sky.
+   */
+  get deepSpace(): number {
+    return Math.min(1, Math.max(0, (this.nearestRatio - 1.5) / 4));
+  }
+
   /** Interest radius (Mpc) of a cosmic-web level for the current tier. */
   private webRadius(level: number): number {
     const tier = this.engine.tier;
@@ -307,9 +315,9 @@ export class GalaxyManager {
       this.webCooldown -= 0.35;
       if (this.webCooldown <= 0) {
         const points = this.webGrid.points;
-        // Out between the galaxies there are no stars to draw, so their share of the point budget goes to the web.
-        const idle = Math.min(1, Math.max(0, (this.nearestRatio - 1.5) / 4));
-        const budget = tier.proceduralGalaxies + idle * (tier.proceduralStars + 0.5 * tier.catalogStars);
+        // Out between the galaxies there are no stars to draw: the procedural stars' share of the point
+        // budget and half of the catalogue stars' go to the web (the other half to the real galaxies nearby).
+        const budget = tier.proceduralGalaxies + this.deepSpace * (tier.proceduralStars + 0.5 * tier.catalogStars);
         if (points > budget * 1.1 && this.webScale > 0.6) {
           this.webScale -= 0.06;
           this.webCooldown = 1.5;

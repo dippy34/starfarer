@@ -92,17 +92,30 @@ export function pointBudget(t: QualityTier): number {
   return t.catalogStars + t.proceduralStars + t.catalogGalaxies + t.proceduralGalaxies;
 }
 
+export interface DatasetLod {
+  /** This dataset's share of the tier's real-catalogue point budget. */
+  share: (t: QualityTier) => number;
+  /** Faintest apparent magnitude worth loading a tile for (null = the tier's deep-sky limit plus a margin for the fade). */
+  magLimit: number | null;
+  /** Draw the evenly sampled part of the dataset as faint "survey dots" when seen from intergalactic space. */
+  surveyDots: boolean;
+  /** See `LodOptions.localHalf` (apparent-brightness-ordered datasets). */
+  localHalf?: number;
+  /** Share of the idle star allowance this dataset may spend on the camera's surroundings out in intergalactic space. */
+  deepShare: number;
+}
+
 /**
  * How the real-catalogue budgets are split between datasets, and how each is refined.
- * `magLimit` is the faintest apparent magnitude worth loading around the camera (null = the
- * tier's deep-sky limit, supplied at run time). `uniformFirst` datasets load whole octree levels
- * before refining locally, so a survey looks evenly sampled from anywhere in the universe.
+ * The bright / nearby galaxies are always loaded as far as their budget goes (they are the real
+ * neighbourhood, and "home" seen from afar); the deep surveys add tiles around the camera only
+ * where something in them could be bright enough to draw.
  */
-export const DATASET_LOD: Record<string, { share: (t: QualityTier) => number; magLimit: number | null; uniformFirst: boolean }> = {
-  stars: { share: (t) => t.catalogStars, magLimit: 13.5, uniformFirst: false },
-  galaxies: { share: (t) => Math.round(t.catalogGalaxies * 0.3), magLimit: null, uniformFirst: true },
-  sdss: { share: (t) => Math.round(t.catalogGalaxies * 0.45), magLimit: null, uniformFirst: true },
-  quasars: { share: (t) => Math.round(t.catalogGalaxies * 0.25), magLimit: null, uniformFirst: true },
+export const DATASET_LOD: Record<string, DatasetLod> = {
+  stars: { share: (t) => t.catalogStars, magLimit: 13.5, surveyDots: false, deepShare: 0 },
+  galaxies: { share: (t) => Math.round(t.catalogGalaxies * 0.3), magLimit: 99, surveyDots: true, localHalf: 32, deepShare: 0.3 },
+  sdss: { share: (t) => Math.round(t.catalogGalaxies * 0.45), magLimit: null, surveyDots: true, deepShare: 0.45 },
+  quasars: { share: (t) => Math.round(t.catalogGalaxies * 0.25), magLimit: null, surveyDots: true, deepShare: 0.25 },
 };
 
 /**
@@ -112,3 +125,24 @@ export const DATASET_LOD: Record<string, { share: (t: QualityTier) => number; ma
  */
 export const STAR_MAG_LIMIT: Record<TierName, number> = { low: 7.6, medium: 8.6, high: 9.4 };
 export const GALAXY_MAG_LIMIT: Record<TierName, number> = { low: 13.2, medium: 14.2, high: 15.2 };
+
+/**
+ * Tile-selection settings of a dataset on a tier (see `selectNodes`).
+ *
+ * `deep` (0–1) says how far out between the galaxies the camera is. There are no stars to draw out
+ * there, so half of the idle catalogue-star allowance goes to the real galaxies around the camera
+ * (the other half, and the procedural stars', go to the cosmic web — see GalaxyManager).
+ */
+export function datasetLodOptions(id: string, t: QualityTier, capacity: number, deep = 0): { budget: number; magLimit: number; nearReserve: number; localHalf?: number } | null {
+  const lod = DATASET_LOD[id];
+  if (!lod) return null;
+  const share = lod.share(t);
+  const extra = Math.round(deep * 0.5 * t.catalogStars * lod.deepShare);
+  return {
+    budget: share + extra,
+    magLimit: lod.magLimit ?? GALAXY_MAG_LIMIT[t.name] + 1,
+    // The camera's own surroundings get the extra allowance and a fair slice of the regular share.
+    nearReserve: Math.round(Math.min(0.4 * share, 10 * capacity)) + extra,
+    localHalf: lod.localHalf,
+  };
+}
