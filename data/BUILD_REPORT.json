@@ -1,0 +1,87 @@
+{
+ "built": "2026-11-19T12:29:16.899Z",
+ "stars": {
+  "gaiaBright": 1902847,
+  "gcns": 330881,
+  "hipMerged": 97586,
+  "hipOnly": 18982,
+  "hipRescued": 1387,
+  "droppedNoParallax": 15609,
+  "priorDistances": 25459
+ },
+ "exoplanets": {
+  "planets": 6161,
+  "hosts": 4564,
+  "hostsMatchedGaia": 1701,
+  "hostsMatchedHip": 17,
+  "hostsMatchedPosition": 8,
+  "hostsAdded": 2838,
+  "hostsSkippedNoDistance": 298,
+  "planetsSkippedNoDistance": 309
+ },
+ "dso": {
+  "huntClustersRejectedByQualityCut": 3163,
+  "openNgcSkippedNoDistance_RfN": 37,
+  "openNgcSkippedNoDistance_HII": 75,
+  "openNgcSkippedNoDistance_*Ass": 60,
+  "openNgcSkippedNoDistance_Neb": 86,
+  "openNgcSkippedNoDistance_Cl+N": 47,
+  "openNgcSkippedNoDistance_PN": 60,
+  "openNgcSkippedNoDistance_SNR": 4,
+  "openNgcSkippedNoDistance_OCl": 320,
+  "openNgcSkippedNoDistance_GCl": 98,
+  "openNgcSkippedNoDistance_EmN": 8,
+  "openNgcSkippedNoDistance_DrkN": 1,
+  "pulsarsSkippedNoDistance": 61,
+  "dso_bh": 6,
+  "dso_dn": 1,
+  "dso_en": 36,
+  "dso_gc": 145,
+  "dso_oc": 3989,
+  "dso_pn": 407,
+  "dso_psr": 2475,
+  "dso_rn": 1,
+  "dso_snr": 11
+ },
+ "galaxies": {
+  "twoMrs": 43533,
+  "ungcAdded": 707,
+  "ungcMerged": 161,
+  "openNgcMerged": 8484,
+  "openNgcAdded": 2035,
+  "openNgcGalaxiesWithoutDistance": 273,
+  "nearDroppedNoDistance": 38,
+  "near": 46237,
+  "sdssRows": 2615951,
+  "sdss": 2604181,
+  "sdssDuplicatesOfNear": 9850,
+  "sdssDroppedImplausibleLuminosity": 1920,
+  "quasars": 750402,
+  "quasarsSkippedBadRedshift": 12
+ },
+ "lss": {
+  "lssGalaxiesUsed": 43437,
+  "sdssFootprintSqDeg": 8575
+ },
+ "totals": {
+  "stars": 2256935,
+  "galaxies": 2650418,
+  "quasars": 750402,
+  "exoplanets": 6161,
+  "deepSky": 7071,
+  "constellations": 88,
+  "all": 5670987
+ },
+ "totalBytes": 67666795,
+ "firstLaunch": {
+  "bytes": 2966212,
+  "files": 63,
+  "tiles": {
+   "stars": 21,
+   "galaxies": 10,
+   "sdss": 16,
+   "quasars": 10
+  }
+ },
+ "seconds": 618
+}

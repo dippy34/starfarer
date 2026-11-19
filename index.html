@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060c" />
+    <meta name="description" content="Starfarer — explore the whole observable universe: real stars, galaxies and planets, and endless procedural worlds in between." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Starfarer" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <title>Starfarer</title>
+    <style>
+      /* Critical styles so the very first paint is the dark sky, never a white flash. */
+      html, body { margin: 0; height: 100%; background: #05060c; overflow: hidden; overscroll-behavior: none; }
+      #app { position: fixed; inset: 0; }
+    </style>
+    <script type="module" crossorigin src="./assets/index-5aRnW919.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/three-DTGfjAnH.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-Bc8cf1Xv.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
