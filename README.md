@@ -54,6 +54,21 @@ or point Capacitor's `webDir` at it.
 4. Turn on **Settings → Performance HUD** to see frames per second, draw
    calls, point count and the quality tier the adaptive controller chose.
 
+### Put it online (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` runs `npm run check` on every push to
+`main` and, if everything passes, publishes `dist/` to the `gh-pages` branch
+(one commit, replaced on each deployment). Switch GitHub Pages on once:
+
+1. **Settings → Pages → Build and deployment**
+2. Source: **Deploy from a branch**; Branch: **`gh-pages`**, folder **`/ (root)`**; Save.
+
+The game is then served over HTTPS at `https://<owner>.github.io/<repository>/`
+— installable ("Add to Home Screen") and playable offline after the first
+visit. The site is public even if the repository is private (private
+repositories need a paid GitHub plan for Pages). A deployment can also be
+started by hand from the **Actions** tab.
+
 ---
 
 ## Controls

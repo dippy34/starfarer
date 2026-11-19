@@ -497,6 +497,14 @@ galaxy all of it goes to procedural ones.
   It contains a few truncated files from early Gaia attempts
   (`gaia/bright_*.csv`) that the pipeline no longer reads; the sandbox would
   not let me delete them. They are harmless and can be removed by hand.
+- **Hosting.** GitHub Pages is fed from a `gh-pages` branch that a workflow
+  rebuilds on every push, rather than through GitHub's artifact-based Pages
+  deployment: the latter only accepts deployments from the default branch
+  unless the environment's rules are edited by hand, and this work was
+  delivered on a feature branch. The branch holds a single commit that is
+  replaced each time, and a `.nojekyll` file so the 8 700 data tiles are
+  served as they are. Switching Pages on is a repository setting that only
+  the owner can change (README, "Put it online").
 - The built catalogue (`public/data/`, 68 MB in ~8 700 files) **is committed**
   so the app runs straight after `npm install` without a 10-minute download
   from the archives. Remove it from git and build in CI if the repository size
