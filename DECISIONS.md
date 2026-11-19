@@ -401,7 +401,13 @@ purges the old one), capped at 128 MB with least-recently-used eviction, and
 falling back to a 24 MB in-memory cache when IndexedDB is unavailable (private
 browsing). Everything you have flown through works offline; places you have
 never visited show their procedural content and whatever tiles are cached,
-with an "Offline" chip.
+with an "Offline" badge in the location box.
+
+The shell cache is matched by URL only (`ignoreVary`). Many static hosts —
+Vite's own preview server among them — answer with `Vary: Origin`, and a
+module script's request then does not match the copy the worker fetched for
+itself: the page came up blank offline until the production build was
+actually relaunched with the network off.
 
 ### 4.8 Which catalogue tiles get loaded
 
@@ -466,6 +472,10 @@ galaxy all of it goes to procedural ones.
   60 fps target rests on the budgets above, not on a measurement. The first
   thing to do on a phone is turn on the performance HUD (Settings) and watch
   the tier the auto controller settles on.
+- The production build (`npm run preview`) was relaunched offline (boots from
+  the service worker and IndexedDB, keeps flying on procedural content, picks
+  the tiles back up when the network returns) and survived a forced WebGL
+  context loss and restore.
 - Touch gestures were exercised through synthesised pointer events, not on a
   physical touchscreen.
 - What the screenshots covered: start screen and tutorial; HUD in portrait and

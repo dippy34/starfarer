@@ -89,7 +89,9 @@ function hud(root: HTMLElement): void {
   const crumbs = el('div', { class: 'sf-crumbs' });
   const scaleBars = SCALE_ORDER.map(() => el('i'));
   const scaleLabel = el('div', { class: 'sf-scale-label' });
-  const where = el('div', { class: 'sf-where sf-glass', title: 'Where you are' }, [crumbs, el('div', { class: 'sf-scale' }, scaleBars), scaleLabel]);
+  // A small badge next to the scale name: it sits in a box that is always on screen and never covers a control.
+  const offline = el('span', { class: 'sf-offline', hidden: true, text: 'Offline', title: 'Offline — showing what’s already been explored' });
+  const where = el('div', { class: 'sf-where sf-glass', title: 'Where you are' }, [crumbs, el('div', { class: 'sf-scale' }, scaleBars), el('div', { class: 'sf-scale-row' }, [scaleLabel, offline])]);
   const panelButton = (icon: string, title: string, panel: AppState['panel']): HTMLButtonElement =>
     el('button', {
       class: 'sf-icon', text: icon, title,
@@ -154,11 +156,10 @@ function hud(root: HTMLElement): void {
     el('button', { text: '✕', title: 'Release', onClick: () => { tap(); if (appState.get().flyingTo) actions.cancelFlight(); else actions.releaseFocus(); } }),
   ]);
   const dilation = el('div', { class: 'sf-dilation sf-glass', hidden: true });
-  const offline = el('div', { class: 'sf-offline sf-glass', hidden: true, text: 'Offline — showing what’s already been explored' });
   const perf = el('div', { class: 'sf-perf sf-glass', hidden: true });
   const reticle = el('div', { class: 'sf-reticle' });
   const node = el('div', { class: 'sf-hud sf-hidden' }, [
-    reticle, el('div', { class: 'sf-top' }, [where, buttons]), throttle, el('div', { class: 'sf-bottom-left' }, [speed, time]), chip, dilation, offline, perf,
+    reticle, el('div', { class: 'sf-top' }, [where, buttons]), throttle, el('div', { class: 'sf-bottom-left' }, [speed, time]), chip, dilation, perf,
   ]);
   root.append(node);
 

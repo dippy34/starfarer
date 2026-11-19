@@ -30,13 +30,16 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/data/')) return;
+  // The shell cache holds only this build's own files, keyed by URL: ignore `Vary` (many static
+  // hosts send `Vary: Origin`, and a module script's request then no longer matches the copy the
+  // worker fetched for itself — which would break every offline launch) and query strings.
   event.respondWith(
-    caches.match(event.request, { ignoreSearch: true }).then(
+    caches.match(event.request, { ignoreSearch: true, ignoreVary: true }).then(
       (hit) =>
         hit ||
         fetch(event.request).catch(() =>
           // Offline navigation to an unknown URL: fall back to the app shell.
-          event.request.mode === 'navigate' ? caches.match('./') : Response.error(),
+          event.request.mode === 'navigate' ? caches.match('./', { ignoreVary: true }) : Response.error(),
         ),
     ),
   );

@@ -100,7 +100,10 @@ class ExploreMode implements ModeInstance {
         this.world.systems.renderer.showOrbits = on;
       }),
       platform.lifecycle.onVisibilityChange((visible) => platform.audio.setSuspended(!visible)),
-      platform.lifecycle.onOnlineChange((online) => appState.set({ online })),
+      platform.lifecycle.onOnlineChange((online) => {
+        appState.set({ online });
+        showToast(online ? 'Back online' : 'Offline — showing what’s already been explored');
+      }),
       platform.links.onHashChange((hash) => {
         // A link pasted into the address bar while the app is open.
         if (hash && hash !== this.lastHash) this.openLink(hash, true);
@@ -108,6 +111,7 @@ class ExploreMode implements ModeInstance {
       engine.onContextChange((lost) => showToast(lost ? 'Graphics were interrupted — restoring…' : 'Back in business!')),
     );
     appState.set({ online: platform.lifecycle.isOnline() });
+    if (!platform.lifecycle.isOnline()) showToast('Offline — showing what’s already been explored');
 
     // Start where the link says, or in orbit around home.
     const link = decodeView(platform.links.getHash());
