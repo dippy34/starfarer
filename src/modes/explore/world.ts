@@ -168,10 +168,11 @@ export class ExploreWorld {
     sysR.update(camPos, engine.camera, this.simTime, dt, starLimit, { quat: camQuat });
 
     // A blazing sun or a daylit sky drowns out the background.
-    const dim = 1 - 0.93 * sysR.skyDimming;
+    const dim = 1 - 0.97 * sysR.skyDimming;
     this.starGain += (dim - this.starGain) * Math.min(1, dt * 3);
     this.starLayer.gain = this.starGain;
     this.galaxyLayer.gain = this.starGain;
+    this.galaxies.renderer.gain = this.starGain;
 
     // Sprite size follows resolution so stars look the same on every screen.
     const px = Math.max(1.1, engine.renderHeight / 720);

@@ -144,25 +144,31 @@ void main() {
   float pixel = 2.0 * uTanFov.y / uRes.y;   // radians per pixel
   if (uExtra.w > 0.0) {
     // Active nucleus: the accretion disc outshining the galaxy from a region far too small to resolve.
+    // Closing in, the glow shrinks and fades with the distance left (it stands for a source far too
+    // small to resolve from kiloparsecs away; at the centre itself the black hole's own disc takes over).
     float tc = -dot(ro, rd);
-    if (tc > 0.0) {
-      float s = hR * 0.03, se = max(s, 0.8 * pixel * tc);
-      float b2 = max(dot(ro, ro) - tc * tc, 0.0);
-      col += vec3(0.75, 0.85, 1.0) * (uExtra.w * 36.0 * exp(-b2 / (se * se)) * (s * s) / (se * se) * mix(1.0, trans, 0.4));
+    float rc2 = dot(ro, ro);
+    float s0 = hR * 0.03, s = min(s0, sqrt(rc2) * 0.08), se = max(s, 0.8 * pixel * abs(tc));
+    if (s > 0.0) {
+      float b2 = max(rc2 - tc * tc, 0.0);
+      float ahead = smoothstep(-1.0, 1.0, tc / se);
+      col += vec3(0.75, 0.85, 1.0) * (uExtra.w * 36.0 * (s / s0) * ahead * exp(-b2 / (se * se)) * (s * s) / (se * se) * mix(1.0, trans, 0.4));
     }
   }
   if (uJet > 0.0) {
     // Relativistic jets: two thin, gently flaring, knotty beams along the spin axis.
     float A = max(dot(rd.xy, rd.xy), 1e-4);
     float ta = -dot(ro.xy, rd.xy) / A;      // where the ray passes closest to the axis
-    if (ta > 0.0) {
+    {
       float zj = abs(ro.z + ta * rd.z);
       float rho2 = max(dot(ro.xy, ro.xy) - ta * ta * A, 0.0);
-      float w = radius * 0.008 + zj * 0.035, we = max(w, 0.7 * pixel * ta);
+      float w = radius * 0.008 + zj * 0.035, we = max(w, 0.7 * pixel * abs(ta));
+      // Only the part of the beam in front of the camera counts (a soft edge, for a camera inside the beam).
+      float ahead = smoothstep(-1.0, 1.0, ta * sqrt(A) / we);
       float along = smoothstep(0.0, radius * 0.02, zj) * exp(-zj / (radius * 0.3)) * (1.0 - smoothstep(radius * 0.6, radius * 0.95, zj));
       float n = texture(uNoise, vec3(zj / radius * 3.1, 0.37, 0.81) + uNoiseOffset).r;
       float knots = 0.3 + 2.2 * n * n;
-      col += vec3(0.55, 0.78, 1.0) * (uJet * 2.2 * along * knots * exp(-rho2 / (we * we)) * (w / we) * min(inversesqrt(A), 3.0));
+      col += vec3(0.55, 0.78, 1.0) * (uJet * 2.2 * ahead * along * knots * exp(-rho2 / (we * we)) * (w / we) * min(inversesqrt(A), 3.0));
     }
   }
   col *= uOpacity;
@@ -258,7 +264,7 @@ export interface GalaxyView {
   opacity: number;
 }
 
-function setViewUniforms(u: Record<string, THREE.IUniform>, view: GalaxyView, camera: THREE.PerspectiveCamera, resW: number, resH: number): void {
+function setViewUniforms(u: Record<string, THREE.IUniform>, view: GalaxyView, camera: THREE.PerspectiveCamera, resW: number, resH: number, gain: number): void {
   const g = view.model;
   const b = g.basis;
   // Rows of the basis are the galaxy's local axes in world coordinates: local = B · world.
@@ -271,10 +277,12 @@ function setViewUniforms(u: Record<string, THREE.IUniform>, view: GalaxyView, ca
   const tanY = Math.tan((camera.fov * Math.PI) / 360);
   (u.uTanFov!.value as THREE.Vector2).set(tanY * camera.aspect, tanY);
   (u.uRes!.value as THREE.Vector2).set(resW, resH);
-  u.uOpacity!.value = view.opacity;
+  u.uOpacity!.value = view.opacity * gain;
 }
 
 export class GalaxyRenderer {
+  /** Overall visibility multiplier: daylight or a nearby sun washes galaxies out along with the stars. */
+  gain = 1;
   private readonly heroTarget: THREE.WebGLRenderTarget;
   private readonly heroMaterial: THREE.ShaderMaterial;
   private readonly heroScene = new THREE.Scene();
@@ -349,7 +357,7 @@ export class GalaxyRenderer {
         setModelUniforms(u, view.model);
         slot.modelId = view.model.id;
       }
-      setViewUniforms(u, view, camera, sceneW, sceneH);
+      setViewUniforms(u, view, camera, sceneW, sceneH, this.gain);
       // Centre in view space: rotate the world-axis offset by the inverse camera rotation.
       tmp.copy(view.rel).applyQuaternion(camera.quaternion.clone().invert());
       const toQuad = QUAD_DISTANCE / Math.max(tmp.length(), 1);
@@ -373,7 +381,7 @@ export class GalaxyRenderer {
       setModelUniforms(u, hero.model);
       this.heroId = hero.model.id;
     }
-    setViewUniforms(u, hero, camera, w, h);
+    setViewUniforms(u, hero, camera, w, h, this.gain);
     u.uSteps!.value = tier.galaxySteps;
     // Inside the galaxy, expose for where we are: the eye adapts to the blaze of a galactic nucleus
     // just as it does to the faint band seen from the outskirts.

@@ -593,7 +593,8 @@ export class SystemRenderer {
       if (inside && ranked[0]) {
         const up = tmpA.copy(v.rel).multiplyScalar(-1).normalize();
         const day = Math.min(1, Math.max(0, up.dot(sd[0]!) * 4 + 0.6));
-        this.skyDimming = Math.max(this.skyDimming, day * Math.min(1, atmo.density) * Math.min(1, (R - v.distance) / (R - planet.radius) + 0.3));
+        // (Dust and haze light up a sky as well as gas does: Mars has little air but a bright butterscotch day.)
+        this.skyDimming = Math.max(this.skyDimming, day * Math.min(1, atmo.density + 0.8 * atmo.mie) * Math.min(1, (R - v.distance) / (R - planet.radius) + 0.3));
       }
     }
     if (v.clouds) {
