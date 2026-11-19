@@ -1,41 +1,38 @@
-/**
- * Starfarer entry point: boots the platform, the engine, the mode registry and the UI shell.
- *
- * Boot order: UI shell (start screen appears immediately) → WebGL engine →
- * Explore mode loads its first-launch data and renders the universe behind the
- * start screen → the player presses Start.
- */
-import './ui/styles.css';
-import './modes/explore';
-import './modes/play';
-import { modes } from './modes/registry';
-import { platform } from './platform';
-import { Engine } from './render/engine';
-import { appState } from './state/appState';
-import { mountUI } from './ui/shell';
+import { App } from './app/App';
+import { StartMenu } from './app/StartMenu';
+import { installPerfTools } from './perf/tools';
 
-async function boot(): Promise<void> {
-  const root = document.getElementById('app')!;
-  const labelLayer = mountUI(root);
-  let engine: Engine;
+declare global {
+  interface Window { app?: App; appError?: string; startMenu?: StartMenu }
+}
+
+async function main(): Promise<void> {
+  const canvas = document.getElementById('view') as HTMLCanvasElement;
+  const hud = document.getElementById('hud')!;
+  const labels = document.getElementById('labels')!;
+  const boot = document.getElementById('boot');
+  // the title screen (src/app/StartMenu.ts) shows while loading; deep links (the tests) skip it
+  const menu = StartMenu.wanted() ? new StartMenu() : null;
+  if (menu) { boot?.remove(); window.startMenu = menu; }
   try {
-    engine = new Engine(root);
+    if (!document.createElement('canvas').getContext('webgl2')) throw new Error('WebGL 2 is not available in this browser.');
+    const app = await App.create(canvas, hud, labels);
+    window.app = app;
+    app.start();
+    menu?.attach(app);
+    installPerfTools(app, () => menu?.start());
+    boot?.classList.add('done');
+    setTimeout(() => boot?.remove(), 1000);
   } catch (err) {
-    appState.set({ fatalError: err instanceof Error ? err.message : String(err) });
-    return;
-  }
-  // The canvas must sit beneath the UI.
-  root.prepend(engine.canvas);
-  engine.onFrame = (dt) => modes.update(dt);
-  platform.lifecycle.registerOfflineSupport();
-  engine.start();
-  // Handy for automated checks and for poking around in the console.
-  (window as unknown as { __starfarer: unknown }).__starfarer = { engine, modes, appState };
-
-  const entered = await modes.enter('explore', { engine, uiRoot: labelLayer });
-  if (!entered) {
-    appState.set({ fatalError: platform.lifecycle.isOnline() ? 'The star catalogues could not be loaded. Please reload to try again.' : 'You appear to be offline and the star catalogues are not cached yet. Connect once to download them.' });
+    boot?.remove();
+    menu?.fail();
+    console.error(err);
+    window.appError = String(err instanceof Error ? err.stack ?? err.message : err);
+    const div = document.createElement('div');
+    div.className = 'fatal';
+    div.textContent = `Failed to start: ${window.appError}`;
+    document.body.appendChild(div);
   }
 }
 
-void boot();
+main();

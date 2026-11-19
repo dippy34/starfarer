@@ -1,287 +1,309 @@
-# Starfarer
+# Space Explorer
 
-*(working title)*
+A real-time, seamless, scale-free explorer of the real and procedurally generated universe — a
+SpaceEngine-style experience for desktop and VR headsets, built on **real astronomical data** (JPL
+ephemerides, AT-HYG / HYG / Gaia DR3 stars, JPL satellite and small-body catalogues, NASA/USGS
+planetary maps, the NASA Exoplanet Archive, JPL Horizons spacecraft trajectories, SIMBAD galaxies)
+with deterministic procedural generation for everything the catalogues don't cover.
 
-A mobile-first, browser-based explorer of the whole observable universe.
-Start in orbit around Earth, pinch out past the planets, the 2.2 million real
-stars of the solar neighbourhood, the Milky Way, 2.6 million real galaxies and
-750 thousand real quasars — and keep going into a procedural universe that
-fills in everything the surveys never reached. Or go the other way: pick a
-star, find its planets, and fly down to the ground.
+**What you can visit:** the Solar System with 16k close-up maps of 15 worlds · 2.75 million catalogued
+stars, each with its own surface, plus billions of generated ones filling the Milky Way · **6,333
+confirmed exoplanets** in 4,743 systems and a generated planetary system around (almost) every other
+star · 23 black holes with lensing, accretion disks and jets · **real spacecraft** at their real
+positions (ISS, Hubble, JWST, Voyager 1 & 2, New Horizons, Parker Solar Probe, Europa Clipper, Juice,
+Lucy, Psyche) · **47 nearby galaxies** (Andromeda, Triangulum, the Magellanic Clouds, the Whirlpool,
+the Sombrero, Centaurus A, M87 …) · **41 nebulae and star clusters** (the Orion, Carina, Eagle,
+Ring, Helix and Crab nebulae, the Pleiades, Omega Centauri, 47 Tucanae …) · the Milky Way from outside ·
+**real 3D ground to land on**: NASA elevation models for the Moon, Mars, Mercury and Ceres and
+NOAA's for Earth, with a tour of landmarks to fly to (Mount Everest, the Grand Canyon, Kilimanjaro, the
+Matterhorn, Mauna Kea, Mount Fuji, Denali, Olympus Mons, Valles Marineris, the Curiosity, Perseverance,
+Spirit and Opportunity sites, the Apollo 11, 15 and 17 sites, Chang'e 4 on the far side, Tycho,
+Copernicus, Shackleton at the lunar south pole, the Caloris Basin, Occator and Ahuna Mons on
+Ceres), generated hills, craters
+and shadows on other moons, and on rocky planets of other stars (their mountains and seas match their
+colours; temperate worlds have blue skies) · **inside Saturn's
+rings** among their ice (search "rings") · comets near the Sun with comas, tails and (up close) a
+dark nucleus with jets · **eclipses at their
+real times** (moon shadows crossing Jupiter, the Moon turning copper in Earth's shadow).
 
-- **Explore mode** is complete. **Play mode** is registered in the mode
-  switcher as "Coming soon"; nothing else of it exists yet.
-- TypeScript + Vite + three.js (WebGL2), Web Workers for all decoding and
-  generation, no backend. The build output is static files, ready to be served
-  from anywhere or wrapped with Capacitor.
-- Every judgment call made while building this is recorded in
-  [`DECISIONS.md`](./DECISIONS.md).
+**Game mode (V):** fly your own ship — a cockpit with live navigation screens (sit inside it in VR),
+a chase view, inertial flight, a warp drive with streaks and engine sound, fictional traffic and a
+rotating space station orbiting the world you are near (fly up to its docking port and the docking
+computer takes over), landing on solid worlds, missions and a discovery log.
 
----
+### ▶ Live: **https://dippy34.github.io/nextjs-boilerplate/**
 
-## Run it
+Desktop browser with WebGL 2 (keyboard + mouse; press **H** for controls) — or a **VR headset**: open
+the link in the headset's browser (Meta Quest Browser, or Chrome/Edge on a PC with a Link/SteamVR
+headset) and press **ENTER VR**.
 
-Requires Node 20 or newer.
+![Earth](docs/img/01-earth.jpg)
+
+| | |
+|---|---|
+| ![Saturn](docs/img/03-saturn.jpg) | ![Orion from Earth orbit](docs/img/07-sky-from-earth-orion.jpg) |
+| ![40 pc above the Sun](docs/img/09-neighborhood.jpg) | ![Asteroid belt](docs/img/11-asteroid-belt.jpg) |
+| ![Pluto and Charon](docs/img/12-pluto-charon.jpg) | ![Sirius](docs/img/13-sirius.jpg) |
+| ![Gaia BH1 bending the Milky Way into an Einstein ring](docs/img/bh-gaia-bh1.jpg) | ![Cygnus X-1's accretion disk lensed over the shadow](docs/img/bh-cygnus-x1.jpg) |
+| ![The Moon from 5 km: LOLA heights, generated craters](docs/img/terrain-moon-5km.jpg) | ![Standing in a lunar crater at sunrise](docs/img/terrain-moon-ground.jpg) |
+| ![Over Olympus Mons (MOLA heights) under the Martian sky](docs/img/terrain-mars-olympus.jpg) | ![On Proxima Cen b, lit by its red dwarf (generated surface)](docs/img/terrain-proxima-b.jpg) |
+
+*Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
+verification run, not hand-picked renders.*
+
+## Quick start
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173 (also listening on your LAN address)
+npm run dev          # http://127.0.0.1:5173
 ```
 
-The catalogue data (`public/data/`, 67 MB) is committed, so there is nothing to
-download first.
+All processed data (≈400 MB, most of it close-up map tiles) is committed under `public/data/`, so the app runs without the
+pipeline. To rebuild every data file from the original sources, see [`pipeline/`](pipeline/README.md)
+(`npm run data`, needs Python 3.10+ and ~0.5 GB of downloads).
 
-```bash
-npm run build      # typecheck + production build into dist/
-npm run preview    # serve dist/ locally, as a static host would
-npm run check      # typecheck, lint, unit tests and production build in one go
-```
+Production build: `npm run build && npm run preview`.
+Deploy to GitHub Pages: `bash scripts/deploy-pages.sh` (builds and force-pushes the `gh-pages` branch).
 
-`dist/` is a plain static site with relative URLs: copy it to any static host
-or point Capacitor's `webDir` at it.
+### Controls
 
-### Try it on a phone over your local network
+| Input | Action |
+|---|---|
+| Left drag | Look around |
+| Right drag / Shift + drag | Orbit around the selection |
+| Wheel | Zoom towards the selection (free flight: change speed) |
+| W A S D, R F | Fly; speed scales with altitude above the nearest surface |
+| Shift / Ctrl | ×10 / ×0.1 speed · Q / E roll |
+| Click / double-click | Select / select and go to |
+| G · C | Go to selection (autopilot) · centre selection |
+| Enter or `/` | Find by name (planets, 459 moons, 302 large asteroids/TNOs, 4,077 comets, 12,585 named stars, 6,333 exoplanets, spacecraft, galaxies) |
+| 0–9 | Sun, Mercury … Pluto |
+| Space · `[` `]` · `\` · Backspace | Pause · slower/faster time · reverse · real time now |
+| L · O · M | Labels · orbits · minor-body orbits |
+| P · H · Esc | Screenshot · help · stop autopilot / deselect |
+| V · J · X | Spaceship (cockpit / chase / off) · warp drive to the selection · brake |
+| K · N | Missions and discoveries · ship sound on/off |
+| T | Tour: Saturn's rings, Olympus Mons, the Apollo 11 site, an eclipse, a comet, a black hole … |
+| U | Photo mode: hide panels and labels (P saves a PNG) |
 
-1. Put the phone and the computer on the same Wi-Fi.
-2. `npm run dev` — Vite prints a `Network:` address such as
-   `http://192.168.1.23:5173`. Open that on the phone.
-3. For the real thing (service worker, offline cache, "Add to Home Screen"),
-   browsers require HTTPS on anything but `localhost`. Either
-   - Android: `adb reverse tcp:4173 tcp:4173`, run `npm run build && npm run preview`
-     and open `http://localhost:4173` on the phone, or
-   - tunnel the preview server through any HTTPS tunnel
-     (`cloudflared tunnel --url http://localhost:4173`, `ngrok http 4173`, …).
-4. Turn on **Settings → Performance HUD** to see frames per second, draw
-   calls, point count and the quality tier the adaptive controller chose.
+**Landing:** go to a solid world (the Moon, Mars, Mercury, Ganymede, Callisto … or a rocky planet of
+another star) and keep descending (F; in VR, point the left controller down and push the left stick): below about 40 km the sphere turns
+into real 3D ground, and you can fly down to standing height. In ship mode, coming down slowly below
+10 m is a touchdown. For long shadows, come down near the terminator (the day/night line).
 
-### Put it online (GitHub Pages)
+### VR (WebXR) — built for the headset
 
-`.github/workflows/deploy-pages.yml` runs `npm run check` on every push to
-`main` and, if everything passes, publishes `dist/` to the `gh-pages` branch
-(one commit, replaced on each deployment). Switch GitHub Pages on once:
+![VR menu, Io, the Moon, the Milky Way, Earth and Saturn](docs/img/vr-and-visuals.jpg)
 
-1. **Settings → Pages → Build and deployment**
-2. Source: **Deploy from a branch**; Branch: **`gh-pages`**, folder **`/ (root)`**; Save.
+Open the link in the headset's browser (Meta Quest Browser, or Chrome/Edge on a PC with a Link /
+SteamVR headset) and press **ENTER VR**. The view fades in and the **menu** opens in front of you.
 
-The game is then served over HTTPS at `https://<owner>.github.io/<repository>/`
-— installable ("Add to Home Screen") and playable offline after the first
-visit. The site is public even if the repository is private (private
-repositories need a paid GitHub plan for Pages). A deployment can also be
-started by hand from the **Actions** tab.
+* **Menu** (Y on the left controller, or MENU on your wrist): tabs for Planets, Moons (by planet),
+  Small worlds (dwarf planets, big asteroids, famous comets), Stars, Exoplanets, Nebulae, Galaxies,
+  Craft, **Places** (highlights, then landmarks by world: Earth, the Moon, Mars, Mercury; Saturn's
+  rings, eclipses), **Search** (virtual keyboard over
+  every planet, moon, asteroid, comet and 12,585 named stars) and Settings. Every item shows a
+  thumbnail rendered from the real map and its live distance; **point and pull the trigger** to fly there.
+* **Travel** blinks, turns the view so the destination is straight ahead, then flies there in a
+  straight line with a comfort vignette and parks you where the world fills your view ("Blink" travel in
+  Settings jumps instead).
+* **Point at anything in the sky**: a ring and its name/distance appear (with a haptic tick); the trigger
+  selects it and opens an info card; pull the trigger on it again, press **A**, or "Fly to" to go there.
 
----
+| Controller | Action |
+|---|---|
+| Trigger (either hand) | Click menus · select what the laser points at · again on the selection: fly there |
+| A · B | Fly to the selection · back (stop flight / close card / close menu / deselect) |
+| Y · X | Menu · pause / resume time |
+| Left stick · left grip | Fly where the left controller points (speed scales with altitude) · ×10 |
+| Right stick | Turn (snap 30° or smooth, in Settings) · up/down: flight speed |
+| Right grip + right stick | Orbit around / zoom to the selection |
+| Stick clicks | Right: labels on/off · left: real time, now |
 
-## Controls
+Hand tracking (no controllers) and gaze-and-pinch work the same way: pinch = trigger. The left wrist
+shows the date, time rate, selection and MENU / FLY TO / PAUSE buttons. Settings: labels, orbit lines
+(off by default in VR), travel and turning style, Milky Way and star brightness, time controls, exit.
 
-| | Touch | Mouse / keyboard |
-| --- | --- | --- |
-| Look around (or circle the thing you flew to) | drag with one finger | drag |
-| Move toward / away from what you are looking at | pinch | scroll wheel |
-| Fly | throttle slider on the right (double-tap it to stop) | `W` `S` / `↑` `↓` (hold `Shift` to boost), `A` `D` strafe, `R` `F` up / down |
-| Roll | twist with two fingers | right-drag, `Q` `E` |
-| Select something | tap it | click it |
-| Fly to it | double-tap, or **Fly there** on its card | double-click, `G` |
-| Land on it | **Land** on its card | `L` |
-| Stop | double-tap the throttle | `Space` |
-| Search | 🔍 | `/` |
-| Time | ⏸ 1× ▶▶ ▶▶▶ ⏩ buttons | `[` and `]` |
-| Photo mode | 📷 | `P` |
-| Back out (close card, stop orbiting, leave photo mode) | ✕ | `Esc` |
+Frames go straight into the headset's stereo framebuffer (tone mapping inside every material, the
+same ACES curve as the desktop), logarithmic depth, a glare sprite around the Sun instead of bloom,
+and a pull-in projection for runtimes that clamp the far plane. Tested with Meta's IWER WebXR emulator
+(Quest 3 profile, stereo, projection layers, controllers and hands — `npm run verify:vr`, 23 checks
+including "every VR draw lands in the headset framebuffer"); not yet profiled on headset hardware.
 
-Speed scales with the distance to the nearest object, so the same throttle
-setting crawls over a landscape and crosses superclusters.
+URL parameters (also used by the automated tests): `time=2026-10-01T20:00:00Z`, `rate=86400`,
+`paused=1`, `target=Saturn&dist=6&az=40&el=20` (distance in radii), `look=Betelgeuse`,
+`campc=x,y,z` (camera position in parsecs), `fov=60`, `starlimit=7.5`, `gaia=0` (skip the
+non-commercial Gaia dataset), `depth=log` (force logarithmic depth), `xr=0` (never offer VR),
+`mw=1` (Milky Way brightness, 0 hides it).
 
-**Search** understands names (*Saturn*, *Betelgeuse*, *M 31*, *TRAPPIST-1 e*,
-*Sgr A\**), catalogue ids (*HIP 32349*), sky coordinates with an optional
-distance (`10h 08m 22s +11° 58′ 79 ly`, `RA 187.7 Dec 12.39 16.5 Mpc`), the
-stable ids shown in Show data, and any other word, which is used as a seed and
-always leads to the same procedural galaxy.
+## Why Three.js (WebGL2) + TypeScript + Vite
 
-**Share** copies a link whose `#…` fragment holds the camera's exact position,
-orientation and the simulation time; opening it restores the view.
-**Bookmarks** and **recents** are stored on the device.
-
-**Settings:** Show data (real numbers on the info card: distance, temperature,
-mass, radius, gravity, orbital period, spectral class, redshift, catalogue id;
-time dilation near black holes), quality (auto / low / medium / high), sound,
-haptics, labels, constellation lines, orbit lines, performance HUD.
-
----
-
-## What is real and what is imagined
-
-Every info card carries a **Real** or **Imagined** badge.
-
-| Real (from catalogues, at their measured positions) | Imagined (procedural, deterministic) |
-| --- | --- |
-| 2 256 935 stars: all of Gaia DR3 brighter than G = 11.5, every known star within 100 pc, Hipparcos for the brightest | stars fainter than the catalogue limit, and all stars of other galaxies |
-| 2 650 418 galaxies (2MRS, Updated Nearby Galaxy Catalog, OpenNGC, SDSS DR17) and 750 402 SDSS DR16Q quasars | galaxies the surveys did not reach, the cosmic web between them, and how every galaxy looks up close |
-| 6 161 confirmed exoplanets around 4 564 stars: orbits, masses, radii | what those planets look like; planets of stars with no known planets |
-| 7 071 nebulae, clusters, pulsars and black holes with measured distances | the gas of nebulae and the member stars of clusters |
-| The Solar System's orbits, sizes, masses, spins and rings | its surfaces (procedural; see DECISIONS.md) |
-| 88 constellations | — |
-
-The same coordinates always produce the same result on every device: procedural
-content is a pure function of one universe seed and integer coordinates, and
-nothing procedural is ever stored.
-
----
-
-## Rebuilding the catalogues
-
-```bash
-npm run build:catalogs                       # download everything (≈ 0.7 GB raw, 30–60 min) and build
-npm run build:catalogs -- --skip-download    # rebuild public/data from the raw files already on disk (≈ 8 min)
-npm run build:catalogs -- --download-only
-```
-
-Environment variables: `VIZIER_HOST` (default `vizier.cfa.harvard.edu`; the
-Strasbourg original is `vizier.cds.unistra.fr`), `GAIA_G_LIMIT` (default 11.5).
-
-The pipeline (`scripts/build-catalogs/`) downloads from the official archives
-into `scripts/build-catalogs/.raw/` (git-ignored), cleans and cross-matches the
-catalogues, quantises them and writes:
-
-```
-public/data/
-  manifest.json          datasets, octree node tables, file sizes, catalogue limits
-  stars/ galaxies/ sdss/ quasars/
-      r<octants>.bin     one tile: ≤ 4096 stars or ≤ 2048 galaxies, columnar, delta-coded, DEFLATE
-      r<octants>.id      (stars) Gaia DR3 / Hipparcos ids, fetched only when a star is selected
-  names/n0.bin …         searchable names; n0 (the famous ones) is part of the first download
-  exoplanets.bin  dso.bin  constellations.bin  notable.json
-  lss.bin                real large-scale-structure density + survey footprint (for procedural fill)
-  BUILD_REPORT.json      every count, every object dropped and why
-```
-
-Downloads are resumable and verified: the Gaia step, for example, compares its
-row total with the archive's own count and fails rather than ship a partial
-sky. If a source is unreachable the build stops with the failing URL; nothing
-is ever substituted or invented.
-
-Last build: 5 670 987 objects, 67.7 MB in total, 3.0 MB fetched before the
-Start button enables.
-
----
+* **Streaming is native to the web.** The star catalogue is an octree of ~1,200 binary tiles and the
+  ephemeris is chunked by decade; the browser fetches exactly what the camera needs. A desktop shell
+  (Tauri/Electron) can wrap it later without changing the engine.
+* **Full shader control without boilerplate.** Three.js gives render targets, HDR formats, and both
+  reversed-Z (`EXT_clip_control`) and logarithmic depth, while every material here is a hand-written
+  GLSL `ShaderMaterial` (stars, PSF sprites, planets, rings, GPU Kepler propagation).
+* **Verifiable here.** Each phase is run and checked in headless Chromium (Playwright + SwiftShader);
+  that rules out Unity/Unreal in this environment, and makes Rust/wgpu (Bevy) iteration much slower.
+* Babylon.js would also work; Three.js is lighter and its WebGPU path is available later for compute.
 
 ## Architecture
 
 ```
 src/
-  core/       maths with no dependencies: hashing, seeded PRNG, deterministic transcendentals,
-              high-precision universe positions, units, astronomy, cosmology, colour, noise
-  universe/   pure generators (no rendering, no DOM): cosmic web, galaxies, star fields, stars,
-              planetary systems, planets, terrain, the Solar System, the Milky Way model
-  data/       tile format + schemas (shared with the build pipeline), LOD selection,
-              catalogue loader, tile streamer, names/search table, worker pool, the data worker
-  render/     three.js: engine + adaptive quality, point layers, galaxy volumes, nebulae,
-              star / planet / ring / atmosphere / cloud shaders, quadtree terrain,
-              black-hole lensing pass, HDR post-processing
-  input/      pointer / wheel / keyboard → look, pinch, twist, tap, double-tap
-  platform/   interfaces for storage, blob cache, share, haptics, audio, links, lifecycle,
-              device — with web implementations (swap them with setPlatform() for Capacitor)
-  state/      observable app state; persisted settings, bookmarks, recents
-  ui/         start screen, HUD, info card, panels (plain DOM + CSS, safe-area aware)
-  modes/      mode registry + state machine
-    explore/  the Explore mode: world management, camera, search, links, labels
-    play/     registered as "Coming soon" — nothing else
-scripts/build-catalogs/   the reproducible catalogue pipeline
-tests/        unit tests (vitest)
+  core/      units, double-double universal positions (UPos), time scales, reference frames
+  astro/     DE442S chunk evaluator, Kepler/universal propagation, IAU rotation models, photometry
+  universe/  Solar System (planets, 459 moons, minor bodies), streaming star catalogue, named stars
+  render/    HDR renderer (bloom + ACES), star field, Milky Way, bodies (planets, rings, Sun, relief,
+             glint), atmospheres, orbits, GPU asteroids, comets (Web Worker), near stars, labels
+  app/       main loop, camera rig (free fly / orbit / autopilot), input, WebXR (VR.ts)
+  vr/        in-headset UI: canvas panels with hit regions, the explorer menu
+  workers/   comet propagation (double precision, off the main thread)
+pipeline/    Python: download → validate → convert raw catalogues into public/data/
+tests/       unit tests incl. comparison against JPL Horizons reference vectors
+scripts/     headless browser verification (scenario screenshots, interaction checks)
 ```
 
-Some things worth knowing before changing anything:
+**Scale and precision.** Every object has a double-double position (≈32 significant digits, i.e.
+millimetres at 100 Mpc). Each frame, positions are differenced against the camera in double-double,
+converted to doubles and only then to float32 for the GPU — a floating origin, so the camera always
+sits at (0,0,0). Depth uses a reversed-Z float32 buffer (logarithmic fallback). The camera co-moves
+with whichever body's sphere of influence it is in, so time acceleration never leaves you behind.
 
-- **Positions** are `UPos`: integer sector indices (2⁴⁰ m each) plus a float64
-  offset, exact to well under a millimetre across 10²⁶ m. The three.js camera
-  never leaves the origin; everything is rendered relative to it.
-- **Everything heavy runs in workers** (`src/data/worker/dataWorker.ts`): tile
-  decompression, star and galaxy cell generation, terrain meshing.
-- **Level of detail.** Catalogue tiles form brightness-ordered octrees. Our own
-  sky (stars, bright and nearby galaxies) is ordered by apparent brightness,
-  so the showpieces are always loaded; the deep surveys are ordered by
-  luminosity, evenly sampled from afar and refined around the camera. The
-  streamer loads what matters from where the camera is within the tier's
-  point budget and evicts the rest (`src/data/lod.ts`, DECISIONS.md §4.8).
-  Procedural content lives in level-of-detail cells keyed by integer
-  coordinates. Terrain is a cube-sphere quadtree.
-- **Budgets** for points, draw calls and shader work per quality tier are in
-  `src/render/qualityTiers.ts`; `src/render/quality.ts` moves between tiers
-  from measured frame time.
-- **Adding a mode:** create `src/modes/<name>/index.ts`, call
-  `modes.register({ id, title, tagline, icon, available: true, order, create })`
-  and import the file from `src/main.ts`. The start screen picks it up.
-- **Platform services** are only reached through `platform.*`; an ESLint rule
-  enforces it.
+**Photometry.** All light is in one physical unit system (radiance 1 = white Lambertian surface lit by
+the Sun at 1 AU). Stars, unresolved planets, asteroids and comets are drawn as point-spread sprites
+whose integrated value equals the physical irradiance at the camera, so a planet fading from disk to
+dot keeps its brightness. Eye adaptation follows the brightest resolved disk in view; a perceptual
+power law is applied to point sources (as SpaceEngine/Celestia do).
 
----
+**Stars.** A brightest-first octree: each node holds the intrinsically brightest stars of its cube not
+taken by an ancestor, so "could any star in this subtree be visible from here?" is an exact test and
+tiles stream in without popping. Colours come from Planck spectra integrated against CIE colour
+matching functions.
 
-## Tests
+## Status
 
-```bash
-npm test
-```
+### What works (each verified before it went live)
 
-60 unit tests cover determinism (same coordinates → same galaxies, stars,
-systems and terrain; a pinned snapshot guards against accidental generator
-changes), physical sanity of generated stars, planets, systems and galaxies,
-the real Solar System, coordinate precision at the edge of the universe, tile
-and id round trips, quantisation bounds, regeneration of IAU designations,
-the catalogue octree builder, level-of-detail selection, spectral-type
-parsing, share links, coordinate parsing and number formatting.
+Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `vr.mjs`, `game.mjs`,
+`terrain.mjs`, `places.mjs`; see HANDOFF.md):
 
----
+* Seamless scale from metres above a planet to kiloparsecs, floating origin, reversed-Z depth.
+* 2,751,164 real stars streamed from two separately-licensed octrees (AT-HYG+HYG; Gaia DR3 100 pc
+  supplement), physical brightness and blackbody colours, 12,585 named stars, picking with real
+  designations (HIP/HD/TYC/Gaia DR3), stars resolve into limb-darkened disks when you fly to them.
+* Solar System at the real date: JPL DE442S (1849–2150; validated against JPL Horizons to ≲50 km for
+  Earth, 1 km for the Moon), JPL approximate elements outside that range, IAU rotation models (pck00011).
+* 459 moons: JPL mean elements, calibrated against Horizons (median error 0.58° over 1950–2100), with
+  Horizons osculating-element tables for Triton, Titan, Iapetus and the irregular moons (≤0.07°).
+* 302 large asteroids/TNOs as full bodies, 75,565 numbered asteroids propagated on the GPU, 4,077
+  comets propagated in a Web Worker.
+* Every body and star looks like itself: stars get their own granulation, spots, flares, flattening
+  and corona from their temperature and size (giant convection cells on red supergiants); the 459
+  moons and the asteroids get 4K maps from the full-resolution USGS mosaics or, where no spacecraft has
+  mapped them, a seeded procedural surface and an irregular shape for small bodies; each black hole has
+  its own disk temperature, gas pattern and (for M87\* and the microquasars) jets.
+* NASA/USGS global maps for 23 bodies, Earth night lights and clouds, Saturn's rings from the Voyager 2
+  PPS occultation profile with planet↔ring shadows.
+* Free flight with altitude-scaled speed (metres/s to parsecs/s), orbit mode, logarithmic go-to
+  autopilot, time control (pause, ×1 … 100 years/s, reverse), labels, orbit lines, search, info panel,
+  screenshots.
+* Immersive VR (WebXR) designed for the headset: in-headset menu with planet/moon/star browser and
+  virtual-keyboard search, laser pointing with hover and haptics, comfortable travel, info cards,
+  wrist panel, 3D labels, controllers and hand tracking.
+* Visuals: the real Milky Way (NASA SVS Deep Star Maps, Gaia DR2) behind the catalogue stars;
+  single-scattering atmospheres (Earth, Mars, Venus, Titan, giant-planet limb haze) with reddened
+  sunlight at the terminator; relief from real elevation models (LOLA, MOLA, MESSENGER, ETOPO 2022);
+  sun glint on Earth's oceans; 8k maps of Earth, Moon, Mars and Mercury streamed on demand; Saturn,
+  Uranus and Neptune from 2025 Hubble OPAL maps; giant-planet and Titan colours from measured albedo
+  spectra.
+* Black holes: 23 real ones (every dynamically confirmed stellar black hole in BlackCAT, Cygnus X-1,
+  Gaia BH1–3, Sagittarius A\*, M87\*) with their companion stars on their real orbits. Light is traced
+  past each hole in the Schwarzschild metric per pixel, so the sky behind it bends into Einstein rings,
+  the far side of the accretion disk arcs over the shadow, and Doppler beaming brightens the side
+  coming towards you. Search for them, or open the **Deep space** tab in the VR menu.
+* The whole Milky Way: a parametric model of the galaxy (thin and thick disks, the boxy bar, four
+  spiral arms and the local spur, dust, the nuclear star cluster around Sgr A\*) drives both the
+  galaxy's unresolved glow — ray-marched through the dust into a cube map, cross-fading from the
+  real NASA map as you leave the Sun's neighbourhood — and **tens of billions of procedural stars**
+  generated on demand in Web Workers wherever the catalogues end. Every generated star is
+  deterministic (it is always the same star, with a designation like `PS 9.41.-3.0-17` you can
+  search for) and none duplicates a catalogued one. Fly to the galactic centre and Sgr A\* sits
+  in a blazing star cluster; search "Milky Way" to leave the galaxy and see the barred spiral from
+  outside.
+* Beyond the Solar System: 6,333 confirmed exoplanets placed around their catalogued stars, a generated
+  system around almost every other star, 47 nearby galaxies, 41 nebulae and clusters, and real
+  spacecraft on their trajectories.
+* Landing: real 3D ground from NASA and NOAA elevation models (sharper patches around landmarks), generated
+  hills, craters and shadows elsewhere, walking at eye height, rocky planets of other stars with
+  matching terrain and Earth-like skies.
+* Saturn's rings from the inside, comets with comas, tails and nuclei, eclipses and moon shadows at
+  their real times.
+* Game mode: cockpit and chase views, inertial flight, warp, traffic, docking at stations, landing,
+  missions and a discovery log.
 
-## Data sources, licences and attribution
+Known limitations (planned for later phases unless noted):
 
-Starfarer redistributes derived, quantised subsets of the following. Please
-keep these acknowledgements with any copy of `public/data/`.
+* Close to a solid world the ground becomes real 3D terrain: elevation models for the Moon, Mars,
+  Mercury, Ceres and Earth (about 5–20 km per sample) with generated relief below that, generated relief on
+  other round moons, dwarf planets and rocky planets of other stars. Venus, Titan and small
+  irregular bodies keep smooth surfaces with relief shading. Earth's clouds are painted on the
+  surface from orbit; below 150 km they become a layer 7 km up (the same map, with generated
+  billows), which clears again below about 30 km so mountains stay in view (no flying through
+  clouds down low), and its ground
+  colours come from the Blue Marble map (blurry at eye level; generated rock-and-soil detail is
+  added close up).
+* Venus uses procedural banding tinted with the Mariner 10 disk colour; the Viking Mars mosaic is
+  somewhat over-saturated; OPAL maps miss the latitudes Hubble could not see (filled zonally).
+* The Milky Way model is smooth and idealised (arm positions, a clumpy noise for dust and star
+  clouds). Other galaxies are procedural discs/spheroids with their catalogued size, type and
+  orientation; the nearest one becomes a 3D cloud of generated star clouds and stars (arm positions
+  are not the real ones); nebulae are procedural at their catalogued size
+  (billboards from afar, a ray-marched volume up close; their shapes are not the real ones);
+  globular-cluster stars are generated.
+* Terrain shadows are ray-marched per mesh vertex, with the edge placed per pixel (features
+  smaller than the mesh spacing cast none). Far from the explorer the mesh is coarse (vertices
+  5-10 km apart at 100+ km), so distant crater walls and ridges look blocky. The global elevation models are coarse (5–20 km per
+  sample; 0.24–0.9 km in the patches around the landmarks) with generated relief below that, which
+  is plausible, not mapped. Generated planets' atmospheres are Earth-like for every temperate world.
+* Generated planets are labelled as such; their counts and sizes follow occurrence statistics, not
+  observations. Orbit orientations and phases of most real exoplanets are unmeasured and chosen
+  deterministically.
+* Game-mode ships are fictional. The ISS and Hubble are propagated from one set of orbital elements
+  (2026-10-01), so they drift from their real positions over weeks. Procedural stars beyond the catalogues
+  are plausible, not real: their densities, colours and luminosities follow the model.
+* Star radii are estimated from V magnitude and temperature (no bolometric correction). Gaia DR3
+  places Sirius B 0.033 pc from Sirius A (a known astrometry problem for that binary).
+* Moons without published sizes get a deterministic procedural radius, flagged "estimated".
+* Comet comas and tails are a model: their size follows each comet's catalogued total-magnitude
+  parameters (M1, K1) and distance from the Sun, the ion tail points straight away from the Sun and
+  the dust tail curves back along the orbit; real tails vary with outbursts. The asteroid-belt
+  brightness boost for distant asteroids is artistic (physical within 0.05 AU).
+* Pluto has no ephemeris outside 1849–2150. Eclipses and moon shadows treat bodies as spheres (up to
+  four shadowing bodies at a time), and the coppery light in Earth's shadow is a simple tint.
+* VR has no bloom pass (a glare sprite around the Sun stands in) and starts at a lower star magnitude
+  limit (6.8, adjustable in Settings) to protect frame rate.
+* Atmospheres are single scattering (no multiple scattering); over the landing terrain the haze is
+  marched to the real ground, elsewhere to the reference sphere. Skylight on Earth and Mars (what
+  fills shadows) is a one-line estimate from the vertical optical depth, not computed per direction. The Milky
+  Way map is Earth-centred and fades out beyond ~1 kpc.
+* Black holes are non-spinning (Schwarzschild).
+* Performance has been verified only under software rendering (≈20–30 fps at 720p; ~3–5 ms JS per
+  frame). GPU profiling and quality presets come in Phase 6.
 
-| Data | Source | Terms |
-| --- | --- | --- |
-| Stars: positions, parallaxes, magnitudes, colours | **Gaia DR3** and the **Gaia Catalogue of Nearby Stars** (ESA/Gaia/DPAC), via the ESA Gaia Archive | Free to use with the acknowledgement below |
-| Bright stars | **Hipparcos** main catalogue (ESA 1997) and the new reduction (van Leeuwen 2007), via VizieR | ESA; free with acknowledgement |
-| Star names | **IAU Working Group on Star Names** catalogue; Bayer / Flamsteed designations from the HD–DM–GC–HR–HIP–Bayer–Flamsteed cross index (Kostjuk 2002, VizieR IV/27A) | Public |
-| Constellation figures (which stars are joined) | **Stellarium** "modern" sky culture | Distributed with Stellarium (GPL-2.0-or-later); see the licensing note in DECISIONS.md |
-| Galaxies | **2MASS Redshift Survey** (Huchra et al. 2012, ApJS 199, 26); **Updated Nearby Galaxy Catalog** (Karachentsev et al. 2013, AJ 145, 101) | Published catalogues via VizieR |
-| Galaxies and quasars | **Sloan Digital Sky Survey** DR17 (SpecPhoto) and the **DR16 quasar catalogue** (Lyke et al. 2020, ApJS 250, 8) | SDSS data are public; acknowledgement below |
-| NGC / IC / Messier objects | **OpenNGC** (Mattia Verga) | **CC BY-SA 4.0** |
-| Exoplanets | **NASA Exoplanet Archive**, Planetary Systems Composite Parameters | Public; acknowledgement below |
-| Globular clusters | Harris (1996, 2010 edition) | Published catalogue via VizieR |
-| Open clusters | Hunt & Reffert (2023, A&A 673, A114) | Published catalogue via VizieR |
-| Planetary nebula distances | González-Santamaría et al. (2021, A&A 656, A51) | Published catalogue via VizieR |
-| Pulsars | **ATNF Pulsar Catalogue** (Manchester et al. 2005, AJ 129, 1993), via VizieR | Free with citation |
-| Solar System orbits | **JPL Horizons** (NASA/JPL) | Public domain |
-| A few famous objects (black-hole masses, nebula distances, …) | Individual papers, cited per entry in `scripts/build-catalogs/curated/notable.json` | — |
+### Roadmap
 
-Required acknowledgements:
+2. Planet rendering: cube-sphere quadtree terrain from real DEMs, Bruneton atmospheric scattering,
+   oceans, clouds, space-to-surface descent and surface walking.
+3. Nebulae and star clusters (OpenNGC), a finer Milky Way seen from outside.
+4. Sharper terrain everywhere (streamed elevation tiles), a cloud layer you can fly through; more
+   stations and ship types.
+5. Full UI: search panel, bookmarks, settings and quality presets.
+6. Polish: lens flares, spinning (Kerr) black holes, performance tuning.
 
-> This work has made use of data from the European Space Agency (ESA) mission
-> *Gaia* (https://www.cosmos.esa.int/gaia), processed by the *Gaia* Data
-> Processing and Analysis Consortium (DPAC,
-> https://www.cosmos.esa.int/web/gaia/dpac/consortium). Funding for the DPAC
-> has been provided by national institutions, in particular the institutions
-> participating in the *Gaia* Multilateral Agreement.
+## Data and credits
 
-> Funding for the Sloan Digital Sky Survey IV has been provided by the Alfred
-> P. Sloan Foundation, the U.S. Department of Energy Office of Science, and the
-> Participating Institutions. SDSS acknowledges support and resources from the
-> Center for High-Performance Computing at the University of Utah. The SDSS web
-> site is www.sdss.org.
-
-> This research has made use of the NASA Exoplanet Archive, which is operated
-> by the California Institute of Technology, under contract with the National
-> Aeronautics and Space Administration under the Exoplanet Exploration Program.
-
-> This research has made use of the VizieR catalogue access tool, CDS,
-> Strasbourg, France (DOI: 10.26093/cds/vizier), and of data products from the
-> Two Micron All Sky Survey, a joint project of the University of Massachusetts
-> and IPAC/Caltech, funded by NASA and the NSF.
-
-> NGC/IC/Messier data © OpenNGC contributors, licensed CC BY-SA 4.0
-> (https://github.com/mattiaverga/OpenNGC). The derived deep-sky and galaxy
-> files in `public/data/` that include OpenNGC content are shared under the
-> same licence.
-
-The same credits are shown in the app under **Settings → About**.
-
-Code dependencies: three.js (MIT), fflate (MIT).
+See [CREDITS.md](CREDITS.md). Licences differ per dataset — notably the Gaia DR3 supplement
+(`public/data/stars-gaia/`) is **CC BY-NC 3.0 IGO (non-commercial)** and the AT-HYG/HYG-derived star
+tiles are **CC BY-SA 4.0**. Source code is MIT.

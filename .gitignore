@@ -1,8 +1,12 @@
-node_modules
-dist
-.cache
+node_modules/
+dist/
+data-raw/
 *.log
 .DS_Store
-coverage
-# Raw catalog downloads (hundreds of MB; reproducible via `npm run build:catalogs`)
-scripts/build-catalogs/.raw
+__pycache__/
+*.pyc
+/test-results/
+/screenshots/
+.vite/
+dist-game/
+dist-dev/
