@@ -46,12 +46,24 @@ const menuState = (page) => page.evaluate(() => {
   };
 });
 
+/** The title's letters all lie inside its heading (its gradient is clipped to that box: letters outside it vanish). */
+const titleFits = (page) => page.evaluate(() => {
+  const h = document.querySelector('#start-menu .sm-title');
+  const box = h.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(h);
+  const text = range.getBoundingClientRect();
+  return { ok: text.left >= box.left - 0.5 && text.right <= box.right + 0.5, text: h.textContent, box: [box.left, box.right], letters: [text.left, text.right] };
+});
+
 if (which !== 'vr') {
   // 1. the bare URL: the title screen, Simulator disabled while loading
   let page = await openPage('');
   await page.waitForSelector('#start-menu', { timeout: 30000 });
   let st = await menuState(page);
   check('title screen on the bare URL', st.shown, JSON.stringify(st));
+  const title = await titleFits(page);
+  check('the whole title is visible', title.ok && title.text.length > 0, JSON.stringify(title));
   check('Story mode is shown but disabled', st.story === true);
   await page.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 300000 });
   await page.waitForFunction(() => !document.querySelector('#start-menu [data-id="sim"]').disabled, null, { timeout: 60000 });
@@ -108,6 +120,8 @@ if (which !== 'vr') {
     await phone.waitForFunction(() => window.app && !document.querySelector('#start-menu [data-id="sim"]').disabled, null, { timeout: 300000 });
     const fits = await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
     check('phone: the title screen fits the width (no sideways scroll)', fits);
+    const phoneTitle = await titleFits(phone);
+    check('phone: the whole title is visible', phoneTitle.ok, JSON.stringify(phoneTitle));
     await phone.screenshot({ path: path.join(outDir, 'start-5-phone.png'), timeout: 300000 });
     await phone.tap('#start-menu [data-id="sim"]');
     await phone.waitForFunction(() => !document.getElementById('start-menu'), null, { timeout: 30000 });

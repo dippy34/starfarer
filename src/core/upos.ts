@@ -34,9 +34,9 @@ export class UPos {
 
   /** this += (x, y, z) with error-free transformation. */
   addXYZ(x: number, y: number, z: number): this {
-    [this.xh, this.xl] = ddAdd(this.xh, this.xl, x);
-    [this.yh, this.yl] = ddAdd(this.yh, this.yl, y);
-    [this.zh, this.zl] = ddAdd(this.zh, this.zl, z);
+    ddAdd(this.xh, this.xl, x); this.xh = hi; this.xl = lo;
+    ddAdd(this.yh, this.yl, y); this.yh = hi; this.yl = lo;
+    ddAdd(this.zh, this.zl, z); this.zh = hi; this.zl = lo;
     return this;
   }
 
@@ -46,9 +46,9 @@ export class UPos {
 
   /** this += o (both double-double). */
   addUPos(o: UPos): this {
-    [this.xh, this.xl] = ddAddDD(this.xh, this.xl, o.xh, o.xl);
-    [this.yh, this.yl] = ddAddDD(this.yh, this.yl, o.yh, o.yl);
-    [this.zh, this.zl] = ddAddDD(this.zh, this.zl, o.zh, o.zl);
+    ddAddDD(this.xh, this.xl, o.xh, o.xl); this.xh = hi; this.xl = lo;
+    ddAddDD(this.yh, this.yl, o.yh, o.yl); this.yh = hi; this.yl = lo;
+    ddAddDD(this.zh, this.zl, o.zh, o.zl); this.zh = hi; this.zl = lo;
     return this;
   }
 
@@ -74,28 +74,35 @@ export class UPos {
 
 const _tmp = new Vector3();
 
-function twoSum(a: number, b: number): [number, number] {
-  const s = a + b;
-  const bb = s - a;
-  const err = a - (s - bb) + (b - bb);
-  return [s, err];
+// Double-double arithmetic (Dekker / Knuth error-free transformations). These run for every
+// object every frame, so they return through two module variables instead of allocating a pair:
+// a headset frame has no time to spare for the garbage collector.
+let hi = 0;
+let lo = 0;
+
+/** (hi, lo) = (ah + al) + b */
+function ddAdd(ah: number, al: number, b: number): void {
+  const s = ah + b;
+  const bb = s - ah;
+  const e = ah - (s - bb) + (b - bb) + al;
+  hi = s + e;
+  lo = e - (hi - s);
 }
 
-function ddAdd(hi: number, lo: number, b: number): [number, number] {
-  const [s, e] = twoSum(hi, b);
-  const e2 = e + lo;
-  const h = s + e2;
-  return [h, e2 - (h - s)];
+/** (hi, lo) = (ah + al) + (bh + bl) */
+function ddAddDD(ah: number, al: number, bh: number, bl: number): void {
+  const s = ah + bh;
+  const bb = s - ah;
+  const e = ah - (s - bb) + (bh - bb) + al + bl;
+  hi = s + e;
+  lo = e - (hi - s);
 }
 
-function ddAddDD(ah: number, al: number, bh: number, bl: number): [number, number] {
-  const [s, e] = twoSum(ah, bh);
-  const e2 = e + al + bl;
-  const h = s + e2;
-  return [h, e2 - (h - s)];
-}
-
+/** (ah + al) - (bh + bl) as one double */
 function ddSubToDouble(ah: number, al: number, bh: number, bl: number): number {
-  const [s, e] = twoSum(ah, -bh);
+  const nb = -bh;
+  const s = ah + nb;
+  const bb = s - ah;
+  const e = ah - (s - bb) + (nb - bb);
   return s + (e + al - bl);
 }

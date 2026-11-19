@@ -46,6 +46,51 @@ describe('double-double positions', () => {
     expect(d.y).toBeCloseTo(2e-3, 9);
     expect(d.z).toBeCloseTo(-3e-3, 9);
   });
+
+  it('matches the textbook double-double formulas bit for bit', () => {
+    // Reference: the error-free transformations written out with explicit (high, low) pairs.
+    const twoSum = (a: number, b: number): [number, number] => { const s = a + b; const bb = s - a; return [s, a - (s - bb) + (b - bb)]; };
+    const refAdd = (h: number, l: number, b: number): [number, number] => { const [s, e] = twoSum(h, b); const e2 = e + l; const r = s + e2; return [r, e2 - (r - s)]; };
+    const refAddDD = (ah: number, al: number, bh: number, bl: number): [number, number] => { const [s, e] = twoSum(ah, bh); const e2 = e + al + bl; const r = s + e2; return [r, e2 - (r - s)]; };
+    const refSub = (ah: number, al: number, bh: number, bl: number): number => { const [s, e] = twoSum(ah, -bh); return s + (e + al - bl); };
+    let seed = 20261001;
+    const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+    const any = () => (rnd() - 0.5) * 10 ** (rnd() * 34 - 6); // millimetres to beyond the observable universe
+    for (let i = 0; i < 3000; i++) {
+      const p = UPos.from(any(), any(), any());
+      const q = UPos.from(any(), any(), any()).addXYZ(any(), any(), any());
+      let h = p.xh, l = p.xl;
+      for (let k = 0; k < 4; k++) {
+        const dx = any();
+        p.addXYZ(dx, 0, 0);
+        [h, l] = refAdd(h, l, dx);
+      }
+      expect(Object.is(p.xh, h) && Object.is(p.xl, l)).toBe(true);
+      expect(Object.is(p.sub(q).x, refSub(h, l, q.xh, q.xl))).toBe(true);
+      p.addUPos(q);
+      [h, l] = refAddDD(h, l, q.xh, q.xl);
+      expect(Object.is(p.xh, h) && Object.is(p.xl, l)).toBe(true);
+    }
+  });
+
+  it('walks a kilometre in millimetre steps at the edge of the observable universe without drift', () => {
+    const edge = 4.4e26; // m
+    const a = UPos.from(edge, -edge, edge);
+    const b = a.clone();
+    for (let i = 0; i < 1_000_000; i++) b.addXYZ(1e-3, -1e-3, 0);
+    const d = b.sub(a);
+    expect(d.x).toBeCloseTo(1000, 6);
+    expect(d.y).toBeCloseTo(-1000, 6);
+    expect(d.z).toBe(0);
+  });
+
+  it('interpolates between far-apart positions on their difference', () => {
+    const a = UPos.from(3.0857e24, 0, 0).addXYZ(0.25, 0, 0);
+    const b = a.clone().addXYZ(8, -4, 2);
+    const m = UPos.lerp(a, b, 0.25);
+    const d = m.sub(a);
+    expect([d.x, d.y, d.z]).toEqual([2, -1, 0.5]);
+  });
 });
 
 describe('frames', () => {

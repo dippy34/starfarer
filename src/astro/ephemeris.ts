@@ -24,7 +24,11 @@ export class Ephemeris {
   private segKey = new Map<string, number>();
   private loaded = new Map<number, LoadedChunk>();
   private pending = new Map<number, Promise<void>>();
+  /** chunks whose download failed: how often, and when the next attempt is due (on `now`'s clock) */
+  private failed = new Map<number, { count: number; retryAt: number }>();
   onChunkLoaded: (() => void) | null = null;
+  /** milliseconds, monotonic (replaced in tests) */
+  now: () => number = () => performance.now();
 
   constructor(readonly index: EphemerisIndex, private baseUrl: string, private approx: Record<string, ApproxElements>) {
     index.segments.forEach((s, i) => this.segKey.set(`${s.center}:${s.target}`, i));
@@ -69,6 +73,10 @@ export class Ephemeris {
     if (this.loaded.has(k)) return Promise.resolve();
     const existing = this.pending.get(k);
     if (existing) return existing;
+    // `request` runs every frame: a chunk that could not be downloaded (offline, a server error)
+    // is tried again after a pause that doubles up to a minute, not sixty times a second.
+    const failure = this.failed.get(k);
+    if (failure && this.now() < failure.retryAt) return Promise.resolve();
     const c = this.index.chunks[k];
     const p = fetch(`${this.baseUrl}/${c.file}`)
       .then((r) => {
@@ -78,13 +86,17 @@ export class Ephemeris {
       .then((buf) => {
         this.loaded.set(k, { f64: new Float64Array(buf), f32: new Float32Array(buf) });
         this.pending.delete(k);
+        this.failed.delete(k);
         // Keep memory bounded: drop chunks far from the one just loaded.
         for (const key of [...this.loaded.keys()]) if (Math.abs(key - k) > 3) this.loaded.delete(key);
         this.onChunkLoaded?.();
       })
       .catch((err) => {
         this.pending.delete(k);
-        console.error('ephemeris chunk failed', err);
+        const count = (this.failed.get(k)?.count ?? 0) + 1;
+        this.failed.set(k, { count, retryAt: this.now() + Math.min(60, 2 ** count) * 1000 });
+        // (reported once; the planets stay on the approximate elements meanwhile)
+        if (count === 1) console.error('ephemeris chunk failed', err);
       });
     this.pending.set(k, p);
     return p;

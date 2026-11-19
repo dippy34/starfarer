@@ -65,10 +65,13 @@
 #start-menu .sm-title {
   margin: 0;
   font-weight: 200;
-  font-size: clamp(40px, 9vw, 84px);
+  /* one nine-letter word: sized from the column's width (560px, or the screen less its margins) so
+     that it always fits — the gradient is clipped to the heading's box, and letters outside it vanish */
+  font-size: min(68px, calc((100vw - 32px) / 8.2));
   line-height: 1;
-  letter-spacing: 0.22em;
-  padding-left: 0.22em; /* letter-spacing trails the last letter: keep the word centred */
+  letter-spacing: 0.18em;
+  padding-left: 0.18em; /* letter-spacing trails the last letter: keep the word centred */
+  white-space: nowrap;
   background: linear-gradient(100deg, #ffffff 0%, #dfeaff 35%, #9fc6ff 50%, #dfeaff 65%, #ffffff 100%);
   background-size: 250% 100%;
   -webkit-background-clip: text;
