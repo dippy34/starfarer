@@ -1,7 +1,7 @@
 // Walking mode in headless Chromium: on the Moon (Apollo 17) and Mars (Gale Crater) on the desktop,
 // gas giants refused, then the same in an emulated Meta Quest 3 (IWER) with the thumbsticks.
 // Usage: node scripts/walk.mjs [baseUrl] [outDir] [desktop|vr|sea|all]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -9,16 +9,14 @@ const base = process.argv[2] ?? 'http://127.0.0.1:5173/';
 const outDir = process.argv[3] ?? 'screenshots';
 const which = process.argv[4] ?? 'all';
 fs.mkdirSync(outDir, { recursive: true });
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist',
-  ...(process.env.TRUSTED_SPKI ? [`--ignore-certificate-errors-spki-list=${process.env.TRUSTED_SPKI}`] : [])] });
+const browser = await launchBrowser();
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`); };
 const errors = [];
 
 async function openPage(vr) {
   const page = await browser.newPage({ viewport: vr ? { width: 960, height: 540 } : { width: 800, height: 450 } });
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  page.on('pageerror', (e) => errors.push(String(e)));
+  collectErrors(page, errors);
   if (vr) {
     await page.addInitScript({ path: 'node_modules/iwer/build/iwer.min.js' });
     await page.addInitScript(() => {

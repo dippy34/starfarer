@@ -7,7 +7,7 @@ export const MSUN = 1.98892e30;
 
 /**
  * One point mass of the gravity field. Read live every step: whoever owns the object (the
- * ephemeris today, the god-mode N-body sandbox tomorrow) moves it, and the ship feels it.
+ * ephemeris) moves it, and the ship feels it.
  */
 export interface GravitySource {
   /** the object this source stands for (Body, BlackHole, CatalogStar...) */

@@ -116,7 +116,7 @@ export class Flight {
     return s;
   }
 
-  /** Every gravitating thing near enough to matter, read live (god mode moves and re-weighs them). */
+  /** Every gravitating thing near enough to matter, read live. */
   private collectSources(): GravitySource[] {
     const app = this.app;
     const out: GravitySource[] = [];

@@ -47,8 +47,8 @@ describe('benchmark code', () => {
     expect(d.s[2].top[0]).toEqual(['render', 3.3]);
     expect(format(d)).toContain('cygx1');
   });
-  it('has the ten scenes of the route and known layers', () => {
-    expect(SCENES.map((s) => s.id)).toEqual(['orbit', 'surface', 'rings', 'jupiter', 'orion', 'cygx1', 'm31', 'mw', 'god', 'cockpit']);
+  it('has the nine scenes of the route and known layers', () => {
+    expect(SCENES.map((s) => s.id)).toEqual(['orbit', 'surface', 'rings', 'jupiter', 'orion', 'cygx1', 'm31', 'mw', 'cockpit']);
     expect(new Set(LAYERS).size).toBe(LAYERS.length);
   });
 });

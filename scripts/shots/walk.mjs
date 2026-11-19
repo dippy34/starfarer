@@ -1,14 +1,13 @@
 // Walking views for visual review: standing at Apollo 17 and in Gale Crater, bootprints behind
 // you after a walk, dust in the air after a jump on the Moon.
 // Usage: node scripts/shots/walk.mjs [base] [outprefix]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/walk';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+collectErrors(page, errors);
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 900000 }); };
 const shot = async (name) => { await page.screenshot({ path: `${out}-${name}.png`, timeout: 600000 }); console.log('saved', `${out}-${name}.png`); };
 await page.goto(`${base}?time=2026-10-01T20:00:00Z&paused=1&target=Moon&dist=3`, { waitUntil: 'load' });

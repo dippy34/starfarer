@@ -1,13 +1,13 @@
 // Planet-wide terrain (render/PlanetTerrain.ts): descents from orbit to the ground at landmarks.
 // SITES="Olympus Mons:Mars,Tycho:Moon" HEIGHTS=2000000,200000,20000,2000,2 node scripts/shots/terrain-lod.mjs http://127.0.0.1:4174/ /tmp/out/lod
 // Each height: looking at the horizon across the sunlight (orbit: the limb), after the tiles settle.
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/lod';
 const sites = (process.env.SITES ?? 'Olympus Mons:Mars').split(',').map((s) => s.split(':'));
 const heights = (process.env.HEIGHTS ?? '2000000,200000,20000,2000,2').split(',').map(Number);
 const sunEl = Number(process.env.SUN ?? 15);
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 960), height: Number(process.env.H ?? 540) } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));

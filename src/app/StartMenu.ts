@@ -1,4 +1,5 @@
 import { Matrix4, Vector3 } from 'three';
+import { PRODUCT_NAME } from '../core/product';
 import { COLORS, Panel } from '../vr/Panel';
 import type { App } from './App';
 import { PERF_TOOLS } from '../perf/tools';
@@ -52,10 +53,10 @@ export class StartMenu {
     root.innerHTML = `
       <div class="sm-shade"></div>
       <div class="sm-stars" aria-hidden="true"></div>
-      <main class="sm-main" role="dialog" aria-label="Space Explorer">
+      <main class="sm-main" role="dialog" aria-label="${PRODUCT_NAME}">
         <header class="sm-head">
           <div class="sm-kicker">A real-scale universe</div>
-          <h1 class="sm-title">SPACE<span>EXPLORER</span></h1>
+          <h1 class="sm-title">${PRODUCT_NAME.toUpperCase()}</h1>
           <div class="sm-sub">2.75 million real stars · every planet and moon · black holes · walk on other worlds</div>
         </header>
         <nav class="sm-list" aria-label="Main menu"></nav>
@@ -287,7 +288,7 @@ export class StartMenu {
   private paintVR(p: Panel): void {
     p.rect(4, 4, p.width - 8, p.height - 8, 40, COLORS.bg, COLORS.border, 4);
     p.text('A REAL-SCALE UNIVERSE', p.width / 2, 78, 26, COLORS.dim, 600, 'center');
-    p.text('SPACE EXPLORER', p.width / 2, 150, 76, '#ffffff', 300, 'center');
+    p.text(PRODUCT_NAME.toUpperCase(), p.width / 2, 150, 76, '#ffffff', 300, 'center');
     p.button('sm:sim', 120, 240, p.width - 240, 150, 'Simulator', () => this.start(),
       { size: 48, sub: 'Fly anywhere · land and walk' });
     p.button('sm:story', 120, 420, p.width - 240, 150, 'Story mode', () => undefined,

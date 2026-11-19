@@ -1,14 +1,13 @@
 // scratch: ground-level views at landmarks (materials, rocks)
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/ground';
 const sites = (process.env.SITES ?? 'Apollo 17 landing site:Moon,Gale Crater (Curiosity):Mars,Mount Everest:Earth').split(',').map((s) => s.split(':'));
 const views = (process.env.VIEWS ?? '2,40,400').split(',').map(Number);
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 1280), height: Number(process.env.H ?? 720) } });
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+collectErrors(page, errors);
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 900000 }); };
 for (const [name, body] of sites) {
   await page.goto(`${base}?time=2026-10-01T12:00:00Z&paused=1&target=${body}&dist=3`, { waitUntil: 'load', timeout: 300000 });

@@ -1,10 +1,10 @@
 // scratch: inside a galaxy (as "fly into" places you) looking at its bulge, then back at the Milky Way
 // usage: node inside.mjs <base> "Galaxy name" <outprefix>
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const name = process.argv[3] ?? 'Andromeda Galaxy';
 const out = process.argv[4] ?? '/tmp/out/in';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 960), height: Number(process.env.H ?? 540) } });
 page.on('pageerror', (e) => console.log('PAGEERR', String(e).slice(0, 300)));
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 300000 }); };

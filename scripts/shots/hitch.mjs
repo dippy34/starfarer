@@ -4,7 +4,7 @@
 // costliest part of a late frame, and the frames that compiled shaders or created textures.
 // SwiftShader is far too slow for absolute numbers: read it for the relative offenders.
 // Usage: node scripts/shots/hitch.mjs [baseUrl] [outFile.json] [scenario...]
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 import fs from 'node:fs';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:4173/';
@@ -21,7 +21,7 @@ const SCENARIOS = [
   { name: 'to-sgr-a', query: `time=${T}&target=Sun&dist=50`, go: 'Sagittarius A*', frames: 100 },
 ];
 
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const report = [];
 for (const sc of SCENARIOS) {
   if (only.size && !only.has(sc.name)) continue;

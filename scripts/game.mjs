@@ -1,25 +1,23 @@
 // Drives game mode in headless Chromium: cockpit, physics thrust, mass lock, warp, chase view, traffic,
 // missions. Usage: node scripts/game.mjs [baseUrl] [outDir]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:5173/';
 const outDir = process.argv[3] ?? 'screenshots';
 fs.mkdirSync(outDir, { recursive: true });
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist',
-  ...(process.env.TRUSTED_SPKI ? [`--ignore-certificate-errors-spki-list=${process.env.TRUSTED_SPKI}`] : [])] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-page.on('pageerror', (e) => errors.push(String(e)));
+collectErrors(page, errors);
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`); };
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 240000 }); };
 
 await page.goto(`${base}?time=2026-10-01T20:00:00Z&paused=1&target=Earth&dist=1.6&az=60&el=10`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
-await page.evaluate(() => localStorage.removeItem('space-explorer-game'));
+await page.evaluate(() => localStorage.removeItem('starfarer-game'));
 
 // 1. V enters the cockpit
 await page.keyboard.press('KeyV');

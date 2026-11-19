@@ -2,7 +2,7 @@
 // emulated Meta Quest 3 (IWER) started from the VR menu's Benchmark button, with short holds. SwiftShader
 // renders at 1-3 fps, so this proves the route runs, the numbers are filled in and the code decodes,
 // not the Quest's speed. Also checks the perf HUD (F3) draws. Usage: node scripts/bench.mjs [baseUrl] [outDir]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { decode, format } from './bench-decode.mjs';
@@ -14,7 +14,6 @@ const only = process.env.ONLY; // 'desktop' | 'vr'
 fs.mkdirSync(outDir, { recursive: true });
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`); };
-const args = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
 
 function checkResult(tag, code, scenes) {
   let d = null;
@@ -28,11 +27,10 @@ function checkResult(tag, code, scenes) {
 }
 
 if (only !== 'vr') {
-  const browser = await chromium.launch({ args });
+  const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   const errors = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  collectErrors(page, errors);
   await page.goto(`${base}?bench=1&benchhold=${hold}&perf=1`, { waitUntil: 'load', timeout: 300000 });
   await page.waitForFunction(() => window.app && window.app.frameCount > 5, null, { timeout: 300000 });
   await page.waitForFunction(() => document.querySelector('#bench-banner')?.style.display === 'block', null, { timeout: 300000 });
@@ -42,10 +40,10 @@ if (only !== 'vr') {
   const code = await page.evaluate(() => window.perfTools.bench.last.code);
   checkResult('desktop', code, 10);
   const panel = await page.evaluate(() => ({ rows: document.querySelectorAll('#bench-result tbody tr').length, code: document.querySelector('#bench-result textarea')?.value }));
-  check('desktop: result panel with the table and the code', panel.rows === 10 && panel.code === code);
+  check('desktop: result panel with the table and the code', panel.rows === 9 && panel.code === code);
   await page.screenshot({ path: path.join(outDir, 'bench-result.png'), timeout: 180000 });
-  const back = await page.evaluate(() => ({ god: window.app.god.active, ship: window.app.game.mode, paused: window.app.clock.paused, saved: localStorage.getItem('space-explorer-bench') !== null }));
-  check('desktop: state restored after the run (no sandbox, no ship)', !back.god && back.ship === 'off', JSON.stringify(back));
+  const back = await page.evaluate(() => ({ ship: window.app.game.mode, paused: window.app.clock.paused, saved: localStorage.getItem('starfarer-bench') !== null }));
+  check('desktop: state restored after the run (no ship)', back.ship === 'off', JSON.stringify(back));
   check('desktop: last result kept', back.saved);
   // copy fallback: no clipboard permission in headless: the button still selects or copies
   await page.click('#bench-result .copy');
@@ -62,11 +60,10 @@ if (only !== 'vr') {
 }
 
 if (only !== 'desktop') {
-  const browser = await chromium.launch({ args });
+  const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   const errors = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  collectErrors(page, errors);
   await page.addInitScript({ path: 'node_modules/iwer/build/iwer.min.js' });
   await page.addInitScript(() => {
     const d = new IWER.XRDevice(IWER.metaQuest3);

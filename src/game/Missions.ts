@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { STORAGE_PREFIX } from '../core/product';
 import { PC } from '../core/units';
 import type { App } from '../app/App';
 import { Body, type SpaceObject } from '../universe/Body';
@@ -14,7 +15,7 @@ export interface Mission { id: string; title: string; detail: string; done: bool
 
 interface Def { id: string; title: string; detail: string; check: (app: App, near: (o: SpaceObject | undefined | null, k: number) => boolean) => boolean }
 
-const KEY = 'space-explorer-game';
+const KEY = `${STORAGE_PREFIX}-game`;
 
 /** Where the explorer is over a body: latitude and longitude (degrees, planetocentric) and altitude (m). */
 function over(app: App, name: string): { lat: number; lon: number; alt: number } | null {

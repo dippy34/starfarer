@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from '../core/product';
+
 /** Minimal Phase-1 heads-up display. Full UI (search panel, bookmarks, settings) arrives in Phase 5. */
 export interface HudState {
   date: string;
@@ -42,9 +44,6 @@ const HELP: [string, string][] = [
   ['K / N', 'Missions & discoveries / ship sound on-off'],
   ['T', 'Tour: places worth a visit'],
   ['U', 'Photo mode: hide panels and labels'],
-  ['Y', 'God mode: change, move, delete and create anything'],
-  ['Ctrl+Z / Delete', 'God mode: undo / delete the selection'],
-  ['`', 'Universe console: Earth.mass = 2 Mearth, for p in planets: p.e = 0, help'],
   ['H', 'Toggle this help'],
 ];
 
@@ -153,7 +152,7 @@ export class Hud {
   }
 
   update(s: HudState): void {
-    this.top.innerHTML = `<b>SPACE EXPLORER</b> &nbsp; ${s.fps.toFixed(0)} fps · ${s.stars}${s.loading ? ` · <span class="warn">${s.loading}</span>` : ''} &nbsp; <span class="dim">H: help · T: tour</span>`;
+    this.top.innerHTML = `<b>${PRODUCT_NAME.toUpperCase()}</b> &nbsp; ${s.fps.toFixed(0)} fps · ${s.stars}${s.loading ? ` · <span class="warn">${s.loading}</span>` : ''} &nbsp; <span class="dim">H: help · T: tour</span>`;
     this.time.innerHTML = `<div class="date">${s.date}</div><div class="rate">${s.paused ? '<span class="warn">PAUSED</span>' : s.rate}</div><div class="dim small">${s.ephemeris}</div>`;
     if (s.selection) {
       this.info.innerHTML = `<div class="name">${escapeHtml(s.selection.name)}</div>

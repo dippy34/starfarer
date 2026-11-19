@@ -1,7 +1,7 @@
 // Star review shots: the sky as points (from space and from a surface), nearby stars (glare,
 // spikes, corona) and star surfaces up close. LITE=1 renders with the headset tier's shaders.
 // usage: [LITE=1] [ONLY=name,name] node scripts/shots/stars.mjs http://127.0.0.1:4174/ /tmp/out/stars
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/stars';
 const T = '2026-10-01T12:00:00Z';
@@ -28,11 +28,10 @@ export const SCENES = [
 ];
 const only = new Set((process.env.ONLY ?? '').split(',').filter(Boolean));
 const lite = process.env.LITE === '1';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 960), height: Number(process.env.H ?? 540) } });
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+collectErrors(page, errors);
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 600000 }); };
 for (const sc of SCENES) {
   if (only.size && !only.has(sc.name)) continue;

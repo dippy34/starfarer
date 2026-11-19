@@ -2,11 +2,11 @@
 // the app computes (src/app/Awe.ts) against the real value, measures the Sun's disc in pixels, checks
 // the Earth-for-scale silhouette and the dust, and saves screenshots.
 // Usage: node scripts/shots/scale.mjs [base] [outprefix]   (exit code 1 on a failed check)
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4173/';
 const out = process.argv[3] ?? '/tmp/claude-0/scale';
 const W = 960, H = 540;
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));

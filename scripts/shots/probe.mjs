@@ -1,7 +1,7 @@
 // scratch: evaluate an expression after placing the camera like galaxy.mjs (no screenshot)
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2], spec = process.argv[3], expr = process.argv[4], pre = process.env.PRE, shot = process.env.SHOT;
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 960), height: Number(process.env.H ?? 540) } });
 page.on('pageerror', (e) => console.log('ERR', String(e)));
 await page.goto(`${base}?time=2026-10-01T12:00:00Z&paused=1&target=Moon&dist=3`, { waitUntil: 'load' });

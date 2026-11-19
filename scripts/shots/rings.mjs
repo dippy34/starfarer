@@ -1,13 +1,12 @@
 // Inside Saturn's rings: towards Saturn, along the ring plane, straight down at the layer, and from
 // 2 km above. Usage: node scripts/shots/rings.mjs [base] [outprefix]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/rings';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+collectErrors(page, errors);
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 180000 }); };
 await page.goto(`${base}?time=2026-10-01T20:00:00Z&paused=1&target=Saturn&dist=4`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 180000 });

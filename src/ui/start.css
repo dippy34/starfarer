@@ -69,9 +69,6 @@
   line-height: 1;
   letter-spacing: 0.22em;
   padding-left: 0.22em; /* letter-spacing trails the last letter: keep the word centred */
-  display: flex;
-  flex-direction: column;
-  gap: 0.08em;
   background: linear-gradient(100deg, #ffffff 0%, #dfeaff 35%, #9fc6ff 50%, #dfeaff 65%, #ffffff 100%);
   background-size: 250% 100%;
   -webkit-background-clip: text;
@@ -80,7 +77,6 @@
   filter: drop-shadow(0 0 22px rgba(120, 170, 255, 0.35));
   animation: sm-shimmer 9s ease-in-out infinite;
 }
-#start-menu .sm-title span { font-size: 0.52em; letter-spacing: 0.62em; padding-left: 0.62em; font-weight: 300; }
 @keyframes sm-shimmer { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0 0; } }
 @keyframes sm-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 #start-menu .sm-sub { margin-top: 16px; font-size: 13px; color: var(--sm-dim); line-height: 1.5; }

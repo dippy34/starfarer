@@ -1,7 +1,13 @@
 # Handoff: where the project stands
 
-Branch: `claude/upbeat-allen-8ok26x` · Live: https://dippy34.github.io/nextjs-boilerplate/ ·
-Deploy: `bash scripts/deploy-pages.sh` (builds and force-pushes `gh-pages`).
+Live: https://dippy34.github.io/starfarer/ (GitHub Pages serving the `gh-pages` branch) ·
+Deploy: automatic on every push to `main` (`.github/workflows/deploy-pages.yml`: `npm run check`,
+then `dist/` is published to `gh-pages`).
+
+Starfarer was imported from Space Explorer (dippy34/nextjs-boilerplate at 4f97371) without its God
+mode (`src/god/`: the universe editor, N-body sandbox and console), which is not included yet. The
+sections below describe the engine as imported; "Clean-up pass" at the end tracks what has been
+gone through since.
 
 ## Goal (from the owner)
 
@@ -288,31 +294,12 @@ binaries 419, brown dwarfs 250. Sources and licences: CREDITS.md.
 `node scripts/game.mjs http://127.0.0.1:4173/ out` (game mode; 16 checks),
 `node scripts/terrain.mjs http://127.0.0.1:4173/ out` (landing terrain),
 `node scripts/places.mjs http://127.0.0.1:4173/ out` (rings, comets, eclipses). Run them one at a time
-(parallel runs starve the software renderer and screenshots time out). `SKIP_BUILD=1 bash
-scripts/deploy-pages.sh` publishes the exact build that was verified. On a machine
+(parallel runs starve the software renderer and screenshots time out). On a machine
 with a real GPU these run far faster than in the cloud container (software rendering, ~1 fps).
+Every script starts its browser through `scripts/lib/browser.mjs`; set `CHROMIUM_PATH` to use an
+installed Chromium when Playwright's own download is not available.
 
 ## Licences to keep in mind
 
 Gaia DR3 supplement (`public/data/stars-gaia/`) is CC BY-NC: drop it for a paid store app. AT-HYG
 tiles are CC BY-SA 4.0; OPAL maps CC BY 4.0; NASA/USGS/NOAA public domain. See `CREDITS.md`.
-
-## God mode (src/god/)
-
-* `physics.ts`: every formula of the editor, each returning its value and its working
-  ("show the math"); tests in `tests/physics.test.ts` (textbook values).
-* `Sandbox.ts`: the edited universe. `mode = 'kepler'` (default): edited bodies follow exact
-  two-body orbits (`Entity.orbit`, ecliptic J2000 elements about a parent), their moons ride along,
-  everything else stays on the ephemeris (SolarSystem.update runs first each frame). `mode = 'nbody'`:
-  IAS15 N-body simulation in `nbody.worker.ts` (`NBody.ts`, `runner.ts`; fast small moons ride Kepler
-  orbits with their mass in the planet's particle, `initial.ts`), the display interpolates snapshots.
-  Edits go through `edit()` (undo snapshot, `WorldState` JSON also used by save/load/export).
-  Spawned planets/stars are Bodies in `system.bodies` (`hidden`, drawn by the exoplanet / near-star
-  layers via proxies in `God.ts`), spawned holes are in `app.blackHoles`; deleted bodies are
-  `valid = false`, `gm = 0`.
-* `God.ts` (glue, proxies, mouse tools, climate -> `SUN_LIGHT` and `AtmospheresLayer.setTweak`),
-  `GodPanel.ts` (desktop editor, Y), `GodTab.ts` (VR menu tab), `GodVR.ts` (grip grab/throw, laser
-  placement), `GodLayer.ts` (trails, predicted orbits, velocity arrow, flashes, debris rings),
-  `BodyView.ts` (what the editors show, real values in `CLIMATE`).
-* Browser suite: `scripts/god.mjs` (desktop + IWER headset); unit: `tests/nbody.test.ts`
-  (1 year vs DE442S, conservation, reversal, merges), `tests/physics.test.ts`.

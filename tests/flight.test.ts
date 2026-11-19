@@ -54,7 +54,7 @@ describe('gravity field', () => {
     const g = gravityAt(p);
     expect(g.length()).toBeCloseTo(GM_EARTH / R_EARTH ** 2, 6);
     expect(g.x).toBeLessThan(0);
-    // the god-mode contract: move or re-weigh a body and the field follows
+    // the field is read live: move or re-weigh a body and it follows
     earth.upos.addXYZ(2 * R_EARTH, 0, 0);
     earth.gm *= 2;
     const g2 = gravityAt(p);

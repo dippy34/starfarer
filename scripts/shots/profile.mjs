@@ -4,7 +4,7 @@
 // `lite` runs the same scenes with the headset tier (LITE) forced on, without entering XR.
 // Usage: node scripts/shots/profile.mjs [baseUrl] [outDir] [scene...] (env LITE=1 for the headset tier only,
 // LITE=both for both)
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -53,7 +53,7 @@ const SCENES = [
 ];
 const modes = process.env.LITE === 'both' ? [false, true] : [process.env.LITE === '1'];
 
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const report = [];
 for (const sc of SCENES) {
   if (only.size && !only.has(sc.name)) continue;

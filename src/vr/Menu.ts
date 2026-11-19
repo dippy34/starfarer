@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { PRODUCT_NAME } from '../core/product';
 import { PERF_TOOLS } from '../perf/tools';
 import { Landmark } from '../universe/Landmarks';
 import { RingSpot } from '../universe/RingSpot';
@@ -15,7 +16,6 @@ import { DeepSkyObject } from '../universe/DeepSky';
 import { CatalogStar } from '../universe/Stars';
 import type { CatCode } from '../universe/CatalogSearch';
 import { COLORS, Panel } from './Panel';
-import { paintGodTab } from '../god/GodTab';
 
 export interface VRSettings {
   travel: 'smooth' | 'blink';
@@ -32,8 +32,8 @@ export interface MenuHost {
   exitVR(): void;
 }
 
-type Tab = 'planets' | 'moons' | 'small' | 'stars' | 'exo' | 'nebulae' | 'holes' | 'craft' | 'places' | 'search' | 'god' | 'settings';
-const TABS: [Tab, string][] = [['planets', 'Planets'], ['moons', 'Moons'], ['small', 'Small'], ['stars', 'Stars'], ['exo', 'Exoplanets'], ['nebulae', 'Nebulae'], ['holes', 'Galaxies'], ['craft', 'Craft'], ['places', 'Places'], ['search', 'Search'], ['god', 'God'], ['settings', 'Settings']];
+type Tab = 'planets' | 'moons' | 'small' | 'stars' | 'exo' | 'nebulae' | 'holes' | 'craft' | 'places' | 'search' | 'settings';
+const TABS: [Tab, string][] = [['planets', 'Planets'], ['moons', 'Moons'], ['small', 'Small'], ['stars', 'Stars'], ['exo', 'Exoplanets'], ['nebulae', 'Nebulae'], ['holes', 'Galaxies'], ['craft', 'Craft'], ['places', 'Places'], ['search', 'Search'], ['settings', 'Settings']];
 const NEBULAE = ['Orion Nebula', 'Carina Nebula', 'Eagle Nebula', 'Lagoon Nebula', 'Ring Nebula', 'Helix Nebula', 'Crab Nebula', 'Veil Nebula (Cygnus Loop)',
   'Tarantula Nebula', 'Pleiades', 'Omega Centauri', 'Hercules Cluster (M13)'];
 /** famous confirmed planets of other stars (NASA Exoplanet Archive names) */
@@ -104,7 +104,7 @@ export class VRMenu {
   private paint(p: Panel): void {
     const app = this.host.app;
     p.rect(4, 4, p.width - 8, p.height - 8, 36, COLORS.bg, COLORS.border, 4);
-    p.text('SPACE EXPLORER', 44, 62, 40, '#ffffff', 700);
+    p.text(PRODUCT_NAME.toUpperCase(), 44, 62, 40, '#ffffff', 700);
     p.text(formatUtc(app.clock.jdTdb), 560, 48, 30, COLORS.text, 600);
     p.text(app.clock.paused ? 'PAUSED' : app.rateText(), 560, 84, 24, app.clock.paused ? COLORS.warn : COLORS.accent, 500);
     p.button('pause', 1080, 30, 170, 64, app.clock.paused ? '▶ Play' : '⏸ Pause', () => { app.togglePause(); p.dirty = true; }, { size: 28 });
@@ -132,7 +132,6 @@ export class VRMenu {
       case 'holes': this.paintGrid(p, area, [app.milkyWay, ...GALAXIES.map((n) => app.findByName(n)).filter(nonNull), ...HOLES.slice(0, 6).map((n) => app.blackHoles.find((h) => h.name === n)).filter(nonNull)], 4, 4); break;
       case 'search': this.paintSearch(p, area); break;
       case 'settings': this.paintSettings(p, area); break;
-      case 'god': paintGodTab(p, area, app, () => this.host.closeMenu()); break;
     }
   }
 

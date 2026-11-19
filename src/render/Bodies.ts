@@ -577,8 +577,8 @@ export class BodiesLayer {
     const rot3 = new Matrix3();
     const tmp = new Vector3();
     for (const b of this.system.bodies) {
-      if (!b.valid || b.hidden) {
-        // (deleted in God mode, or drawn by another layer)
+      if (!b.valid) {
+        // (no position at this date)
         this.views.delete(b);
         const m = this.meshes.get(b);
         if (m) m.visible = false;

@@ -1,7 +1,7 @@
 // Draw calls by material/object in software GL: wraps renderer.renderBufferDirect for one frame
 // per scene and tallies the calls (and their passes: main, volume, captures) by material name.
 // Usage: node scripts/shots/drawcalls.mjs [baseUrl] [scene...]
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4173/';
 const only = new Set(process.argv.slice(3));
 const T = '2026-10-01T20:00:00Z';
@@ -11,7 +11,7 @@ const SCENES = [
   { name: 'earth-surface', query: `time=${T}&paused=1&target=Earth&dist=1.0003&el=5` },
   { name: 'earth-orbit', query: `time=${T}&paused=1&target=Earth&dist=3` },
 ];
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 for (const sc of SCENES) {
   if (only.size && !only.has(sc.name)) continue;
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } });

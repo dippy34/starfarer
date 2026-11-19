@@ -1,9 +1,9 @@
 // Pull away from the Milky Way (seen from outside) and log each frame's mean brightness, to catch
 // one-frame flashes at level-of-detail switches. usage: node scripts/shots/mwpull.mjs <base> [from kpc] [to kpc] [step pc]
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const [from, to, step] = [Number(process.argv[3] ?? 15), Number(process.argv[4] ?? 60), Number(process.argv[5] ?? 400)];
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 320, height: 180 } });
 page.on('pageerror', (e) => console.log('PAGEERR', String(e).slice(0, 300)));
 await page.goto(`${base}?time=2026-10-01T12:00:00Z&paused=1&target=Moon&dist=3`, { waitUntil: 'load' });

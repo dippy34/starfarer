@@ -1,4 +1,4 @@
-# Space Explorer
+# Starfarer
 
 A real-time, seamless, scale-free explorer of the real and procedurally generated universe — a
 SpaceEngine-style experience for desktop and VR headsets, built on **real astronomical data** (JPL
@@ -31,7 +31,7 @@ a chase view, inertial flight, a warp drive with streaks and engine sound, ficti
 rotating space station orbiting the world you are near (fly up to its docking port and the docking
 computer takes over), landing on solid worlds, missions and a discovery log.
 
-### ▶ Live: **https://dippy34.github.io/nextjs-boilerplate/**
+### ▶ Live: **https://dippy34.github.io/starfarer/** (once GitHub Pages is switched on, see below)
 
 Desktop browser with WebGL 2 (keyboard + mouse; press **H** for controls) — or a **VR headset**: open
 the link in the headset's browser (Meta Quest Browser, or Chrome/Edge on a PC with a Link/SteamVR
@@ -63,7 +63,13 @@ pipeline. To rebuild every data file from the original sources, see [`pipeline/`
 (`npm run data`, needs Python 3.10+ and ~0.5 GB of downloads).
 
 Production build: `npm run build && npm run preview`.
-Deploy to GitHub Pages: `bash scripts/deploy-pages.sh` (builds and force-pushes the `gh-pages` branch).
+Deploy to GitHub Pages: automatic. `.github/workflows/deploy-pages.yml` runs `npm run check`
+(typecheck, unit tests, production build) on every push to `main` and, if it passes, publishes
+`dist/` to the `gh-pages` branch. Switch Pages on once: **Settings → Pages → Build and deployment →
+Source: Deploy from a branch → `gh-pages` / `(root)`**.
+
+Starfarer began as a copy of [Space Explorer](https://github.com/dippy34/nextjs-boilerplate) (same
+owner) without its God mode (the universe editor and N-body sandbox), which is not included yet.
 
 ### Controls
 

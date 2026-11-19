@@ -3,9 +3,9 @@
 // few thousand directions into a float target and compares. Needs the Vite dev server (it imports
 // the TypeScript sources directly):
 //   npx vite --port 4175 --strictPort &   node scripts/exoterrain-gpu.mjs http://127.0.0.1:4175/
-import { chromium } from '@playwright/test';
+import { launchBrowser } from './lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4175/';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage();
 await page.goto(`${base}src/universe/ExoTerrain.ts`);
 const res = await page.evaluate(async () => {

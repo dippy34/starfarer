@@ -198,7 +198,7 @@ export class SolarSystem {
    * cost follows what is on screen: moons and minor bodies outside it keep their last orbital state
    * until it is more than 1° of orbit (or a day) old, and their orientation is refreshed a sixteenth
    * at a time. The focus bodies, their parents' and their own moons are exact every frame. Without
-   * `focus` everything is computed (time jumps, God mode, tests).
+   * `focus` everything is computed (time jumps, tests).
    */
   update(jd: number, timeDirection = 0, focus?: ReadonlySet<Body>): void {
     const frame = this.frameNo++;
@@ -212,7 +212,7 @@ export class SolarSystem {
     // 1) Sun and planet (barycentre) positions
     for (const b of this.bodies) {
       const e = this.ephemOf.get(b);
-      if (!e) continue; // (God mode's spawned bodies)
+      if (!e) continue;
       if (e.kind !== 'spk') continue;
       b.valid = true;
       if (de) {
@@ -275,9 +275,8 @@ export class SolarSystem {
       for (const m of p.children) {
         const r = this.rel.get(m);
         if (!r || !(m.gm > 0)) continue;
-        // (the velocity likewise, the moons' momentum about the barycentre: God mode's N-body
-        // sandbox starts from these states, and a planet moving with its barycentre's velocity
-        // would leave its moons behind)
+        // (the velocity likewise, the moons' momentum about the barycentre: a planet moving with its
+        // barycentre's velocity would drift against its own moons)
         p.pos.addScaledVector(r.pos, -m.gm / p.systemGm);
         p.vel.addScaledVector(r.vel, -m.gm / p.systemGm);
       }

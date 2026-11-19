@@ -17,7 +17,7 @@ import type { WebGLRenderer } from 'three';
 export const HISTORY = 240;
 
 /** short names for the lap timers (the benchmark code carries these) */
-export const LAYERS = ['sim', 'cam', 'bodies', 'atmo', 'exo', 'terrain', 'craft', 'holes', 'sky', 'stars', 'orbits', 'game', 'god', 'capture', 'render', 'overlay'] as const;
+export const LAYERS = ['sim', 'cam', 'bodies', 'atmo', 'exo', 'terrain', 'craft', 'holes', 'sky', 'stars', 'orbits', 'game', 'awe', 'capture', 'render', 'overlay'] as const;
 export type LayerName = typeof LAYERS[number];
 
 interface TimerExt { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number }

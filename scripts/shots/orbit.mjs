@@ -1,6 +1,6 @@
 // scratch: Earth seen from low orbit (clouds, their shadows, ocean and land)
 // usage: ALTS=400,2000 node scripts/shots/orbit.mjs http://127.0.0.1:4174/ /tmp/out/orbit
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/orbit';
 const alts = (process.env.ALTS ?? '400,2000').split(',').map(Number);
@@ -8,11 +8,10 @@ const alts = (process.env.ALTS ?? '400,2000').split(',').map(Number);
 const sunAng = Number(process.env.SUNANG ?? 50);
 const tilt = Number(process.env.TILT ?? 35);
 const time = process.env.TIME ?? '2026-10-01T12:00:00Z';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 960), height: Number(process.env.H ?? 540) } });
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+collectErrors(page, errors);
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 240000 }); };
 await page.goto(`${base}?time=${time}&paused=1&target=Earth&dist=3`, { waitUntil: 'load', timeout: 300000 });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 180000 });

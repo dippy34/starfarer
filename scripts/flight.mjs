@@ -1,19 +1,17 @@
 // Real-physics ship flight in headless Chromium: orbit HUD and predicted path, a burn that changes
 // the orbit, on-rails time warp, mass lock, a crash and respawn, a landing, a stellar black hole's
 // tides and a supermassive one's horizon. Usage: node scripts/flight.mjs [baseUrl] [outDir]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:5173/';
 const outDir = process.argv[3] ?? 'screenshots';
 fs.mkdirSync(outDir, { recursive: true });
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist',
-  ...(process.env.TRUSTED_SPKI ? [`--ignore-certificate-errors-spki-list=${process.env.TRUSTED_SPKI}`] : [])] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-page.on('pageerror', (e) => errors.push(String(e)));
+collectErrors(page, errors);
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`); };
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 240000 }); };

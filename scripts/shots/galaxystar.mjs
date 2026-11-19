@@ -1,5 +1,5 @@
-import { chromium } from '@playwright/test';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+import { launchBrowser } from '../lib/browser.mjs';
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 page.on('pageerror', (e) => console.log('PAGEERR', String(e).slice(0, 300)));
 await page.goto('http://127.0.0.1:4174/?time=2026-10-01T12:00:00Z&paused=1&target=Moon&dist=3', { waitUntil: 'load' });

@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { STORAGE_PREFIX } from '../core/product';
 import type { App } from '../app/App';
 import { QUALITY } from '../render/Quality';
 import type { Body } from '../universe/Body';
@@ -26,10 +27,6 @@ export interface Scene {
   /** undo anything special when leaving */
   leave?(app: App): void;
 }
-
-const GOD_SAVE = 'space-explorer-god-universe';
-/** the sandbox was already running when the benchmark started (then it is left alone) */
-let godBefore = false;
 
 function body(app: App, id: number): Body {
   return app.system.byId.get(id)!;
@@ -133,17 +130,6 @@ export const SCENES: Scene[] = [
     },
   },
   {
-    id: 'god', label: 'God mode, N-body running', live: true,
-    setup: (app) => {
-      const sun = app.system.sun;
-      app.select(sun);
-      app.placeNear(sun, 4.5e11, 30, 35);
-      app.clock.rate = 86400 * 2;
-      app.god.setSimulation(true);
-    },
-    leave: (app) => { if (!godBefore) app.god.reset(); },
-  },
-  {
     id: 'cockpit', label: 'Ship cockpit in flight', live: true,
     setup: (app) => {
       const e = body(app, 399);
@@ -212,13 +198,8 @@ export class Bench {
     const app = this.app, c = app.clock;
     const paused = c.paused, rate = c.rate, jd = c.jdTdb;
     const upos = app.rig.upos.clone(), quat = app.rig.quat.clone(), sel = app.selection, anchor = app.rig.anchor;
-    const godActive = godBefore = app.god.active;
-    let godSave: string | null = null;
-    try { godSave = localStorage.getItem(GOD_SAVE); } catch { /* no storage */ }
     const gameMode = app.game.mode;
     return () => {
-      if (!godActive && app.god.active) app.god.reset();
-      try { if (godSave === null) localStorage.removeItem(GOD_SAVE); else localStorage.setItem(GOD_SAVE, godSave); } catch { /* no storage */ }
       if (app.game.mode !== gameMode) app.game.setMode(gameMode);
       c.jdTdb = jd; c.rate = rate; c.paused = paused;
       app.system.update(jd);
@@ -307,7 +288,7 @@ export class Bench {
     const result = this.makeResult();
     void encode(result).then((code) => {
       this.last = { result, code };
-      try { localStorage.setItem('space-explorer-bench', JSON.stringify({ code, at: result.at })); } catch { /* */ }
+      try { localStorage.setItem(`${STORAGE_PREFIX}-bench`, JSON.stringify({ code, at: result.at })); } catch { /* */ }
       console.info(`benchmark code: ${code}`);
       this.onDone(this.last);
     });

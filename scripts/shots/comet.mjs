@@ -1,14 +1,13 @@
 // Comet tails from several directions: face-on to the orbit plane, edge-on, oblique, and from the
 // nucleus looking down the tail. Usage: node scripts/shots/comet.mjs [base] [outdir] [time]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/comet';
 const time = process.argv[4] ?? '2026-10-01T20:00:00Z';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+collectErrors(page, errors);
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 180000 }); };
 await page.goto(`${base}?time=${time}&paused=1&target=Sun&dist=50`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10 && window.app.small?.cometObjects?.length > 100, null, { timeout: 180000 });

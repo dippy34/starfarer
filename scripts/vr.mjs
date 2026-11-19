@@ -2,7 +2,7 @@
 // enters immersive VR, uses the in-headset menu with the controller laser, travels, searches with the
 // virtual keyboard, selects in the sky, flies, turns, uses hand tracking, visits a black hole, exits.
 // Usage: node scripts/vr.mjs [baseUrl] [outDir]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { asymmetricFrusta, measureDisparity } from './stereo.mjs';
@@ -10,12 +10,10 @@ import { asymmetricFrusta, measureDisparity } from './stereo.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:5173/';
 const outDir = process.argv[3] ?? 'screenshots';
 fs.mkdirSync(outDir, { recursive: true });
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist',
-  ...(process.env.TRUSTED_SPKI ? [`--ignore-certificate-errors-spki-list=${process.env.TRUSTED_SPKI}`] : [])] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 const errors = [];
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-page.on('pageerror', (e) => errors.push(String(e)));
+collectErrors(page, errors);
 page.on('console', (m) => { if (m.type() === 'warning' && /XR render target/.test(m.text())) errors.push(m.text()); });
 // Mean brightness of what the headset shows (IWER composites the eye images into the page canvas).
 const headsetBrightness = () => page.evaluate(() => {

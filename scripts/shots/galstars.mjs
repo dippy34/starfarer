@@ -1,10 +1,10 @@
 // Inside other galaxies: Andromeda at 0.4 radii (towards its bulge, and towards the Milky Way from
 // inside its disc) and M33 at 0.4 radii; prints drawn star counts, cells and tile budget.
 // usage: node scripts/shots/galstars.mjs <base> <outprefix>
-import { chromium } from '@playwright/test';
+import { launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/out/gs';
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 960), height: Number(process.env.H ?? 540) } });
 page.on('pageerror', (e) => console.log('PAGEERR', String(e).slice(0, 300)));
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 300000 }); };

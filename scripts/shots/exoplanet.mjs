@@ -7,7 +7,7 @@
 //   GALT height over the ground for `g` (m, default 2500)
 //   LITE=1 the headset tier's cheaper shader variant
 //   SUN angle (degrees) between the view direction and the star direction seen from the planet (default 56)
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from '../lib/browser.mjs';
 const base = process.argv[2] ?? 'http://127.0.0.1:4174/';
 const out = process.argv[3] ?? '/tmp/claude-0/exo';
 const names = (process.env.PL ?? 'Proxima Cen b,TRAPPIST-1 e,Kepler-22 b,51 Peg b').split(',');
@@ -16,11 +16,10 @@ const sunAng = Number(process.env.SUN ?? 56);
 const elev = Number(process.env.EL ?? 0);
 const galt = Number(process.env.GALT ?? 2500);
 const lite = process.env.LITE === '1';   // the headset tier's shader variant (LITE.uLite)   // `g`: height over the ground (m)   // camera elevation above the system plane (degrees)
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 1280), height: Number(process.env.H ?? 720) } });
 const errors = [];
-page.on('pageerror', (e) => errors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+collectErrors(page, errors);
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 240000 }); };
 await page.goto(`${base}?time=2026-10-01T12:00:00Z&paused=1&target=Moon&dist=3`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 180000 });

@@ -1,7 +1,7 @@
 // Headless verification: loads scenarios in Chromium, waits for streaming to
 // settle, saves screenshots and fails on console/page errors.
 // Usage: node scripts/verify.mjs [baseUrl] [outDir] [scenarioName...]
-import { chromium } from '@playwright/test';
+import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -49,24 +49,17 @@ export const scenarios = [
   { name: '35-crab-nebula', query: `time=${T}&paused=1&target=Crab Nebula&dist=2.6&fov=60` },
 ];
 
-const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH || undefined,
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist',
-    // Optional: trust one extra CA by public-key hash (e.g. a TLS-intercepting corporate/sandbox proxy).
-    ...(process.env.TRUSTED_SPKI ? [`--ignore-certificate-errors-spki-list=${process.env.TRUSTED_SPKI}`] : [])],
-});
+const browser = await launchBrowser();
 let failed = false;
 for (const sc of scenarios) {
   if (only.size && !only.has(sc.name)) continue;
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const errors = [];
+  collectErrors(page, errors);
+  // keep the whole message of a shader failure (it carries the GLSL log)
   page.on('console', (m) => {
-    if (m.type() !== 'error') return;
-    errors.push(m.text());
-    // keep the whole message of a shader failure (it carries the GLSL log)
-    if (/Shader Error|VALIDATE_STATUS/.test(m.text())) fs.writeFileSync(path.join(outDir, `${sc.name}-shader-error.txt`), m.text());
+    if (m.type() === 'error' && /Shader Error|VALIDATE_STATUS/.test(m.text())) fs.writeFileSync(path.join(outDir, `${sc.name}-shader-error.txt`), m.text());
   });
-  page.on('pageerror', (e) => errors.push(String(e)));
   const t0 = Date.now();
   await page.goto(`${base}?${sc.query}`, { waitUntil: 'load' });
   try {
