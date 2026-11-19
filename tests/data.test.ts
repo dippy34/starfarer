@@ -1,0 +1,316 @@
+import { describe, expect, it } from 'vitest';
+import { DEG } from '../src/core/astro';
+import { comovingDistanceMpc } from '../src/core/cosmology';
+import { uposDistance, uposFromMeters } from '../src/core/hp';
+import { Rng } from '../src/core/rng';
+import { LY, MPC, PC } from '../src/core/units';
+import { STYLE_COMPACT, STYLE_GIANT, STYLE_STAR, decodeCatalogTile, galaxyPosition, starAbsMag, starPosition } from '../src/data/decode';
+import {
+  GALAXY_COLUMNS, QUASAR_COLUMNS, SDSS_COLUMNS, STAR_COLUMNS, STAR_FLAG_WD, type DatasetManifest,
+  dqGalColor, dqGalMag, dqGalPa, dqGalRatio, dqGalSize, dqNameDec, dqNameRa, dqQsoMag, dqRedshift, dqStarColor, dqStarDec, dqStarDist, dqStarMag, dqStarRa,
+  jName, parseJName, qGalColor, qGalMag, qGalPa, qGalRatio, qGalSize, qNameDec, qNameRa, qQsoMag, qRedshift, qStarColor, qStarDec, qStarDist, qStarMag, qStarRa, twoMassName,
+} from '../src/data/format/schema';
+import { type ColumnSpec, type Columns, type RawTile, decodeIds, decodeTile, encodeIds, encodeTile, packTile, unpackTile } from '../src/data/format/tileFormat';
+import { buildNodeIndex, nodeCube, selectNodes } from '../src/data/lod';
+import { normalizeName } from '../src/data/names';
+import { decodeView, encodeView } from '../src/modes/explore/links';
+import { parseCoordinates, seedPosition } from '../src/modes/explore/search';
+import { UNIVERSE_RADIUS_MPC } from '../src/universe/cosmicWeb';
+
+const MAX: Record<string, number> = { u8: 0xff, u16: 0xffff, u24: 0xffffff, u32: 0xffffffff };
+
+/** A random tile that satisfies the format's rules (delta columns sorted). */
+function randomTile(specs: ColumnSpec[], count: number, seed: number): RawTile {
+  const rng = new Rng(seed);
+  const columns: Columns = {};
+  for (const spec of specs) {
+    const arr = spec.type === 'u8' ? new Uint8Array(count) : spec.type === 'u16' ? new Uint16Array(count) : new Uint32Array(count);
+    for (let i = 0; i < count; i++) arr[i] = Math.floor(rng.next() * (MAX[spec.type]! + 1));
+    // Make sure the extremes are exercised.
+    if (count > 2) {
+      arr[0] = 0;
+      arr[1] = MAX[spec.type]!;
+    }
+    if (spec.delta) arr.sort();
+    columns[spec.name] = arr;
+  }
+  const refCount = Math.min(count, 7);
+  const refRows = Uint32Array.from({ length: refCount }, (_, i) => Math.floor((i * count) / Math.max(1, refCount)));
+  const refIds = Uint32Array.from({ length: refCount }, () => rng.u32());
+  return { count, columns, refRows, refIds };
+}
+
+function expectSameTile(a: RawTile, b: RawTile, specs: ColumnSpec[]): void {
+  expect(b.count).toBe(a.count);
+  for (const s of specs) expect(Array.from(b.columns[s.name]!)).toEqual(Array.from(a.columns[s.name]!));
+  expect(Array.from(b.refRows)).toEqual(Array.from(a.refRows));
+  expect(Array.from(b.refIds)).toEqual(Array.from(a.refIds));
+}
+
+describe('tile format', () => {
+  it('round-trips every dataset schema bit-exactly', () => {
+    const schemas: Array<[string, ColumnSpec[]]> = [['stars', STAR_COLUMNS], ['galaxies', GALAXY_COLUMNS], ['sdss', SDSS_COLUMNS], ['quasars', QUASAR_COLUMNS]];
+    for (const [, specs] of schemas) {
+      for (const count of [0, 1, 2, 3, 257, 4096]) {
+        const tile = randomTile(specs, count, 1000 + count);
+        expectSameTile(tile, unpackTile(specs, packTile(specs, tile)), specs);
+        expectSameTile(tile, decodeTile(specs, encodeTile(specs, tile)), specs);
+      }
+    }
+  });
+
+  it('compresses realistic tiles well below their raw size', () => {
+    // Neighbouring stars in a small patch of sky: sorted RA, similar Dec — as in a real leaf tile.
+    const n = 4096;
+    const rng = new Rng(7);
+    const ra = Uint32Array.from({ length: n }, () => qStarRa(120 + rng.next() * 0.5)).sort();
+    const columns: Columns = {
+      ra, dec: Uint32Array.from({ length: n }, () => qStarDec(-30 + rng.next() * 0.5)), dist: Uint16Array.from({ length: n }, () => qStarDist(300 + rng.next() * 60)),
+      mag: Uint16Array.from({ length: n }, () => qStarMag(9 + rng.next() * 2.5)), color: Uint8Array.from({ length: n }, () => qStarColor(0.4 + rng.next())), flags: new Uint8Array(n),
+    };
+    const bytes = encodeTile(STAR_COLUMNS, { count: n, columns, refRows: new Uint32Array(0), refIds: new Uint32Array(0) });
+    // 14 raw bytes per star; the format should need well under 11.
+    expect(bytes.length / n).toBeLessThan(11);
+  });
+
+  it('rejects malformed input instead of returning garbage', () => {
+    const tile = randomTile(STAR_COLUMNS, 50, 3);
+    const packed = packTile(STAR_COLUMNS, tile);
+    expect(() => unpackTile(STAR_COLUMNS, packed.subarray(0, packed.length - 1))).toThrow(/size mismatch/);
+    const bad = packed.slice();
+    bad[0] = 0x58;
+    expect(() => unpackTile(STAR_COLUMNS, bad)).toThrow(/bad magic/);
+    // A tile read with the wrong schema (different row size) is caught by the size check.
+    expect(() => unpackTile(QUASAR_COLUMNS, packed)).toThrow(/size mismatch/);
+    const unsorted = randomTile(STAR_COLUMNS, 50, 4);
+    unsorted.columns.ra!.reverse();
+    expect(() => packTile(STAR_COLUMNS, unsorted)).toThrow(/not sorted/);
+    const overflow = randomTile(QUASAR_COLUMNS, 10, 5);
+    overflow.columns.dec![3] = 0x1000000;
+    expect(() => packTile(QUASAR_COLUMNS, overflow)).toThrow(/overflows/);
+    expect(() => packTile(STAR_COLUMNS, { ...tile, columns: { ra: tile.columns.ra! } })).toThrow(/missing/);
+  });
+
+  it('round-trips 64-bit catalogue ids', () => {
+    const ids = BigUint64Array.from([0n, 1n, 5853498713190525696n, 4472832130942575872n, 0xffffffffffffffffn, 118322n]);
+    expect(Array.from(decodeIds(encodeIds(ids)))).toEqual(Array.from(ids));
+    expect(decodeIds(encodeIds(new BigUint64Array(0))).length).toBe(0);
+  });
+});
+
+describe('quantisation', () => {
+  it('stores star positions to a micro-degree and distances to 0.02 %', () => {
+    const rng = new Rng(11);
+    for (let i = 0; i < 2000; i++) {
+      const ra = rng.next() * 360;
+      const dec = rng.range(-90, 90);
+      const dist = 10 ** rng.range(-0.5, 5.2);
+      const mag = rng.range(-1.5, 21);
+      expect(Math.abs(dqStarRa(qStarRa(ra)) - ra)).toBeLessThanOrEqual(0.51e-6);
+      expect(Math.abs(dqStarDec(qStarDec(dec)) - dec)).toBeLessThanOrEqual(0.51e-6);
+      expect(Math.abs(dqStarDist(qStarDist(dist)) / dist - 1)).toBeLessThan(1.2e-4);
+      expect(Math.abs(dqStarMag(qStarMag(mag)) - mag)).toBeLessThanOrEqual(0.00051);
+    }
+    expect(dqStarColor(qStarColor(null))).toBeNull();
+    expect(dqStarColor(qStarColor(NaN))).toBeNull();
+    expect(dqStarColor(qStarColor(0.82))).toBeCloseTo(0.82, 1);
+    // RA wraps instead of overflowing.
+    expect(qStarRa(360)).toBe(0);
+    expect(qStarRa(-0.000001)).toBe(359_999_999);
+  });
+
+  it('decodes a star to where the catalogue says it is', () => {
+    // Sirius: RA 101.287°, Dec −16.716°, 2.64 pc, G ≈ −1.09.
+    const [x, y, z] = starPosition(qStarRa(101.287155), qStarDec(-16.716116), qStarDist(2.6371));
+    const c = Math.cos(-16.716116 * DEG);
+    expect(x).toBeCloseTo(2.6371 * c * Math.cos(101.287155 * DEG), 3);
+    expect(y).toBeCloseTo(2.6371 * c * Math.sin(101.287155 * DEG), 3);
+    expect(z).toBeCloseTo(2.6371 * Math.sin(-16.716116 * DEG), 3);
+    expect(starAbsMag(qStarMag(-1.09), qStarDist(2.6371))).toBeCloseTo(-1.09 - 5 * Math.log10(0.26371), 2);
+  });
+
+  it('keeps extragalactic coordinates inside their IAU-name truncation bin', () => {
+    const rng = new Rng(13);
+    for (let i = 0; i < 2000; i++) {
+      const ra = rng.next() * 360;
+      const dec = rng.range(-90, 90);
+      // RA bin: 0.01 s of time = 0.15″; Dec bin: 0.1″. Decoded to bin centres.
+      expect(Math.abs(dqNameRa(qNameRa(ra)) - ra)).toBeLessThanOrEqual(0.5 / 24_000 + 1e-9);
+      expect(Math.abs(dqNameDec(qNameDec(dec)) - dec)).toBeLessThanOrEqual(0.5 / 36_000 + 1e-9);
+      const codes = parseJName(jName(qNameRa(ra), qNameDec(dec)));
+      expect(codes).toEqual({ ra: qNameRa(ra), dec: qNameDec(dec) });
+      expect(parseJName(twoMassName(qNameRa(ra), qNameDec(dec)))).toEqual(codes);
+    }
+  });
+
+  it('regenerates survey designations from position alone', () => {
+    // 12h 29m 06.6997s, +02° 03′ 08.598″ → truncated, never rounded (IAU convention).
+    expect(jName(qNameRa(187.2779154), qNameDec(2.0523883))).toBe('122906.69+020308.5');
+    expect(twoMassName(qNameRa(187.2779154), qNameDec(2.0523883))).toBe('12290669+0203085');
+    expect(jName(qNameRa(0), qNameDec(-0.5))).toBe('000000.00-003000.0');
+    expect(jName(qNameRa(359.99999), qNameDec(-89.99999))).toBe('235959.99-895959.9');
+    expect(parseJName('J122906.69+020308.5')).toEqual({ ra: qNameRa(187.2779154), dec: qNameDec(2.0523883) });
+    expect(parseJName('not a name')).toBeNull();
+  });
+
+  it('stores redshifts finely nearby and handles missing photometry', () => {
+    for (const z of [0, 0.0001, 0.003, 0.02, 0.1, 0.7, 2.5, 7.5]) {
+      const back = dqRedshift(qRedshift(z));
+      // Cubic scale: the step is 24·z^(2/3)/65535, i.e. ≈ 2.7e-5 at z = 0.02.
+      expect(Math.abs(back - z)).toBeLessThanOrEqual((12 * Math.cbrt(z / 8) ** 2) / 65535 + 2e-11);
+    }
+    expect(dqRedshift(qRedshift(99))).toBe(8);
+    expect(dqRedshift(qRedshift(-1))).toBe(0);
+    for (const [q, dq] of [[qGalMag, dqGalMag], [qGalColor, dqGalColor], [qGalSize, dqGalSize], [qGalRatio, dqGalRatio], [qGalPa, dqGalPa], [qQsoMag, dqQsoMag]] as Array<[(v: number | null) => number, (c: number) => number | null]>) {
+      expect(dq(q(null))).toBeNull();
+      expect(dq(q(NaN))).toBeNull();
+    }
+    expect(dqGalMag(qGalMag(11.37))).toBeCloseTo(11.4, 5);
+    expect(dqGalColor(qGalColor(0.73))).toBeCloseTo(0.73, 5);
+    expect(dqGalSize(qGalSize(2.5))! / 2.5).toBeCloseTo(1, 1);
+    expect(dqGalRatio(qGalRatio(0.62))).toBeCloseTo(0.62, 2);
+    expect(dqGalPa(qGalPa(-45))).toBeCloseTo(135, 0);
+    expect(dqQsoMag(qQsoMag(19.24))).toBeCloseTo(19.2, 5);
+    expect(dqQsoMag(qQsoMag(0))).toBeNull();
+    // A galaxy at z = 0.023 lands at its comoving distance in megaparsecs.
+    const [x, y, z] = galaxyPosition(qNameRa(194.95), qNameDec(27.98), qRedshift(0.0231));
+    expect(Math.hypot(x, y, z)).toBeCloseTo(comovingDistanceMpc(0.0231), 0);
+  });
+
+  it('decodes a whole star tile relative to its node centre', () => {
+    const stars = [
+      { ra: 10.0, dec: 20.0, dist: 50, g: 8.2, c: 0.8 }, // Sun-like dwarf
+      { ra: 10.1, dec: 20.1, dist: 300, g: 6.0, c: 1.4 }, // red giant (M_G ≈ −1.4)
+      { ra: 10.2, dec: 19.9, dist: 20, g: 14.5, c: 0.1 }, // white dwarf (M_G ≈ 13)
+    ];
+    const columns: Columns = {
+      ra: Uint32Array.from(stars, (s) => qStarRa(s.ra)), dec: Uint32Array.from(stars, (s) => qStarDec(s.dec)), dist: Uint16Array.from(stars, (s) => qStarDist(s.dist)),
+      mag: Uint16Array.from(stars, (s) => qStarMag(s.g)), color: Uint8Array.from(stars, (s) => qStarColor(s.c)), flags: Uint8Array.from([0, 0, STAR_FLAG_WD]),
+    };
+    const bytes = encodeTile(STAR_COLUMNS, { count: 3, columns, refRows: Uint32Array.from([1]), refIds: Uint32Array.from([42]) });
+    const chunk = decodeCatalogTile('stars', STAR_COLUMNS, bytes, 40, 8, 17, 64);
+    expect(chunk.count).toBe(3);
+    const [x, y, z] = starPosition(columns.ra![0]!, columns.dec![0]!, columns.dist![0]!);
+    expect(chunk.positions[0]).toBeCloseTo(x - 40, 3);
+    expect(chunk.positions[1]).toBeCloseTo(y - 8, 3);
+    expect(chunk.positions[2]).toBeCloseTo(z - 17, 3);
+    expect(chunk.absMag[0]).toBeCloseTo(8.2 - 5 * Math.log10(5), 2);
+    expect([chunk.colors[3], chunk.colors[7], chunk.colors[11]]).toEqual([STYLE_STAR, STYLE_GIANT, STYLE_COMPACT]);
+    // The giant is redder than the white dwarf.
+    expect(chunk.colors[4 + 2]!).toBeLessThan(chunk.colors[8 + 2]!);
+    expect(Array.from(chunk.refRows)).toEqual([1]);
+    expect(Array.from(chunk.refIds)).toEqual([42]);
+  });
+});
+
+describe('level of detail', () => {
+  /** A three-level synthetic octree: root, 8 children, 64 grandchildren, each level 3 mag fainter. */
+  function syntheticDataset(): DatasetManifest {
+    const path: string[] = [''];
+    for (let a = 0; a < 8; a++) path.push(String(a));
+    for (let a = 0; a < 8; a++) for (let b = 0; b < 8; b++) path.push(`${a}${b}`);
+    return {
+      id: 'test', kind: 'stars', title: 'Synthetic', unit: PC, rootHalf: 1024, capacity: 1000, count: path.length * 1000, hasIds: false, columns: STAR_COLUMNS,
+      nodes: { path, count: path.map(() => 1000), mag: path.map((p) => -6 + 3 * p.length), bytes: path.map(() => 9000) },
+    };
+  }
+
+  it('maps octant paths to cubes', () => {
+    expect(nodeCube(1024, '')).toEqual({ cx: 0, cy: 0, cz: 0, half: 1024 });
+    expect(nodeCube(1024, '7')).toEqual({ cx: 512, cy: 512, cz: 512, half: 512 });
+    expect(nodeCube(1024, '70')).toEqual({ cx: 256, cy: 256, cz: 256, half: 256 });
+    expect(nodeCube(1024, '1')).toEqual({ cx: 512, cy: -512, cz: -512, half: 512 });
+  });
+
+  it('selects brightest-first within the point budget, parents before children', () => {
+    const nodes = buildNodeIndex(syntheticDataset());
+    expect(nodes[9]!.parent).toBe(1);
+    expect(nodes[1]!.children.length).toBe(8);
+    let previous = 0;
+    for (const budget of [500, 1000, 4000, 9000, 30000, 1e6]) {
+      const sel = selectNodes(nodes, 300, 300, 300, { budget, magLimit: 30, tenPc: 10 });
+      expect(sel.nodes[0]).toBe(0); // the root is always drawn
+      expect(sel.points).toBeLessThanOrEqual(Math.max(1000, budget));
+      expect(sel.points).toBeGreaterThanOrEqual(previous);
+      previous = sel.points;
+      const chosen = new Set(sel.nodes);
+      for (const id of sel.nodes) if (nodes[id]!.parent >= 0) expect(chosen.has(nodes[id]!.parent)).toBe(true);
+      expect(sel.points).toBe(sel.nodes.length * 1000);
+    }
+    // With a tight budget the octant that contains the camera wins over the far ones.
+    const near = selectNodes(nodes, 300, 300, 300, { budget: 3000, magLimit: 30, tenPc: 10 });
+    expect(near.nodes).toContain(8); // path '7'
+    expect(near.nodes).not.toContain(1); // path '0', on the far side
+    // The magnitude limit prunes nodes that could not show anything.
+    const bright = selectNodes(nodes, 300, 300, 300, { budget: 1e6, magLimit: -100, tenPc: 10 });
+    expect(bright.nodes).toEqual([0]);
+    // Same question, same answer.
+    expect(selectNodes(nodes, 12, -7, 99, { budget: 20000, magLimit: 30, tenPc: 10 })).toEqual(selectNodes(nodes, 12, -7, 99, { budget: 20000, magLimit: 30, tenPc: 10 }));
+  });
+
+  it('reports the cutoff magnitude where the budget ran out', () => {
+    const nodes = buildNodeIndex(syntheticDataset());
+    const tight = selectNodes(nodes, 0, 0, 0, { budget: 4000, magLimit: 30, tenPc: 10 });
+    const loose = selectNodes(nodes, 0, 0, 0, { budget: 1e6, magLimit: 30, tenPc: 10 });
+    expect(tight.cutoffMag).toBeLessThan(30);
+    expect(loose.cutoffMag).toBe(30);
+    expect(Number.isFinite(tight.cutoffMag)).toBe(true);
+  });
+});
+
+describe('share links and search', () => {
+  it('restores the exact place, direction and time from a link', () => {
+    // 9.8 billion light-years out, to the millimetre.
+    const pos = uposFromMeters(6.1e25 + 1234.567, -4.2e25 - 0.25, 3.3e25 + 99.125);
+    const s = Math.SQRT1_2;
+    const link = encodeView({ pos, quat: [0.5, -0.5, s * s * 2 * 0.5, 0.5], time: 843_912_345, focus: 3, name: 'Somewhere far' });
+    const back = decodeView(`#${link}`)!;
+    expect(uposDistance(back.pos, pos)).toBeLessThan(0.002);
+    expect(back.time).toBe(843_912_345);
+    expect(back.focus).toBe(3);
+    expect(back.name).toBe('Somewhere far');
+    for (let i = 0; i < 4; i++) expect(back.quat[i]).toBeCloseTo([0.5, -0.5, 0.5, 0.5][i]!, 6);
+    // Encoding is stable: decode → encode gives the same link.
+    expect(encodeView(back)).toBe(link);
+  });
+
+  it('ignores broken or foreign links', () => {
+    for (const bad of ['', '#', '#v=2&p=1.2.3.4.5.6&q=1.0.0.0&t=0', '#v=1&p=zz&q=1.0.0.0&t=0', '#v=1&p=1.2.3.4.5.6&q=0.0.0.0&t=0', '#v=1&p=1.2.3.4.5.6&q=1.0.0&t=0', '#hello']) {
+      expect(decodeView(bad)).toBeNull();
+    }
+  });
+
+  it('parses sky coordinates in the usual notations', () => {
+    const a = parseCoordinates('10h 08m 22.3s +11° 58′ 02″ 79 ly')!;
+    expect(a.ra).toBeCloseTo((10 + 8 / 60 + 22.3 / 3600) * 15, 9);
+    expect(a.dec).toBeCloseTo(11 + 58 / 60 + 2 / 3600, 9);
+    expect(a.dist).toBeCloseTo(79 * LY, -3);
+    const b = parseCoordinates('RA 187.70, Dec −12.39, 16.5 Mpc')!;
+    expect([b.ra, b.dec]).toEqual([187.7, -12.39]);
+    expect(b.dist).toBeCloseTo(16.5 * MPC, -10);
+    const c = parseCoordinates('05h 35m -05d 23m')!;
+    expect(c.ra).toBeCloseTo(83.75, 9);
+    expect(c.dec).toBeCloseTo(-(5 + 23 / 60), 9);
+    expect(c.dist).toBe(100 * LY);
+    expect(parseCoordinates('400 12')).toBeNull();
+    expect(parseCoordinates('12 95')).toBeNull();
+    expect(parseCoordinates('andromeda')).toBeNull();
+  });
+
+  it('maps a seed word to one fixed place inside the universe', () => {
+    const p = seedPosition('  Hello World ');
+    expect(uposDistance(p, seedPosition('hello world'))).toBe(0);
+    expect(uposDistance(p, seedPosition('hello world!'))).toBeGreaterThan(MPC);
+    for (const word of ['a', 'starfarer', '42', 'ünïcödé']) {
+      expect(uposDistance(seedPosition(word), uposFromMeters(0, 0, 0))).toBeLessThan(UNIVERSE_RADIUS_MPC * MPC);
+    }
+  });
+
+  it('normalises names for matching', () => {
+    expect(normalizeName('  Alpha  CENTAURI ')).toBe('alpha centauri');
+    expect(normalizeName('ξ Boötis')).toBe('ξ bootis');
+    expect(normalizeName('M 31')).toBe('m 31');
+    expect(normalizeName('TRAPPIST-1 e')).toBe('trappist-1 e');
+    expect(normalizeName('Sgr A*')).toBe('sgr a*');
+  });
+});

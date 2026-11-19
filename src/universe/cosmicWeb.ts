@@ -36,9 +36,22 @@ const warp = new Noise3(0x2a4b);
 
 /** Base wavelength of the web pattern (void-to-void distance), Mpc. */
 const WEB_SCALE = 115;
-/** Mean of the raw field, measured numerically (see tests) — divides the field to unit mean. */
-const WEB_MEAN = 2.35;
-
+/**
+ * How the galaxies are shared between the four environments of the web. Voids
+ * fill ~75 % of space but hold only ~8 % of the galaxies; walls ~20 %,
+ * filaments ~45 % and the dense knots where filaments thicken ~27 % (the
+ * proportions of the simulated cosmic web in Cautun et al. 2014, shifted
+ * towards the dense phases because galaxies cluster more strongly than mass).
+ * The weights are scaled so that the field has unit mean (measured 1.000 ± 0.003
+ * over a (14 Gpc)³ box; the unit tests re-measure it), so procedural galaxy
+ * counts follow the luminosity function exactly on average.
+ */
+const W_VOID = 0.08;
+const W_WALL = 0.96;
+const W_FIL = 7.8;
+const W_KNOT = 9.8;
+/** Average of the knot profile along a filament: coarse callers keep the knots' galaxies, smeared along the filament. */
+const KNOT_MEAN = 0.478;
 /**
  * Procedural matter density relative to the cosmic mean at a comoving position (Mpc).
  * `detail` = smallest scale (Mpc) that matters to the caller; coarser callers get a
@@ -63,15 +76,13 @@ export function webDensity(x: number, y: number, z: number, detail = 0): number 
   const n2 = web2.noise(px + 17.3, py + 5.1, pz + 29.7);
   const wall = dexp(-(n1 * n1) / 0.0072);
   const fil = wall * dexp(-(n2 * n2) / 0.013);
-  let rho = 0.05 + 1.5 * wall + 13 * fil;
-  if (detail < 60) {
-    const n3 = web3.noise(px * 1.7 + 3.3, py * 1.7 + 41.9, pz * 1.7 + 7.7);
-    const node = fil * dexp(-(n3 * n3) / 0.05);
-    // Small-scale clumping into groups along the structure.
-    const clump = detail < 12 ? 0.55 + 0.9 * (0.5 + 0.5 * web2.noise(x / 9, y / 9, z / 9)) : 1;
-    rho = (rho + 150 * node) * clump;
-  }
-  return (rho * Math.max(0.2, huge)) / WEB_MEAN;
+  const amp = Math.max(0.2, huge);
+  if (detail >= 60) return (W_VOID + W_WALL * wall + (W_FIL + W_KNOT * KNOT_MEAN) * fil) * amp;
+  const n3 = web3.noise(px * 1.7 + 3.3, py * 1.7 + 41.9, pz * 1.7 + 7.7);
+  const knot = fil * dexp(-(n3 * n3) / 0.05);
+  // Small-scale clumping into groups along the structure.
+  const clump = detail < 12 ? 0.55 + 0.9 * (0.5 + 0.5 * web2.noise(x / 9, y / 9, z / 9)) : 1;
+  return (W_VOID + W_WALL * wall + W_FIL * fil + W_KNOT * knot) * clump * amp;
 }
 
 /** Real large-scale-structure data produced by the catalog pipeline (lss.bin). */

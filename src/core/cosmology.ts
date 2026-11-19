@@ -68,14 +68,22 @@ function ensureTable(): Float64Array {
   return t;
 }
 
-/** Comoving distance in Mpc (table lookup with linear interpolation; ~1e-7 relative accuracy). */
+/**
+ * Comoving distance in Mpc: table lookup with cubic Hermite interpolation
+ * (the derivative dD/dz = (c/H0)/E(z) is known exactly), ~1e-9 relative accuracy.
+ */
 export function comovingDistanceMpc(z: number): number {
   if (z <= 0) return 0;
   if (z >= Z_MAX) return comovingDistanceExact(z);
   const t = ensureTable();
   const f = z / DZ;
-  const i = Math.floor(f);
-  return t[i]! + (t[i + 1]! - t[i]!) * (f - i);
+  const i = Math.min(t.length - 2, Math.floor(f));
+  const u = f - i;
+  const d0 = (HUBBLE_DISTANCE_MPC / hubbleE(i * DZ)) * DZ;
+  const d1 = (HUBBLE_DISTANCE_MPC / hubbleE((i + 1) * DZ)) * DZ;
+  const u2 = u * u;
+  const u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * t[i]! + (u3 - 2 * u2 + u) * d0 + (-2 * u3 + 3 * u2) * t[i + 1]! + (u3 - u2) * d1;
 }
 
 /** Inverse: redshift at a given comoving distance in Mpc. */
@@ -100,7 +108,10 @@ export function redshiftAtComovingMpc(d: number): number {
     if (t[mid]! < d) lo = mid;
     else hi = mid;
   }
-  return (lo + (d - t[lo]!) / (t[hi]! - t[lo]!)) * DZ;
+  // Linear first guess inside the cell, polished with two Newton steps on the smooth forward function.
+  let z = (lo + (d - t[lo]!) / (t[hi]! - t[lo]!)) * DZ;
+  for (let k = 0; k < 2; k++) z -= (comovingDistanceMpc(z) - d) / (HUBBLE_DISTANCE_MPC / hubbleE(z));
+  return z;
 }
 
 /** Distance modulus μ = 5·log10(d_L / 10 pc), with luminosity distance d_L = (1+z)·d_C. */

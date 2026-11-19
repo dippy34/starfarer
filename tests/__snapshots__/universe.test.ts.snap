@@ -1,0 +1,10 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`determinism: same coordinates, same universe > pins a known sample of the universe (guards against accidental generator changes) 1`] = `
+{
+  "bodies": 6,
+  "firstSeed": 242511388,
+  "galaxies": 8,
+  "kinds": "sppppp",
+}
+`;

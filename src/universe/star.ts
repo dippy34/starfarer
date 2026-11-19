@@ -29,10 +29,40 @@ export function mainSequenceTeff(absMag: number): number {
   return MS_TABLE[MS_TABLE.length - 1]![1];
 }
 
-/** Bolometric correction as a function of temperature (Reed 1998 fit to Flower 1996). */
-export function bolometricCorrection(teff: number): number {
-  const x = dlog10(Math.max(2300, Math.min(60000, teff))) - 4;
+/** Flower (1996) bolometric correction in the closed form of Reed (1998); accurate for hot stars. */
+function bcHot(teff: number): number {
+  const x = dlog10(teff) - 4;
   return -8.499 * x * x * x * x + 13.421 * x * x * x - 8.131 * x * x - 3.901 * x - 0.438;
+}
+
+/** Gaia G-band bolometric correction of Andrae et al. (2018, A&A 616, A8, table 4), valid 3300–8000 K. */
+function bcGaia(teff: number): number {
+  const d = teff - 5772;
+  return teff >= 4000
+    ? 6.0e-2 + d * (6.731e-5 + d * (-6.647e-8 + d * (2.859e-11 + d * -7.197e-15)))
+    : 1.749 + d * (1.977e-3 + d * (3.737e-7 + d * (-8.966e-11 + d * -4.183e-14)));
+}
+
+/** Offset that joins the hot-star relation continuously to the Gaia one at 8000 K. */
+const BC_HOT_SHIFT = bcGaia(8000) - bcHot(8000);
+const BC_3300 = bcGaia(3300);
+
+/**
+ * Bolometric correction for the Gaia G band, BC_G = M_bol − M_G, from temperature.
+ * Catalogue magnitudes are G magnitudes, so this is what turns a measured
+ * brightness into a luminosity.
+ *  - 3300–8000 K: Andrae et al. (2018);
+ *  - hotter: the Flower/Reed relation shifted to join at 8000 K (G and V differ
+ *    by only a few hundredths of a magnitude for hot stars);
+ *  - cooler: straight segments through the corrections implied by the measured
+ *    luminosities of Proxima Centauri (−1.63 at 3050 K) and TRAPPIST-1 (−2.29 at 2550 K).
+ */
+export function bolometricCorrection(teff: number): number {
+  const t = Math.max(1500, Math.min(60000, teff));
+  if (t >= 8000) return bcHot(t) + BC_HOT_SHIFT;
+  if (t >= 3300) return bcGaia(t);
+  if (t >= 3050) return -1.63 + ((BC_3300 + 1.63) * (t - 3050)) / 250;
+  return -2.29 + (0.66 * (t - 2550)) / 500;
 }
 
 /** Classify a catalogue star from its position in the colour–magnitude diagram. */
