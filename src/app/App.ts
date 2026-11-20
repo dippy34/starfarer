@@ -65,15 +65,12 @@ import { Walk } from './Walk';
 import { PERF } from '../perf/Perf';
 
 /**
- * How bright a star's face is shown (its mean, before the tone curve). Filling the view it is at
- * the level its colours are designed for (STAR_FACE: StarLook's FACE_KEY); a disk with dark sky
- * round it somewhat brighter (STAR_KEY; STAR_CAP is the most a big disk is shown at): far above
- * that the tone curve presses the face's colours and its texture together into a pale plate.
+ * How bright a star's face is shown (its mean, before the tone curve): a disk large enough to
+ * show its face, at the level its colours are designed for (StarLook's FACE_KEY), whether it
+ * fills the view or stands in a dark sky; a smaller one brighter, up to `small` for one a few
+ * pixels wide (shown brighter, a face is shown hotter: orange, yellow, white. StarLook: faceLight).
  */
-const STAR_KEY = 0.8;
-const STAR_FACE = FACE_KEY;
-const STAR_CAP = 0.8;
-const starKey = (coverage: number) => STAR_KEY + (STAR_FACE - STAR_KEY) * smoothstep(0.05, 0.5, coverage);
+const starCap = (small: number, cssRadius: number) => small + (FACE_KEY - small) * smoothstep(12, 60, cssRadius);
 const DATA = `${import.meta.env.BASE_URL}data`;
 /** catalogue stars closer than this (pc) are drawn individually by the near-star layer */
 const NEAR_STAR_RADIUS = 0.02;
@@ -1491,9 +1488,9 @@ export class App {
         if (v.pixelRadius <= 1.5) continue;
         const L = (AU / SUN_RADIUS) ** 2;
         const shown = this.inSight(v.rel, b.radius);
-        if (v.pixelRadius >= 2) settle(s.coverage * shown, L, starKey(s.coverage));
-        // a small Sun is shown glaring; a disk big enough to have a face, at a level that shows it (as other stars' are, below)
-        limitLight(1.8 + (STAR_CAP - 1.8) * smoothstep(12, 90, v.pixelRadius / this.view.pixelRatio), L, s.presence * shown);
+        if (v.pixelRadius >= 2) settle(s.coverage * shown, L, FACE_KEY);
+        // (a small Sun is shown glaring)
+        limitLight(starCap(1.8, v.pixelRadius / this.view.pixelRatio), L, s.presence * shown);
         continue;
       }
       // In the world's own shadow none of its sunlit face is in sight (the Sun behind it, the side
@@ -1562,12 +1559,10 @@ export class App {
       const s = look(rel, st.radius);
       const L = (magToIrradiance(st.absMag + 5 * Math.log10(d / PC) - 5) * d * d) / (Math.PI * st.radius * st.radius);
       const shown = this.inSight(rel, st.radius);
-      settle(s.coverage * shown, L, starKey(s.coverage));
+      settle(s.coverage * shown, L, FACE_KEY);
       const px = s.size / this.view.pixelAngle;
       if (px <= 1.5) continue;
-      // a small star disk is shown bright (~1.4); a big one at a level at which its colour and its
-      // surface show instead of a white blob
-      limitLight(1.4 + (STAR_CAP - 1.4) * smoothstep(12, 90, px / this.view.pixelRatio), L, s.presence * shown);
+      limitLight(starCap(1.4, px / this.view.pixelRatio), L, s.presence * shown);
     }
     // under a daytime sky the eye adapts to the sky: the stars fade out, and the sky itself is a lit surface
     const sky = this.skyRadiance();

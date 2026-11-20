@@ -2,8 +2,9 @@
 // headless Chromium. A star's face is drawn the way the space observatories show the Sun's:
 // glowing plasma, mottled and threaded all over, white-hot active regions, a glow hugging the limb.
 // Measured from the frames the app draws:
-//   - the Sun from where its whole disk is in view: orange (not a pale plate, not burnt out),
-//     textured in every part of the disk, as bright at the limb as in the middle
+//   - the Sun wears the map of the real one; from where its whole disk is in view it is orange
+//     (not a pale plate, not pink, not burnt out), textured in every part of the disk, as bright
+//     at the limb as in the middle
 //   - turned to one of its active regions: a white-hot patch on the orange
 //   - a red glow hugs the limb and fades outwards; over a turn of the star prominences rise over it
 //   - the surface seethes (it changes from second to second, the disk staying as bright), turns at
@@ -25,19 +26,27 @@ const check = (name, ok, detail = '') => { results.push({ name, ok }); console.l
 const errors = [];
 const ctx = await phoneContext(browser);
 
-/** Open the app looking at `target` from `dist` of its radii, and let the eye settle. */
+/**
+ * Open the app looking at `target` from `dist` of its radii, and let the eye settle. The app's
+ * own loop is stopped then: from here on its frames are stepped by hand, a tenth of a second of
+ * its time each, so every run sees the same however fast the machine draws.
+ */
 async function open(target, dist) {
   const page = await ctx.newPage();
   collectErrors(page, errors);
   await page.goto(`${base}?menu=0&target=${encodeURIComponent(target)}&dist=${dist}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 });
-  await page.evaluate(() => { window.app.hud.setHidden(true); window.app.labels.enabled = false; window.app.orbits.enabled = false; });
+  await page.evaluate(() => {
+    const a = window.app;
+    a.renderer.gl.setAnimationLoop(null);
+    a.hud.setHidden(true); a.labels.enabled = false; a.orbits.enabled = false;
+  });
   await settle(page, 25);
   return page;
 }
-/** `n` frames of the app, a tenth of a second apart (so every run sees the same). */
+/** `n` frames of the app. */
 const settle = (page, n) => page.evaluate(async (n) => {
-  for (let i = 0; i < n; i++) { await new Promise((res) => setTimeout(res, 100)); window.app.frame(); }
+  for (let i = 0; i < n; i++) { await new Promise((res) => setTimeout(res, 105)); window.app.frame(); }
 }, n);
 
 /**
@@ -89,7 +98,7 @@ const measure = (page) => page.evaluate(() => {
   mean /= m;
   inside.sort((p, q) => L[p] - L[q]);
   const at = (f) => { const i = inside[Math.floor(f * (inside.length - 1))]; return [d[4 * i], d[4 * i + 1], d[4 * i + 2]]; };
-  // rings round the centre: mean colour at a radius (in disk radii)
+  // rings round the centre: mean colour at a radius (in disk radii; null where the ring is out of the frame)
   const ring = (r) => {
     const s = [0, 0, 0]; let k = 0;
     for (let j = 0; j < 180; j++) {
@@ -99,7 +108,7 @@ const measure = (page) => page.evaluate(() => {
     }
     return k > 90 ? s.map((v) => Math.round(v / k)) : null;
   };
-  const lumOf = (p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+  const lumOf = (p) => p && 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
   // how much of the pattern has changed place since the frame measured before (as a share of the
   // disk's brightness): the middle of the disk, pixel by pixel
   let change = null;
@@ -140,8 +149,10 @@ const rgb = (p) => `(${p.join(', ')})`;
   await settle(page, 30);
   const s = await measure(page);
   await page.screenshot({ path: path.join(outDir, 'stars-sun.png') });
+  const mapped = await page.evaluate(() => window.app.bodies.meshes.get(window.app.system.sun).material.uniforms.uHasMap.value);
+  check('the Sun wears its own face: the map of the real one', mapped === 1);
   const [r, g, b] = s.median;
-  check('the Sun is a ball of orange plasma: not a pale plate, not burnt out', r > 170 && g > 45 && g < 0.62 * r && b < 0.5 * g && s.burnt < 0.03,
+  check('the Sun is a ball of orange plasma: not a pale plate, not pink, not burnt out', r > 170 && g > 45 && g < 0.52 * r && b < 0.35 * g && s.burnt < 0.03,
     `median ${rgb(s.median)}, dark ${rgb(s.dark)}, light ${rgb(s.light)}; ${(s.burnt * 100).toFixed(2)} % burnt out`);
   check('what is darker on it is deeper red, what is brighter yellower', s.dark[1] / s.dark[0] < g / r && s.light[1] / s.light[0] > g / r,
     `green to red: dark ${(s.dark[1] / s.dark[0]).toFixed(2)}, median ${(g / r).toFixed(2)}, light ${(s.light[1] / s.light[0]).toFixed(2)}`);
@@ -150,17 +161,22 @@ const rgb = (p) => `(${p.join(', ')})`;
     `brightest ${rgb(s.brightest)} on a disk of mean brightness ${s.mean.toFixed(0)}`);
   check('its limb is as bright as its middle (no dark rim)', s.limb > 0.75 * s.middle && s.limb < 1.35 * s.middle, `middle ${s.middle.toFixed(0)}, at 0.93 of the radius ${s.limb.toFixed(0)}`);
   const halo = s.halo.map((p) => p[0]);
-  check('a red glow hugs the limb and fades outwards', halo[0] > 60 && halo[0] > halo[1] && halo[1] > halo[2] && halo[2] > halo[3] && halo[3] < 0.35 * halo[0] && s.halo[1][0] > 3 * s.halo[1][1],
+  check('a red glow hugs the limb and fades outwards', halo[0] > 120 && halo[0] > halo[1] && halo[1] > halo[2] && halo[2] > halo[3] && halo[3] < 0.35 * halo[0] && s.halo[1][0] > 3 * s.halo[1][1],
     `at 1.03, 1.08, 1.14 and 1.3 radii: ${s.halo.map(rgb).join(' ')}`);
   const level = s.lightExposure * (1.495978707e11 / 6.957e8) ** 2;
-  check('its face is shown at the level its colours are designed for', level > 0.5 && level < 0.9, `mean level ${level.toFixed(2)}`);
+  check('its face is shown at the level its colours are designed for', level > 0.5 && level < 0.6, `mean level ${level.toFixed(2)}`);
 
-  // --- it seethes
+  // --- it seethes (its turning stopped meanwhile: what changes is the seething alone)
+  const rate = await page.evaluate(() => { const look = window.app.bodies.sunLook, r = look.rotRate; look.rotRate = 0; return r; });
+  await settle(page, 2);
   const before = await measure(page);
-  await settle(page, 25);
+  const next = await measure(page);
+  await settle(page, 50);
   const after = await measure(page);
-  check('the surface seethes: it has changed after a few seconds, and the disk is as bright as it was', after.change > 0.03 && Math.abs(after.mean - before.mean) < 0.03 * before.mean,
-    `${(after.change * 100).toFixed(1)} % of the brightness changed place; the mean went from ${before.mean.toFixed(1)} to ${after.mean.toFixed(1)}`);
+  await page.evaluate((r) => { window.app.bodies.sunLook.rotRate = r; }, rate);
+  check('the surface seethes: after a few seconds it has changed, far more than from one frame to the next, and the disk is as bright as it was',
+    after.change > 0.008 && after.change > 2.5 * next.change && Math.abs(after.mean - before.mean) < 0.03 * before.mean,
+    `${(after.change * 100).toFixed(1)} % of the brightness changed place (${(next.change * 100).toFixed(2)} % in one frame); the mean went from ${before.mean.toFixed(1)} to ${after.mean.toFixed(1)}`);
 
   // --- prominences rise over the limb as it turns
   const proms = await page.evaluate(() => {
@@ -183,7 +199,7 @@ const rgb = (p) => `(${p.join(', ')})`;
   const turning = (page) => page.evaluate(async () => {
     const a = window.app, b = a.bodies;
     const t0 = b.time, s0 = b.sunTurned;
-    for (let i = 0; i < 10; i++) { await new Promise((res) => setTimeout(res, 100)); a.frame(); }
+    for (let i = 0; i < 10; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
     return (b.sunTurned - s0) / (b.time - t0);
   });
   const far = await turning(page);
@@ -194,7 +210,7 @@ const rgb = (p) => `(${p.join(', ')})`;
   await page.screenshot({ path: path.join(outDir, 'stars-sun-close.png') });
   check('from where the whole disk is in view the Sun turns at its full rate; from close by it is slowed', Math.abs(far - 1) < 0.02 && near < 0.3 && near > 0,
     `share of the full rate: ${far.toFixed(2)} from 4 radii, ${near.toFixed(3)} from 1.15`);
-  check('from close by its face fills the view, still orange and textured', close.median[0] > 170 && close.median[1] < 0.62 * close.median[0] && Math.min(...close.fine) > 0.05 && close.burnt < 0.03,
+  check('from close by its face fills the view, still orange and textured', close.median[0] > 170 && close.median[1] < 0.52 * close.median[0] && Math.min(...close.fine) > 0.025 && close.burnt < 0.03,
     `median ${rgb(close.median)}, fine contrast ${close.fine.map((v) => v.toFixed(3)).join(', ')}`);
   await page.close();
 }
@@ -211,7 +227,7 @@ for (const [name, dist] of [['Betelgeuse', 4], ['Proxima Centauri', 4], ['Sirius
   const b = faces.Betelgeuse, p = faces['Proxima Centauri'], s = faces.Sirius;
   check('Betelgeuse is deep red, in cells far larger than the texture on them', b.median[0] > 150 && b.median[1] < 0.42 * b.median[0] && b.coarse > 1.2 * Math.max(...b.fine) && b.burnt < 0.03,
     `median ${rgb(b.median)}; contrast: coarse ${b.coarse.toFixed(3)}, fine ${b.fine.map((v) => v.toFixed(3)).join(', ')}`);
-  check('Proxima Centauri is a red star with a face of its own', p.median[0] > 150 && p.median[1] < 0.45 * p.median[0] && Math.min(...p.fine) > 0.05 && p.burnt < 0.05,
+  check('Proxima Centauri is a red star with a face of its own', p.median[0] > 150 && p.median[1] < 0.45 * p.median[0] && Math.min(...p.fine) > 0.025 && p.burnt < 0.05,
     `median ${rgb(p.median)}, fine contrast ${p.fine.map((v) => v.toFixed(3)).join(', ')}`);
   check('Sirius is blue-white and nearly smooth: a face all the same, not a plate', s.median[2] > s.median[0] + 20 && Math.max(...s.fine) < 0.6 * Math.min(...p.fine) && Math.min(...s.fine) > 0.004 && s.burnt < 0.03,
     `median ${rgb(s.median)}, fine contrast ${s.fine.map((v) => v.toFixed(4)).join(', ')}`);

@@ -139,14 +139,31 @@ carry restrictions on commercial use — check the caption of each PIA image bef
   from the planet's equilibrium temperature and gravity (mean molecular weight 29), and Earth-like
   haze. Plausible numbers, not measurements.
 
-## Stars up close (`src/render/StarLook.ts`)
+## Stars up close (`src/render/StarLook.ts`, `pipeline/build_sun_map.py`)
 
-Each star's surface is generated from its temperature, size and luminosity plus a per-star seed:
-granulation scaled by the pressure scale height (∝ T/g; a handful of giant cells on red supergiants, as
-in simulations of Betelgeuse such as Freytag et al. 2002), quadratic limb darkening loosely following
-Claret's V-band coefficients, starspots, faculae and flares by activity (strongest in cool dwarfs),
-flattening and gravity darkening for fast-rotating hot stars (as measured by interferometry for Vega
-and Altair). The corona glow and prominences are artistic.
+A star's face is drawn the way the space observatories show the Sun's, in the app's own colours
+(stylised: see the README's list of what is). **The Sun's pattern is a map of the real Sun**:
+
+* **NASA/Goddard Space Flight Center Scientific Visualization Studio, "STEREO+SDO: Around the Sun
+  for 81 Days"** (SVS 3851, visualisation by Tom Bridgman) — <https://svs.gsfc.nasa.gov/3851> —
+  611 cylindrical-equidistant maps of the whole Sun at 304 Å (He II, extreme ultraviolet), each
+  assembled from STEREO-A and STEREO-B (SECCHI/EUVI) and the Solar Dynamics Observatory (AIA),
+  April to June 2011. NASA SVS content is public domain (<https://svs.gsfc.nasa.gov/help/>).
+  `public/data/textures/sun.jpg` takes each longitude from the frame in which it is sharpest, of
+  frames 200, 255 and 309 (late April to mid May 2011; where two spacecraft's views meet a single
+  frame is smeared): a synoptic map, real observations throughout but not one instant. It stores
+  the brightness pattern only (the frames are display pictures, "suitable for animation and
+  visualization purposes but NOT for scientific analysis", as their page says). The eight
+  brightest patches are listed in the manifest as the Sun's active regions. Towards the poles,
+  where every frame is smeared, the app draws its generated pattern instead.
+
+Every other star's face is generated from its temperature, size and luminosity plus a per-star
+seed: its colours from its temperature; the scale of its texture from its kind (fine on a dwarf, a
+handful of giant cells across a red supergiant, as interferometric images and simulations of
+Betelgeuse show, e.g. Freytag et al. 2002); active regions, prominences and flares by activity
+(strongest in cool dwarfs); a nearly smooth, limb-darkened face, flattening and gravity darkening
+for fast-rotating hot stars (as measured by interferometry for Vega and Altair). The corona's glow
+and the prominences are artistic in strength.
 
 ## Black holes (`public/data/blackholes.json`, `pipeline/build_blackholes.py`)
 

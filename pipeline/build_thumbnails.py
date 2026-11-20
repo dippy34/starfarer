@@ -79,7 +79,8 @@ def main() -> None:
     for key, info in man["maps"].items():
         if key.endswith("_relief") or info.get("channels") not in ("RGB", "L"):
             continue
-        if key in ("earth_night", "earth_clouds"):
+        # (the Sun's map is a brightness pattern, not a picture: its thumbnail is drawn below)
+        if key in ("earth_night", "earth_clouds", "sun"):
             continue
         body = KEY_TO_BODY.get(key, key.capitalize())
         if body == "Titan":

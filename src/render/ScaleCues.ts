@@ -88,6 +88,12 @@ export interface EarthRefTarget {
   radius: number;
   /** camera-relative position of the Sun (m) */
   sunRel: Vector3;
+  /**
+   * The exposure Earth is seen at: the surfaces' beside a world; against a star's face the star's
+   * own (with the eye open for the dark beside a small sun, the sunlit sliver round the silhouette
+   * was shown a hundred million times too bright: a white ball in front of the Sun).
+   */
+  exposure: { value: number };
 }
 
 export class ScaleCues {
@@ -106,7 +112,7 @@ export class ScaleCues {
   private off = new Vector3();
   private alpha = 0;
 
-  constructor(exposure: { value: number }, count = 500) {
+  constructor(count = 500) {
     this.group.name = 'scale cues';
     const base = new Float32Array(count * 6), end = new Float32Array(count * 2), pos = new Float32Array(count * 6);
     let seed = 12345;
@@ -131,7 +137,7 @@ export class ScaleCues {
     this.dust.visible = false;
     this.earthMat = new ShaderMaterial({
       name: 'earth for scale', vertexShader: EARTH_VERT, fragmentShader: EARTH_FRAG,
-      uniforms: { uSunDir: { value: new Vector3(1, 0, 0) }, uSunIrr: { value: Math.PI }, uExposure: exposure, uRim: { value: 0.12 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK },
+      uniforms: { uSunDir: { value: new Vector3(1, 0, 0) }, uSunIrr: { value: Math.PI }, uExposure: { value: 1 }, uRim: { value: 0.12 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK },
     });
     this.earth = new Mesh(new SphereGeometry(1, 48, 24), this.earthMat);
     this.earth.matrixAutoUpdate = false;
@@ -189,6 +195,7 @@ export class ScaleCues {
     const ds = toSun.length();
     (this.earthMat.uniforms.uSunDir.value as Vector3).copy(toSun).divideScalar(Math.max(ds, 1));
     this.earthMat.uniforms.uSunIrr.value = Math.PI * (AU_M / Math.max(ds, 1e6)) ** 2;
+    this.earthMat.uniforms.uExposure = t.exposure;
     this.earth.visible = true;
     this.earthAt = pl.pos.clone();
     this.earthScale = k;

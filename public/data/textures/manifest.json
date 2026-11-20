@@ -332,6 +332,59 @@
    "credit": "ESA/DLR/FU Berlin, Mars Express HRSC SRC Phobos global mosaic (16 px/deg), via USGS",
    "source": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Phobos_ME_SRC_Mosaic_Global_16ppd.tif",
    "license": "ESA/DLR/FU Berlin, CC BY-SA 3.0 IGO"
+  },
+  "sun": {
+   "file": "sun.jpg",
+   "width": 4096,
+   "height": 2048,
+   "channels": "L",
+   "lonLeft": -180,
+   "credit": "NASA/Goddard Space Flight Center Scientific Visualization Studio, STEREO+SDO: Around the Sun for 81 Days (T. Bridgman): STEREO/SECCHI EUVI and SDO/AIA at 304 \u00c5, late April to mid May 2011",
+   "source": "https://svs.gsfc.nasa.gov/3851",
+   "license": "Public domain (U.S. Government work)",
+   "note": "brightness pattern, sqrt(p / 4); each longitude from the sharpest of frames 200, 255, 309 of the 611",
+   "regions": [
+    [
+     -18.5,
+     -95.4,
+     4.6
+    ],
+    [
+     -20.9,
+     -172.1,
+     4.1
+    ],
+    [
+     26.2,
+     166.8,
+     4.6
+    ],
+    [
+     17.8,
+     -170.0,
+     5.0
+    ],
+    [
+     17.4,
+     123.2,
+     2.8
+    ],
+    [
+     -19.9,
+     -13.2,
+     5.0
+    ],
+    [
+     26.2,
+     -89.8,
+     2.7
+    ],
+    [
+     -13.9,
+     116.5,
+     5.0
+    ]
+   ]
   }
  },
  "diskColors": {

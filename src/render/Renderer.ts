@@ -3,6 +3,7 @@ import {
   type Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, Quaternion, RGBAFormat, Scene, ShaderMaterial, Vector2,
   Vector3, WebGLCoordinateSystem, WebGLRenderer, WebGLRenderTarget,
 } from 'three';
+import { BLOOM, BLOOM_LEVELS } from './shaders/bloom';
 import { installToneMapping, TONE_GLSL } from './shaders/tone';
 import { HITCH } from '../core/hitch';
 import { PERF } from '../perf/Perf';
@@ -299,7 +300,7 @@ ${OUTPUT_FRAGMENT}
     this.twins.clear();
     this.bloomTargets = [];
     let bw = w, bh = h;
-    for (let i = 0; i < 7 && bw > 4 && bh > 4; i++) {
+    for (let i = 0; i < BLOOM_LEVELS && bw > 4 && bh > 4; i++) {
       bw = Math.max(1, bw >> 1);
       bh = Math.max(1, bh >> 1);
       this.bloomTargets.push(new WebGLRenderTarget(bw, bh, { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter }));
@@ -460,6 +461,8 @@ ${OUTPUT_FRAGMENT}
     const budget = this.presenting ? 1000 / ((gl.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72) : 1000 / 60;
     HITCH.budgetMs = budget;
     if (this.governor.update(performance.now(), budget, PERF.cpuMs[PERF.head], PERF.gpuMs[PERF.head])) this.applyQuality();
+    // (the headset's frame has no bloom pass)
+    BLOOM.uBloom.value = this.presenting || !this.bloomTargets.length ? 0 : this.bloomStrength;
     if (this.presenting) {
       // three binds the headset's framebuffer (an XR render target backed by the session's
       // projection layer) before every XR frame: draw into that, never into the page canvas.

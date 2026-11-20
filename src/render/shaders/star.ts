@@ -1,3 +1,4 @@
+import { BLOOM_VEIL_GLSL } from './bloom';
 import { FIX_LOGDEPTH, OUTPUT_FRAGMENT, PROJECT_PARS } from './xr';
 import { FACE_KEY, FACE_TOP, PROM_SLOTS, SPOT_SLOTS } from '../StarLook';
 
@@ -56,6 +57,9 @@ vec3 faceLight(float I, vec3 k, vec3 p, float level) {
  *    being the star's own; all of it seething in place;
  *  - what is darker is deeper in the star's colour, what is brighter paler, the brightest
  *    white-hot (fire): on the Sun red, orange, yellow, white;
+ *  - the Sun wears its own face: a map of the real one in the light those pictures are taken in
+ *    (uMap; pipeline/build_sun_map.py) gives the pattern, active regions and all, in place of the
+ *    drawn one, which keeps the poles, everything finer than the map shows, and the seething;
  *  - active regions where the star's spots are, in its two belts, each going round at its own
  *    latitude's rate (StarLook.spotAt): bright threaded ground, a white-hot core over each spot;
  *  - a cool star's limb is a little brighter than its face (its glowing skin, seen edge on), a
@@ -74,11 +78,24 @@ uniform float uPixelSA;     // solid angle of a CSS pixel of the pass being draw
 uniform float uDpr;         // how many of its own pixels one takes
 uniform float uRadiusM;     // the star's radius (m)
 ${STAR_LOOK_UNIFORMS}
+uniform sampler2D uMap;     // the star's own face where there is a map of it (the Sun's): its brightness
+uniform float uHasMap;      // over the median, stored as sqrt(p / 4) (pipeline/build_sun_map.py)
 varying vec3 vNormalBF;
 varying vec3 vPosView;
 varying vec2 vUv;
 // the finest threads drawn take this many of the screen's own pixels (finer ones would only flicker)
 const float GRAIN = 7.0;
+// a map shows what is this fine (waves across a radius) and coarser: 4096 pixels round the star,
+// soft over five or so of them
+const float MAP_FINE = 140.0;
+// the map's brightness to this power is the face's (the map is a picture scaled to show
+// everything at once, flatter than the face is designed; set against the observatories' own
+// pictures of the disk: its darks, its middle and its brights come out as theirs)
+const float MAP_CONTRAST = 1.4;
+// how much of the drawn pattern's ground shows on a map, as its seething
+const float MAP_SEETHE = 0.4;
+// the level (over the designed one) at which a face is white-hot all over
+const float WHITE_HOT = 6.0;
 // a turn between one octave and the next: no two lie the same way
 const mat3 TURN = mat3(0.00, 0.80, 0.60, -0.80, 0.36, -0.48, -0.60, -0.48, 0.64);
 float h3(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
@@ -102,6 +119,7 @@ vec3 n33(vec3 p) {
 float fbm3(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.1 + 7.0) + 0.15 * n3(p * 4.3 + 13.0); }
 vec3 rotateAbout(vec3 v, vec3 k, float a) { float c = cos(a), s = sin(a); return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c); }
 ${STAR_FACE_GLSL}
+${BLOOM_VEIL_GLSL}
 
 void main() {
   // the surface normal of the drawn (flattened) ellipsoid: with the sphere's own normal the limb of
@@ -122,6 +140,9 @@ void main() {
   // drawn up to the limb, flattened against it, which is what makes the disk a ball)
   float pxPerRad = uRadiusM / max(length(vPosView) * sqrt(uPixelSA), 1e-30);
   float px = pxPerRad * uDpr * sqrt(max(mu, 0.02));
+  // How much of this place is the star's own map. (None towards the poles: no spacecraft has
+  // looked down on the Sun's, the map is smeared there, and the drawn pattern takes over.)
+  float mapped = uHasMap * (1.0 - smoothstep(0.74, 0.88, abs(lat)));
 
   // --- the plasma: mottled ground, and short threads of light curling over it, octave on octave
   // from an eighth of the scale that stands out down to what the pixels show
@@ -129,7 +150,7 @@ void main() {
   vec3 w = q + (1.6 / uTexFreq) * (n33(q * (0.3 * uTexFreq) + off) - 0.5) + (0.5 / uTexFreq) * (n33(q * (1.1 * uTexFreq) + off.zxy) - 0.5);
   float f = uTexFreq * 0.125;
   vec3 p = w * f + off;
-  float ground = 0.0, threads = 0.0;
+  float ground = 0.0, threads = 0.0, under = 0.0;
   for (int k = 0; k < 15; k++) {
     float vis = smoothstep(0.5 * GRAIN, GRAIN, px / f);
     if (vis <= 0.0 || (uLite > 0.5 && k > 6)) break;
@@ -138,6 +159,11 @@ void main() {
     float ph = 6.2831853 * ((mod(kf, 2.0) < 0.5 ? uBoil.x : uBoil.y) * (1.0 + mod(kf, 3.0)) + 0.37 * kf);
     vec3 v = n33(p + 0.45 * vec3(cos(ph), sin(ph), cos(ph + 2.1)));
     float a = f < uTexFreq ? pow(f / uTexFreq, 1.6) : pow(uTexFreq / f, 0.55);
+    // (on a map only what is finer than the map shows is drawn; of the rest, the ground alone
+    // is kept aside: by it the map's own picture seethes)
+    float finer = mix(1.0, smoothstep(0.5 * MAP_FINE, MAP_FINE, f), mapped);
+    under += a * vis * (1.0 - finer) * (2.0 * v.z - 1.0);
+    a *= finer;
     ground += a * vis * (2.0 * v.z - 1.0);
     // a thread of light where one pattern crosses its middle, cut short where another is low:
     // curls and dashes, not a net of rings
@@ -148,11 +174,23 @@ void main() {
   }
   // the face as a whole is uneven too: brighter and darker over tenths of the radius
   float I = 1.0 + uMottle * 2.0 * (fbm3(q * 1.7 + off) + 0.5 * n3(q * 4.3 + off.yzx) - 0.75);
-  I *= max(1.0 + uTexAmp * (0.5 * ground + 1.25 * threads), 0.12);
+  float fine = max(1.0 + uTexAmp * (0.5 * ground + 1.25 * threads), 0.12);
+  I *= fine;
+  if (uHasMap > 0.0) {
+    // The map goes round with the star, as the drawn pattern does. Its brightness becomes the
+    // face's (steeper at the top: the core of an active region is white-hot), the fine threads
+    // are drawn over it, and it seethes: a map is one moment, so the drawn pattern's ground
+    // brightens and dims it from place to place as it swings.
+    float m = texture2D(uMap, vec2(vUv.x - uSpin / 6.2831853, vUv.y)).r;
+    float bright = 4.0 * m * m;
+    float own = pow(bright, MAP_CONTRAST + 0.4 * smoothstep(1.4, 2.6, bright));
+    I = mix(I, own * fine * (1.0 + MAP_SEETHE * uTexAmp * under), mapped);
+  }
 
   // --- active regions: bright threaded ground round the star's spots, a white-hot core over each
+  // (a map shows the star's own)
   for (int k = 0; k < ${SPOT_SLOTS}; k++) {
-    if (k >= uSpotCount) break;
+    if (k >= uSpotCount || mapped >= 1.0) break;
     vec4 s = uSpotList[k];
     float c = dot(nB, s.xyz);
     float chord2 = 2.0 - 2.0 * c;                       // (the chord: the angle, near enough)
@@ -166,7 +204,7 @@ void main() {
     float around = 1.0 - smoothstep(0.3, reach, r0 * (0.55 + 0.9 * rag));
     float core = exp(-1.3 * r0 * r0 / (0.45 + rag));
     // (the ground round a spot is the face's own texture, brighter; a spot's core is white-hot)
-    I += uActive * (around * sqrt(around) * (0.7 + 1.9 * fibre * fibre + 1.6 * max(threads, 0.0)) + (1.5 + 0.5 * reach) * core);
+    I += (1.0 - mapped) * uActive * (around * sqrt(around) * (0.7 + 1.9 * fibre * fibre + 1.6 * max(threads, 0.0)) + (1.5 + 0.5 * reach) * core);
   }
 
   // --- the limb, and a fast rotator's dark equator
@@ -182,7 +220,23 @@ void main() {
       I += 9.0 * exp(-age / 3.0) * smoothstep(0.0, 0.5, age) * exp(-pow(length(nB - fp) / 0.08, 2.0));
     }
   }
-  gl_FragColor = vec4(min(faceLight(I, uFaceK, uFaceP, uRadiance * uExposure / ${FACE_KEY.toFixed(3)}), vec3(6.0e4)), 1.0);
+  float level = uRadiance * uExposure / ${FACE_KEY.toFixed(3)};
+  vec3 light = faceLight(I, uFaceK, uFaceP, level);
+  // The frame's bloom will lay a veil of the face's own light over it: that much of the face's
+  // mean is left out here, and the frame shows the face as it is designed. (Left in, the veil
+  // lifted a large orange disk half-way up the tone curve's shoulder: salmon pink, and flatter.)
+  if (uBloom > 0.0) {
+    float diskPx = pxPerRad * uDpr;
+    vec2 veil = bloomVeil(diskPx, diskPx * (1.0 - sqrt(1.0 - mu * mu)));
+    light = max(light - veil.x / (1.0 + veil.y) * faceLight(1.0, uFaceK, uFaceP, level), 0.0);
+  }
+  // Far above the level at which a face is white-hot all over, its light is as bright as it is.
+  // (A disk too small to hold the exposure, seen with the eye open for the dark: a sun from among
+  // its planets, the companion star beside a black hole. Its colours' top is the display's white,
+  // and a pixel or two of that is a faint dot: the frame's bloom makes the star's glare of the
+  // light beyond it.)
+  light *= max(1.0, level / WHITE_HOT);
+  gl_FragColor = vec4(min(light, vec3(6.0e4)), 1.0);
 ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>
 }`;
@@ -232,10 +286,7 @@ export const CORONA_FRAG = /* glsl */ `
 #include <common>
 #include <logdepthbuf_pars_fragment>
 uniform vec3 uColor;       // the glow's colour (luminance 1)
-uniform vec3 uPromColor;   // the light of a prominence's gas, and of its brightest threads
-uniform vec3 uPromHot;
 uniform float uIntensity;  // display value of the glow at the limb
-uniform float uPromLevel;  // how bright the prominences are shown (1: as the face's own colours)
 uniform float uQuad;       // quad half-size in star radii
 uniform float uCorona;
 uniform float uRays;       // how much of the corona is streamers and rays (0: an even glow)
@@ -335,8 +386,11 @@ void main() {
     }
   }
   red *= outside;
-  // (the gas of a prominence glows like the star's face; its brightest threads paler, like an active region)
-  vec3 c = uColor * glow * uIntensity + faceLight(skin, uFaceK, uFaceP, uLevel) + mix(uPromColor, uPromHot, clamp(red - 0.6, 0.0, 1.0)) * min(red, 1.6) * uPromLevel;
+  // (The gas of a prominence glows in the face's own colours, like the skin it stands in: its
+  // body a little deeper than the face's mean, its brightest threads paler. The two together are
+  // one brightness of those colours: their lights added up, the tone curve turned a prominence
+  // against the skin pale pink.)
+  vec3 c = uColor * glow * uIntensity + faceLight(skin + 0.9 * min(red, 1.6), uFaceK, uFaceP, uLevel);
   gl_FragColor = vec4(c, 1.0);
 ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>

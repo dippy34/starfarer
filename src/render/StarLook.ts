@@ -94,7 +94,7 @@ export interface StarLook {
 /**
  * The level (before the tone curve) of a star's face's mean brightness at which it is shown as
  * designed: STAR_FRAG works in the display's own colours and undoes the tone curve from this
- * level; the exposure aims at it for a star that fills the view (App: STAR_FACE).
+ * level; the exposure aims at it for a disk large enough to show its face (App: starCap).
  */
 export const FACE_KEY = 0.55;
 
@@ -250,6 +250,27 @@ function makeProms(rand: () => number, strength: number, pairs: [StarSpot, StarS
   return proms;
 }
 
+/** An active region as a star's own map shows it: latitude, longitude east, radius (degrees). */
+export type MapRegion = [number, number, number];
+
+/**
+ * The spots of the active regions on a star's map: across each region a leader and a follower,
+ * east and west of its middle (as the two polarities of a region on the Sun lie), for a loop to
+ * stand on.
+ */
+function mapSpots(regions: MapRegion[]): { spots: StarSpot[]; pairs: [StarSpot, StarSpot][] } {
+  const spots: StarSpot[] = [], pairs: [StarSpot, StarSpot][] = [];
+  const deg = Math.PI / 180;
+  for (const [lat, lon, radius] of regions.slice(0, SPOT_SLOTS / 2)) {
+    const apart = (0.6 * radius * deg) / Math.cos(lat * deg);
+    const leader = { lat: lat * deg, lon: lon * deg + apart, size: 0.4 * radius * deg };
+    const follower = { lat: lat * deg, lon: lon * deg - apart, size: 0.3 * radius * deg };
+    spots.push(leader, follower);
+    pairs.push([leader, follower]);
+  }
+  return { spots, pairs };
+}
+
 /** A stream of numbers in [0, 1) that is the same every time for the same seed (mulberry32). */
 function stream(seed: number): () => number {
   let a = seed >>> 0;
@@ -263,9 +284,10 @@ function stream(seed: number): () => number {
 
 /**
  * `key` identifies the star (stable seed); `teff` K; `radiusSun` in solar radii; `absMag` V.
- * `sun` gives the Sun its measured look (moderate activity, slow rotation).
+ * `sun` gives the Sun its measured look (moderate activity, slow rotation): `true`, or the active
+ * regions of its map (the textures' manifest: maps.sun.regions), which then are the star's.
  */
-export function starLook(key: string, teff: number, radiusSun: number, absMag: number, sun = false): StarLook {
+export function starLook(key: string, teff: number, radiusSun: number, absMag: number, sun: boolean | MapRegion[] = false): StarLook {
   // (drawn from one stream: hashes of the key with a different ending come out nearly alike)
   const rand = stream(Math.floor(hashString(key) * 4294967296));
   const r1 = rand(), r2 = rand(), r3 = rand(), r4 = rand();
@@ -287,7 +309,8 @@ export function starLook(key: string, teff: number, radiusSun: number, absMag: n
   else activity = 0.4 * r1 ** 3;
   if (sun) activity = 0.12;
   const fast = !sun && (T < 3900 ? r4 > 0.5 : r4 > 0.85);
-  const { spots, pairs } = supergiant ? { spots: [], pairs: [] } : makeSpots(rand, activity, giant ? 'giant' : T < 3900 ? 'red dwarf' : 'dwarf', fast);
+  const mapped = typeof sun === 'object';
+  const { spots, pairs } = mapped ? mapSpots(sun) : supergiant ? { spots: [], pairs: [] } : makeSpots(rand, activity, giant ? 'giant' : T < 3900 ? 'red dwarf' : 'dwarf', fast);
   const prominences = convective && !supergiant ? Math.min(1, activity * 1.4) : 0;
   const hotRotator = T > 7400 && !whiteDwarf;
   const flattening = hotRotator ? 0.22 * r2 * r2 : 0;
@@ -307,7 +330,8 @@ export function starLook(key: string, teff: number, radiusSun: number, absMag: n
     spots, active: 0.75 + 0.9 * activity,
     limb: convective ? 0 : -0.45,
     rotRate: (fast ? 0.05 : 0.012) * (supergiant ? 0.2 : giant ? 0.4 : 1) * (0.6 + 0.8 * r2),
-    shear: convective ? 0.25 : 0.05,
+    // (a map goes round all of a piece)
+    shear: mapped ? 0 : convective ? 0.25 : 0.05,
     // (a dwarf's surface changes in minutes, a supergiant's cells in months: all sped up alike)
     boilRate: (supergiant ? 0.012 : giant ? 0.025 : 0.05) * (0.8 + 0.4 * r4),
     flattening, gravDark: flattening * 1.4,

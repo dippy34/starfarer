@@ -14,11 +14,9 @@ const geo = new PlaneGeometry(2, 2);
 
 /**
  * It stays well under the brightness of the limb it rises from (GLOW of the disk's mean): a
- * star's limb is its darkest part, and a glow that outshines it rims the star with light. A
- * prominence is shown PROMINENCE times as bright as the face's own colours of its kind.
+ * star's limb is its darkest part, and a glow that outshines it rims the star with light.
  */
 const GLOW = 0.26;
-const PROMINENCE = 1;
 /** The narrowest a prominence seen edge on is drawn, as a share of its height. */
 const EDGE_ON = 0.22;
 
@@ -46,8 +44,7 @@ export class StarCorona {
     this.mat = new ShaderMaterial({
       name: 'star-corona', vertexShader: CORONA_VERT, fragmentShader: CORONA_FRAG,
       uniforms: {
-        uColor: { value: new Vector3(1, 1, 1) }, uPromColor: { value: new Vector3(1, 1, 1) }, uPromHot: { value: new Vector3(1, 1, 1) },
-        uIntensity: { value: 1 }, uPromLevel: { value: 1 }, uQuad: { value: QUAD },
+        uColor: { value: new Vector3(1, 1, 1) }, uIntensity: { value: 1 }, uQuad: { value: QUAD },
         uFaceK: { value: new Vector3() }, uFaceP: { value: new Vector3() }, uLevel: { value: 1 },
         uCorona: { value: 0.6 }, uRays: { value: 1 }, uChromo: { value: 0 }, uProm: { value: 0 }, uSeed: { value: 0 }, uTime: { value: 0 },
         uAxis2: { value: new Vector2(0, 1) }, uAxisSee: { value: 1 }, uMinor: { value: 1 }, uSinLimb: { value: 1 }, uLimbPx: { value: 100 },
@@ -74,22 +71,19 @@ export class StarCorona {
   update(star: CoronaStar, viewQuat: Quaternion, pixelAngle: number, display: number, time: number, turned: number): void {
     const { rel, radius, look } = star;
     const u = this.mat.uniforms;
-    // the glow is of the face's own colour, a little deeper (its darker light); a prominence's
-    // gas glows like the face where that is brighter, its brightest threads like an active region
+    // the glow is of the face's own colour, a little deeper (its darker light); the skin and the
+    // prominences are drawn in the face's colours themselves (CORONA_FRAG)
     const glow = faceLight(look.face, 0.7), lum = 0.2126 * glow[0] + 0.7152 * glow[1] + 0.0722 * glow[2];
     (u.uColor.value as Vector3).set(glow[0] / lum, glow[1] / lum, glow[2] / lum);
     const answer = faceResponse(look.face);
     (u.uFaceK.value as Vector3).set(...answer.k);
     (u.uFaceP.value as Vector3).set(...answer.p);
     u.uLevel.value = Math.min(3, display / FACE_KEY);
-    (u.uPromColor.value as Vector3).set(...faceLight(look.face, 1.5));
-    (u.uPromHot.value as Vector3).set(...faceLight(look.face, 3.2));
     // a fixed display-level glow once the disk is bright enough to see (not dimmed by adaptation)
     // (close to a star the eye is adapted to the surface filling the view: the corona, a millionth
     // of its brightness, fades from sight)
     const near = Math.min(1, Math.max(0, (rel.length() / radius - 1.4) / 4.6));
     u.uIntensity.value = GLOW * Math.min(1.2, display) * (0.3 + 0.7 * near * near * (3 - 2 * near));
-    u.uPromLevel.value = PROMINENCE * Math.min(1.5, display / FACE_KEY);
     u.uCorona.value = look.corona;
     u.uRays.value = look.rays;
     u.uProm.value = look.prominences;

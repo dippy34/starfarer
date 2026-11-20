@@ -12,6 +12,7 @@ import type { Body } from '../universe/Body';
 import type { SolarSystem } from '../universe/SolarSystem';
 import type { AtmosphereSpec } from './Atmospheres';
 import type { TileDetail } from './TileDetail';
+import { BLOOM } from './shaders/bloom';
 import { BODY_FRAG, BODY_VERT, GLARE_FRAG, GLARE_VERT } from './shaders/body';
 import { STAR_FRAG } from './shaders/star';
 import { RING_FRAG, RING_VERT } from './shaders/rings';
@@ -22,7 +23,7 @@ import { PlanetTerrain } from './PlanetTerrain';
 import type { TerrainCandidate } from './PlanetTerrain';
 import { CloudLayer } from './CloudLayer';
 import { TerrainSource } from '../universe/Terrain';
-import { applyStarLook, hashString, starLook, starLookUniforms, turnShare, type StarLook } from './StarLook';
+import { applyStarLook, hashString, starLook, starLookUniforms, turnShare, type MapRegion, type StarLook } from './StarLook';
 import { PSF_FRAGMENT, PSF_UNIFORMS, PSF_VERTEX } from './shaders/psf';
 import { MAT, MATERIALS } from './Materials';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS, POINT_CLIP } from './shaders/xr';
@@ -30,6 +31,8 @@ import { loadMap } from './Uploads';
 
 interface MapInfo {
   file: string; channels: string; lonLeft: number; credit: string; width: number; height: number;
+  /** the Sun's map: its active regions (pipeline/build_sun_map.py) */
+  regions?: MapRegion[];
   /** optional high-resolution tier, loaded only while the body fills a large part of the view */
   hi?: { file: string; width: number; height: number };
 }
@@ -42,6 +45,8 @@ const HI_WANT_PX = 260;
 const HI_KEEP_PX = 140;
 const HI_RELEASE_S = 20;
 const RELIEF_WANT_PX = 40;
+/** pixel radius above which the Sun's own map is wanted (smaller, its disk shows none of it) */
+const FACE_WANT_PX = 24;
 
 /** Unit sphere in body-fixed coordinates with the texture seam at `lonLeftDeg`. */
 function makeSphere(lonLeftDeg: number, wSeg = 128, hSeg = 64): BufferGeometry {
@@ -327,7 +332,8 @@ export class BodiesLayer {
     mesh.visible = false;
     const key = this.textureKey(b);
     const tasks: Promise<unknown>[] = [];
-    if (key) tasks.push(this.texture(key));
+    if (key && b.kind === 'star') this.requestFace(key, (mesh.material as ShaderMaterial).uniforms);
+    else if (key) tasks.push(this.texture(key));
     if (b.name === 'Earth') tasks.push(this.texture('earth_night'), this.texture('earth_clouds'));
     const rk = this.reliefKey(b);
     if (rk) this.requestRelief(rk, (mesh.material as ShaderMaterial).uniforms);
@@ -402,7 +408,7 @@ export class BodiesLayer {
         uSunRel: { value: new Vector3() }, uSunR: { value: SUN_RADIUS },
         uHasRings: { value: 0 }, uRingTex: { value: null }, uRingRadii: { value: new Vector3() },
         uRadiance: { value: 1 }, uTime: { value: 0 },
-        ...(isStar ? { ...starLookUniforms(this.sunLook = starLook('sun', b.teff, 1, 4.83, true)), uPixelSA: this.psf.uPixelSA, uDpr: this.psf.uDpr } : {}),
+        ...(isStar ? { ...starLookUniforms(this.sunLook = starLook('sun', b.teff, 1, 4.83, mapInfo?.regions ?? true)), ...BLOOM, uPixelSA: this.psf.uPixelSA, uDpr: this.psf.uDpr } : {}),
         uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       side: FrontSide,
@@ -417,9 +423,6 @@ export class BodiesLayer {
 
     const u = mat.uniforms;
     if (isStar) {
-      const L = luminance(blackbodyRGB(b.teff));
-      const c = blackbodyRGB(b.teff);
-      u.uColor.value.set(c[0] / L, c[1] / L, c[2] / L);
       // Mean disk radiance: solar irradiance at 1 AU / solid angle of the solar disk at 1 AU.
       u.uRadiance.value = (AU / SUN_RADIUS) ** 2;
     } else {
@@ -864,6 +867,10 @@ export class BodiesLayer {
   /** Swap in the high-resolution map and the relief map when the body is large on screen. */
   private updateMaps(b: Body, u: Record<string, { value: unknown }>, pixelRadius: number, now: number): void {
     const key = this.textureKey(b);
+    if (b.kind === 'star') {
+      if (key && pixelRadius > FACE_WANT_PX) this.requestFace(key, u);
+      return;
+    }
     if (key && this.manifest.maps[key]?.hi) {
       const entry = this.hiTex.get(key);
       const want = this.allowHi && (pixelRadius > HI_WANT_PX || (entry !== undefined && pixelRadius > HI_KEEP_PX));
@@ -891,6 +898,17 @@ export class BodiesLayer {
     }).catch((err) => console.warn('relief map failed', rk, err));
   }
   private reliefRequested = new Set<string>();
+
+  /** The Sun's own face, once: drawn (STAR_FRAG) from when its map is on the GPU; without it the face is the generated one. */
+  private requestFace(key: string, u: Record<string, { value: unknown }>): void {
+    if (this.faceRequested) return;
+    this.faceRequested = true;
+    this.texture(key).then(({ tex }) => {
+      u.uMap.value = tex;
+      u.uHasMap.value = 1;
+    }).catch((err) => console.warn('the Sun\'s map failed', err));
+  }
+  private faceRequested = false;
 
   /** VR: glare quad around the resolved Sun, facing the viewer; and the Sun's corona. */
   private updateGlare(viewQuat?: Quaternion): void {

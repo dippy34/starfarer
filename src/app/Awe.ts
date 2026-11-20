@@ -5,6 +5,7 @@ import { Rumble } from '../game/Rumble';
 import { ScaleCues } from '../render/ScaleCues';
 import { BlackHole } from '../universe/BlackHoles';
 import { Body, type SpaceObject } from '../universe/Body';
+import { CatalogStar } from '../universe/Stars';
 import { M_SUN_KG, R_EARTH_M, angularDiameter, rumbleLevel, rumblePitch, scaleRows, shadowDiameter } from '../universe/Scale';
 import type { App } from './App';
 
@@ -39,7 +40,7 @@ export class Awe {
   dominant: { name: string; ang: number; level: number } | null = null;
 
   constructor(private app: App) {
-    this.cues = new ScaleCues(app.bodies.surfaceExposure, app.vr?.active ? 300 : 500);
+    this.cues = new ScaleCues(app.vr?.active ? 300 : 500);
     const q = new URLSearchParams(location.search);
     if (q.get('dust') === '0') this.cues.dustOn = false;
     if (q.get('earthref') === '0') this.cues.earthOn = false;
@@ -68,7 +69,11 @@ export class Awe {
     const fwd = new Vector3(0, 0, -1).applyQuaternion(app.view.quat);
     if (sel && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth') {
       const sun = app.system.sun;
-      this.cues.updateEarth({ rel: sel.upos.sub(cam, new Vector3()), radius: sel.radius, sunRel: sun.upos.sub(cam, new Vector3()) }, fwd, app.view.pixelAngle);
+      const star = sel instanceof CatalogStar || (sel instanceof Body && sel.kind === 'star');
+      this.cues.updateEarth({
+        rel: sel.upos.sub(cam, new Vector3()), radius: sel.radius, sunRel: sun.upos.sub(cam, new Vector3()),
+        exposure: star ? app.bodies.lightExposure : app.bodies.surfaceExposure,
+      }, fwd, app.view.pixelAngle);
     } else this.cues.updateEarth(null, fwd, app.view.pixelAngle);
 
     // rumble: the body that looms largest (weighted by mass) among the anchor, the selection and near holes

@@ -66,7 +66,7 @@ procedural generation for the rest. Never use SpaceEngine's own files.
     jets (`Jets.ts`), procedural surfaces/lumpy shapes for map-less bodies, 4K moon maps.
     The corona quad is drawn on a scaled-down copy 1e4 km from the eye (a 1e12 m quad around a giant
     was garbled) and starts at the disk's elliptical outline; big star disks are exposed below white
-    (`STAR_KEY`/`STAR_CAP` in App.ts). Catalogue stars move from the name list's rounded position to
+    (`starCap` in App.ts). Catalogue stars move from the name list's rounded position to
     the octree's when their tile loads; `App.getStar` carries a parked explorer along.
   - GPU crash fix: point sprites of very distant stars overflowed the clipper (`POINT_CLIP` in
     `shaders/xr.ts` rescales point clip coordinates; meshes at Mpc use a per-object `uClipScale`).
@@ -173,9 +173,9 @@ procedural generation for the rest. Never use SpaceEngine's own files.
     3 km of the plane `RingParticles.slab` draws the whole ring as a medium (Gaussian layer, σ 4.5 m,
     measured optical depth, sunlight dimmed by the layer, self-gravity wakes) on a sphere around the
     eye; the ice chunks are shaded and fogged by the same layer (`LAYER_GLSL`).
-  - Star surfaces: `shaders/star.ts` (arithmetic hash: `sin` of large arguments lined the granules
-    up on a grid; granules ~1000 km on the Sun; bright points; mesogranulation); the corona glow
-    fades close to a star (`StarCorona`).
+  - Star surfaces: `shaders/star.ts` (arithmetic hash: `sin` of large arguments lined the pattern
+    up on a grid); the corona glow fades close to a star (`StarCorona`). The face itself has been
+    redrawn since (clean-up pass, part 5).
   - Milky Way from outside: `MilkyWayVolume` ray-marches the galaxy model per pixel (with H II knots,
     OB associations, dust lanes on the arms' inner edges, feathers) and takes over from the glow cube
     a few kpc outside the disc.
@@ -293,7 +293,8 @@ running (a build, not the dev server: an edit reloads the page under a running s
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
 49), `interact` (mouse and keys; 11), `verify` (35 scenes), `exposure` (looking away from bright
-things and back; 51), `whatif` (the worked-out facts, a moon made and taken away; 29),
+things and back; 51), `stars` (the faces of stars, measured from the frames; 16),
+`whatif` (the worked-out facts, a moon made and taken away; 29),
 `vr` (IWER Quest 3 emulator; 32), `game` (20), `walk` (45), `places` (rings, comets, eclipses; 14),
 `terrain` (14), `flight` (19). At most three at a time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
@@ -304,7 +305,8 @@ installed Chromium when Playwright's own download is not available.
 ## Licences to keep in mind
 
 Gaia DR3 supplement (`public/data/stars-gaia/`) is CC BY-NC: drop it for a paid store app. AT-HYG
-tiles are CC BY-SA 4.0; OPAL maps CC BY 4.0; NASA/USGS/NOAA public domain. See `CREDITS.md`.
+tiles are CC BY-SA 4.0; OPAL maps CC BY 4.0; NASA/USGS/NOAA public domain (the Sun's map among
+them: NASA SVS). See `CREDITS.md`.
 
 ## Clean-up pass (ground up, one part at a time)
 
@@ -472,19 +474,16 @@ above is validated against JPL Horizons and stays as it is unless something is w
      dark, not as noise (`Renderer.ts`, interleaved gradient noise).
    - *A star up close* (`shaders/star.ts`, `StarLook.ts`, `StarCorona.ts`). It was a flat, pale
      disc with a bright rim: the face was shown at 0.9 to 1.8 of white, where the tone curve
-     flattens everything; the glow layer started inside the limb and outshone it; and the true
-     limb darkening does its work in the last hundredths of the radius. Now a face large in the
-     view is shown at 0.52 (`starKey`; small it is as brilliant as before); the limb darkening
-     is per colour (the limb is redder, as it is) and drawn to the power 2.2 with the disk's mean
-     kept (`limbGain`; a small disk keeps the true law); from afar, where granules are far below
-     a pixel, a restless larger pattern stands in for them (`uTurb`, stylised and said so in the
-     code); blue stars keep their blue. The glow is written at the star's own depth, so the face
-     hides what is behind it to the pixel (measured in its quad's plane it left a dark sliver on
-     one side of any star off the middle of the frame), and it stays under the limb's brightness.
-     A small cool star is a red dwarf, not a white dwarf, whatever its estimated radius
-     (Proxima comes out at 0.022 solar radii; see below). The Sun's glare fades with the share of
-     the frame its disk takes, not with pixels. A dead copy of the star shader in
-     `shaders/body.ts` is gone.
+     flattens everything, and the glow layer started inside the limb and outshone it. A face
+     large in the view was brought under the display's white, with a steeper limb darkening and
+     a restless pattern standing in for the granules (the owner found that face unconvincing:
+     it was redrawn in part 5, and nothing of it is left). What stands from here: the glow is
+     written at the star's own depth, so the face hides what is behind it to the pixel (measured
+     in its quad's plane it left a dark sliver on one side of any star off the middle of the
+     frame), and it stays under the limb's brightness. A small cool star is a red dwarf, not a
+     white dwarf, whatever its estimated radius (Proxima comes out at 0.022 solar radii; see
+     below). The Sun's glare fades with the share of the frame its disk takes, not with pixels.
+     A dead copy of the star shader in `shaders/body.ts` is gone.
    - Verification: see "Checks before every deploy" for the commands. Run for this part (headless
      Chromium, software WebGL, against a production build): 350 unit tests;
      the 35 scenes of verify, start 34/34, touch 49/49, interact 11/11, exposure 48/48, vr 32/32,
@@ -620,18 +619,157 @@ above is validated against JPL Horizons and stays as it is unless something is w
      same was not looked at); walking on one was not tried. The remaining sine hashes (`Jets.ts` h1,
      `Materials.ts` mhash2, `shaders/rings.ts`, `shaders/planet.ts`, `shaders/body.ts` hash1 and
      h33) are as they were.
-5. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
+5. **A star's face: done** (the owner: "Work on the stars because they don't exactly look
+   realistic and they barely have any texture, if at all"; looked at on an iPhone, in Chrome, at
+   three pixels to the CSS pixel).
+   - *What was tried first, and thrown out.* A pale yellow-white disc with a dark limb, a mosaic
+     of granule cells and dark sunspots: what a telescope with a white-light filter shows. The
+     owner: "that looks nothing like a star", with a page of pictures of the Sun attached, the
+     space observatories' (SDO at 304 Å and its like): a deep orange disc, mottled and wormy all
+     over, white-hot active regions, as bright at the limb as in the middle, a red glow hugging
+     the limb, prominences. That is what a star looks like to people, and a star's face is drawn
+     after those pictures now: stylised, and said so in the README's list of what is. Nothing of
+     the first attempt is left in the code. The owner's next words: "What about try downloading
+     it from external services?" (below: the Sun's own face).
+   - *The colours are designed on the display* (`StarLook.ts`: `faceColor`, `fire`, `untone`,
+     `faceLight`; `shaders/star.ts`: `STAR_FACE_GLSL`). `fire(face, I)` is the colour the screen
+     shows where a face is `I` times as bright as its mean: darker is deeper in the star's own
+     colour, brighter paler, the brightest white-hot (on the Sun red, orange, yellow, white). The
+     shader writes the light that the tone curve brings to that colour (`untone`, the curve the
+     other way round). Measured on the owner's picture: the disc's median sRGB (226, 95, 5), its
+     darks (197, 51, 2), its brights (228, 157, 66), white cores. Three things turn such a face
+     pink or pale, and each did:
+     1. *A brighter exposure* must climb the face's colours (`faceLight` takes the level and
+        evaluates `fire(I * level)`: orange, yellow, white), not multiply its light: the tone
+        curve brings a strong colour whose red is at the top back in by adding white.
+     2. *The bloom.* Over a bright area far wider than its blur the composite's bloom adds every
+        level's share of the area's own light, 42 % in all, and the face went up the tone curve's
+        shoulder: salmon (251, 139, 91) where (225, 95, 10) was designed, and flatter. It showed
+        only in the app (a scratch page that drew stars with the app's shaders, used to work the
+        look out, had no bloom: judge in the app). `STAR_FRAG` now leaves out of what it writes
+        what the bloom will lay over it (`shaders/bloom.ts`: `bloomVeil`, by the disc's radius
+        on the screen and how far inside its edge the place is, per level of the chain;
+        `tests/bloom.test.ts` runs the chain's own arithmetic on a disc and compares).
+        `BLOOM.uBloom` is set by the renderer every frame, and is 0 in a headset, which has no
+        bloom pass. Anything else designed in the display's colours has to make the same
+        allowance.
+     3. *Lights added up.* A prominence drawn over the limb's red skin as a second light came
+        out pale pink: the two are one brightness of the face's colours (`CORONA_FRAG`).
+   - *How bright a face is shown* (`App.ts`: `starCap`). A disc large enough to show its face (60
+     CSS px in radius) is at the level its colours are designed for (`FACE_KEY`), whether it
+     fills the view or stands in a dark sky (with dark sky round it it was up to half as bright
+     again: yellow, where the pictures are orange); a smaller one is brighter, and so hotter, up
+     to 1.8 for a Sun a few pixels wide.
+   - *The Sun's own face* (the owner's idea, tried and taken). NASA's Scientific Visualization
+     Studio has "STEREO+SDO: Around the Sun for 81 Days" (SVS 3851, public domain): 611 maps of
+     the whole Sun at 304 Å, 4096 x 2048, each from the three spacecraft that saw all of it at
+     once in 2011. `pipeline/build_sun_map.py` makes `textures/sun.jpg` (1.1 MB) of three of
+     them and lists it in the textures' manifest (`maps.sun`: the credit, and the eight brightest
+     patches as `regions`). What had to be dealt with:
+     - one frame is smeared along the longitude where two spacecraft's views meet (a quarter of
+       the sphere, worst on the far side). The maps are in Carrington longitude and the seams
+       move over the surface, so the map takes each longitude from the frame in which it is
+       sharpest (frames 200, 255, 309: a quarter and a half turn of the Sun apart); the smear
+       is measured as detail along the longitude over detail across it (0.24 at a seam, 0.81 at
+       the worst place of the map made). A synoptic map: real throughout, not one instant.
+     - the frames are pictures in the instrument's colour table, red at its top nearly
+       everywhere: the map stores the pattern only (green plus half the blue, over the median,
+       as a square root), and the app draws it in the face's own colours, to the power 1.4 (1.8
+       at the top), which brings its darks, middle and brights to the owner's picture's
+       (measured in the app: median (224, 91, 18), darks (179, 40, 12), brights (242, 168, 76)).
+     - towards the poles every frame is smeared (no spacecraft has looked down on them): beyond
+       48 degrees of latitude the generated pattern fades in, and has the poles from 62.
+     - in the shader (`STAR_FRAG`: `uMap`, `uHasMap`, the body material's own): the map turns
+       with the star (`uSpin` shifts it); the generated octaves coarser than the map shows are
+       not drawn over it, the finer ones are, so there is detail at any distance; and it
+       seethes, since a map is one moment: the generated ground it replaces brightens and dims
+       it from place to place. (Swinging the map's own coordinates about was tried first: it
+       curls the real texture into marble.)
+     - `starLook('sun', ..., regions)` makes the map's active regions the Sun's spots
+       (`mapSpots`), so the loops of its prominences stand on the regions the map shows; and a
+       mapped star turns all of a piece (`shear` 0), or they would drift off them.
+     - it is asked for when the Sun's disc passes 24 px or the Sun becomes a destination
+       (`Bodies.requestFace`), not at the start: from the Earth the Sun is a few pixels wide.
+       Until it is there, and if it fails to load, the face is the generated one, its active
+       regions in the same places.
+     - why it stayed: side by side with the owner's picture at a phone's size, the mapped Sun is
+       the one that looks like it; the generated face reads as drawn. It is the Sun of spring
+       2011, not of the date shown (said in the README).
+     - hosts: everything came from svs.gsfc.nasa.gov, which the container's proxy lets through
+       (as it does sdo.gsfc.nasa.gov, stereo-ssc.nascom.nasa.gov and soho.nascom.nasa.gov, not
+       needed in the end). Two others looked at for a map could not be reached from here, by
+       faults of the connection and not the proxy's refusal, and were left alone:
+       solarsystemscope.com (an artist's Sun texture; an HTTP/2 protocol error) and
+       jsoc.stanford.edu (SDO's own synoptic maps; a TLS version the client does not speak).
+   - *The generated face* (every other star; the Sun's poles and what is finer than its map).
+     Mottled ground and short threads of light, octave on octave from an eighth of the scale
+     that stands out (a star's own: fine on a dwarf, a handful of cells across a supergiant)
+     down to what the pixels show, each octave fading in as the eye comes near enough to resolve
+     it (nothing flickers or pops while zooming) and swinging round its own place (the surface
+     seethes and drifts nowhere). Active regions where the star's spots are; prominences
+     anchored to them (`StarLook.proms`; `StarCorona.seenAt` works out every frame where each
+     stands as seen), so they ride round with the star and rise over the limb. The turning is
+     shown at its full, sped-up rate from afar and slowed from close by, where the surface
+     would race past (`turnShare`: 6 CSS px a second at the most). The red skin at the limb is
+     set on the picture's limb profile (in the app, red at 1.03, 1.08, 1.14 radii: 187, 133,
+     88; the picture falls off faster, the corona's glow and the bloom being added here).
+   - *Blocks on a supergiant* (found on the way). A supergiant seen from a few of its radii has
+     clip coordinates near 1e12, and the software rasteriser lost the interpolation inside each
+     triangle to them: the face came out in flat blocks. `BODY_VERT` scales the clip
+     coordinates by `uClipScale` (the same factor for every vertex changes nothing that is
+     drawn); every material that uses `BODY_VERT` must define it (Bodies, NearStars and
+     ExoPlanetLayer do).
+   - *A white ball in front of the Sun* (found on the way; there since part 4 gave suns an
+     exposure of their own). "Earth for scale" was drawn at the surfaces' exposure, which is
+     wide open while a sun covers little of the frame: from about 7 to 13 radii on a phone the
+     lit sliver round Earth's silhouette blazed and bloomed over the Sun's face. Against a star it
+     takes the star's exposure now (`ScaleCues`, `Awe`).
+   - `scripts/stars.mjs`, on a phone: the Sun wears its map and is orange (not pale, not pink,
+     not burnt out), deeper red where darker and yellower where brighter, textured in every
+     quarter of the disc, with a white-hot region where the view is turned to one, its limb as
+     bright as its middle, a red glow round it that fades outwards, shown at the designed
+     level; it seethes (its turning stopped, the frames stepped by hand: far more has changed
+     after five seconds than from one frame to the next); prominences rise and set over a turn;
+     the turning is slowed from close by, where the face is still orange and textured;
+     Betelgeuse is deep red in cells far larger than its texture, Proxima red with a face of
+     its own, Sirius blue-white and nearly smooth but not a plate. Each threshold was set from
+     the values the run prints, with a margin, and against what it is to rule out (the pale
+     ball of part 3, the pink of the bloom).
+   - Verification so far: the type check, 407 unit tests and the production build; `stars` 16/16
+     against the dev server; `exposure` 51/51 against a production build of this code less its
+     last change (the light of a disc too small to hold the exposure, below); the star scenes of
+     `verify` beside the last deployed run's. **The round of browser suites has not been run on
+     this commit**: it went out at the owner's word ("Push the new stars"); the round and
+     what it turns up follow in the next one. The README's picture of the stars is from the
+     app as it is here.
+   - *The light of a disc too small to hold the exposure* (found by that comparison). A star's
+     colours top out at the display's white, so a disc a pixel or two wide, seen with the eye
+     open for the dark, was a faint dot: the Sun from among the planets had lost its glare, and
+     the companion of Gaia BH1 was gone from the lensed sky. Far above the level at which a face
+     is white-hot all over, its light is as bright as it is again (`WHITE_HOT` in `STAR_FRAG`),
+     and the bloom makes the glare of it: the inner system from 2.8 AU is the picture it was, to
+     the pixel.
+   - Seen and left: the limb's raggedness (spicules) hardly shows. From very close (1.2 radii)
+     the Sun's map is magnified eight times: soft blotches under the fine generated threads. A
+     small disc's glare rims the red skin with pinkish white. The map takes the generated
+     face's place the moment it arrives (no fade). Hot stars are nearly smooth by design (a
+     faint mottling). Whether a generated hot star is flattened is drawn by lot: Sirius, a slow
+     rotator, comes out 17 % flattened (the engine has no measured rotation rates). The
+     headset draws the same faces without the allowance for bloom (it has none), with fewer
+     octaves (`uLite`): not looked at in a headset, nor in the emulated one beyond the `vr`
+     suite.
+6. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then the ship, missions and the benchmark as screens of the app.
-6. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
+7. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.
-7. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
-8. App core: `app/App.ts` is 2,400 lines doing exposure, picking, labels, navigation, loading and
+8. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
+9. App core: `app/App.ts` is 2,400 lines doing exposure, picking, labels, navigation, loading and
    the frame loop; to be split into modules behind the same behaviour (the eye's arithmetic, the
    loading's state, the worked-out facts and the what-if powers are out already: `Exposure.ts`,
    `Loading.ts`, `Worked.ts`, `WhatIf.ts`).
-9. Stars and sky (the rest). 10. Deep space (galaxies, nebulae, black holes, exoplanets).
-   11. Terrain, landing, walking. 12. Game mode. 13. VR.
+10. Stars and sky (the rest). 11. Deep space (galaxies, nebulae, black holes, exoplanets).
+   12. Terrain, landing, walking. 13. Game mode. 14. VR.
 
 To look at when their part comes (seen in the scenario screenshots): Pluto's lit side washes out to
 white from 12 radii; 51 Peg b shows a flat black disc on its cloud deck; the Sun's glare hides the

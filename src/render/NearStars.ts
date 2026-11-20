@@ -3,6 +3,7 @@ import { blackbodyRGB, luminance, magToIrradiance } from '../astro/photometry';
 import { PC, SUN_RADIUS } from '../core/units';
 import type { UPos } from '../core/upos';
 import type { CatalogStar } from '../universe/Stars';
+import { BLOOM } from './shaders/bloom';
 import { BODY_VERT } from './shaders/body';
 import { STAR_FRAG } from './shaders/star';
 import { STAR_NEAR, StarCorona } from './StarCorona';
@@ -47,7 +48,7 @@ const MAX = 32;
 /**
  * Catalogue stars closer than the star-field hide radius are drawn here
  * individually in double precision: a point sprite while unresolved and a
- * limb-darkened sphere (estimated radius) once the disk spans pixels.
+ * sphere (estimated radius) with a face of its own (StarLook) once the disk spans pixels.
  */
 export class NearStarsLayer {
   readonly group = new Group();
@@ -94,8 +95,9 @@ export class NearStarsLayer {
       const m = new Mesh(this.sphere, new ShaderMaterial({
         name: 'near-star-surface', vertexShader: BODY_VERT, fragmentShader: STAR_FRAG,
         uniforms: {
-          uColor: { value: new Vector3() }, uRadiance: { value: 1 }, uExposure: this.lightExposure, uTime: { value: 0 }, uBodyToWorld: { value: new Matrix3() },
-          ...starLookUniforms(starLook('init', 5772, 1, 4.83)), uLite: LITE.uLite, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
+          uRadiance: { value: 1 }, uExposure: this.lightExposure, uTime: { value: 0 }, uBodyToWorld: { value: new Matrix3() },
+          ...starLookUniforms(starLook('init', 5772, 1, 4.83)), uMap: { value: null }, uHasMap: { value: 0 },
+          ...BLOOM, uLite: LITE.uLite, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
           uPixelSA: this.psf.uPixelSA, uDpr: this.psf.uDpr, uRadiusM: { value: 1 }, uLumpy: { value: 0 }, uClipScale: { value: 1 },
         },
       }));
@@ -146,7 +148,6 @@ export class NearStarsLayer {
         m.matrix.compose(rel, q, new Vector3(s.radius, s.radius, s.radius * (1 - look.flattening)));
         m.matrixWorldNeedsUpdate = true;
         const u = (m.material as ShaderMaterial).uniforms;
-        u.uColor.value.set(c[0] / L, c[1] / L, c[2] / L);
         // mean disk radiance = irradiance * d^2 / (pi R^2), independent of distance
         const radiance = (E * d * d) / (Math.PI * s.radius * s.radius);
         u.uRadiance.value = radiance;

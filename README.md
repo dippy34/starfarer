@@ -51,7 +51,7 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 | ![The Moon from 5 km: LOLA heights, generated craters](docs/img/terrain-moon-5km.jpg) | ![Standing in a lunar crater at sunrise](docs/img/terrain-moon-ground.jpg) |
 | ![Over Olympus Mons (MOLA heights) under the Martian sky](docs/img/terrain-mars-olympus.jpg) | ![On Proxima Cen b, lit by its red dwarf (generated surface)](docs/img/terrain-proxima-b.jpg) |
 
-<img src="docs/img/stars-up-close.jpg" width="640" alt="Stars up close: the Sun, Sirius, Betelgeuse and Proxima Centauri, each with the surface of its kind"> <img src="docs/img/loading.jpg" width="640" alt="The loading screen: what has arrived, what it brought, how much was downloaded">
+<img src="docs/img/stars-up-close.jpg" width="640" alt="Stars up close: the Sun (its face a map of the real one), Sirius, Betelgeuse and Proxima Centauri, each with the face of its kind"> <img src="docs/img/loading.jpg" width="640" alt="The loading screen: what has arrived, what it brought, how much was downloaded">
 
 <img src="docs/img/whatif.jpg" width="640" alt="What if: the Earth given a second moon, and the new moon's details, with what is worked out for it and the button that takes it away again">
 
@@ -224,8 +224,19 @@ matching functions.
 ### What works (each verified before it went live)
 
 Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `start.mjs`,
-`touch.mjs`, `interact.mjs`, `exposure.mjs`, `whatif.mjs`, `vr.mjs`, `game.mjs`, `walk.mjs`,
-`terrain.mjs`, `places.mjs`, `flight.mjs`; see HANDOFF.md):
+`touch.mjs`, `interact.mjs`, `exposure.mjs`, `stars.mjs`, `whatif.mjs`, `vr.mjs`, `game.mjs`,
+`walk.mjs`, `terrain.mjs`, `places.mjs`, `flight.mjs`; see HANDOFF.md):
+
+* **A star up close has a face**, drawn the way the space observatories show the Sun's (SDO,
+  STEREO: the orange pictures of a star that everyone knows): glowing plasma, mottled and threaded
+  all over, deeper in the star's colour where it is darker and white-hot where it is brightest;
+  active regions; a red skin of light at the limb with prominences standing on it; a corona; all
+  of it seething in place and turning with the star. Each kind has its own: a red dwarf deep red
+  with vast active regions, a red supergiant in a handful of giant cells, hot stars blue-white
+  and nearly smooth. **The Sun wears its own face**: a whole-sphere map of the real Sun in the
+  extreme ultraviolet, put together by NASA from the three spacecraft that saw all of it at once
+  in 2011, its real active regions with loops standing on them (`src/render/StarLook.ts`,
+  `shaders/star.ts`, `pipeline/build_sun_map.py`, `scripts/stars.mjs`).
 
 * **What if** (the beginning of it): a world's details show what follows from its facts by the
   textbook (its gravity, its escape velocity, how long its orbit takes, a black hole's horizon),
@@ -249,15 +260,16 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
 * Seamless scale from metres above a planet to kiloparsecs, floating origin, reversed-Z depth.
 * 2,751,164 real stars streamed from two separately-licensed octrees (AT-HYG+HYG; Gaia DR3 100 pc
   supplement), physical brightness and blackbody colours, 12,585 named stars, picking with real
-  designations (HIP/HD/TYC/Gaia DR3), stars resolve into limb-darkened disks when you fly to them.
+  designations (HIP/HD/TYC/Gaia DR3), stars resolve into disks with a face of their own when you fly to them.
 * Solar System at the real date: JPL DE442S (1849–2150; validated against JPL Horizons to ≲50 km for
   Earth, 1 km for the Moon), JPL approximate elements outside that range, IAU rotation models (pck00011).
 * 459 moons: JPL mean elements, calibrated against Horizons (median error 0.58° over 1950–2100), with
   Horizons osculating-element tables for Triton, Titan, Iapetus and the irregular moons (≤0.07°).
 * 302 large asteroids/TNOs as full bodies, 75,565 numbered asteroids propagated on the GPU, 4,077
   comets propagated in a Web Worker.
-* Every body and star looks like itself: stars get their own granulation, spots, flares, flattening
-  and corona from their temperature and size (giant convection cells on red supergiants); the 459
+* Every body and star looks like itself: stars get their own colours, texture, active regions,
+  prominences, flares, flattening and corona from their temperature and size (giant convection
+  cells on red supergiants); the 459
   moons and the asteroids get 4K maps from the full-resolution USGS mosaics or, where no spacecraft has
   mapped them, a seeded procedural surface and an irregular shape for small bodies; each black hole has
   its own disk temperature, gas pattern and (for M87\* and the microquasars) jets.
@@ -334,8 +346,15 @@ Known limitations (planned for later phases unless noted):
   whose light is nearly all infrared, come out several times too small (Proxima Centauri 0.022
   solar radii; it is 0.15). Gaia DR3 places Sirius B 0.033 pc from Sirius A (a known astrometry
   problem for that binary).
-* A star's face up close is drawn to be read, not measured: its limb darkening is steeper than the
-  real law, and the restless pattern on it from afar stands in for granules far too small to see.
+* Star faces are stylised: they are drawn after the space observatories' pictures of the Sun
+  (false-colour pictures in the extreme ultraviolet, of the hot gas over its surface), not as a
+  white-light photograph would show a star (a pale disc with a darker limb and, on the Sun, a few
+  dark spots). Their colours are stronger than a star's own pale tint, their brightness is set for
+  the display, and their turning and seething are sped up thousands of times. The Sun's pattern is
+  real, but it is the Sun of spring 2011, not of the date shown: a NASA map assembled from three
+  spacecraft over three weeks, its poles (which no spacecraft has looked down on) generated. Every
+  other star's face is generated from its temperature, size and brightness: nobody has seen them.
+  The corona's glow and the prominences are artistic in strength.
 * Moons without published sizes get a deterministic procedural radius, flagged "estimated".
 * Comet comas and tails are a model: their size follows each comet's catalogued total-magnitude
   parameters (M1, K1) and distance from the Sun, the ion tail points straight away from the Sun and

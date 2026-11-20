@@ -131,6 +131,38 @@ describe('how a star is drawn up close', () => {
     }
   });
 
+  it('with a map of its face, the Sun\'s active regions are the map\'s, and go round with it', () => {
+    // (latitude, longitude east, radius: degrees, as pipeline/build_sun_map.py lists them)
+    const regions: [number, number, number][] = [[-18.5, -95.4, 4.6], [26.2, 166.8, 4.6], [17.4, 123.2, 2.8]];
+    const sun = starLook('sun', 5772, 1, 4.83, regions);
+    const deg = Math.PI / 180;
+    expect(sun.spots.length).toBe(2 * regions.length);
+    regions.forEach(([lat, lon, radius], i) => {
+      // a leader and a follower, east and west of the region's middle and well inside it
+      const [a, b] = [sun.spots[2 * i], sun.spots[2 * i + 1]];
+      expect(a.lat).toBeCloseTo(lat * deg, 12);
+      expect(b.lat).toBeCloseTo(lat * deg, 12);
+      expect((a.lon + b.lon) / 2).toBeCloseTo(lon * deg, 12);
+      expect(a.lon).toBeGreaterThan(b.lon);
+      expect((a.lon - b.lon) * Math.cos(a.lat)).toBeLessThan(2 * radius * deg);
+      expect(a.size).toBeLessThan(radius * deg);
+      // and a loop stands on them
+      expect(sun.proms.some((p) => !p.curtain && p.a.lon === a.lon && p.b.lon === b.lon)).toBe(true);
+    });
+    // a map is one picture: every latitude goes round at the same rate, the pattern with them
+    expect(sun.shear).toBe(0);
+    const t = 500;
+    for (const s of sun.spots) expect(Math.atan2(spotAt(sun, s, t).y, spotAt(sun, s, t).x)).toBeCloseTo(Math.atan2(Math.sin(s.lon + spinAt(sun, t)), Math.cos(s.lon + spinAt(sun, t))), 9);
+    // no more of them than the shader's list holds, however many the map has
+    const many = Array.from({ length: 20 }, (_, i): [number, number, number] => [10, i * 18 - 180, 3]);
+    expect(starLook('sun', 5772, 1, 4.83, many).spots.length).toBe(SPOT_SLOTS);
+    // otherwise it is the Sun it was
+    const plain = starLook('sun', 5772, 1, 4.83, true);
+    expect(sun.face).toEqual(plain.face);
+    expect(sun.texFreq).toBe(plain.texFreq);
+    expect(sun.rotRate).toBe(plain.rotRate);
+  });
+
   it('a spot goes round at the rate of its latitude, slower towards the poles; the surface with them', () => {
     const look = starLook('sun', 5772, 1, 4.83, true);
     const t = 40;
