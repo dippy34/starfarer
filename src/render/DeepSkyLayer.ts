@@ -8,7 +8,7 @@ import type { UPos } from '../core/upos';
 import type { DeepSkyObject } from '../universe/DeepSky';
 import { noise3D } from './Noise3D';
 import { STAR_FRAG, STAR_VERT } from './StarField';
-import { VOLUMES } from './Renderer';
+import { VOLUME_JITTER, VOLUMES } from './Renderer';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS } from './shaders/xr';
 
 const BILL_VERT = /* glsl */ `
@@ -146,6 +146,7 @@ uniform vec3 uAxis;     // symmetry axis (nebula frame)
 uniform vec4 uP;        // emission: cavity radius, pillars, lanes, [O III] extent
 uniform vec4 uQ;        // emission: filaments, pillar angular scale, ionisation-front bar, reflection
 varying vec3 vPos;
+${VOLUME_JITTER}
 float sq(float x) { return x * x; }
 vec4 nz(vec3 p, float lod) { return textureLod(uNoise, p, max(lod, 0.0)); }
 float ridge(float n) { return 1.0 - abs(2.0 * n - 1.0); }
@@ -356,8 +357,7 @@ void main() {
   float NMAX = hi ? (uType > 0.5 ? 96.0 : 64.0) : 24.0;
   int N = int(clamp(ceil((t1 - t0) * 0.5 * NMAX), 6.0, NMAX));
   float dt = (t1 - t0) / float(N);
-  // interleaved gradient noise: an even jitter of the samples (no banding, no blotches)
-  float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float jit = volJitter();
   sd = vec3(uSeed * 17.31, uSeed * 29.17, uSeed * 7.73);
   vec3 col = vec3(0.0);
   float T = 1.0;
@@ -467,7 +467,6 @@ export class DeepSkyLayer {
   private far = new Map<DeepSkyObject, Mesh>();
   private stars = new Map<DeepSkyObject, Points>();
   readonly gain = { value: 0.6 };
-  private pixAng = { value: 1e-3 };
 
   constructor(readonly objects: DeepSkyObject[], psf: Record<string, { value: number }>, colorLut: DataTexture, vr = false) {
     this.group.name = 'deep-sky';
@@ -522,7 +521,7 @@ export class DeepSkyLayer {
         uniforms: {
           uNoise: { value: noise }, uCenter: { value: new Vector3() }, uRadius: { value: o.radius }, uRot: { value: rot },
           uType: { value: type }, uShape: { value: look.shape }, uSeed: { value: o.seed }, uGain: this.gain, uBright: { value: look.bright ?? 1 }, uFade: { value: 1 },
-          uLite: LITE.uLite, uPixAng: this.pixAng, uAxes: { value: new Vector3(...(look.axes ?? [1, 1, 1])) },
+          uLite: LITE.uLite, uPixAng: VOLUMES.pixelAngle, uJitter: VOLUMES.jitter, uAxes: { value: new Vector3(...(look.axes ?? [1, 1, 1])) },
           uAxis: { value: new Vector3(Math.sin(tilt), 0, Math.cos(tilt)) },
           uP: { value: new Vector4(...(look.p ?? [0.2, 0, 0, 0.3])) }, uQ: { value: new Vector4(...(look.q ?? [1, 3, 0, 0])) },
           uClipScale: { value: 1 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
@@ -564,8 +563,6 @@ export class DeepSkyLayer {
   /** `camPc`: camera position (pc); `adapt`: dark adaptation (1 = dark-adapted). */
   update(cam: UPos, camPc: Vector3, pixelAngle: number, adapt: number): void {
     this.views = [];
-    // (a pixel of the volume pass, which runs at reduced resolution: the noise's level of detail)
-    this.pixAng.value = pixelAngle / Math.min(1, LITE.uLite.value > 0.5 ? VOLUMES.scaleXr : VOLUMES.scale);
     const rel = new Vector3();
     // inside a bright nebula the eye adapts to the glowing gas all around (no wash-out to white)
     let inside = 0;
@@ -643,7 +640,6 @@ export class DeepSkyLayer {
     for (const c of [...t.group.children]) {
       const u = ((c as Mesh).material as ShaderMaterial | undefined)?.uniforms;
       if (u?.uGain === t.gain) u.uGain = this.gain;
-      if (u?.uPixAng === t.pixAng) u.uPixAng = this.pixAng;
       this.group.add(c);
     }
     t.glows.forEach((v, k) => this.glows.set(k, v));

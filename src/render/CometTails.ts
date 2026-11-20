@@ -5,7 +5,7 @@ import { eclToEqu } from '../core/frames';
 import { AU, GM_SUN } from '../core/units';
 import type { UPos } from '../core/upos';
 import type { Comet } from './SmallBodies';
-import { VOLUMES } from './Renderer';
+import { VOLUME_JITTER, VOLUMES } from './Renderer';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS, QUALITY_LEVEL } from './shaders/xr';
 
 const VERT = /* glsl */ `
@@ -66,6 +66,7 @@ uniform float uSeed;
 uniform float uLite;
 uniform float uQuality;
 varying vec3 vP;
+${VOLUME_JITTER}
 float th(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 float tn(vec3 p) {
   vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -92,7 +93,7 @@ void main() {
     int N = uLite > 0.5 ? 32 - 6 * int(uQuality) : 96;
     float dsMax = (t1 - t0) / (uLite > 0.5 ? 12.0 - 2.0 * uQuality : 28.0);
     float dyz = max(length(d.yz), 0.02), dz = max(abs(d.z), 0.02);
-    float jit = th(vec3(gl_FragCoord.xy, uSeed));
+    float jit = volJitter();
     float t = t0;
     for (int i = 0; i < 96; i++) {
       if (i >= N || t >= t1) break;
@@ -293,7 +294,7 @@ export class CometTails {
         uniforms: {
           uCam: { value: new Vector3() }, uBoxC: { value: new Vector3() }, uBoxE: { value: new Vector3(1, 1, 1) },
           uLi: { value: 1 }, uLd: { value: 1 }, uBend: { value: 0 }, uL0: { value: 0 }, uSeed: { value: i * 7.3 },
-          uGain: this.gain, uLite: LITE.uLite, uQuality: QUALITY_LEVEL.uQuality, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
+          uGain: this.gain, uLite: LITE.uLite, uQuality: QUALITY_LEVEL.uQuality, uJitter: VOLUMES.jitter, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
         },
         transparent: true, depthWrite: false, blending: AdditiveBlending, side: BackSide,
       }));

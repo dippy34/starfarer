@@ -1,6 +1,6 @@
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { adapt, DAZZLE, diskLimit, diskSeen, MARGIN, released, seen, TAU_OPEN, TAU_SHUT, type Frame } from '../src/app/Exposure';
+import { adapt, DAZZLE, diskLimit, diskMean, diskSeen, FILL, hidden, MARGIN, released, seen, TAU_OPEN, TAU_SHUT, TAU_STARS, type Frame } from '../src/app/Exposure';
 
 const deg = Math.PI / 180;
 const wide: Frame = { quat: new Quaternion(), fovY: 50, aspect: 16 / 9 };
@@ -101,6 +101,49 @@ describe('the eye adapting', () => {
   it('starts from the target when it has no history', () => {
     expect(adapt(NaN, 3, 0.016)).toBe(3);
     expect(adapt(Infinity, 3, 0.016)).toBe(3);
+  });
+});
+
+describe('a sun behind a world', () => {
+  const AU = 1.496e11, SUN = 6.957e8, EARTH = 6.371e6;
+  // the eye in the Earth's shadow, three radii behind it, `off` radii off the line from the Sun
+  const behind = (off: number) => hidden(new Vector3(0, 0, -AU), SUN, new Vector3(off * EARTH, 0, -3 * EARTH), EARTH);
+
+  it('is hidden: all of it on the line, none of it once the eye is out of the shadow', () => {
+    expect(behind(0)).toBe(1);
+    expect(behind(0.5)).toBe(1);
+    expect(behind(1.2)).toBe(0);
+    expect(behind(5)).toBe(0);
+  });
+
+  it('comes out from behind the limb gradually, with no step', () => {
+    let prev = behind(0.9);
+    for (let off = 0.9; off <= 1.1; off += 0.0005) {
+      const h = behind(off);
+      expect(h).toBeLessThanOrEqual(prev + 1e-12);
+      expect(prev - h).toBeLessThan(0.05);
+      prev = h;
+    }
+    expect(prev).toBe(0);
+  });
+
+  it('is not hidden by what is beyond it, nor by a moon too small to cover it', () => {
+    // the Earth on the far side of the Sun
+    expect(hidden(new Vector3(0, 0, -AU), SUN, new Vector3(0, 0, -2 * AU), EARTH)).toBe(0);
+    // Phobos from Mars's distance in front of the Sun: a few thousandths of its disc (a transit)
+    const h = hidden(new Vector3(0, 0, -1.52 * AU), SUN, new Vector3(0, 0, -9.4e6), 11e3);
+    expect(h).toBeGreaterThan(0.01);
+    expect(h).toBeLessThan(0.2);
+  });
+
+  it('the stars come back sooner than the rest opens up', () => {
+    expect(TAU_STARS).toBeLessThan(TAU_OPEN);
+    // from a sun's exposure to the dark's, some twenty e-folds: within three of it in half a second
+    let x = -10;
+    for (let t = 0; t < 0.5; t += 1 / 60) x = adapt(x, 12, 1 / 60, TAU_STARS);
+    expect(12 - x).toBeLessThan(3.2);
+    // (and shutting is as quick as ever, whatever the opening)
+    expect(adapt(12, -10, 1 / 60, TAU_STARS)).toBe(adapt(12, -10, 1 / 60));
   });
 });
 
@@ -304,5 +347,70 @@ describe('the limit a disk puts on the exposure', () => {
     expect(high - low).toBeLessThan(0.5);
     // and the exposure is the wide disk's, far from the core's
     expect(low).toBeGreaterThan(Math.log(0.9 / radiance(inner)) + 3);
+  });
+});
+
+describe('the bright middle of a disk too far off to resolve', () => {
+  // a cool disk (a supermassive hole's): all its glow within a few inner radii, a thousand
+  // million times too bright there, and nothing to speak of in the two hundred radii beyond
+  const inner = 3, outer = 600;
+  const glow = (r: number) => 1e9 * Math.exp(-(Math.max(r, inner) - inner) / 2);
+  const open = 12, level = 0.9;
+  // looking straight at its centre from 30 degrees above its plane
+  const from = (frame: Frame, dist: number) => overDisk(frame, outer, dist * Math.cos(30 * deg), dist * Math.sin(30 * deg), 0, -30, inner);
+  /** the light of the whole disk as a share of the frame's (radiance x the share of the frame it takes) */
+  const light = (frame: Frame, dist: number) => {
+    let sum = 0;
+    for (let r = inner; r < inner + 60; r += 0.01) sum += glow(r + 0.005) * 2 * Math.PI * (r + 0.005) * 0.01;
+    const ty = Math.tan((frame.fovY * deg) / 2);
+    return (sum * Math.sin(30 * deg)) / (dist * dist) / (4 * ty * ty * frame.aspect);
+  };
+
+  it('is one entry of its own once the cells cannot tell its inner edge, and none before', () => {
+    expect(from(phone, 40).disk.core).toBe(-1);
+    const far = from(phone, 5000).disk;
+    expect(far.core).toBeGreaterThanOrEqual(0);
+    // it stands for what one cell takes in around the centre: more than the glowing part, here
+    expect(far.radius[far.core]).toBeGreaterThan(inner + 20);
+    expect(far.radius[far.core]).toBeLessThanOrEqual(outer);
+    // and adds nothing to the frame the disk covers: an ellipse 600 across at 5000, seen from 30 degrees up
+    const ty = Math.tan(35 * deg);
+    expect(far.coverage / ((Math.PI * 0.12 ** 2 * 0.5) / (4 * ty * ty * phone.aspect))).toBeCloseTo(1, 0.9);
+  });
+
+  it('holds the exposure by its light: a glint, with no more light in it than a bright patch FILL wide', () => {
+    for (const frame of [phone, wide]) {
+      for (const dist of [1500, 5000, 20000, 80000]) {
+        const shown = Math.exp(diskLimit(from(frame, dist).disk, glow, level, open)) * light(frame, dist);
+        // (the frame's cells are a measure, not an image: within a third)
+        expect(shown).toBeGreaterThan(0.66 * level * FILL);
+        expect(shown).toBeLessThan(1.5 * level * FILL);
+      }
+    }
+  });
+
+  it('never lets go as the disk shrinks into the distance: the exposure opens as its light fades, with no step', () => {
+    let prev = diskLimit(from(phone, 30).disk, glow, level, open);
+    for (let dist = 30 * 1.01; dist < 3e5; dist *= 1.01) {
+      const l = diskLimit(from(phone, dist).disk, glow, level, open);
+      // (its light falls as the square of the distance: 2 % a step)
+      expect(l - prev).toBeLessThan(0.12);
+      expect(l - prev).toBeGreaterThan(-0.12);
+      prev = l;
+    }
+  });
+
+  it('the mean over a disk inside a radius, ring by ring', () => {
+    // an even glow: its mean over the circle is the share of the circle that glows (within a fifth of a percent)
+    expect(diskMean(() => 5, 3, 30, 0.5) / (5 * (1 - 0.01))).toBeCloseTo(1, 2);
+    // falling off as the square of the radius: 2 ln(R / inner) / R^2
+    expect(diskMean((r) => r ** -2, 3, 30, 0)).toBeCloseTo((2 * Math.log(10)) / 900, 12);
+    // a gentler fall: within half a percent
+    expect(diskMean((r) => r ** -0.75, 3, 300, 0) / ((2 / 300 ** 2) * ((300 ** 1.25 - 3 ** 1.25) / 1.25))).toBeCloseTo(1, 2);
+    // the side whose gas comes towards the eye outshines the other: the mean is of all the way round
+    expect(diskMean((_r, approach) => 1 + approach, 3, 30, 0.6)).toBeCloseTo(0.99, 2);
+    expect(diskMean((_r, approach) => (approach > 0 ? 10 : 0), 3, 30, 0.6)).toBeCloseTo(2.5 * 0.99, 2);
+    // nothing inside the inner edge
+    expect(diskMean(() => 5, 3, 2, 0)).toBe(0);
   });
 });

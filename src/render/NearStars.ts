@@ -72,7 +72,7 @@ export class NearStarsLayer {
     return l;
   }
 
-  constructor(psf: Record<string, { value: number }>, private surfaceExposure: { value: number }) {
+  constructor(psf: Record<string, { value: number }>, private lightExposure: { value: number }) {
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(this.pos, 3).setUsage(DynamicDrawUsage));
     g.setAttribute('aIrr', new BufferAttribute(this.irr, 1).setUsage(DynamicDrawUsage));
@@ -91,7 +91,7 @@ export class NearStarsLayer {
       const m = new Mesh(this.sphere, new ShaderMaterial({
         name: 'near-star-surface', vertexShader: BODY_VERT, fragmentShader: STAR_FRAG,
         uniforms: {
-          uColor: { value: new Vector3() }, uRadiance: { value: 1 }, uExposure: this.surfaceExposure, uTime: { value: 0 }, uBodyToWorld: { value: new Matrix3() },
+          uColor: { value: new Vector3() }, uRadiance: { value: 1 }, uExposure: this.lightExposure, uTime: { value: 0 }, uBodyToWorld: { value: new Matrix3() },
           ...starLookUniforms(starLook('init', 5772, 1, 4.83)), uLite: LITE.uLite, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
         },
       }));
@@ -145,7 +145,7 @@ export class NearStarsLayer {
         u.uTime.value = time;
         (u.uBodyToWorld.value as Matrix3).setFromMatrix4(m.matrix.clone().makeRotationFromQuaternion(q));
         applyStarLook(u, look);
-        if (viewQuat) this.coronas[n].update(rel, s.radius, viewQuat, [c[0] / L, c[1] / L, c[2] / L], radiance * this.surfaceExposure.value, look, time);
+        if (viewQuat) this.coronas[n].update(rel, s.radius, viewQuat, [c[0] / L, c[1] / L, c[2] / L], radiance * this.lightExposure.value, look, time);
       }
       n++;
     }

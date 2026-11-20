@@ -25,6 +25,9 @@ export const ICON = {
   help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.2 1-1.2 1.8"/><path d="M12 16.7v.2" stroke-width="2.4"/>'),
   fullscreen: svg('<path d="M4 9.5V4h5.5M20 9.5V4h-5.5M4 14.5V20h5.5M20 14.5V20h-5.5"/>'),
   chevron: svg('<path d="m9.5 6 6 6-6 6"/>'),
+  // a world with a new moon beside it (what if: src/app/WhatIf.ts)
+  moon: svg('<circle cx="9.5" cy="14.5" r="6"/><circle cx="18.2" cy="6" r="2.3"/><path d="M18.2 1.2v1.3M18.2 9.5v1.3M13.4 6h1.3M21.7 6H23"/>'),
+  unmake: svg('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.6 3"/><path d="m9.3 9.3 5.4 5.4M14.7 9.3l-5.4 5.4"/>'),
 };
 
 export type IconName = keyof typeof ICON;

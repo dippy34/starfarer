@@ -65,6 +65,18 @@ export class OrbitsLayer {
     this.group.name = 'orbits';
   }
 
+  /** A body has left the system (src/app/WhatIf.ts): its orbit line goes with it. */
+  forget(b: Body): void {
+    const o = this.objs.get(b);
+    if (!o) return;
+    this.group.remove(o.line);
+    o.line.geometry.dispose();
+    o.mat.dispose();
+    this.objs.delete(b);
+    if (this.selected === b) this.selected = null;
+    if (this.focus === b) this.focus = null;
+  }
+
   private obj(b: Body): OrbitObj {
     let o = this.objs.get(b);
     if (o) return o;

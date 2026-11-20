@@ -7,8 +7,8 @@ import { FIX_LOGDEPTH, OUTPUT_FRAGMENT, PROJECT_PARS } from './xr';
  * A photon moves in the plane spanned by its position and direction; with u = 1/r its orbit
  * obeys d²u/dφ² = −u + 1.5 u² (Binet equation with the GR term). Rays are traced backwards
  * from the eye with RK4 in φ until they escape (u → 0, the direction there is the asymptote)
- * or fall in (u ≥ 1). The background is the scene as seen from the eye without the hole (a
- * cube map refreshed a face per frame), looked up in the escape direction. Rays that stay far
+ * or fall in (u ≥ 1). The background is the scene as seen from the eye without the hole (cube
+ * maps refreshed a face per frame: BlackHoleLayer), looked up in the escape direction. Rays that stay far
  * from the hole (impact parameter and eye distance > 30 rs) use the weak-field deflection
  * 2/b + 15π/(16 b²), scaled by the fraction still ahead of the eye.
  *
@@ -24,20 +24,28 @@ export const BH_VERT = /* glsl */ `
 #include <common>
 #include <logdepthbuf_pars_vertex>
 ${PROJECT_PARS}
-varying vec3 vWorld;
+uniform float uClipScale;
+varying vec3 vRay;
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorld = wp.xyz;
+  // The sight line through each pixel, from the eye to the sphere. A supermassive hole's region is
+  // light years wide: in metres its clip coordinates are ~1e17, whose products overflow 32-bit
+  // floats in the rasteriser, and what it interpolates across each triangle comes out wrong (the
+  // sky behind showed as a mosaic of the sphere's facets). One factor for the whole mesh changes
+  // neither the projection nor the perspective interpolation.
+  vRay = (wp.xyz - cameraPosition) * uClipScale;
   gl_Position = projectView(viewMatrix * wp);
   #include <logdepthbuf_vertex>
 ${FIX_LOGDEPTH}
+  gl_Position *= uClipScale;
 }`;
 
 export const BH_FRAG = /* glsl */ `
 precision highp float;
 #include <common>
 #include <logdepthbuf_pars_fragment>
-uniform samplerCube uEnv;
+uniform samplerCube uEnv;     // the scene around the eye without the hole
+uniform samplerCube uGlow;    // and the glowing volumes around it (a galaxy's light, nebulae)
 uniform sampler2D uLut;      // blackbody: rgb chromaticity (luminance 1), a = log10(Y / Y_sun)
 uniform vec3 uO;             // eye (rig origin) relative to the hole, in rs
 uniform float uRs;           // metres per rs
@@ -58,7 +66,7 @@ uniform float uArms;
 uniform float uStreakFreq;
 uniform float uAngFreq;
 uniform float uWarp;
-varying vec3 vWorld;
+varying vec3 vRay;
 
 const float LUT_LOG_MIN = 2.5;
 const float LUT_LOG_SPAN = 5.5;
@@ -134,7 +142,7 @@ void composite(inout vec3 acc, inout float tr, vec4 e) {
 }
 
 void main() {
-  vec3 d = normalize(vWorld - cameraPosition);
+  vec3 d = normalize(vRay);
   vec3 O = uO + cameraPosition / uRs;
   float r0 = max(length(O), 1.0001);
   vec3 acc = vec3(0.0);
@@ -229,7 +237,7 @@ void main() {
       esc = 1.0;
     }
   }
-  vec3 bg = textureCube(uEnv, dirOut).rgb;
+  vec3 bg = textureCube(uEnv, dirOut).rgb + textureCube(uGlow, dirOut).rgb;
   vec3 col = min(acc + tr * esc * bg, vec3(6.0e4));
   gl_FragColor = vec4(col, 1.0);
 ${OUTPUT_FRAGMENT}

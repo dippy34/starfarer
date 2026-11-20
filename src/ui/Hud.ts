@@ -18,7 +18,9 @@ import { ICON } from './icons';
 export type HudAction =
   | 'go' | 'centre' | 'deselect' | 'stop' | 'home'
   | 'pause' | 'faster' | 'slower' | 'reverse' | 'now'
-  | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot';
+  | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot'
+  // what if (src/app/WhatIf.ts): give the selected world a moon; take away one that was made
+  | 'add-moon' | 'unmake';
 
 export interface HudHost {
   act(action: HudAction): void;
@@ -40,7 +42,14 @@ export interface HudState {
   rate: string;
   paused: boolean;
   reversed: boolean;
-  selection: { key: string; name: string; detail: string; rows: [string, string][]; picture: Picture; here: boolean } | null;
+  selection: {
+    key: string; name: string; detail: string; rows: [string, string][]; picture: Picture; here: boolean;
+    /** what follows from those facts by the textbook, each with its working (src/app/Worked.ts) */
+    worked: { label: string; text: string; math: string }[];
+    /** what can be done to it (src/app/WhatIf.ts): given a moon; taken away again, if the explorer made it */
+    canAddMoon: boolean;
+    made: boolean;
+  } | null;
   /** the destination of the flight in progress */
   flying: string | null;
   labels: boolean;
@@ -127,7 +136,15 @@ const TEMPLATE = `
           <button class="btn" type="button" data-act="centre">${ICON.centre}<span>Look at</span></button>
           <button class="btn" type="button" data-details aria-expanded="false">${ICON.info}<span>Details</span></button>
         </div>
-        <dl class="facts" hidden></dl>
+        <div class="facts" hidden>
+          <dl></dl>
+          <div class="worked" hidden><h3>Worked out <small>tap a line to see how</small></h3><div class="worked-rows"></div></div>
+          <div class="whatif" hidden>
+            <h3>What if</h3>
+            <button class="row" type="button" data-act="add-moon">${ICON.moon}<span class="row-text"><b>Give it a moon</b><small>A new one, on a circular orbit between you and it</small></span></button>
+            <button class="row" type="button" data-act="unmake">${ICON.unmake}<span class="row-text"><b>Take it away</b><small>You made this moon: this unmakes it</small></span></button>
+          </div>
+        </div>
       </section>
       <section class="sheet explore" data-sheet="explore" aria-label="Search and places to go">
         <div class="sheet-grab"></div>
@@ -205,6 +222,8 @@ export class Hud {
   private pictureStale = true;
   private factKeys = '';
   private factValues: HTMLElement[] = [];
+  private workedKeys = '';
+  private workedValues: [HTMLElement, HTMLElement][] = [];
 
   private readonly slot: HTMLElement;
   private readonly input: HTMLInputElement;
@@ -405,10 +424,27 @@ export class Hud {
     const keys = sel.rows.map((r) => r[0]).join('\n');
     if (keys !== this.factKeys) {
       this.factKeys = keys;
-      facts.innerHTML = sel.rows.map(([k]) => `<div><dt>${escapeHtml(k)}</dt><dd></dd></div>`).join('');
-      this.factValues = [...facts.querySelectorAll<HTMLElement>('dd')];
+      const list = facts.querySelector('dl')!;
+      list.innerHTML = sel.rows.map(([k]) => `<div><dt>${escapeHtml(k)}</dt><dd></dd></div>`).join('');
+      this.factValues = [...list.querySelectorAll<HTMLElement>('dd')];
     }
     sel.rows.forEach((r, i) => setText(this.factValues[i], r[1]));
+    // what is worked out from them: a line each, which opens to show its working (and stays open while the numbers move)
+    const worked = facts.querySelector<HTMLElement>('.worked')!;
+    worked.hidden = sel.worked.length === 0;
+    const labels = sel.worked.map((w) => w.label).join('\n');
+    if (labels !== this.workedKeys) {
+      this.workedKeys = labels;
+      const rows = worked.querySelector('.worked-rows')!;
+      rows.innerHTML = sel.worked.map((w) => `<details><summary><span>${escapeHtml(w.label)}</span><b></b>${ICON.chevron}</summary><code></code></details>`).join('');
+      this.workedValues = [...rows.querySelectorAll<HTMLElement>('details')].map((d) => [d.querySelector('b')!, d.querySelector('code')!]);
+    }
+    sel.worked.forEach((w, i) => { setText(this.workedValues[i][0], w.text); setText(this.workedValues[i][1], w.math); });
+    // what can be done to it
+    const whatif = facts.querySelector<HTMLElement>('.whatif')!;
+    whatif.hidden = !sel.canAddMoon && !sel.made;
+    whatif.querySelector<HTMLElement>('[data-act="add-moon"]')!.hidden = !sel.canAddMoon;
+    whatif.querySelector<HTMLElement>('[data-act="unmake"]')!.hidden = !sel.made;
   }
 
   /** One panel at a time: the open sheet, else the card of the selection. */

@@ -83,7 +83,7 @@ export class Body implements SpaceObject {
     const typeNames: Record<BodyType, string> = {
       star: 'Star', planet: 'Planet', dwarf: 'Dwarf planet', moon: 'Moon', asteroid: 'Asteroid', tno: 'Trans-Neptunian object', comet: 'Comet',
     };
-    rows.push(['Type', typeNames[this.kind] + (this.meta.orbitClass ? ` (${this.meta.orbitClass})` : '')]);
+    rows.push(['Type', typeNames[this.kind] + (this.meta.orbitClass ? ` (${this.meta.orbitClass})` : '') + (this.meta.made ? ' (made by you)' : '')]);
     if (this.parent && this.kind !== 'planet' && this.kind !== 'dwarf' && this.kind !== 'asteroid' && this.kind !== 'tno')
       rows.push(['Orbits', this.parent.name]);
     if (this.radius > 0) {

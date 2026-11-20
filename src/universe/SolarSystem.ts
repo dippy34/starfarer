@@ -29,7 +29,11 @@ interface BodyJson {
   radii?: number[]; radiusSource?: string; gm?: number; systemGm?: number; rot?: RotationModel;
   albedo?: number; V10?: number; H?: number; texture?: string; color?: number[]; teff?: number; absMag?: number;
   spectralType?: string; rotPeriodDays?: number; rotPeriodHours?: number; orbitClass?: string;
+  /** not from any catalogue: made by the explorer (src/app/WhatIf.ts) */
+  made?: boolean;
 }
+
+export type { BodyJson };
 
 export interface SystemJson {
   nutPrecAngles: NutPrecAngles;
@@ -74,64 +78,115 @@ export class SolarSystem {
   constructor(readonly data: SystemJson, readonly ephemeris: Ephemeris) {
     this.angles = data.nutPrecAngles;
     setLeapSeconds(data.leapSeconds);
-    for (const bj of data.bodies) {
-      const b = new Body(bj.id, bj.name, bj.type);
-      const r = (bj.radii ?? []).map((x) => x * 1e3);
-      if (r.length === 3) {
-        b.radii = [r[0], r[1], r[2]];
-      } else {
-        // No measured size in the sources: deterministic procedural estimate (flagged in the UI).
-        const est = (1 + 3 * hash01(bj.id)) * 1e3;
-        b.radii = [est, est, est];
-        b.radiusEstimated = true;
-      }
-      b.radius = Math.cbrt(b.radii[0] * b.radii[1] * b.radii[2]);
-      b.gm = (bj.gm ?? 0) * 1e9;
-      b.systemGm = (bj.systemGm ?? bj.gm ?? 0) * 1e9;
-      b.rotation = bj.rot ?? null;
-      b.texture = bj.texture ?? null;
-      if (bj.color) b.color = [bj.color[0], bj.color[1], bj.color[2]];
-      if (bj.albedo !== undefined) b.albedo = bj.albedo;
-      else if (bj.type === 'moon' || bj.type === 'asteroid' || bj.type === 'tno') b.albedo = 0.1 + 0.4 * hash01(bj.id + 7);
-      if (bj.type === 'star') {
-        b.teff = bj.teff ?? SUN_TEFF;
-        b.absMag = bj.absMag ?? SUN_ABS_MAG;
-      }
-      b.meta = { ...bj, ephem: undefined };
-      this.bodies.push(b);
-      this.byId.set(bj.id, b);
-      this.ephemOf.set(b, bj.ephem);
-    }
-    for (const bj of data.bodies) {
-      const b = this.byId.get(bj.id)!;
-      if (bj.parent !== null) {
-        const p = this.byId.get(bj.parent) ?? null;
-        b.parent = p;
-        p?.children.push(b);
-      }
-    }
+    for (const bj of data.bodies) this.make(bj);
+    for (const bj of data.bodies) this.link(bj);
     this.sun = this.byId.get(10)!;
-    // Precompute frames / elements.
-    for (const b of this.bodies) {
-      const e = this.ephemOf.get(b)!;
-      if (e.kind === 'satellite') {
-        const o = e.orbit;
-        let frame: Matrix3;
-        if (o.frame === 'laplace' && o.poleRa !== undefined && o.poleDec !== undefined) frame = poleFrame(o.poleRa, o.poleDec);
-        else if (o.frame === 'equatorial' && b.parent?.rotation) {
-          const pr = b.parent.rotation;
-          // Retrograde rotators (Uranus): satellite elements use the angular-momentum pole.
-          frame = pr.pm[1] < 0 ? poleFrame((pr.ra[0] + 180) % 360, -pr.dec[0]) : poleFrame(pr.ra[0], pr.dec[0]);
-        } else {
-          // ecliptic J2000 -> ICRF
-          const c = Math.cos(OBLIQUITY_J2000), s = Math.sin(OBLIQUITY_J2000);
-          frame = new Matrix3().set(1, 0, 0, 0, c, -s, 0, s, c);
-        }
-        this.satFrames.set(b, frame);
-      } else if (e.kind === 'kepler') {
-        this.keplerEl.set(b, elementsFromMeanAnomaly(e.a * 1e3, e.e, e.i, e.node, e.w, e.M, e.epochJd, GM_SUN + b.gm));
-      }
+    for (const b of this.bodies) this.prepare(b);
+  }
+
+  /** A body from its description: size, mass, look. */
+  private make(bj: BodyJson): Body {
+    const b = new Body(bj.id, bj.name, bj.type);
+    const r = (bj.radii ?? []).map((x) => x * 1e3);
+    if (r.length === 3) {
+      b.radii = [r[0], r[1], r[2]];
+    } else {
+      // No measured size in the sources: deterministic procedural estimate (flagged in the UI).
+      const est = (1 + 3 * hash01(bj.id)) * 1e3;
+      b.radii = [est, est, est];
+      b.radiusEstimated = true;
     }
+    b.radius = Math.cbrt(b.radii[0] * b.radii[1] * b.radii[2]);
+    b.gm = (bj.gm ?? 0) * 1e9;
+    b.systemGm = (bj.systemGm ?? bj.gm ?? 0) * 1e9;
+    b.rotation = bj.rot ?? null;
+    b.texture = bj.texture ?? null;
+    if (bj.color) b.color = [bj.color[0], bj.color[1], bj.color[2]];
+    if (bj.albedo !== undefined) b.albedo = bj.albedo;
+    else if (bj.type === 'moon' || bj.type === 'asteroid' || bj.type === 'tno') b.albedo = 0.1 + 0.4 * hash01(bj.id + 7);
+    if (bj.type === 'star') {
+      b.teff = bj.teff ?? SUN_TEFF;
+      b.absMag = bj.absMag ?? SUN_ABS_MAG;
+    }
+    b.meta = { ...bj, ephem: undefined };
+    this.bodies.push(b);
+    this.byId.set(bj.id, b);
+    this.ephemOf.set(b, bj.ephem);
+    return b;
+  }
+
+  /** Its place in the family: what it goes round. */
+  private link(bj: BodyJson): void {
+    if (bj.parent === null) return;
+    const b = this.byId.get(bj.id)!;
+    const p = this.byId.get(bj.parent) ?? null;
+    b.parent = p;
+    p?.children.push(b);
+  }
+
+  /** The frame its orbit is given in, or its elements: worked out once. */
+  private prepare(b: Body): void {
+    const e = this.ephemOf.get(b)!;
+    if (e.kind === 'satellite') {
+      const o = e.orbit;
+      let frame: Matrix3;
+      if (o.frame === 'laplace' && o.poleRa !== undefined && o.poleDec !== undefined) frame = poleFrame(o.poleRa, o.poleDec);
+      else if (o.frame === 'equatorial' && b.parent?.rotation) {
+        const pr = b.parent.rotation;
+        // Retrograde rotators (Uranus): satellite elements use the angular-momentum pole.
+        frame = pr.pm[1] < 0 ? poleFrame((pr.ra[0] + 180) % 360, -pr.dec[0]) : poleFrame(pr.ra[0], pr.dec[0]);
+      } else {
+        // ecliptic J2000 -> ICRF
+        const c = Math.cos(OBLIQUITY_J2000), s = Math.sin(OBLIQUITY_J2000);
+        frame = new Matrix3().set(1, 0, 0, 0, c, -s, 0, s, c);
+      }
+      this.satFrames.set(b, frame);
+    } else if (e.kind === 'kepler') {
+      this.keplerEl.set(b, elementsFromMeanAnomaly(e.a * 1e3, e.e, e.i, e.node, e.w, e.M, e.epochJd, GM_SUN + b.gm));
+    }
+  }
+
+  /**
+   * A body that is not in the catalogue joins the system (a moon the explorer has made:
+   * src/app/WhatIf.ts): described like the others, and from the next update on it moves, is
+   * drawn, has an orbit line and pulls on a ship like any of them.
+   */
+  add(bj: BodyJson): Body {
+    if (this.byId.has(bj.id)) throw new Error(`a body ${bj.id} is there already`);
+    const b = this.make(bj);
+    this.link(bj);
+    this.prepare(b);
+    return b;
+  }
+
+  /**
+   * Turn a satellite's orbit in its own plane so that at `jd` it stands in the direction `dir`
+   * from its parent (ICRF), as nearly as the plane allows: for a moon that has just been made,
+   * to be where its maker is looking.
+   */
+  place(b: Body, dir: Vector3, jd: number): void {
+    const e = this.ephemOf.get(b), frame = this.satFrames.get(b);
+    if (!e || e.kind !== 'satellite' || !frame) return;
+    const m = frame.elements; // (columns: the plane's x and y axes in ICRF)
+    const x = dir.x * m[0] + dir.y * m[1] + dir.z * m[2], y = dir.x * m[3] + dir.y * m[4] + dir.z * m[5];
+    const o = e.orbit;
+    o.M = (Math.atan2(y, x) * 180) / Math.PI - o.node - o.w;
+    o.epochJd = jd;
+    this.rel.delete(b);
+  }
+
+  /** Take a body out again (one that `add` put in: the catalogue's stay). */
+  remove(b: Body): void {
+    const i = this.bodies.indexOf(b);
+    if (i < 0 || b.children.length) return;
+    this.bodies.splice(i, 1);
+    this.byId.delete(b.id);
+    this.ephemOf.delete(b);
+    this.satFrames.delete(b);
+    this.keplerEl.delete(b);
+    this.rel.delete(b);
+    if (b.parent) b.parent.children.splice(b.parent.children.indexOf(b), 1);
+    b.valid = false;
   }
 
   static async load(baseUrl: string): Promise<SolarSystem> {

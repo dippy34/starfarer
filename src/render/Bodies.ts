@@ -5,6 +5,7 @@ import {
   TextureLoader, Vector3, ClampToEdgeWrapping,
 } from 'three';
 import { blackbodyRGB, lambertPhase, luminance, sunIrradianceAt } from '../astro/photometry';
+import { shadowShare } from '../core/discs';
 import { AU, SUN_RADIUS } from '../core/units';
 import type { UPos } from '../core/upos';
 import type { Body } from '../universe/Body';
@@ -120,16 +121,6 @@ ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>
 }`;
 
-/** Area of overlap of two discs of radii r1, r2 whose centres are d apart (as in the body shader). */
-export function discOverlap(r1: number, r2: number, d: number): number {
-  if (d >= r1 + r2) return 0;
-  if (d <= Math.abs(r1 - r2)) return Math.PI * Math.min(r1, r2) ** 2;
-  const a1 = Math.acos(Math.max(-1, Math.min(1, (d * d + r1 * r1 - r2 * r2) / (2 * d * r1))));
-  const a2 = Math.acos(Math.max(-1, Math.min(1, (d * d + r2 * r2 - r1 * r1) / (2 * d * r2))));
-  const k = (-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2);
-  return r1 * r1 * a1 + r2 * r2 * a2 - 0.5 * Math.sqrt(Math.max(k, 0));
-}
-
 /** Per-frame screen information about a body (used by labels, picking, exposure). */
 export interface BodyView {
   body: Body;
@@ -189,6 +180,12 @@ export class BodiesLayer {
   readonly maxSprites: number;
   /** exposure for resolved surfaces (point sprites use the shared PSF exposure) */
   readonly surfaceExposure = { value: 1 };
+  /**
+   * The exposure a sun's own face is drawn with (its corona and its glare too): the surfaces',
+   * or less while a sun's disc is in view, which is held at the level a sun is shown at whatever
+   * the worlds beside it need. Shared with the other stars' discs (NearStars).
+   */
+  readonly lightExposure = { value: 1 };
   /** the ice particles around the explorer inside Saturn's rings */
   ringParticles: RingParticles | null = null;
   private ringParticlesBody: Body | null = null;
@@ -395,7 +392,7 @@ export class BodiesLayer {
         uSunDir: { value: new Vector3(1, 0, 0) },
         uSunIrr: { value: Math.PI },
         uSunColor: { value: new Vector3(...this.sunColor) },
-        uExposure: this.surfaceExposure,
+        uExposure: isStar ? this.lightExposure : this.surfaceExposure,
         uBodyToWorld: { value: new Matrix3() },
         uBodyCenter: { value: new Vector3() },
         uOcc: { value: [new Vector4(), new Vector4(), new Vector4(), new Vector4()] }, uOccRed: { value: new Vector4() }, uOccN: { value: 0 },
@@ -711,8 +708,29 @@ export class BodiesLayer {
     (this.sprites.geometry.attributes.aColor as BufferAttribute).needsUpdate = true;
   }
 
+  /**
+   * The list of bodies has changed (the explorer has made a moon, or taken one away:
+   * src/app/WhatIf.ts): `gone` leaves the scene, and what can cast a shadow is listed afresh.
+   */
+  changed(gone?: Body): void {
+    this.occluders = null;
+    if (!gone) return;
+    const m = this.meshes.get(gone);
+    if (m) {
+      this.group.remove(m);
+      (m.material as ShaderMaterial).dispose();
+      this.meshes.delete(gone);
+    }
+    this.views.delete(gone);
+    this.sunlit.delete(gone);
+  }
+
   private occluders: Body[] | null = null;
-  /** fraction of sunlight reaching each body's centre this frame (eclipses), with the reddened light in a planet's shadow */
+  /**
+   * How much of its sunlight each body's sunlit face gets this frame (eclipses), for the eye's
+   * adaptation: all of it but the share in another body's shadow (core/discs.ts: shadowShare),
+   * with the reddened light that reaches into a planet's shadow.
+   */
   readonly sunlit = new Map<Body, number>();
 
   /** Does some body's shadow fall on `b` this frame? */
@@ -753,9 +771,8 @@ export class BodiesLayer {
         occ[n].set(ov.rel.x, ov.rel.y, ov.rel.z, o.radius);
         const reddens = this.atmosphere(o)?.surfaceTransmittance ? 1 : 0;
         red.setComponent(n, reddens);
-        // as seen from the body's centre (for the eye's adaptation)
-        const dO = v.length();
-        const f = discOverlap(penumbra, o.radius / dO, Math.atan2(v.clone().cross(toSun).length(), along)) / (Math.PI * penumbra * penumbra);
+        // for the eye's adaptation: the share of the body's sunlit face in this shadow
+        const f = shadowShare(b.radius, o.radius, perp, along, penumbra);
         vis *= 1 - f;
         glow = Math.max(glow, f * reddens);
         if (++n === 4) break;
@@ -875,7 +892,7 @@ export class BodiesLayer {
         const c = blackbodyRGB(this.system.sun.teff);
         const L = luminance(c);
         this.sunCorona.update(sv.rel, this.system.sun.radius, viewQuat, [c[0] / L, c[1] / L, c[2] / L],
-          this.surfaceExposure.value * (AU / SUN_RADIUS) ** 2, this.sunLook, this.time);
+          this.lightExposure.value * (AU / SUN_RADIUS) ** 2, this.sunLook, this.time);
       } else this.sunCorona.hide();
     }
     const g = this.glare;
@@ -894,7 +911,7 @@ export class BodiesLayer {
     // the disk's visible edge in the quad's plane (through the centre), as a fraction of the quad
     u.uDiskFrac.value = Math.min(0.9, Math.tan(angR) / Math.tan(halfAng));
     // the disk is shown at ~2.5 (eye adaptation caps it); scale the glare with it
-    const diskDisplay = this.surfaceExposure.value * (AU / SUN_RADIUS) ** 2;
+    const diskDisplay = this.lightExposure.value * (AU / SUN_RADIUS) ** 2;
     // (a smaller, farther Sun scatters less light into the eye: weaker glare from the outer planets,
     // where its point image with its halo and spikes takes over)
     const far = Math.min(1, angR / (SUN_RADIUS / AU));

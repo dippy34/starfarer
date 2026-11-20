@@ -4,7 +4,7 @@ import type { UPos } from '../core/upos';
 import { discFrame, type Galaxy } from '../universe/Galaxies';
 import { F_LOG0, F_N, F_STEP, INTERIOR } from './interiorState';
 import { noise3D, sampleNoise } from './Noise3D';
-import { VOLUMES } from './Renderer';
+import { VOLUME_JITTER, VOLUMES } from './Renderer';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, POINT_CLIP, PROJECT_PARS } from './shaders/xr';
 
 /**
@@ -104,6 +104,16 @@ ${FIX_LOGDEPTH}
  * centre and long elsewhere (always reaching the far side of the box), so thin discs and bright
  * cusps are resolved from any angle; light emitted in a step is absorbed within it. The noise is
  * read at the mip level of the pixel's footprint: no sparkle when far, full detail up close.
+ *
+ * A spheroid's light rises to its very centre (a Sérsic cusp: a quarter of what a sight line
+ * through the middle collects comes from the innermost hundredth of the effective radius). Its
+ * steps are a fraction of the distance from the centre all the way in (down to a thousandth of
+ * the effective radius), so the cusp is resolved from the outside and from within it alike; they
+ * are counted beforehand (along a straight line that distance is a hyperbola: the count is an
+ * inverse hyperbolic sine) and kept for it, and the disc's steps share the rest. With steps that
+ * could not shrink below the ray's length over their number, each pixel's one sample of the
+ * cusp was a draw from a tenfold range, and the middle of an elliptical a field of dots that no
+ * jitter could average.
  */
 const VOL_FRAG = /* glsl */ `
 #include <common>
@@ -122,6 +132,8 @@ uniform float uNearOn;
 uniform float uRpc;       // galaxy radius (pc)
 varying vec3 vBox;
 ${GAL_MODEL}
+${VOLUME_JITTER}
+float asinhf(float x) { return sign(x) * log(abs(x) + sqrt(x * x + 1.0)); }
 void main() {
   vec3 pf = vBox * uExt;
   vec3 dir = normalize(pf - uCam);
@@ -131,28 +143,43 @@ void main() {
   float t0 = max(max(tlo.x, tlo.y), max(tlo.z, 0.0));
   float t1 = min(min(thi.x, thi.y), thi.z);
   if (t1 <= t0) discard;
-  // interleaved gradient noise: a fine, even jitter of the samples (no banding, no blotches)
-  float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float jit = volJitter();
   bool hi = uLite < 0.5;
   bool disc = uDiscW.x + uDiscW.y + uDiscW.z + uDustP.x + uSpot.w > 0.0;
   vec3 dirD = uDiscRot * dir, camD = uDiscRot * uCam;
   float adz = max(abs(dirD.z), 0.015);
   int N = hi ? 96 : 40;
   float dsMax = hi ? 0.05 : 0.1;
+  // the spheroid, in the frame where it is round: its distance from the centre along the ray is
+  // sqrt(sB^2 + (dBl (t - tcB))^2), softened by a thousandth of its effective radius
+  bool sph = uBulgeW.x > 0.0;
+  vec3 oB = uCam * uBulgeAx, dB = dir * uBulgeAx;
+  float dB2 = dot(dB, dB), dBl = sqrt(dB2);
+  float tcB = -dot(oB, dB) / dB2;
+  float sB = sqrt(max(dot(oB, oB) - dB2 * tcB * tcB, 0.0) + 1.0e-6 / (uBulgeW.y * uBulgeW.y));
+  // steps of 0.3 of that distance, or as much more as fits them all into the spheroid's share of the steps
+  float uEnd = asinhf(dBl * (t1 - tcB) / sB);
+  float eFold = max(0.2624, (uEnd - asinhf(dBl * (t0 - tcB) / sB)) / (hi ? 56.0 : 24.0));
+  float kB = exp(eFold) - 1.0;
   vec3 L = vec3(0.0);
   vec3 T = vec3(1.0);
   float t = t0;
   for (int i = 0; i < 96; i++) {
     if (i >= N || t >= t1 || T.g < 0.004) break;
-    vec3 pg0 = uCam + dir * t;
     vec3 pd0 = camD + dirD * t;
-    // near the disc plane: a fraction of the height (at most dsMax); elsewhere the smooth spheroid
-    // sets it (a fraction of the distance from the centre)
+    // near the disc plane: a fraction of the height (at most dsMax), and no shorter than what
+    // takes the steps left to the far side
     float ds = disc ? max(abs(pd0.z) * 0.5, 0.0035) / adz : 1.0;
     if (disc && abs(pd0.z) < 0.15) ds = min(ds, dsMax);
-    if (uBulgeW.x > 0.0) ds = min(ds, 0.3 * length(pg0 * uBulgeAx) + 0.003);
-    ds = clamp(ds, 0.002, 0.3);
-    ds = min(max(ds, (t1 - t) / float(N - i)), t1 - t);
+    ds = min(ds, 0.3);
+    float left = float(N - i);
+    if (sph) {
+      // (the steps the spheroid still needs are its own; then its step, where that is the shorter)
+      float xB = dBl * (t - tcB);
+      left = max(left - (uEnd - asinhf(xB / sB)) / eFold - 1.0, 1.0);
+      ds = min(max(ds, (t1 - t) / left), kB * sqrt(sB * sB + xB * xB) / dBl);
+    } else ds = max(ds, (t1 - t) / left);
+    ds = min(ds, t1 - t);
     float tt = t + ds * jit;
     vec3 pg = uCam + dir * tt;
     float lod = log2(max(tt * uPixAng * 64.0, 1e-6));
@@ -494,9 +521,9 @@ export class GalaxyModel {
   private readonly tanP: number;
 
   /**
-   * Smooth radiance (the model without its noise and dust, in its emission units) along a ray from
-   * `o` in direction `d` (galaxy frame, radii): the spheroid marched, the disc as its surface density
-   * where the ray crosses the plane, over the cosine of the crossing angle.
+   * Smooth radiance (the model without its noise, in its emission units) along a ray from `o` in
+   * direction `d` (galaxy frame, radii): the spheroid marched, and the disc's layers followed along
+   * the ray from wherever the eye is (above the disc, or inside it, where it lies all round).
    */
   radiance(o: Vector3, d: Vector3): number {
     const e = this.ext, c = this.coef, l = this.look;
@@ -524,17 +551,18 @@ export class GalaxyModel {
         L += c.bulge * Math.exp(-bn * (Math.pow(Math.max(s / l.bulgeRe, 1e-5), 1 / l.bulgeN) - 1)) * dt;
       }
     }
-    const od = o.clone().applyMatrix3(this.rot), dd = d.clone().applyMatrix3(this.rot);
-    if (Math.abs(dd.z) > 1e-6) {
-      const t = -od.z / dd.z;
-      if (t > t0 && t < t1) {
-        const r = Math.hypot(od.x + dd.x * t, od.y + dd.y * t);
-        const sig = (c.old * Math.exp(-r / l.hr) + c.thick * Math.exp(-r / (1.3 * l.hr)) + (c.young + 1.5 * c.knots) * Math.exp(-r / (1.5 * l.hr))) * (1 - smooth(l.trunc * 0.8, l.trunc, r));
-        // seen at a grazing angle the dust hides all but a column of about one optical depth
-        const tau = l.dust * Math.exp(-r / l.dustHr) * smooth(0.02, 0.1, r) * 0.8;
-        const slant = 1 / Math.max(Math.abs(dd.z), 0.01);
-        L += tau > 1e-3 ? (sig * (1 - Math.exp(-tau * slant))) / tau : sig * Math.min(slant, 25);
-      }
+    if (c.old + c.thick + c.young + c.knots > 0) {
+      const od = o.clone().applyMatrix3(this.rot), dd = d.clone().applyMatrix3(this.rot);
+      const hr = l.hr, cut = (r: number) => 1 - smooth(l.trunc * 0.8, l.trunc, r);
+      // the disc's thickness where the ray is nearest its plane (it flares outwards: hzF in the shader)
+      const tp = Math.min(Math.max(Math.abs(dd.z) > 1e-12 ? -od.z / dd.z : t0, t0), t1);
+      const hz = l.hz * (1 + 0.8 * Math.hypot(od.x + dd.x * tp, od.y + dd.y * tp));
+      const emit = layerColumn(od, dd, t0, t1, hz, (r) => c.old * Math.exp(-r / hr) * cut(r))
+        + layerColumn(od, dd, t0, t1, 0.05, (r) => c.thick * Math.exp(-r / (1.3 * hr)) * cut(r))
+        + layerColumn(od, dd, t0, t1, 0.45 * hz, (r) => (c.young + 1.5 * c.knots) * Math.exp(-r / (1.5 * hr)) * cut(r));
+      // the dust mixed in with the stars: along a long path it hides all but about one optical depth of them
+      const tau = l.dust > 0 ? layerColumn(od, dd, t0, t1, 0.4 * hz, (r) => l.dust * Math.exp(-r / l.dustHr) * smooth(0.02, 0.1, r) * 0.8 * cut(r)) : 0;
+      L += tau > 1e-3 ? (emit * (1 - Math.exp(-tau))) / tau : emit;
     }
     return L;
   }
@@ -657,6 +685,37 @@ export class GalaxyModel {
   }
 }
 
+/**
+ * What a ray collects in a thin layer about the plane z = 0: the integral of f(r) v(z) along it
+ * from t0 to t1, where v is the layer's profile across (a two-sided exponential of scale height
+ * `h`, whose own integral is 1) and r the distance from the axis. `o`, `d`: the ray in the
+ * layer's frame. The samples are taken at even steps of the share of the layer crossed (the
+ * profile's cumulative), so a thin layer is resolved from any angle: crossed steeply, grazed, or
+ * looked along from inside it, where its share crossed is nothing and its length is everything.
+ */
+export function layerColumn(o: Vector3, d: Vector3, t0: number, t1: number, h: number, f: (r: number) => number): number {
+  const N = 8;
+  const below = (z: number) => (z < 0 ? 0.5 * Math.exp(z / h) : 1 - 0.5 * Math.exp(-z / h));
+  const z0 = o.z + d.z * t0, z1 = o.z + d.z * t1;
+  const w0 = below(z0), w1 = below(z1);
+  let sum = 0;
+  if (Math.abs(z1 - z0) < 1e-6 * h) {
+    // along the layer: the same height all the way
+    for (let i = 0; i < N; i++) {
+      const t = t0 + ((i + 0.5) / N) * (t1 - t0);
+      sum += f(Math.hypot(o.x + d.x * t, o.y + d.y * t));
+    }
+    return (sum / N) * (Math.exp(-Math.abs(z0) / h) / (2 * h)) * (t1 - t0);
+  }
+  for (let i = 0; i < N; i++) {
+    const w = w0 + ((i + 0.5) / N) * (w1 - w0);
+    const z = w < 0.5 ? h * Math.log(2 * w) : -h * Math.log(2 * (1 - w));
+    const t = Math.min(Math.max((z - o.z) / d.z, t0), t1);
+    sum += f(Math.hypot(o.x + d.x * t, o.y + d.y * t));
+  }
+  return (sum / N) * (Math.abs(w1 - w0) / Math.abs(d.z));
+}
+
 export function smooth(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -712,6 +771,19 @@ function* fillCloud(model: GalaxyModel, star: Float32Array, flux: Float32Array, 
 
 export interface GalaxyView { galaxy: Galaxy; rel: Vector3; dist: number; pixelRadius: number }
 
+/** inside a galaxy, its light from all round, taken together, is shown this bright at most (the display's white is 1) */
+const VEIL = 0.04;
+/** directions all round, each standing for as much of the sky: along the axes and between them */
+const VEIL_FLOOR = 1e-4 * VEIL;
+const AROUND: [number, number, number][] = (() => {
+  const out: [number, number, number][] = [];
+  for (const x of [-1, 0, 1]) for (const y of [-1, 0, 1]) for (const z of [-1, 0, 1]) {
+    const n = Math.hypot(x, y, z);
+    if (n > 0 && n < 1.8 && (n < 1.1 || n > 1.7)) out.push([x / n, y / n, z / n]);
+  }
+  return out;
+})();
+
 /**
  * Other galaxies as 3D volumes (VOL_FRAG): a box around each galaxy in its catalogued orientation,
  * ray-marched per pixel, so a galaxy has thickness and dust lanes from every side and can be flown
@@ -734,7 +806,6 @@ export class GalaxiesLayer {
   private fill = { n: 0, stars: 0, clouds: 0 };
   private nClouds: number;
   private nStars: number;
-  private pixAng = { value: 1e-3 };
 
   constructor(readonly galaxies: Galaxy[], psf?: Record<string, { value: number }>, vr = false) {
     this.group.name = 'galaxies';
@@ -792,7 +863,7 @@ export class GalaxiesLayer {
     const m = new Mesh(this.box, new ShaderMaterial({
       name: 'galaxy-volume', vertexShader: VOL_VERT, fragmentShader: VOL_FRAG, side: BackSide,
       uniforms: {
-        ...model.u, uCam: { value: new Vector3() }, uExt: { value: model.ext }, uPixAng: this.pixAng,
+        ...model.u, uCam: { value: new Vector3() }, uExt: { value: model.ext }, uPixAng: VOLUMES.pixelAngle, uJitter: VOLUMES.jitter,
         uNearF: { value: new Float32Array(F_N) }, uNearOn: { value: 0 }, uRpc: { value: g.radius / 3.0856775814913673e16 },
         uGain: this.gain, uWeight: { value: 1 }, uYoungW: { value: 1 }, uLite: LITE.uLite, uClipScale: { value: 1 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
@@ -829,45 +900,71 @@ export class GalaxiesLayer {
   }
 
   private expo = 1;
-  /** the last metered radiance (diagnostics) */
+  /** the last metered radiance, and the galaxies' light all round the eye as shown without adapting (diagnostics) */
   metered = 0;
+  veil = 0;
   /**
-   * The eye adapting to a galaxy that fills the view: the log-mean of the galaxies' radiance over a
-   * cone of 25° around the view direction (centre-weighted, like a camera's metering) sets an
-   * exposure factor (at most 1: faint galaxies are not brightened), eased over a few frames.
+   * The eye adapting to the galaxies' light: a factor on their brightness (at most 1: faint
+   * galaxies are not brightened), eased over a few frames. `base`: the brightness without it.
+   *
+   * A galaxy that fills the view: the log-mean of the galaxies' radiance over a cone of 25° around
+   * the view direction (centre-weighted, like a camera's metering).
+   *
+   * Inside one, its light comes from all round, and the eye takes the whole of it for its sky:
+   * the mean of the logarithm over directions all round is shown at VEIL at most, whichever way
+   * the eye looks. So turning round in the heart of an elliptical changes nothing (nor do the
+   * faces of a black hole's environment map differ, drawn at different moments), and the glow
+   * stays a glow, brighter towards the middle. Metered by the view alone, the heart of M87 was
+   * a flat pale fog in every direction. Where part of the sky is dark (outside a galaxy, above a
+   * disc) that mean is nothing, and the view decides as before.
    */
-  private adaptGalaxy(cam: UPos, q?: Quaternion): number {
+  private adaptGalaxy(cam: UPos, base: number, q?: Quaternion): number {
     if (!q) return this.expo;
     const fwd = new Vector3(0, 0, -1).applyQuaternion(q), up = new Vector3(0, 1, 0).applyQuaternion(q);
     const right = new Vector3().crossVectors(fwd, up);
     const rel = new Vector3(), o = new Vector3(), d = new Vector3(), dir = new Vector3();
-    // the galaxies large on the sky
-    const big: Galaxy[] = [];
+    // the galaxies large on the sky, and those the eye may be inside (their light reaches a
+    // little beyond the catalogued radius: GalaxyModel.ext)
+    const big: Galaxy[] = [], around: Galaxy[] = [];
     for (const g of this.galaxies) {
       const k = g.upos.sub(cam, rel).length() / g.radius;
       if (k < 25) big.push(g);
+      if (k < 2) around.push(g);
     }
+    const radiance = (list: Galaxy[]) => {
+      let L = 0;
+      for (const g of list) {
+        g.upos.sub(cam, rel);
+        const R = g.radius;
+        o.set(-rel.dot(g.major) / R, -rel.dot(g.minor) / R, -rel.dot(g.normal) / R);
+        d.set(dir.dot(g.major), dir.dot(g.minor), dir.dot(g.normal));
+        L += this.modelOf(g).radiance(o, d);
+      }
+      return L;
+    };
     let target = 1;
+    this.veil = 0;
+    if (around.length && base > 0) {
+      let sumLog = 0;
+      for (const a of AROUND) {
+        dir.set(a[0], a[1], a[2]);
+        sumLog += Math.log(radiance(around) * base + VEIL_FLOOR);
+      }
+      this.veil = Math.exp(sumLog / AROUND.length);
+      if (this.veil > VEIL) target = VEIL / this.veil;
+    }
     if (big.length) {
       let sumW = 0, sumLog = 0;
       const rings = [[0, 1, 2], [0.12, 6, 1], [0.25, 8, 0.7], [0.42, 8, 0.4]];
       for (const [ang, cnt, wt] of rings) for (let i = 0; i < cnt; i++) {
         const ph = (i / cnt) * Math.PI * 2 + ang * 3;
         dir.copy(fwd).addScaledVector(right, Math.tan(ang) * Math.cos(ph)).addScaledVector(up, Math.tan(ang) * Math.sin(ph)).normalize();
-        let Lr = 0;
-        for (const g of big) {
-          g.upos.sub(cam, rel);
-          const R = g.radius;
-          o.set(-rel.dot(g.major) / R, -rel.dot(g.minor) / R, -rel.dot(g.normal) / R);
-          d.set(dir.dot(g.major), dir.dot(g.minor), dir.dot(g.normal));
-          Lr += this.modelOf(g).radiance(o, d);
-        }
-        sumLog += wt * Math.log(Lr * 0.9 + 0.02);
+        sumLog += wt * Math.log(radiance(big) * 0.9 + 0.02);
         sumW += wt;
       }
       const La = Math.exp(sumLog / sumW);
       this.metered = La;
-      target = Math.min(1, Math.pow(La / 0.3, -0.85));
+      target = Math.min(target, Math.pow(La / 0.3, -0.85));
     }
     this.expo += (target - this.expo) * 0.3;
     return this.expo;
@@ -885,9 +982,8 @@ export class GalaxiesLayer {
    */
   update(cam: UPos, pixelAngle: number, adapt: number, fade: number, viewQuat?: Quaternion): void {
     this.views = [];
-    this.gain.value = 0.9 * Math.pow(Math.max(adapt, 0), 0.55) * fade * this.adaptGalaxy(cam, viewQuat);
-    // (the volumes are drawn at reduced resolution: their pixels are larger)
-    this.pixAng.value = pixelAngle / Math.min(1, LITE.uLite.value > 0.5 ? VOLUMES.scaleXr : VOLUMES.scale);
+    const base = 0.9 * Math.pow(Math.max(adapt, 0), 0.55) * fade;
+    this.gain.value = base * this.adaptGalaxy(cam, base, viewQuat);
     this.group.visible = fade > 0.001;
     const rel = new Vector3();
     const m = new Matrix4();

@@ -189,11 +189,29 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .btn.primary { flex: 1.25; background: var(--accent); color: var(--accent-ink); }
 #hud .btn[aria-expanded='true'] { background: rgba(127, 178, 255, 0.22); color: var(--accent); }
 #hud .btn:active { filter: brightness(1.25); }
-.facts { flex: 1 1 auto; min-height: 0; margin: 0; padding-top: 4px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); }
-.facts div { display: flex; justify-content: space-between; gap: 14px; padding: 7px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 14px; }
-.facts div:last-child { border-bottom: 0; }
-.facts dt { flex: none; color: var(--dim); }
-.facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; -webkit-user-select: text; user-select: text; }
+.facts { flex: 1 1 auto; min-height: 0; padding-top: 4px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); }
+.facts dl { margin: 0; }
+.facts dl div, .worked summary { display: flex; justify-content: space-between; gap: 14px; padding: 7px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 14px; }
+.facts dl div:last-child { border-bottom: 0; }
+.facts dt, .worked summary span { flex: none; color: var(--dim); }
+.facts dd, .worked summary b { margin: 0; text-align: right; font-variant-numeric: tabular-nums; -webkit-user-select: text; user-select: text; }
+/* what follows from the facts: each line opens to show its working */
+.worked h3, .whatif h3 { margin: 12px 2px 2px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.whatif { padding-bottom: 6px; }
+#hud .whatif .row { margin-top: 6px; background: var(--fill); }
+.worked h3 small { margin-left: 6px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--dim); }
+.worked summary { align-items: center; min-height: 44px; padding: 4px 2px; list-style: none; cursor: pointer; }
+.worked summary::-webkit-details-marker { display: none; }
+.worked summary span { flex: 1 1 auto; }
+.worked summary b { flex: 0 1 auto; font-weight: 500; }
+.worked summary .icon { flex: none; width: 16px; height: 16px; margin-left: -8px; color: var(--dim); transition: transform 0.15s; }
+.worked details[open] summary { border-bottom-color: transparent; }
+.worked details[open] summary .icon { transform: rotate(90deg); }
+.worked code {
+  display: block; margin: 0 2px 8px; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.35);
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #cfe3ff;
+  white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text;
+}
 
 /* search and places to go */
 .explore .sheet-head { padding-left: 10px; }

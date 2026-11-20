@@ -53,6 +53,8 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 
 <img src="docs/img/stars-up-close.jpg" width="640" alt="Stars up close: the Sun, Sirius, Betelgeuse and Proxima Centauri, each with the surface of its kind"> <img src="docs/img/loading.jpg" width="640" alt="The loading screen: what has arrived, what it brought, how much was downloaded">
 
+<img src="docs/img/whatif.jpg" width="640" alt="What if: the Earth given a second moon, and the new moon's details, with what is worked out for it and the button that takes it away again">
+
 *Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
 verification run, not hand-picked renders.*
 
@@ -222,13 +224,25 @@ matching functions.
 ### What works (each verified before it went live)
 
 Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `start.mjs`,
-`touch.mjs`, `interact.mjs`, `exposure.mjs`, `vr.mjs`, `game.mjs`, `walk.mjs`, `terrain.mjs`,
-`places.mjs`, `flight.mjs`; see HANDOFF.md):
+`touch.mjs`, `interact.mjs`, `exposure.mjs`, `whatif.mjs`, `vr.mjs`, `game.mjs`, `walk.mjs`,
+`terrain.mjs`, `places.mjs`, `flight.mjs`; see HANDOFF.md):
+
+* **What if** (the beginning of it): a world's details show what follows from its facts by the
+  textbook (its gravity, its escape velocity, how long its orbit takes, a black hole's horizon),
+  and every line opens to its working: the formula, the numbers put in, the result. A planet can be
+  given a moon: sized to it, on a circular orbit between you and the planet, with the period
+  Kepler's third law gives it; from then on it is a body like any other (drawn, named, listed,
+  flown to, pulling on a ship, casting its shadow), says that it was made, and can be taken away
+  again. No mode to switch on: each of these is a button where it belongs (`src/app/Worked.ts`,
+  `src/app/WhatIf.ts`, `scripts/whatif.mjs`).
 
 * The eye adapts like one: it shuts down at once for something bright, opens over a moment in the
   dark, and holds its exposure for as long as any of a bright thing is in the frame, so looking
   away from the Sun, a planet's rings or a black hole's disk, and back, never flashes
-  (`src/app/Exposure.ts`, `scripts/exposure.mjs`).
+  (`src/app/Exposure.ts`, `scripts/exposure.mjs`). A sun in the frame puts out the stars but not
+  the worlds beside it; a sun behind a world holds nothing (in a planet's shadow the stars are
+  out and its night side is there to be seen); a far-off accretion disk is a glint, not a
+  white-out; and inside a galaxy its light is a glow with a brighter middle, not a fog.
 * Stars are sharp points on any screen: each one's light is summed over the pixels it falls on, at
   the screen's own density; the bright ones are white-hot points in a soft glow, not disks.
 
@@ -336,6 +350,9 @@ Known limitations (planned for later phases unless noted):
   fills shadows) is a one-line estimate from the vertical optical depth, not computed per direction. The Milky
   Way map is Earth-centred and fades out beyond ~1 kpc.
 * Black holes are non-spinning (Schwarzschild).
+* Inside a galaxy its light is kept dim so the view stays readable (the heart of a giant elliptical
+  would be a blaze); near the centre of M87 the stars inside it do not show yet. A moon made in
+  the app is a model like the rest: a ball of rock or ice on a circular orbit, gone on reload.
 * Performance has been verified only under software rendering (≈20–30 fps at 720p; ~3–5 ms JS per
   frame). GPU profiling and quality presets come in Phase 6.
 

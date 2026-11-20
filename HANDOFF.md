@@ -293,8 +293,9 @@ running (a build, not the dev server: an edit reloads the page under a running s
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
 49), `interact` (mouse and keys; 11), `verify` (35 scenes), `exposure` (looking away from bright
-things and back; 47), `vr` (IWER Quest 3 emulator; 32), `game` (20), `walk` (45), `places` (rings,
-comets, eclipses; 14), `terrain` (14), `flight` (19). At most three at a time on four cores (more
+things and back; 51), `whatif` (the worked-out facts, a moon made and taken away; 29),
+`vr` (IWER Quest 3 emulator; 32), `game` (20), `walk` (45), `places` (rings, comets, eclipses; 14),
+`terrain` (14), `flight` (19). At most three at a time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
 Every script starts its browser through `scripts/lib/browser.mjs`; set `CHROMIUM_PATH` to use an
@@ -502,17 +503,135 @@ above is validated against JPL Horizons and stays as it is unless something is w
      contrast on a planet filling the view); the Sun's glare from 10 to 30 radii greys the whole
      frame; the bodies' shader still has a sine hash (`shaders/body.ts` h33, for the generated
      craters): on a GPU with a coarse sine its cells may line up, as the star shader's did.
-4. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
+4. **The glow, the view from a world, and the first of "what if": done** (the owner, with four
+   screenshots from an iPhone at M87* and inside M60: "The lighting is still weird. Not when you
+   look away now, but like with bright things like black holes and stuff when you zoom out. And
+   when you're like looking from the point of view of planets. Also start adding in small things
+   to incorporate God mode ... incorporated into the app, not like a separate thing that you
+   click for God mode"). Each of the three was reproduced here before it was touched.
+   - *Stripes and dots at a black hole* (the screenshots: hatching in polygons, a dotted mesh).
+     The renderer adds the glowing volumes (a galaxy's light, nebulae) to the frame through a
+     full-screen quad that lives in the scene (`Renderer.volQuad`). The black holes' environment
+     capture drew the scene, quad included: every face of its cube map got the main view's
+     picture of the glow pasted over it, read far outside the texture (its edge pixels smeared
+     into stripes, its per-pixel jitter magnified into dots), and the volumes themselves, which
+     are on a layer of their own, were never in it. Now the capture hides the quad and draws the
+     volumes into a second, smaller cube map (`BlackHoleLayer.glow`, 512 px faces; soft light
+     needs no more), which the lensing shader adds to the first. The volumes draw there with
+     their samples mid-step and their noise at that map's detail (`VOLUMES.jitter`,
+     `VOLUMES.pixelAngle`: one uniform each for every volume shader, and one `volJitter()`:
+     the four shaders had three different hashes). The map is redrawn whole when the glow's
+     brightness changes (`glowLevel`), so its faces never differ. Inside a lensing region the
+     main volume pass is skipped (`VOLUMES.covered`: the hole draws the whole frame and the
+     pass was drawn only to be painted over; on a phone that region reaches 23 light years from
+     M87*).
+   - *The jet as a zig-zag* (found on the way, older). The lensing sphere of a supermassive
+     hole is light years wide; in metres its clip coordinates are ~1e17, whose products
+     overflow 32-bit floats in the rasteriser, and what it interpolated across each triangle
+     (the sight line) was wrong: the sky behind showed as a mosaic of the sphere's facets, and
+     the hole's own disk was displaced. One factor for the whole mesh (`uClipScale`, as the
+     jets and the galaxy volumes already had) and the sight line passed in units of the sphere.
+   - *The white-out from a few light years* (the screenshots: a white blob over the frame).
+     `diskSeen` counts a cell of the frame as no hotter than a patch its own size on the disk,
+     so from far off the cell that holds M87*'s whole glowing middle (25 of its 600 radii) read
+     as the cool outer disk: nothing held the exposure, and a core ten thousand times too
+     bright bloomed over everything. Between 300 radii and 917 the exposure jumped 50,000
+     times. Now what the cells cannot resolve is one entry of its own (`DiskSeen.core`), counted
+     by its light (`diskMean`: summed ring by ring, over the gas coming and going), and the
+     rule is one for all sizes: the brightest FILL of the frame is shown at `level` on average,
+     and a part smaller than that counts by its light as if spread over FILL. A far-off disk is
+     a glint with a modest halo; nothing lets go as it shrinks (`tests/exposure.test.ts`: no
+     step over four decades of distance). The tuned close views are unchanged (they are held by
+     the ball rule, as before).
+   - *The pale fog inside a galaxy* (the M60 screenshot; the heart of M87). Two causes. The
+     march could not take steps shorter than the ray's length over their number, so a
+     spheroid's cusp (a quarter of a central sight line's light comes from the innermost
+     hundredth of the effective radius) got one sample drawn from a tenfold range: dots that no
+     jitter averages. The spheroid's steps are now a fraction of the distance from the centre
+     all the way in, counted beforehand (an inverse hyperbolic sine) and kept for it; the disc's
+     steps share the rest. And the galaxies' brightness was metered by the view alone, to a
+     mid-grey: inside one, where its light is all round, that is fog in every direction. Now the
+     light all round (the mean of the logarithm over fourteen directions) is shown at `VEIL`
+     (0.04) at most, whichever way the eye looks; from outside, where part of the sky is dark,
+     the view decides as before. The metering's own estimate saw nothing of a disc from inside
+     its plane: `layerColumn` follows the disc's layers along the ray from wherever the eye is
+     (`tests/galaxylight.test.ts`). The volume pass is added through a tent over its 3 x 3
+     neighbours instead of one tap.
+   - *From a world's point of view* (turning the view round at the Earth, in a planet's shadow,
+     on its night side). Four things. (1) A sun in the frame took the worlds beside it down with
+     it: with the Sun a few pixels wide anywhere in view the planet being looked at was black,
+     and from the night side the screen was black but for a dot. A sun's own face, corona and
+     glare now have an exposure of their own (`Bodies.lightExposure`, the other stars' discs
+     too); the worlds keep theirs; the stars still go out while a sun is in view. (2) A sun
+     behind a world held the exposure all the same, and its glare shone through the planet:
+     `Exposure.hidden` (the share of its disc that a nearer ball covers) scales its hold and its
+     glare; in a planet's shadow the stars are out. From there none of the planet's sunlit face
+     is in sight, and its hold loosens by `NIGHT` (15) so the lights of its night side show.
+     (3) After a sun left the frame the sky stayed black for two seconds (twenty e-folds at
+     0.6 s each): the stars now come back with their own time constant (`TAU_STARS`, 0.25 s).
+     (4) An eclipse was measured at the body's centre alone: when Io crossed in front of the
+     middle of Jupiter, Jupiter counted as gone dark, the exposure opened and its sunlit side
+     flooded the frame white (caught here by chance, at the hour it happened). It is the share
+     of the body's sunlit face in the shadow now (`core/discs.ts shadowShare`: a moon's shadow
+     on its planet is a dot, a planet's on its moon is all of it). (5) A lit disc holds the
+     surfaces' exposure from the size at which it is drawn (0.6 px for a body or a spacecraft,
+     0.8 for a planet of another star), not from 1.5 px: in between, a moon's disc was drawn
+     with the eye open for the dark, ten thousand times too bright, and bloomed into a ball of
+     light (from Jupiter, one of its moons like a second sun). With the worlds no longer held
+     down by a sun in the frame this showed at once beside Alpha Centauri: the scene-by-scene
+     comparison with the last run caught it (`verify` scene 08).
+   - *What if: the first of it* (the original's God mode, folded in: no mode, no switch; each
+     power has its button where it belongs). (a) A world's details now show what follows from
+     its facts by the textbook, each line opening to its working: the formula, the numbers put
+     in, the result (`src/sim/physics.ts`, the original's `god/physics.ts` with its tests;
+     `src/app/Worked.ts` chooses the lines: gravity, escape velocity, density, the orbit's
+     period from where the body is and how it moves, the Hill sphere, the equator's speed; a
+     star's luminosity and habitable zone; a black hole's horizon, photon sphere, innermost
+     orbit and Hawking temperature). Nothing is looked up: a line whose ingredients are not
+     measured is left out. (b) A planet's details offer it a moon (`src/app/WhatIf.ts`,
+     `SolarSystem.add/place/remove`, `App.addMoon/unmake`): sized to its planet, rock inside
+     the frost line and ice beyond, on a circular orbit in the plane of the equator between the
+     planet and the eye (never inside the Roche limit), with the period Kepler's third law gives
+     it. It is a body like any other from then on (drawn, named, listed among the planet's
+     moons, flown to, pulling on a ship, casting its shadow), says "made by you" in its facts,
+     and can be taken away again. `scripts/whatif.mjs` checks all of it on a phone and at a
+     desk. Not yet: keeping what was made across a reload; choosing its size or orbit; anything
+     else of the original's editor (changing a world, making planets and stars, N-body
+     gravity). Next powers are to go the same way: one button, where it belongs, with its
+     physics shown.
+   - Verification (headless Chromium, software WebGL, against a production build): 388 unit
+     tests; the 35 scenes of verify (28 of them the same picture, to the pixel, as in the run for
+     part 3; the other seven differ in what moves: a disk's gas, clouds, the ship's
+     instruments), exposure 51/51, whatif 29/29, start 34/34, touch 49/49, interact 11/11, vr
+     32/32, game 20/20, walk 45/45, places 14/14, terrain 14/14, flight 19/19 (bench not run).
+     With three suites at once, start and touch each failed one check once (the bar's last ticks
+     not seen; a pinch that did not lift off); each passes on its own, as before.
+     Not tried on a real phone: the owner's four screenshots were reproduced in the emulated one
+     and are gone there.
+   - Seen and left: the stars inside a giant elliptical do not show near its centre (the heart
+     of M87: 145,000 are generated, the nearest cell 27 kpc away): the cells of the brightest
+     bands are sized for the Milky Way and hold up to 12,000 stars each, so a dozen of them fill
+     the pool before any cell near the eye is asked for (`ProceduralStarLayer.update`,
+     `GalaxyInterior`); M60's heart does show them. The view from the centre of a galaxy is
+     kept dark (`VEIL`): the real one would be a blaze. Pluto's sunlit side is near white (every
+     world's mean is shown at 0.45, and Pluto's map has more contrast than most). A made moon can
+     be flown to and come down to (tried to 7 km: its ground is the generated one, and from there
+     shows faint steps across its slopes; whether other worlds without measured heights do the
+     same was not looked at); walking on one was not tried. The remaining sine hashes (`Jets.ts` h1,
+     `Materials.ts` mhash2, `shaders/rings.ts`, `shaders/planet.ts`, `shaders/body.ts` hash1 and
+     h33) are as they were.
+5. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then the ship, missions and the benchmark as screens of the app.
-5. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
+6. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.
-6. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
-7. App core: `app/App.ts` is 2,300 lines doing exposure, picking, labels, navigation, loading and
-   the frame loop; to be split into modules behind the same behaviour (the eye's arithmetic and
-   the loading's state are out already: `Exposure.ts`, `Loading.ts`).
-8. Stars and sky (the rest). 9. Deep space (galaxies, nebulae, black holes, exoplanets).
-   10. Terrain, landing, walking. 11. Game mode. 12. VR.
+7. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
+8. App core: `app/App.ts` is 2,400 lines doing exposure, picking, labels, navigation, loading and
+   the frame loop; to be split into modules behind the same behaviour (the eye's arithmetic, the
+   loading's state, the worked-out facts and the what-if powers are out already: `Exposure.ts`,
+   `Loading.ts`, `Worked.ts`, `WhatIf.ts`).
+9. Stars and sky (the rest). 10. Deep space (galaxies, nebulae, black holes, exoplanets).
+   11. Terrain, landing, walking. 12. Game mode. 13. VR.
 
 To look at when their part comes (seen in the scenario screenshots): Pluto's lit side washes out to
 white from 12 radii; 51 Peg b shows a flat black disc on its cloud deck; the Sun's glare hides the

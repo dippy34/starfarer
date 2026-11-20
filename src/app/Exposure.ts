@@ -1,4 +1,5 @@
 import { type Quaternion, Vector3 } from 'three';
+import { discCovered } from '../core/discs';
 
 /**
  * How the eye of the explorer adapts: what counts as "in view", and how fast the exposure follows.
@@ -71,11 +72,25 @@ export function seen(rel: Vector3, radius: number, frame: Frame, scratch: Vector
   return { coverage, shown, presence, angle, halfFrame, size };
 }
 
+/**
+ * The share (0..1) of a shining ball's disc that another ball hides from the eye: none of it if
+ * the other is beyond it. `rel`, `radius`: the ball that shines; `relOther`, `radiusOther`: what may
+ * stand in front (from the eye, m). A sun behind a world holds no exposure and throws no glare.
+ */
+export function hidden(rel: Vector3, radius: number, relOther: Vector3, radiusOther: number): number {
+  const d = rel.length(), dO = relOther.length();
+  if (!(dO < d) || !(d > radius) || !(dO > radiusOther)) return 0;
+  const sep = Math.acos(Math.max(-1, Math.min(1, rel.dot(relOther) / (d * dO))));
+  return discCovered(Math.asin(radius / d), Math.asin(radiusOther / dO), sep);
+}
+
 /** cells across the frame and its margin, each way, that a disk is looked for in */
 const CELLS = 26;
-const cellRadius = new Float64Array(CELLS * CELLS), cellApproach = new Float64Array(CELLS * CELLS);
-const cellShare = new Float64Array(CELLS * CELLS), cellDepth = new Float64Array(CELLS * CELLS);
-const cellRadiance = new Float64Array(CELLS * CELLS), cellOrder = new Uint16Array(CELLS * CELLS);
+/** (and one entry more: the middle of the disk, where no cell resolves it) */
+const ENTRIES = CELLS * CELLS + 1;
+const cellRadius = new Float64Array(ENTRIES), cellApproach = new Float64Array(ENTRIES);
+const cellShare = new Float64Array(ENTRIES), cellDepth = new Float64Array(ENTRIES);
+const cellRadiance = new Float64Array(ENTRIES), cellOrder = new Uint16Array(ENTRIES);
 const centre = new Vector3(), axis = new Vector3();
 
 /**
@@ -98,6 +113,16 @@ export interface DiskSeen {
   presence: number;
   /** the smallest radius seen (m): Infinity if none */
   nearest: number;
+  /**
+   * The middle of the disk, where it is too small in the frame for the cells to resolve: an entry
+   * of its own (its index; -1 if the cells resolve the disk down to its inner edge). Its `radius`
+   * is that of the part it stands for, everything inside which is one cell's worth of the frame;
+   * its `approach` the most its gas comes towards the eye, on the side that does (the other side
+   * goes away as much).
+   */
+  core: number;
+  /** the inner radius of the disk (m) */
+  inner: number;
 }
 
 /**
@@ -111,9 +136,14 @@ export interface DiskSeen {
  * of it the disk takes (from how far the edge is from the cell's middle), and the cells of the
  * margin count the less the farther out they are. Light bending is left out: it reshapes the
  * picture close to the hole, where the disk is measured as a ball instead (see App.updateExposure).
+ *
+ * A cell sees a patch of the disk, and counts as the radius of a patch its size at the least:
+ * from far off one cell takes in the whole bright middle, and must not count as the very hottest
+ * point because a sight line passes through that. What is inside that radius around the centre
+ * is the `core`: one entry for all of it, which diskLimit counts by its light.
  */
 export function diskSeen(rel: Vector3, normal: Vector3, inner: number, outer: number, frame: Frame, inverse: Quaternion): DiskSeen {
-  const out: DiskSeen = { count: 0, radius: cellRadius, approach: cellApproach, share: cellShare, depth: cellDepth, coverage: 0, presence: 0, nearest: Infinity };
+  const out: DiskSeen = { count: 0, radius: cellRadius, approach: cellApproach, share: cellShare, depth: cellDepth, coverage: 0, presence: 0, nearest: Infinity, core: -1, inner };
   if (!(outer > 0)) return out;
   // in the camera's axes and in units of the disk's radius: its centre c, and the plane's normal n
   // pointing from the eye's side to the plane, which is then h away
@@ -196,43 +226,90 @@ export function diskSeen(rel: Vector3, normal: Vector3, inner: number, outer: nu
       count++;
     }
   }
+  // The middle of the disk, as the sight line to its centre sees it: a patch one cell wide there
+  // has the radius `spread`. If that reaches beyond the inner edge, the cells do not resolve what
+  // is inside it (they count as that radius at the least, see above): it is one entry.
+  const dc = Math.hypot(c.x, c.y, c.z);
+  if (c.z < 0 && h > 0 && dc > 0) {
+    const u = c.x / -c.z, v = c.y / -c.z;
+    const a = n.x * u + n.y * v - n.z; // (= h / -c.z: the centre is on the plane)
+    const spread = Math.sqrt((du * dv * h * h) / (Math.PI * a * a * a));
+    if (spread > least) {
+      const au = Math.abs(u), av = Math.abs(v);
+      const inside = Math.min(ax - Math.atan(au), ay - Math.atan(av));
+      const window = smooth(1 + inside / margin);
+      if (window > 0) {
+        cellRadius[count] = outer * Math.min(1, spread);
+        // (the gas comes towards the eye at most by the sine of the angle between the sight line and the disk's axis)
+        cellApproach[count] = Math.sqrt(Math.max(0, 1 - (h / dc) ** 2));
+        // (one cell's worth of the frame, or the whole disk if that is smaller)
+        // (it lies over cells already counted: no more of the frame is covered for it)
+        cellShare[count] = cell * window * Math.min(1, 1 / (spread * spread));
+        cellDepth[count] = window;
+        out.core = count;
+        count++;
+      }
+    }
+  }
   out.coverage = Math.min(1, out.coverage);
   out.count = count;
   return out;
 }
 
-/** a part of a disk taking this share of the frame (a few cells) holds the exposure in full; a smaller part less */
+/** how many rings the unresolved middle of a disk is summed over */
+const RINGS = 24;
+
+/**
+ * The mean radiance of a disk inside `radius`, which is how bright the patch of the frame it takes
+ * is on the whole: its light summed ring by ring (rings evenly spaced in the logarithm of the
+ * radius: a disk is far brighter inside than out), over what the gas of each ring looks like going
+ * round (towards the eye on one side, away on the other, across in between).
+ */
+export function diskMean(radiance: (radius: number, approach: number) => number, inner: number, radius: number, approach: number): number {
+  if (!(radius > inner)) return 0;
+  const k = Math.log(radius / inner) / RINGS;
+  let sum = 0;
+  for (let i = 0; i < RINGS; i++) {
+    const r = inner * Math.exp(k * (i + 0.5));
+    sum += r * r * 0.25 * (radiance(r, approach) + 2 * radiance(r, 0) + radiance(r, -approach));
+  }
+  // (the integral of L 2 pi r dr over pi radius^2, with dr = r k)
+  return (2 * k * sum) / (radius * radius);
+}
+
+/** the brightest part of a disk is judged over this share of the frame (a few cells) */
 export const FILL = 0.015;
 
 /**
  * The limit a disk puts on the exposure (log; Infinity for none). A disk has no one brightness:
  * it is far brighter inside than out, more than any exposure can show at once; a cool one fades
  * outwards by orders of magnitude within the frame; and the side whose gas comes towards the eye
- * outshines the other. So the eye is held by the brightest part of it there is enough of to
- * see: no part that takes FILL of the frame is shown brighter than `level`; a smaller part may
- * be, the more the smaller it is (the far-off core is a glint). `radiance`: of the disk as it is
- * drawn at a radius, with its gas moving as `approach` says (DiskSeen); `open`: the exposure with
+ * outshines the other. So the eye is held by the brightest part of it: the brightest FILL of the
+ * frame is shown at `level` on average. A part smaller than that counts by its light all the
+ * same, as if spread over FILL: a far-off core is a glint, bright but with no more light in it
+ * than that, whatever its size (its light is what blooms: left to itself a core two pixels wide
+ * and ten thousand times too bright whites out the frame). `radiance`: of the disk as it is drawn
+ * at a radius, with its gas moving as `approach` says (DiskSeen); `open`: the exposure with
  * nothing in view.
  */
 export function diskLimit(disk: DiskSeen, radiance: (radius: number, approach: number) => number, level: number, open: number): number {
   const n = disk.count;
   for (let i = 0; i < n; i++) {
-    cellRadiance[i] = radiance(disk.radius[i], disk.approach[i]);
+    cellRadiance[i] = i === disk.core ? diskMean(radiance, disk.inner, disk.radius[i], disk.approach[i]) : radiance(disk.radius[i], disk.approach[i]);
     cellOrder[i] = i;
   }
   const order = cellOrder.subarray(0, n).sort((x, y) => cellRadiance[y] - cellRadiance[x]);
-  let limit = Infinity, coverage = 0, presence = 0;
+  let limit = Infinity, coverage = 0, light = 0, presence = 0;
   for (let j = 0; j < n; j++) {
     const i = order[j], L = cellRadiance[i];
     if (!(L > 0)) break;
-    // the disk at least as bright as here: how much of the frame it takes, and whether it is in it
+    // the disk at least as bright as here: how much of the frame it takes, the light in it, and whether it is in the frame
     coverage += disk.share[i];
+    light += L * disk.share[i];
     presence = Math.max(presence, disk.depth[i]);
-    const enough = smooth(coverage / FILL);
-    if (enough <= 0) continue;
-    limit = Math.min(limit, released(Math.log(level / (L * enough)), open, presence));
+    limit = Math.min(limit, released(Math.log((level * Math.max(coverage, FILL)) / light), open, presence));
     // (the rest is dimmer, and no more in view than this)
-    if (enough >= 1 && presence >= 1) break;
+    if (coverage >= FILL && presence >= 1) break;
   }
   return limit;
 }
@@ -240,6 +317,11 @@ export function diskLimit(disk: DiskSeen, radiance: (radius: number, approach: n
 /** the exposure opens up in the dark over about this long (s), and shuts down for something bright over this */
 export const TAU_OPEN = 0.6;
 export const TAU_SHUT = 0.12;
+/**
+ * The stars come back sooner than that once a sun has left the frame: points of light cannot
+ * flash, and with twenty e-folds to go a sky left black for two seconds looks broken.
+ */
+export const TAU_STARS = 0.25;
 /** a bright thing coming into view is never shown more than e^DAZZLE times too bright (a third), even for a frame */
 export const DAZZLE = 0.3;
 
@@ -248,13 +330,13 @@ export const DAZZLE = 0.3;
  * moment), quick to shut down, and never more than a little too bright: without that a sun
  * swinging into view whites out the frame until the exposure has caught up.
  */
-export function adapt(current: number, target: number, dt: number): number {
+export function adapt(current: number, target: number, dt: number, open = TAU_OPEN): number {
   if (!Number.isFinite(current)) return target;
   if (target < current) {
     const from = Math.min(current, target + DAZZLE);
     return from + (target - from) * (1 - Math.exp(-dt / TAU_SHUT));
   }
-  return current + (target - current) * (1 - Math.exp(-dt / TAU_OPEN));
+  return current + (target - current) * (1 - Math.exp(-dt / open));
 }
 
 /**

@@ -7,7 +7,8 @@
 //   - nothing burns out while the bright thing is leaving the frame (a black hole's disk used to
 //     white out the whole screen the moment its centre left)
 //   - once it has gone, no glare is left as a veil over the dark sky
-//   - the stars come out over a moment, not in one frame
+//   - the stars come out over a moment, not in one frame; and after a sun has left, within a second
+//     (a sun's own face has an exposure of its own: the worlds beside it keep theirs)
 //   - turning back, the frame does not flash white
 // Usage: node scripts/exposure.mjs [baseUrl] [outDir] [scene...]   (frames are saved to outDir/<scene>)
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
@@ -25,9 +26,9 @@ const errors = [];
 /** what is looked at: where (query), and the radius (in its own radii) of all of it that shines */
 const SCENES = [
   // (a far Sun is all glare; a near one's face has its own corona, and nearly none)
-  { id: 'sun-far', label: 'the Sun from 40 radii', query: 'target=Sun&dist=40', extent: 1, glare: 'bright' },
-  { id: 'sun', label: 'the Sun from 8 radii', query: 'target=Sun&dist=8', extent: 1, glare: 'faint' },
-  { id: 'sirius', label: 'Sirius from 6 radii', query: 'target=Sirius&dist=6', extent: 1 },
+  { id: 'sun-far', label: 'the Sun from 40 radii', query: 'target=Sun&dist=40', extent: 1, glare: 'bright', light: true },
+  { id: 'sun', label: 'the Sun from 8 radii', query: 'target=Sun&dist=8', extent: 1, glare: 'faint', light: true },
+  { id: 'sirius', label: 'Sirius from 6 radii', query: 'target=Sirius&dist=6', extent: 1, light: true },
   { id: 'earth', label: 'the Earth', query: 'target=Earth&dist=4.9', extent: 1 },
   { id: 'earth-close', label: 'the Earth filling the view', query: 'target=Earth&dist=1.5', extent: 1 },
   { id: 'saturn', label: 'Saturn and its rings', query: 'target=Saturn&dist=4', extent: 2.35 },
@@ -57,7 +58,7 @@ for (const scene of SCENES) {
     const half = Math.atan(Math.tan((a.rig.fovY * Math.PI) / 360) * (a.rig.viewport.width / a.rig.viewport.height));
     return { half: (half * 180) / Math.PI, dist: d, radius: t.radius, diskOuter: t.diskOuter ?? 0, dark: null };
   });
-  const frame = (deg) => page.evaluate(async (deg) => {
+  const frame = (deg) => page.evaluate(async ([deg, light]) => {
     const a = window.app, r = a.rig;
     if (deg) r.quat.multiply(r.quat.clone().set(0, Math.sin((deg * Math.PI) / 360), 0, Math.cos((deg * Math.PI) / 360)));
     await new Promise((res) => setTimeout(res, 105));
@@ -75,8 +76,9 @@ for (const scene of SCENES) {
       if (y >= 245 || Math.max(px[i], px[i + 1], px[i + 2]) >= 252) burnt++;
     }
     const d = a.debugState();
-    return { mean: sum / (96 * 96), burnt: burnt / (96 * 96), x: Math.log(d.exposure), xs: Math.log(d.starExposure), glare: d.glare };
-  }, deg);
+    // (what is looked at is exposed by `x`: a sun's face by the light exposure, anything else by the surfaces')
+    return { mean: sum / (96 * 96), burnt: burnt / (96 * 96), x: Math.log(light ? d.lightExposure : d.exposure), xs: Math.log(d.starExposure), glare: d.glare };
+  }, [deg, !!scene.light]);
   const log = [];
   const rec = async (deg, yaw, phase) => {
     const m = await frame(deg);
@@ -113,6 +115,14 @@ for (const scene of SCENES) {
     check(`${scene.label}: the stars come out over a moment, not in a frame`, end - start >= 6, `${((end - start) / 10).toFixed(1)} s to open up ${(dark.x - at.x).toFixed(0)} e-folds`);
     const jump = Math.max(...away.slice(1).map((f, i) => f.x - away[i].x));
     check(`${scene.label}: the exposure never leaps`, jump < 4.2, `largest step in a frame: ${jump.toFixed(2)} e-folds`);
+  }
+  if (scene.light) {
+    // a sun puts the stars out while it is in the frame; once it is a margin beyond the edge they are back within a second
+    // (back: within a magnitude and a half of the sky in the dark; the last of it comes as the eye opens for the dark itself)
+    const out = away.findIndex((f) => f.yaw > gone + 0.4 * geo.half);
+    const back = away.findIndex((f, i) => i >= out && f.xs >= dark.xs - 1.5);
+    check(`${scene.label}: the stars are out while it is in the frame, and back within a second of its leaving`,
+      at.xs < dark.xs - 5 && out > 0 && back >= out && back - out <= 10, `${((back - out) / 10).toFixed(1)} s after it has left; ${(dark.xs - at.xs).toFixed(0)} e-folds dimmer with it in view`);
   }
   if (scene.glare) {
     const veil = away.filter((f) => f.yaw > gone + 0.4 * geo.half);

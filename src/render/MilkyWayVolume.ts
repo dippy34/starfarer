@@ -3,7 +3,7 @@ import { PC } from '../core/units';
 import { UPos } from '../core/upos';
 import { DUST_NORM, GALAXY, LUM } from '../universe/Galaxy';
 import { GALAXY_GLSL } from './shaders/galaxy';
-import { VOLUMES } from './Renderer';
+import { VOLUME_JITTER, VOLUMES } from './Renderer';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS, QUALITY_LEVEL } from './shaders/xr';
 
 const f = (x: number) => (Number.isInteger(x) ? `${x}.0` : `${x}`);
@@ -36,6 +36,7 @@ const FRAG = /* glsl */ `
 #define PI 3.141592653589793
 const float DUST_NORM = ${f(DUST_NORM)};
 ${GALAXY_GLSL}
+${VOLUME_JITTER}
 uniform vec3 uCam;        // galactocentric camera position (pc)
 uniform vec3 uExt;
 uniform float uWeight;
@@ -62,7 +63,7 @@ void main() {
   int N = uLite > 0.5 ? 60 - 10 * int(uQuality) : 160;
   float dsMax = uLite > 0.5 ? 900.0 * (1.0 + 0.3 * uQuality) : 400.0;
   float adz = max(abs(d.z), 0.02);
-  float jit = gHash(vec3(gl_FragCoord.xy, 3.7));
+  float jit = volJitter();
   vec3 L = vec3(0.0);
   vec3 T = vec3(1.0);
   float t = t0;
@@ -131,7 +132,7 @@ export class MilkyWayVolume {
       uniforms: {
         uCam: { value: new Vector3() }, uExt: { value: EXT.clone() }, uWeight: { value: 0 },
         uModelK: { value: 0 }, uModelRef: { value: 81.3 }, uModelExp: { value: 0.6 }, uLite: LITE.uLite, uQuality: QUALITY_LEVEL.uQuality,
-        uClipScale: { value: 1 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
+        uJitter: VOLUMES.jitter, uClipScale: { value: 1 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       transparent: true, depthWrite: false, blending: AdditiveBlending,
     });
@@ -153,6 +154,11 @@ export class MilkyWayVolume {
     const outside = Math.max(0, Math.abs(camGal.z) - EXT.z, Math.hypot(camGal.x, camGal.y) - EXT.x);
     const t = Math.min(1, Math.max(0, (outside - 1500) / 4500));
     return t * t * (3 - 2 * t);
+  }
+
+  /** how bright the volume is being drawn (0: not at all) */
+  get level(): number {
+    return this.mesh.visible ? (this.mat.uniforms.uWeight.value as number) * (this.mat.uniforms.uModelK.value as number) : 0;
   }
 
   /** `k`, `ref`, `exp`: the sky's current model mapping (SkyLayer). */

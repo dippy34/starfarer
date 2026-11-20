@@ -1,7 +1,7 @@
 import { Matrix4, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { UPos } from '../src/core/upos';
-import { discOverlap } from '../src/render/Bodies';
+import { discCovered, discOverlap, shadowShare } from '../src/core/discs';
 import { CometTails } from '../src/render/CometTails';
 import type { Body } from '../src/universe/Body';
 import { Landmark, LANDMARKS } from '../src/universe/Landmarks';
@@ -15,6 +15,35 @@ describe('eclipses', () => {
     const half = discOverlap(1, 100, 100);                               // edge of a huge disc through the centre
     expect(half / Math.PI).toBeGreaterThan(0.45);
     expect(half / Math.PI).toBeLessThan(0.55);
+  });
+
+  it('the share of a disc that is covered', () => {
+    expect(discCovered(1, 3, 0.5)).toBe(1);
+    expect(discCovered(3, 1, 0.5)).toBeCloseTo(1 / 9, 9);
+    expect(discCovered(1, 1, 5)).toBe(0);
+    // (a point is covered or it is not)
+    expect(discCovered(0, 1, 0.5)).toBe(1);
+    expect(discCovered(0, 1, 1.5)).toBe(0);
+  });
+
+  it("a moon's shadow on its planet is a dot on it; a planet's on its moon is all of the moon", () => {
+    const AU = 1.496e11, SUN = 6.957e8;
+    // Io in front of the very middle of Jupiter: 1821 km of shadow on a disc of 69 911 km
+    const io = shadowShare(69.911e6, 1.8216e6, 0, 421.7e6, SUN / (5.2 * AU));
+    expect(io).toBeCloseTo((1.8216 / 69.911) ** 2, 6);
+    expect(io).toBeLessThan(0.001);
+    // the Moon deep in the Earth's shadow, at its edge, and clear of it
+    const sun = SUN / AU;
+    expect(shadowShare(1.7374e6, 6.371e6, 0, 384.4e6, sun)).toBe(1);
+    const edge = shadowShare(1.7374e6, 6.371e6, 6.371e6, 384.4e6, sun);
+    expect(edge).toBeGreaterThan(0.3);
+    expect(edge).toBeLessThan(0.7);
+    expect(shadowShare(1.7374e6, 6.371e6, 9e6, 384.4e6, sun)).toBe(0);
+    // a moon too small and far to hide the Sun (an annular eclipse) shades as much as it hides
+    const deimos = shadowShare(3.3895e6, 6.2e3, 0, 23.46e6, SUN / (1.52 * AU));
+    expect(deimos).toBeLessThan((6.2 / 3389.5) ** 2);
+    // and nothing is shaded by what is behind it
+    expect(shadowShare(1e6, 5e6, 0, -1e7, sun)).toBe(0);
   });
 });
 

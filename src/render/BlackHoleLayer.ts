@@ -8,6 +8,7 @@ import { AU, SUN_RADIUS } from '../core/units';
 import type { UPos } from '../core/upos';
 import type { BlackHole } from '../universe/BlackHoles';
 import { QUALITY } from './Quality';
+import { VOLUMES } from './Renderer';
 import { BH_FRAG, BH_VERT } from './shaders/blackhole';
 import { GLOBALS } from './shaders/xr';
 
@@ -24,6 +25,7 @@ const MAX_ACTIVE = 2;
 const INSIDE_SPHERE = 1e7;
 /** while the eye holds still, a cube face is refreshed every this many frames (exposure changes, slow motions) */
 const IDLE_FRAMES = 6;
+const ALL_FACES = [0, 1, 2, 3, 4, 5];
 
 export interface BlackHoleView {
   bh: BlackHole;
@@ -43,8 +45,10 @@ export interface BlackHoleView {
 /**
  * Draws black holes: each nearby hole gets a sphere around the region it visibly distorts (or
  * a full-screen sphere when the eye is inside that region) whose shader traces light past it
- * (shaders/blackhole.ts). The undistorted scene behind it comes from a cube map captured at
- * the eye with the holes hidden, one face per frame.
+ * (shaders/blackhole.ts). The undistorted scene behind it comes from two cube maps captured at
+ * the eye with the holes hidden, one face per frame: the scene itself (stars, bodies), and in a
+ * smaller one the glowing volumes around the eye (a galaxy's light, nebulae, the Milky Way),
+ * which the renderer draws in a pass of their own (Renderer: VOLUMES) and which are soft.
  */
 export class BlackHoleLayer {
   readonly group = new Group();
@@ -55,6 +59,18 @@ export class BlackHoleLayer {
   private geo = new SphereGeometry(1, 64, 32);
   private env: WebGLCubeRenderTarget;
   private cubeCam: CubeCamera;
+  /** the volumes around the eye, and whether the map holds any at the moment */
+  private glow: WebGLCubeRenderTarget;
+  private glowCam: CubeCamera;
+  private glowing = false;
+  /**
+   * How bright the volumes are being drawn (the galaxies', the nebulae's, the Milky Way's factors:
+   * the app sets it each frame). The eye's adaptation changes them with no move of the eye; the
+   * volumes' map then is redrawn whole, so its faces never differ from one another or from the
+   * view beside the hole.
+   */
+  glowLevel: number[] = [];
+  private glowDrawn: number[] = [];
   private lut: DataTexture;
   private face = 0;
   private fullCapture = true;
@@ -74,19 +90,22 @@ export class BlackHoleLayer {
     this.lut = makeLut();
     this.env = makeEnv(1024);
     this.cubeCam = new CubeCamera(1e3, 1e30, this.env);
+    this.glow = makeGlow(512);
+    this.glowCam = new CubeCamera(1e3, 1e30, this.glow);
+    this.glowCam.layers.set(VOLUMES.layer);
   }
 
   private material(): ShaderMaterial {
     return new ShaderMaterial({
       name: 'black-hole', vertexShader: BH_VERT, fragmentShader: BH_FRAG,
       uniforms: {
-        uEnv: { value: this.env.texture }, uLut: { value: this.lut },
+        uEnv: { value: this.env.texture }, uGlow: { value: this.glow.texture }, uLut: { value: this.lut },
         uO: { value: new Vector3() }, uRs: { value: 1 },
         uN: { value: new Vector3(0, 0, 1) }, uE1: { value: new Vector3(1, 0, 0) }, uE2: { value: new Vector3(0, 1, 0) },
         uRin: { value: 3 }, uRout: { value: 0 }, uTmax: { value: 1e4 }, uSunDisk: { value: SUN_DISK }, uExposure: this.exposure, uTime: { value: 0 },
         uMaxSteps: { value: 220 }, uStepK: { value: 1 },
         uDiskSeed: { value: 0 }, uSpiral: { value: 0 }, uArms: { value: 2 }, uStreakFreq: { value: 9 }, uAngFreq: { value: 2.2 }, uWarp: { value: 0.5 },
-        uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
+        uClipScale: { value: 1 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       // drawn after the stars and point sources it replaces, before nearby sprites that may be in front
       transparent: true, blending: NoBlending, depthTest: true, depthWrite: true,
@@ -232,9 +251,11 @@ export class BlackHoleLayer {
       const region = v.region;
       if (v.inside) {
         m.matrix.makeScale(INSIDE_SPHERE, INSIDE_SPHERE, INSIDE_SPHERE);
+        u.uClipScale.value = 1 / INSIDE_SPHERE;
         if (mat.side !== BackSide) { mat.side = BackSide; mat.depthFunc = this.reversedDepth ? NeverDepth : AlwaysDepth; mat.needsUpdate = true; }
       } else {
         m.matrix.makeScale(region, region, region).setPosition(v.rel);
+        u.uClipScale.value = 1 / (v.dist + region);
         if (mat.side !== FrontSide) { mat.side = FrontSide; mat.depthFunc = LessEqualDepth; mat.needsUpdate = true; }
       }
       m.matrixWorldNeedsUpdate = true;
@@ -256,12 +277,14 @@ export class BlackHoleLayer {
       u.uMaxSteps.value = this.vr ? 90 : 220;
       u.uStepK.value = this.vr ? 1.5 : 1;
       u.uEnv.value = this.env.texture;
+      u.uGlow.value = this.glow.texture;
     });
   }
 
   /**
    * Refresh the environment the holes lens: the scene from the eye without the holes, the
-   * explorer's rig (controllers, panels) or `hide`. One face per call while the eye moves, one
+   * explorer's rig (controllers, panels) or `hide` (which has to include whatever is drawn for the
+   * main camera alone: the renderer's volume pass). One face per call while the eye moves, one
    * every `IDLE_FRAMES` while it holds still (turning the head does not change a cube map); all
    * six when a hole first comes into view. `psf` is adjusted so point sprites are sized for the cube's pixels.
    */
@@ -276,19 +299,30 @@ export class BlackHoleLayer {
       this.env.dispose();
       this.env = makeEnv(size);
       this.cubeCam.renderTarget = this.env;
+      this.glow.dispose();
+      this.glow = makeGlow(size / 2);
+      this.glowCam.renderTarget = this.glow;
+      this.glowing = false;
       this.fullCapture = true;
     }
-    if (this.cubeCam.coordinateSystem !== gl.coordinateSystem) {
-      this.cubeCam.coordinateSystem = gl.coordinateSystem;
-      this.cubeCam.updateCoordinateSystem();
+    for (const cam of [this.cubeCam, this.glowCam]) {
+      if (cam.coordinateSystem !== gl.coordinateSystem) {
+        cam.coordinateSystem = gl.coordinateSystem;
+        cam.updateCoordinateSystem();
+      }
+      cam.updateMatrixWorld(true);
     }
-    this.cubeCam.updateMatrixWorld(true);
     // (headset: every other frame even while moving; a face is 512 px there and the scene costs more)
-    if (!this.fullCapture && ++this.idle < (this.moved ? (this.vr ? 2 : 1) : IDLE_FRAMES)) return;
-    this.idle = 0;
-    const faces = this.fullCapture ? [0, 1, 2, 3, 4, 5] : [this.face];
-    this.fullCapture = false;
-    this.face = (this.face + 1) % 6;
+    const due = this.fullCapture || ++this.idle >= (this.moved ? (this.vr ? 2 : 1) : IDLE_FRAMES);
+    const stale = this.glowLevel.length !== this.glowDrawn.length
+      || this.glowLevel.some((v, i) => Math.abs(v - this.glowDrawn[i]) > 0.02 * Math.max(Math.abs(v), Math.abs(this.glowDrawn[i]), 1e-9));
+    if (!due && !stale) return;
+    const faces = !due ? [] : this.fullCapture ? ALL_FACES : [this.face];
+    if (due) {
+      this.idle = 0;
+      this.fullCapture = false;
+      this.face = (this.face + 1) % 6;
+    }
 
     const prevTarget = gl.getRenderTarget();
     const prevFace = gl.getActiveCubeFace();
@@ -310,6 +344,7 @@ export class BlackHoleLayer {
       gl.clear(true, true, true);
       gl.render(scene, this.cubeCam.children[f] as PerspectiveCamera);
     }
+    this.captureGlow(gl, scene, stale ? ALL_FACES : faces);
     psf.uPixelSA.value = saved.sa;
     psf.uDpr.value = saved.dpr;
     psf.uMinSigma.value = saved.sigma;
@@ -319,12 +354,40 @@ export class BlackHoleLayer {
     gl.xr.enabled = xrWas;
     gl.setRenderTarget(prevTarget, prevFace, prevMip);
   }
+
+  /**
+   * The volumes into their own map. Its pixels are not the screen's: the volumes take their
+   * samples mid-step (a per-pixel jitter seen through the lens, magnified, would be grain) and
+   * their noise at the detail a pixel of this map can hold.
+   */
+  private captureGlow(gl: WebGLRenderer, scene: Scene, faces: number[]): void {
+    const any = VOLUMES.any();
+    // nothing glows any more: every face is cleared at once (they are refreshed one at a time otherwise)
+    if (!any) faces = this.glowing ? ALL_FACES : [];
+    this.glowing = any;
+    if (faces.length === 6 || !any) this.glowDrawn = this.glowLevel.slice();
+    const saved = { jitter: VOLUMES.jitter.value, pixel: VOLUMES.pixelAngle.value };
+    VOLUMES.jitter.value = 0;
+    VOLUMES.pixelAngle.value = 2 / this.glow.width;
+    for (const f of faces) {
+      gl.setRenderTarget(this.glow, f);
+      gl.clear(true, false, false);
+      if (any) gl.render(scene, this.glowCam.children[f] as PerspectiveCamera);
+    }
+    VOLUMES.jitter.value = saved.jitter;
+    VOLUMES.pixelAngle.value = saved.pixel;
+  }
 }
 
 function makeEnv(size: number): WebGLCubeRenderTarget {
   return new WebGLCubeRenderTarget(size, {
     type: HalfFloatType, generateMipmaps: true, minFilter: LinearMipmapLinearFilter, magFilter: LinearFilter, depthBuffer: true,
   });
+}
+
+/** the volumes' map: soft light, so no mip levels and no depth */
+function makeGlow(size: number): WebGLCubeRenderTarget {
+  return new WebGLCubeRenderTarget(size, { type: HalfFloatType, generateMipmaps: false, minFilter: LinearFilter, magFilter: LinearFilter, depthBuffer: false });
 }
 
 /** Blackbody lookup over log10 T in [2.5, 8]: rgb with luminance 1, a = log10 of the luminance relative to 5772 K. */

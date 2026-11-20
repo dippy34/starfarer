@@ -59,7 +59,34 @@ export const VOLUMES = {
   scale: 0.75,
   /** headset: half (the cost there is two eyes of full-screen marching) */
   scaleXr: 0.5,
+  /** uniform of every volume: radians per pixel of the pass it is being drawn in (its noise's level of detail) */
+  pixelAngle: { value: 1e-3 },
+  /** uniform of every volume: 1 = each pixel takes its samples at a depth of its own within a step (VOLUME_JITTER) */
+  jitter: { value: 1 },
+  /**
+   * Set by the app each frame: something opaque covers the whole frame (the eye is inside a black
+   * hole's lensing region, which draws the surroundings itself), so the pass would not be seen.
+   */
+  covered: false,
+  /** whether any volume is to be drawn at all */
+  any(): boolean {
+    for (const m of this.meshes) if (m.visible && m.parent?.visible !== false) return true;
+    return false;
+  },
 };
+
+/**
+ * Where within a step a ray-marched volume takes its samples: `volJitter()`, 0..1. Each pixel has
+ * its own (interleaved gradient noise, Jimenez 2014: even over any few pixels, so the steps never
+ * show as bands, and no sine in it: the usual sine hash comes out as a regular mesh on GPUs whose
+ * sine of a large number is coarse). It belongs to the pixels of the screen: a picture that is
+ * looked at through something else (the black holes' environment map) is drawn with
+ * `VOLUMES.jitter` 0, every sample mid-step, so that neighbouring pixels agree.
+ */
+export const VOLUME_JITTER = /* glsl */ `
+uniform float uJitter;
+float volJitter() { return mix(0.5, fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))), uJitter); }
+`;
 
 /** up to this many pixels the scene is drawn with 4 samples each; above, with 2 */
 const MSAA_FULL_PIXELS = 2.4e6;
@@ -92,15 +119,25 @@ export class Renderer {
       uniform float uFarZ;
       void main() { gl_Position = vec4(position.xy, uFarZ, 1.0); }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D tVol; uniform vec2 uInvFb;
+      uniform sampler2D tVol; uniform vec2 uInvFb; uniform vec2 uTexel;
       void main() {
-        gl_FragColor = vec4(texture2D(tVol, gl_FragCoord.xy * uInvFb).rgb, 1.0);
+        // four taps half a pixel of the volume apart: a tent over its 3 x 3 neighbours. The samples
+        // of neighbouring pixels are taken at different depths (VOLUME_JITTER), and together they
+        // are the smooth picture; one tap alone shows each pixel's own
+        vec2 uv = gl_FragCoord.xy * uInvFb;
+        vec3 c = texture2D(tVol, uv + vec2(-0.5, -0.5) * uTexel).rgb + texture2D(tVol, uv + vec2(0.5, -0.5) * uTexel).rgb
+               + texture2D(tVol, uv + vec2(-0.5, 0.5) * uTexel).rgb + texture2D(tVol, uv + vec2(0.5, 0.5) * uTexel).rgb;
+        gl_FragColor = vec4(0.25 * c, 1.0);
 ${OUTPUT_FRAGMENT}
       }`,
-    uniforms: { tVol: { value: null }, uInvFb: { value: new Vector2(1, 1) }, uFarZ: { value: 1 } },
+    uniforms: { tVol: { value: null }, uInvFb: { value: new Vector2(1, 1) }, uTexel: { value: new Vector2(1, 1) }, uFarZ: { value: 1 } },
     transparent: true, depthTest: true, depthWrite: false, blending: AdditiveBlending,
   });
-  private volQuad = new Mesh(new PlaneGeometry(2, 2), this.volMat);
+  /**
+   * The volume pass, added to the frame: in the scene so that it is drawn first, and a picture of
+   * this camera's view only. Whoever draws the scene with a camera of their own hides it.
+   */
+  readonly volQuad = new Mesh(new PlaneGeometry(2, 2), this.volMat);
   private quadScene = new Scene();
   private quadCam = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private downMat: ShaderMaterial;
@@ -352,9 +389,7 @@ ${OUTPUT_FRAGMENT}
     const L = VOLUMES.layer;
     if (scale >= 1) { this.camera.layers.enable(L); return false; }
     this.camera.layers.disable(L);
-    let any = false;
-    for (const m of VOLUMES.meshes) if (m.visible && m.parent?.visible !== false) { any = true; break; }
-    if (!any) return false;
+    if (VOLUMES.covered || !VOLUMES.any()) return false;
     const w = Math.max(1, Math.round(fbW * scale)), h = Math.max(1, Math.round(fbH * scale));
     if (!this.volTarget) {
       this.volTarget = new WebGLRenderTarget(w, h, { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter });
@@ -384,6 +419,7 @@ ${OUTPUT_FRAGMENT}
     }
     this.volMat.uniforms.tVol.value = this.volTarget.texture;
     (this.volMat.uniforms.uInvFb.value as Vector2).set(1 / fbW, 1 / fbH);
+    (this.volMat.uniforms.uTexel.value as Vector2).set(1 / w, 1 / h);
     return true;
   }
 
