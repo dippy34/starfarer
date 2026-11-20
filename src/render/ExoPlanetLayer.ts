@@ -253,7 +253,7 @@ export class ExoPlanetLayer {
     const albedo = Number(pal.albedo);
     delete pal.albedo;
     const u: Record<string, { value: unknown }> = {
-      uType: { value: TYPE_ID[p.spec.type] }, uSeed: { value: seed }, uLumpy: { value: 0 },
+      uType: { value: TYPE_ID[p.spec.type] }, uSeed: { value: seed }, uLumpy: { value: 0 }, uClipScale: { value: 1 },
       uSunDir: { value: new Vector3(1, 0, 0) }, uSunColor: { value: new Vector3(1, 1, 1) }, uSunIrr: { value: Math.PI },
       uExposure: this.exposure, uTime: { value: 0 }, uBodyToWorld: { value: new Matrix3() },
       uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK, uLite: LITE.uLite, uCSeed: { value: exoCraterSeed(p.name) },

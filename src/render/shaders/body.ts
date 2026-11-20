@@ -10,6 +10,7 @@ export const BODY_VERT = /* glsl */ `
 ${PROJECT_PARS}
 uniform float uLumpy;     // irregular shape of small bodies (relative radius variation)
 uniform float uSeed;
+uniform float uClipScale; // 1; less for a star (see the end of main)
 varying vec3 vNormalBF;   // body-fixed unit normal
 varying vec3 vTerrN;      // body-fixed normal of the landing terrain (render/TerrainPatch.ts)
 varying float vSun;       // terrain only: clearance of the Sun over the relief (penumbra widths)
@@ -41,6 +42,11 @@ void main() {
   gl_Position = projectView(viewMatrix * wp);
   #include <logdepthbuf_vertex>
 ${FIX_LOGDEPTH}
+  // A supergiant seen from a few of its radii has clip coordinates near 1e12: a rasteriser's
+  // arithmetic loses the interpolation within each triangle to them (seen in the software one:
+  // the face came out in flat blocks, one to a triangle). The same factor for every vertex of the
+  // mesh changes neither where it is drawn nor its depth, and keeps the numbers small.
+  gl_Position *= uClipScale;
 }`;
 
 export const BODY_FRAG = /* glsl */ `
@@ -608,99 +614,6 @@ void main() {
     radiance += lights * lights * vec3(1.0, 0.8, 0.55) * 0.02 * night * (1.0 - cloud);
   }
   gl_FragColor = vec4(min(radiance * uExposure, vec3(6.0e4)), 1.0);
-${OUTPUT_FRAGMENT}
-  #include <logdepthbuf_fragment>
-}`;
-
-/** Uniforms of a star's surface (see StarLook.ts). */
-export const STAR_LOOK_UNIFORMS = /* glsl */ `
-uniform float uSeed;
-uniform float uGranFreq;
-uniform float uGranAmp;
-uniform float uSpots;
-uniform float uSpotLat;
-uniform float uFaculae;
-uniform float uLimbA;
-uniform float uLimbB;
-uniform float uRotRate;
-uniform float uGravDark;
-uniform vec3 uAxis;
-uniform float uFlares;
-uniform float uFlat;       // polar flattening of the drawn ellipsoid (fast rotators)
-uniform float uTurb;       // strength of the restless large-scale pattern seen from afar
-uniform float uLimbGain;   // keeps the disk's mean brightness under the steepened limb darkening
-`;
-
-export const CORONA_VERT = /* glsl */ `
-#include <common>
-#include <logdepthbuf_pars_vertex>
-${PROJECT_PARS}
-uniform float uCopy;      // the quad is on a copy of the star this many times nearer the eye (StarCorona), and
-uniform float uRadiusM;   // the star's radius (m)
-varying vec2 vXY;
-varying vec3 vToFrag;     // from the eye to this point of the quad, and to the star's centre (view space)
-varying vec3 vToStar;
-void main() {
-  vXY = position.xy;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vToFrag = mv.xyz;
-  vToStar = modelViewMatrix[3].xyz;
-  gl_Position = projectView(mv);
-  // In depth the glow lies just behind the star: the star's face hides what of it is behind
-  // (to the pixel: no gap at the limb, and no light laid over it), and so does whatever passes in
-  // front of the star.
-  float depth = -vToStar.z / uCopy + uRadiusM;
-  vec4 behind = projectionMatrix * vec4(0.0, 0.0, -depth, 1.0);
-  gl_Position.z = behind.z / behind.w * gl_Position.w;
-  gTrueDepth = depth;
-  #include <logdepthbuf_vertex>
-${FIX_LOGDEPTH}
-}`;
-export const CORONA_FRAG = /* glsl */ `
-#include <common>
-#include <logdepthbuf_pars_fragment>
-uniform vec3 uColor;
-uniform float uIntensity;  // display value of the glow at the limb
-uniform float uQuad;       // quad half-size in star radii
-uniform float uCorona;
-uniform float uProm;
-uniform float uSeed;
-uniform float uTime;
-uniform vec2 uAxis2;      // the star's spin axis projected on the quad (unit), and
-uniform float uMinor;     // the disk's half-width along it (a flattened star's disk is an ellipse)
-uniform float uSinLimb;   // sine of the disk's angular radius: where the sight lines graze the sphere
-varying vec2 vXY;
-varying vec3 vToFrag;
-varying vec3 vToStar;
-float h2(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.y); }
-float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y); }
-void main() {
-  vec2 p = vXY * uQuad;                   // in star radii
-  // Distance from the centre in units of the disk's edge: by the angle between this sight line
-  // and the one to the star's centre, so that 1 is where the sphere's outline is, wherever in the
-  // frame the star stands. A flattened star's outline is an ellipse: narrower along its axis.
-  float cosA = dot(normalize(vToFrag), normalize(vToStar));
-  float r = sqrt(max(1.0 - cosA * cosA, 0.0)) / uSinLimb;
-  r *= length(vec2(dot(p, vec2(-uAxis2.y, uAxis2.x)), dot(p, uAxis2) / uMinor)) / max(length(p), 1e-6);
-  // (The star hides the glow behind it. The glow is far fainter than the limb it rises from:
-  // a star's limb is its darkest part, and a glow that outshines it rims the star with light.)
-  float h = max(r - 1.0, 0.0);            // height over the limb, in radii
-  float a = atan(vXY.y, vXY.x);
-  vec2 ring = vec2(cos(a), sin(a));       // (noise on the circle: periodic in angle)
-  // streamers: in some directions the glow reaches far out, in others it hugs the limb; fine
-  // rays within them; all of it slowly changing
-  float broad = n2(ring * 1.7 + uSeed + vec2(0.0, uTime * 0.004));
-  float rays = 0.6 * n2(ring * 6.0 + uSeed * 1.7 + vec2(uTime * 0.008, 0.0)) + 0.4 * n2(ring * 17.0 + uSeed * 0.3 + h * 0.8);
-  float reach = 0.25 + 1.5 * broad * broad;
-  float streamer = (0.3 + 0.7 * rays) * exp(-h / reach) / (1.0 + 5.0 * h * h);
-  float glow = uCorona * (0.6 * exp(-h * 10.0) + 0.4 * streamer);
-  glow *= (1.0 - smoothstep(0.7, 1.0, length(vXY))) * smoothstep(0.9, 0.98, r);
-  // the chromosphere, a thin red skin on an active star's limb, and prominences: bright loops just above it
-  float pn = n2(vec2(cos(a) * 14.0 + uSeed, sin(a) * 14.0 + r * 9.0 - uTime * 0.02));
-  float prom = uProm * (pow(pn, 7.0) * 6.0 * smoothstep(1.16, 1.0, r) + 0.5 * exp(-h * 90.0)) * smoothstep(0.9, 0.98, r);
-  vec3 c = uColor * glow + vec3(1.0, 0.32, 0.42) * prom;
-  gl_FragColor = vec4(c * uIntensity, 1.0);
 ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>
 }`;

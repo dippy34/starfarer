@@ -15,14 +15,14 @@ import type { TileDetail } from './TileDetail';
 import { BODY_FRAG, BODY_VERT, GLARE_FRAG, GLARE_VERT } from './shaders/body';
 import { STAR_FRAG } from './shaders/star';
 import { RING_FRAG, RING_VERT } from './shaders/rings';
-import { StarCorona } from './StarCorona';
+import { STAR_NEAR, StarCorona } from './StarCorona';
 import { RingParticles } from './RingParticles';
 import { ringFrame } from '../universe/RingSpot';
 import { PlanetTerrain } from './PlanetTerrain';
 import type { TerrainCandidate } from './PlanetTerrain';
 import { CloudLayer } from './CloudLayer';
 import { TerrainSource } from '../universe/Terrain';
-import { hashString, starLook, starLookUniforms, type StarLook } from './StarLook';
+import { applyStarLook, hashString, starLook, starLookUniforms, turnShare, type StarLook } from './StarLook';
 import { PSF_FRAGMENT, PSF_UNIFORMS, PSF_VERTEX } from './shaders/psf';
 import { MAT, MATERIALS } from './Materials';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS, POINT_CLIP } from './shaders/xr';
@@ -148,6 +148,9 @@ export class BodiesLayer {
   /** the Sun's corona and surface look */
   private sunCorona: StarCorona | null = null;
   private sunLook: StarLook | null = null;
+  /** how long the Sun's surface has been turning, at its full rate (s: StarLook.turnShare) */
+  private sunTurned = 0;
+  private sunTurn = new Quaternion();
   /** camera-facing glare around the Sun (VR only: the desktop path has a bloom pass) */
   glareOn = false;
   /** presenting to a headset (no bloom pass: the glare is all there is) */
@@ -196,7 +199,7 @@ export class BodiesLayer {
     private system: SolarSystem,
     private manifest: TextureManifest,
     private texBase: string,
-    psf: Record<string, { value: number }>,
+    private psf: Record<string, { value: number }>,
     private rings_: Record<string, { innerKm: number; outerKm: number; texture: string }>,
   ) {
     this.group.name = 'bodies';
@@ -384,7 +387,7 @@ export class BodiesLayer {
         uBetaMe: { value: new Vector3() }, uHM: { value: 1200 },
         uSeed: { value: hashString(b.name) * 500 },
         uProc: { value: 0 }, uIcy: { value: 0 }, uTint: { value: new Vector3(1, 1, 1) }, uCraters: { value: 0 },
-        uLumpy: { value: 0 }, uRadiusM: { value: b.radius }, uMapW: { value: 0 },
+        uLumpy: { value: 0 }, uRadiusM: { value: b.radius }, uMapW: { value: 0 }, uClipScale: { value: 1 },
         uDetail: { value: null }, uDetailRect: { value: new Vector4(0, 0, 1, 1) }, uDetailOn: { value: 0 }, uLite: LITE.uLite,
         ...MATERIALS, uMatSel: { value: new Vector4(MAT.regolith, MAT.regolithPocked, MAT.cliff, MAT.snow) }, uMatMode: { value: 0 },
         uTanE: { value: new Vector3(1, 0, 0) }, uTanN: { value: new Vector3(0, 1, 0) },
@@ -399,7 +402,7 @@ export class BodiesLayer {
         uSunRel: { value: new Vector3() }, uSunR: { value: SUN_RADIUS },
         uHasRings: { value: 0 }, uRingTex: { value: null }, uRingRadii: { value: new Vector3() },
         uRadiance: { value: 1 }, uTime: { value: 0 },
-        ...(isStar ? starLookUniforms(this.sunLook = starLook('sun', b.teff, 1, 4.83, true)) : {}),
+        ...(isStar ? { ...starLookUniforms(this.sunLook = starLook('sun', b.teff, 1, 4.83, true)), uPixelSA: this.psf.uPixelSA, uDpr: this.psf.uDpr } : {}),
         uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       side: FrontSide,
@@ -653,6 +656,11 @@ export class BodiesLayer {
         u.uBodyToWorld.value.copy(rot3);
         u.uBodyCenter.value.copy(view.rel);
         u.uTime.value = this.time;
+        if (b.kind === 'star' && this.sunLook) {
+          u.uClipScale.value = Math.min(1, STAR_NEAR / Math.max(view.rel.length(), 1));
+          this.sunTurned += dt * turnShare(this.sunLook, b.radius, view.rel.length(), Math.sqrt(this.psf.uPixelSA.value));
+          applyStarLook(u, this.sunLook, this.time, this.sunTurned);
+        }
         if (b.kind !== 'star') {
           const toSun = tmp.copy(sunRel).sub(view.rel);
           const rSun = toSun.length();
@@ -889,10 +897,9 @@ export class BodiesLayer {
     const sv = this.views.get(this.system.sun);
     if (this.sunCorona && this.sunLook) {
       if (sv && sv.resolved && sv.pixelRadius > 1.5 && viewQuat) {
-        const c = blackbodyRGB(this.system.sun.teff);
-        const L = luminance(c);
-        this.sunCorona.update(sv.rel, this.system.sun.radius, viewQuat, [c[0] / L, c[1] / L, c[2] / L],
-          this.lightExposure.value * (AU / SUN_RADIUS) ** 2, this.sunLook, this.time);
+        const sun = this.system.sun;
+        this.sunCorona.update({ rel: sv.rel, radius: sun.radius, turn: this.sunTurn.setFromRotationMatrix(sun.orientation), look: this.sunLook },
+          viewQuat, Math.sqrt(this.psf.uPixelSA.value), this.lightExposure.value * (AU / SUN_RADIUS) ** 2, this.time, this.sunTurned);
       } else this.sunCorona.hide();
     }
     const g = this.glare;

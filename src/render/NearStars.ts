@@ -5,8 +5,8 @@ import type { UPos } from '../core/upos';
 import type { CatalogStar } from '../universe/Stars';
 import { BODY_VERT } from './shaders/body';
 import { STAR_FRAG } from './shaders/star';
-import { StarCorona } from './StarCorona';
-import { applyStarLook, starLook, starLookUniforms, type StarLook } from './StarLook';
+import { STAR_NEAR, StarCorona } from './StarCorona';
+import { applyStarLook, starLook, starLookUniforms, turnShare, type StarLook } from './StarLook';
 import { PSF_FRAGMENT, PSF_UNIFORMS, PSF_VERTEX } from './shaders/psf';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS, POINT_CLIP } from './shaders/xr';
 
@@ -59,6 +59,9 @@ export class NearStarsLayer {
   private coronas: StarCorona[] = [];
   private sphere = new SphereGeometry(1, 128, 64);
   private looks = new Map<string, StarLook>();
+  /** how long each star in view has been turning, at its full rate (s: StarLook.turnShare) */
+  private turned = new Map<string, number>();
+  private lastTime = 0;
   stars: CatalogStar[] = [];
 
   /** The surface look of a star (stable per star). */
@@ -72,7 +75,7 @@ export class NearStarsLayer {
     return l;
   }
 
-  constructor(psf: Record<string, { value: number }>, private lightExposure: { value: number }) {
+  constructor(private psf: Record<string, { value: number }>, private lightExposure: { value: number }) {
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(this.pos, 3).setUsage(DynamicDrawUsage));
     g.setAttribute('aIrr', new BufferAttribute(this.irr, 1).setUsage(DynamicDrawUsage));
@@ -93,6 +96,7 @@ export class NearStarsLayer {
         uniforms: {
           uColor: { value: new Vector3() }, uRadiance: { value: 1 }, uExposure: this.lightExposure, uTime: { value: 0 }, uBodyToWorld: { value: new Matrix3() },
           ...starLookUniforms(starLook('init', 5772, 1, 4.83)), uLite: LITE.uLite, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
+          uPixelSA: this.psf.uPixelSA, uDpr: this.psf.uDpr, uRadiusM: { value: 1 }, uLumpy: { value: 0 }, uClipScale: { value: 1 },
         },
       }));
       m.matrixAutoUpdate = false;
@@ -115,6 +119,10 @@ export class NearStarsLayer {
   update(cam: UPos, pixelAngle: number, time: number, viewQuat?: Q): void {
     let n = 0;
     const rel = new Vector3();
+    const dt = Math.min(Math.max(time - this.lastTime, 0), 0.25);
+    const pixelCss = Math.sqrt(this.psf.uPixelSA.value);
+    this.lastTime = time;
+    if (this.turned.size > 2000) this.turned.clear();
     for (const m of this.meshes) m.visible = false;
     for (const c of this.coronas) c.hide();
     for (const s of this.stars.slice(0, MAX)) {
@@ -144,8 +152,15 @@ export class NearStarsLayer {
         u.uRadiance.value = radiance;
         u.uTime.value = time;
         (u.uBodyToWorld.value as Matrix3).setFromMatrix4(m.matrix.clone().makeRotationFromQuaternion(q));
-        applyStarLook(u, look);
-        if (viewQuat) this.coronas[n].update(rel, s.radius, viewQuat, [c[0] / L, c[1] / L, c[2] / L], radiance * this.lightExposure.value, look, time);
+        u.uRadiusM.value = s.radius;
+        u.uClipScale.value = Math.min(1, STAR_NEAR / Math.max(d, 1));
+        const turned = (this.turned.get(s.key) ?? 0) + dt * turnShare(look, s.radius, d, pixelCss);
+        this.turned.set(s.key, turned);
+        applyStarLook(u, look, time, turned);
+        if (viewQuat) {
+          this.coronas[n].update({ rel, radius: s.radius, turn: q, look }, viewQuat, pixelCss,
+            radiance * this.lightExposure.value, time, turned);
+        }
       }
       n++;
     }
