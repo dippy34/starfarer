@@ -8,7 +8,9 @@ import { ShaderChunk } from 'three';
  * RRT matrices bleached mid-tones (Saturn's pale gold came out off-white, Mars's red as salmon).
  * Bright light still goes white, as on film and in the eye: above ~60% of display white the colour
  * is blended towards a grey of the same luminance, and a channel that would exceed the display is
- * brought in by moving towards white (keeping the luminance).
+ * brought in by moving towards white (keeping the luminance). It is brought in gradually, from
+ * 80% of the display's range on: held back only where it reaches the top, a strongly coloured
+ * glow shows the place as an edge (a red star's face came out as a pale disc inside an orange ring).
  */
 export const TONE_GLSL = /* glsl */ `
 float spToneCurve(float y) {
@@ -26,7 +28,8 @@ vec3 spTone(vec3 c) {
   vec3 o = c * (Yt / Y);
   o = mix(o, vec3(Yt), smoothstep(0.6, 1.0, Yt) * 0.6);
   float p = max(o.r, max(o.g, o.b));
-  if (p > 1.0) o = mix(o, vec3(Yt), (p - 1.0) / max(p - Yt, 1e-4));
+  // (the strongest colour goes from p to a value that only approaches 1: no change up to 0.8, no corner anywhere)
+  if (p > 0.8) o = mix(o, vec3(Yt), (p - (1.0 - 0.2 * exp(-(p - 0.8) * 5.0))) / max(p - Yt, 1e-4));
   return clamp(o, 0.0, 1.0);
 }
 `;

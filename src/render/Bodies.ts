@@ -161,6 +161,18 @@ export class BodiesLayer {
   glareOn = false;
   /** presenting to a headset (no bloom pass: the glare is all there is) */
   glareVr = false;
+  /**
+   * How much the Sun is in the frame, 1 to 0 (src/app/Exposure.ts `presence`). Glare is the Sun's
+   * light scattered in the eye: with the Sun out of the frame it fades, where it used to stay as a
+   * veil over a view the eye had already adapted to the dark for.
+   */
+  glarePresence = 1;
+  /**
+   * How much of the frame the Sun's disk takes, for the glare: 0 a small, far Sun (the glare in
+   * full), 1 a disk large enough that the eye looks at its surface (no glare: its own corona and
+   * the bloom glow round it). From the frame's shape, not from pixels: the same on every screen.
+   */
+  glareFill = 0;
   /** allow the 8k map tier (off in VR: uploading an 8k texture stalls a headset frame) */
   allowHi = true;
   /** uploads a texture to the GPU now (set by the app: renderer.initTexture) */
@@ -321,6 +333,16 @@ export class BodiesLayer {
     if (rk) this.requestRelief(rk, (mesh.material as ShaderMaterial).uniforms);
     // (each map is complete on the GPU when its promise resolves)
     for (const t of tasks) t.catch(() => undefined);
+  }
+
+  /** How strongly the Sun's glare is drawn now (0: not at all); for tests and diagnostics. */
+  get glareLevel(): number {
+    return this.glare?.visible ? ((this.glare.material as ShaderMaterial).uniforms.uIntensity.value as number) : 0;
+  }
+
+  /** The outer radius of a body's rings (m); 0 if it has none. */
+  ringOuter(b: Body): number {
+    return (this.rings_[b.name.toLowerCase()]?.outerKm ?? 0) * 1e3;
   }
 
   /** Create one of every kind of body material (planet, rings, star, glare) for shader warm-up. */
@@ -862,8 +884,8 @@ export class BodiesLayer {
     const v = this.views.get(sun);
     // (also while the Sun is only a few pixels across: that is when glare matters most; up close,
     // with the disk filling much of the view, the eye looks at the surface and the glare fades)
-    const fill = v ? Math.min(1, Math.max(0, (v.pixelRadius - 120) / 280)) : 1;
-    g.visible = this.glareOn && !!v && !!viewQuat && v.pixelRadius > 0.3 && fill < 0.999;
+    const fill = v ? this.glareFill : 1;
+    g.visible = this.glareOn && !!v && !!viewQuat && v.pixelRadius > 0.3 && fill < 0.999 && this.glarePresence > 0;
     if (!g.visible || !v || !viewQuat) return;
     const angR = Math.asin(Math.min(1, sun.radius / Math.max(v.dist, sun.radius * 1.0001)));
     const halfAng = Math.min(1.2, Math.max(angR * 14, (10 * Math.PI) / 180));
@@ -876,7 +898,7 @@ export class BodiesLayer {
     // (a smaller, farther Sun scatters less light into the eye: weaker glare from the outer planets,
     // where its point image with its halo and spikes takes over)
     const far = Math.min(1, angR / (SUN_RADIUS / AU));
-    u.uIntensity.value = (this.glareVr ? 0.9 : 0.8) * Math.min(1, diskDisplay / 2.5) * (1 - fill) * far;
+    u.uIntensity.value = (this.glareVr ? 0.9 : 0.8) * Math.min(1, diskDisplay / 2.5) * (1 - fill) * far * this.glarePresence;
     // drawn on a scaled-down copy 1e4 km from the eye (same directions and angular size): triangles
     // ~1e10 m across come out garbled in some rasterisers (as StarCorona does)
     const k = Math.min(1, 1e7 / Math.max(v.dist, 1));

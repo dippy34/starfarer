@@ -1,11 +1,14 @@
 import { OUTPUT_FRAGMENT } from './xr';
 import { STAR_LOOK_UNIFORMS } from './body';
+import { LIMB_POWER } from '../StarLook';
 
 /**
  * A star's photosphere: granulation (cellular, bright cells with dark lanes) at the star's own
  * scale, giant convection cells on supergiants, spots with umbra/penumbra in the star's active
  * latitudes, faculae brightening towards the limb, differential rotation, gravity darkening on fast
- * rotators, quadratic limb darkening, and occasional flares on active red dwarfs.
+ * rotators, limb darkening (quadratic, stronger towards the blue: the limb is redder as well as
+ * darker), and occasional flares on active red dwarfs. From afar, where the granules are far
+ * smaller than a pixel, a restless larger pattern stands in for them (uTurb; stylised).
  */
 export const STAR_FRAG = /* glsl */ `
 #include <common>
@@ -99,10 +102,24 @@ void main() {
   // giant convection cells / supergranulation (large on supergiants), visible from farther
   float bigVis = smoothstep(1.5, 5.0, cellPx * 6.0);
   gran *= 1.0 + 0.9 * uGranAmp * bigVis * (fbm3(q * max(1.6, uGranFreq * 0.12)) - 0.5);
-  // a faint large-scale mottling on every star, so a disk seen from afar is not a flat blob
-  // (white-light pictures of the Sun show little of it; this is artistic, kept subtle)
-  float mottVis = smoothstep(2.0, 8.0, cellPx * uGranFreq / 9.0);
-  gran *= 1.0 + 0.28 * mottVis * (fbm3(q * 9.0 + 41.0) - 0.5) * (uGranAmp > 0.02 ? 1.0 : 0.3);
+  // The surface from a few radii out, where the granules are far too small to see: not a flat
+  // plate but restless, brighter and darker in patches the size of supergranules and active
+  // regions, laced with a bright network, drifting and changing. (Stylised: on the real Sun this
+  // structure is the magnetic network, a few per cent in white light; a star drawn without it
+  // reads as a painted ball.) Each scale shows once the pixels resolve it.
+  float qPx = cellPx * uGranFreq;                      // pixels per radius of the star
+  float big = smoothstep(1.0, 3.0, qPx / 12.6);
+  if (uTurb > 0.0 && big > 0.0) {
+    float fine = uLite > 0.5 ? 0.0 : smoothstep(1.0, 3.0, qPx / 42.0);
+    vec3 tq = q * 6.0;
+    float tt = uTime * 0.02;
+    vec3 w1 = vec3(n3(tq * 0.7 + vec3(11.0, tt, 0.0)), n3(tq * 0.7 + vec3(37.0, 0.0, tt)), n3(tq * 0.7 + vec3(tt, 59.0, 0.0))) - 0.5;
+    float patches = fbm3(tq + 1.8 * w1) - 0.5;
+    float net = 1.0 - abs(2.0 * fbm3(tq * 1.9 + 2.0 * w1 + 5.0) - 1.0);
+    float turb = 1.0 * patches + 0.6 * (net * net - 0.42);
+    if (fine > 0.0) turb += 0.55 * fine * (fbm3(tq * 3.3 + 2.4 * w1 + 17.0) - 0.5);
+    gran *= 1.0 + uTurb * big * turb;
+  }
   // spots in the active latitudes: umbra and penumbra
   float band = exp(-pow((abs(lat) - uSpotLat) / 0.22, 2.0));
   float sf = fbm3(q * 7.0 + 31.0) * band;
@@ -112,20 +129,30 @@ void main() {
   float spot = pen * 0.45 + umb * 0.5;
   // faculae: bright network around active regions, visible towards the limb
   float fac = uFaculae * smoothstep(thr - 0.2, thr - 0.05, sf) * (1.0 - spot) * pow(1.0 - mu, 1.5) * 0.6;
-  // limb darkening (quadratic law, normalised to unit mean) and gravity darkening
+  // limb darkening and gravity darkening. The quadratic law; the light of the limb comes from
+  // higher, cooler layers, so the darkening is stronger in the blue than in the red (the Sun's
+  // limb is at 0.46 of the centre in red light, 0.22 in blue): the limb is the redder as well as
+  // the darker part. A face large in the view is drawn with it steeper than it is (to the power
+  // LIMB_POWER, the mean kept: uLimbGain): the true law does most of its darkening in the last
+  // few hundredths of the radius, and what is left of it under the glow and the display's curve
+  // is a flat plate. A small disk, shown brilliant, keeps the true law: steepened, its limb is
+  // a dark ring between its face and its glare.
   float x = 1.0 - mu;
-  float ld = (1.0 - uLimbA * x - uLimbB * x * x) / (1.0 - uLimbA / 3.0 - uLimbB / 6.0);
+  vec3 law = max(1.0 - uLimbA * vec3(0.78, 1.0, 1.32) * x - uLimbB * x * x, 0.0);
+  vec3 ld = mix(law / (1.0 - uLimbA / 3.0 - uLimbB / 6.0), uLimbGain * pow(law, vec3(${LIMB_POWER.toFixed(2)})), smoothstep(24.0, 140.0, qPx));
   float gd = 1.0 - uGravDark * (1.0 - lat * lat);
   vec3 col = uColor * ld * gd * gran * (1.0 - spot) * (1.0 + fac);
-  // cooler (redder) spots, lanes and equator; hotter cell centres a little whiter; and a redder
-  // limb (the light there comes from higher, cooler layers: limb darkening is stronger in blue)
-  float cool = clamp(spot * 1.4 + uGravDark * (1.0 - lat * lat) + (1.0 - gran) * 1.5 + 0.45 * x * x * x * x, 0.0, 1.0);
+  // cooler (redder) spots, lanes, dark patches and equator; the brightest patches a little whiter
+  float cool = clamp(spot * 1.4 + uGravDark * (1.0 - lat * lat) + (1.0 - gran) * 1.5, 0.0, 1.0);
   col *= mix(vec3(1.0), vec3(1.0, 0.72, 0.5), cool);
+  col *= mix(vec3(1.0), vec3(0.94, 1.0, 1.1), clamp((gran - 1.0) * 1.5, 0.0, 1.0));
   // shown more saturated than the blackbody's own pale tint (as photographs and the eye's
-  // impression of a star's colour are): an M star orange-red, a G star yellow-white, an O star blue
-  // (with a slight warm bias: the Sun reads yellow-white, as in photographs, not pinkish grey)
-  col *= vec3(1.0, 0.97, 0.84);
-  col = max(mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 1.4), 0.0);
+  // impression of a star's colour are): an M star orange-red, a G star yellow-white, an O star blue.
+  // Stars no bluer than white get a slight warm bias (the Sun reads yellow-white, as in
+  // photographs, not pinkish grey); the blue ones keep their blue, and are drawn a little bluer.
+  float blue = smoothstep(-0.1, 0.2, uColor.b - uColor.r);
+  col *= mix(vec3(1.0, 0.97, 0.84), vec3(1.0), blue);
+  col = max(mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 1.7 + 0.15 * blue), 0.0);
   // (the display curve keeps hues now: the blackbody colour is shown as it is, a G star white)
   // flares on active red dwarfs: a bright patch that flashes up and fades
   if (uFlares > 0.0) {

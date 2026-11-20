@@ -34,8 +34,19 @@ export class Systems {
   private named = new Map<number, number>();
   loaded = false;
 
+  /** how many stars the archive lists with planets, and how many planets in all */
+  get count(): number {
+    return this.archive.length;
+  }
+
+  get planetCount(): number {
+    return this.archive.reduce((n, s) => n + s.planets.length, 0);
+  }
+
   async load(base: string): Promise<void> {
-    const j = await fetch(`${base}/exoplanets.json`).then((r) => r.json()) as { systems: ArchiveSystem[] };
+    const res = await fetch(`${base}/exoplanets.json`);
+    if (!res.ok) throw new Error(`exoplanets.json: HTTP ${res.status}`);
+    const j = await res.json() as { systems: ArchiveSystem[] };
     this.archive = j.systems;
     this.archive.forEach((s, i) => {
       for (const n of [s.host, ...s.ids]) this.byName.set(norm(n), i);

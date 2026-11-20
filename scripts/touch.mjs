@@ -95,7 +95,7 @@ const centreOf = async (page, sel) => {
 {
   const ctx = await phoneContext(browser);
   let page = await open(ctx, '');
-  await page.waitForFunction(() => window.app && !document.querySelector('#start-menu [data-id="sim"]').disabled, null, { timeout: 600000 });
+  await page.waitForFunction(() => window.app?.frameCount > 3 && !!document.querySelector('#start-menu [data-id="sim"]') && !document.getElementById('boot'), null, { timeout: 600000 });
   await page.evaluate(inPage);
   const f = await fingers(page);
   await f.tap(await centreOf(page, '#start-menu [data-id="sim"]'));
@@ -131,7 +131,7 @@ const centreOf = async (page, sel) => {
   // a second visit does not explain again
   await page.close();
   page = await open(ctx, '');
-  await page.waitForFunction(() => window.app && !document.querySelector('#start-menu [data-id="sim"]').disabled, null, { timeout: 600000 });
+  await page.waitForFunction(() => window.app?.frameCount > 3 && !!document.querySelector('#start-menu [data-id="sim"]') && !document.getElementById('boot'), null, { timeout: 600000 });
   await page.evaluate(() => document.querySelector('#start-menu [data-id="sim"]').click());
   await page.waitForFunction(() => !document.getElementById('start-menu'), null, { timeout: 60000 });
   check('the explanation is shown only once', await page.evaluate(() => document.querySelector('.hud-coach').hidden));

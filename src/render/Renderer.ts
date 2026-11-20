@@ -6,7 +6,7 @@ import {
 import { installToneMapping, TONE_GLSL } from './shaders/tone';
 import { HITCH } from '../core/hitch';
 import { PERF } from '../perf/Perf';
-import { Governor, QUALITY, RENDER_SCALE, XR_VOLUME_FACTOR } from './Quality';
+import { Governor, QUALITY, renderScale, XR_VOLUME_FACTOR } from './Quality';
 import { OUTPUT_FRAGMENT } from './shaders/xr';
 
 /**
@@ -60,6 +60,9 @@ export const VOLUMES = {
   /** headset: half (the cost there is two eyes of full-screen marching) */
   scaleXr: 0.5,
 };
+
+/** up to this many pixels the scene is drawn with 4 samples each; above, with 2 */
+const MSAA_FULL_PIXELS = 2.4e6;
 
 export class Renderer {
   readonly gl: WebGLRenderer;
@@ -190,7 +193,9 @@ ${OUTPUT_FRAGMENT}
         uniform sampler2D tScene; uniform sampler2D tBloom; uniform float uExposure; uniform float uBloom; varying vec2 vUv;
         ${TONE_GLSL}
         vec3 toSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
-        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        // interleaved gradient noise (Jimenez 2014): even over any few pixels, and no sine (the
+        // usual sin hash comes out as a regular mesh on GPUs whose sine of a large number is coarse)
+        float hash(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
         void main() {
           vec3 hdr = min(texture2D(tScene, vUv).rgb, vec3(6.0e4)) + uBloom * min(texture2D(tBloom, vUv).rgb, vec3(6.0e4));
           vec3 c = toSRGB(spTone(hdr * uExposure));
@@ -226,8 +231,10 @@ ${OUTPUT_FRAGMENT}
 
   private makeHdrTarget(w: number, h: number): WebGLRenderTarget {
     const depthTexture = new DepthTexture(w, h, FloatType);
+    // (4 samples a pixel; 2 where the pixels are many and small: a phone's own density, where an
+    // edge's steps are a third the size and the samples' memory would be the largest thing held)
     return new WebGLRenderTarget(w, h, {
-      type: HalfFloatType, format: RGBAFormat, samples: 4, depthBuffer: true, depthTexture,
+      type: HalfFloatType, format: RGBAFormat, samples: w * h > MSAA_FULL_PIXELS ? 2 : 4, depthBuffer: true, depthTexture,
       minFilter: LinearFilter, magFilter: LinearFilter,
     });
   }
@@ -321,9 +328,14 @@ ${OUTPUT_FRAGMENT}
     try { return fn(); } finally { this.gl.setRenderTarget(was); }
   }
 
+  /** Full quality again, the frames so far forgotten (see Governor.reset): for when the loading is over. */
+  resetQuality(): void {
+    if (this.governor.reset()) this.applyQuality();
+  }
+
   /** The quality level changed (Quality.ts): a desktop renders at a scaled internal resolution. */
   private applyQuality(): void {
-    const scale = RENDER_SCALE[QUALITY.level];
+    const scale = renderScale(QUALITY.level, this.pixelRatio);
     console.info(`quality level ${QUALITY.level}${this.presenting ? ' (headset)' : `: render scale ${scale}`}`);
     if (!this.presenting && scale !== this.renderScale) {
       this.renderScale = scale;

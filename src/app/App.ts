@@ -51,17 +51,26 @@ import { CameraRig } from './CameraRig';
 import { Game } from '../game/Game';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
+import { adapt, diskLimit, diskSeen, released, seen } from './Exposure';
+import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
-import { leanDevice } from '../core/device';
+import { canvasRatio, leanDevice } from '../core/device';
 import { describe, distanceText, distanceTo, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
 import { Systems } from './Systems';
 import { VRSupport } from './VR';
 import { Walk } from './Walk';
 import { PERF } from '../perf/Perf';
 
-/** display level of a view-filling star disk (eye adaptation key), and the most a big resolved star disk is shown at */
+/**
+ * How bright a star's face is shown (its mean, before the tone curve). Small in the view it is
+ * brilliant (STAR_KEY); taking more of it, darker (down to STAR_FACE), so that the dark, red limb,
+ * the colour and the surface show: above the display's white the tone curve flattens all of
+ * them into a pale plate. STAR_CAP: the most a big resolved disk is shown at.
+ */
 const STAR_KEY = 0.9;
-const STAR_CAP = 0.8;
+const STAR_FACE = 0.52;
+const STAR_CAP = 0.7;
+const starKey = (coverage: number) => STAR_KEY + (STAR_FACE - STAR_KEY) * smoothstep(0.01, 0.2, coverage);
 const DATA = `${import.meta.env.BASE_URL}data`;
 /** catalogue stars closer than this (pc) are drawn individually by the near-star layer */
 const NEAR_STAR_RADIUS = 0.02;
@@ -69,6 +78,23 @@ const NEAR_STAR_RADIUS = 0.02;
 const COMPANION_RADIUS = 2;
 /** black holes are labelled within this distance (pc) */
 const BH_LABEL_PC = 400;
+/** how far a generated planet's rings reach, in its radii (for what counts as "in view") */
+const EXO_RING_REACH = 3;
+/** where a hole's disk is brightest, in inner radii (BlackHoleLayer.radianceAt) */
+const DISK_PEAK_RADIUS = 49 / 36;
+/**
+ * With a hole itself in the frame, how many times brighter its disk may be drawn than as a
+ * glowing surface: the side of the inner edge coming towards the eye, in its brightest streaks,
+ * is that much over the display's white, and blooms.
+ */
+const DISK_GLARE = 6;
+/** how long the start waits for each piece of the first view (ms) before going on without it */
+const FIRST_VIEW_WAIT = 12_000;
+/**
+ * The share of the sky's star regions that must be in before the start goes on. They arrive
+ * brightest first: what is still to come by then is the faintest stars, which fill in unnoticed.
+ */
+const ENOUGH_STARS = 0.65;
 /** the eye's height above the ground when standing on it (m) */
 const EYE_HEIGHT = 1.6;
 /** a double tap on the world the camera is at brings it this many times closer */
@@ -101,6 +127,13 @@ export class App {
   private nearestStarDist = Infinity;
   /** compile every shader before it is first needed (set again when VR changes tone mapping) */
   warmupPending = false;
+  /** how the start went: each piece that was loaded and what it brought */
+  loading!: LoadProgress;
+  /** settles when the Milky Way's map is in (or could not be had) */
+  private skyMap!: Promise<unknown>;
+  /** settles once the shaders compiled at the start are ready (warmUp) */
+  private shadersReady!: () => void;
+  private readonly warmed = new Promise<void>((resolve) => { this.shadersReady = resolve; });
   private fieldMinDistPc = 0;
   /** one object per catalogue star so selection, labels and near-star rendering agree */
   private starCache = new Map<string, CatalogStar>();
@@ -181,23 +214,56 @@ export class App {
     this.clock = SimClock.now();
   }
 
-  static async create(canvas: HTMLCanvasElement, hudRoot: HTMLElement, labelRoot: HTMLElement): Promise<App> {
-    const xrCapable = await VRSupport.detect();
-    const lean = leanDevice(xrCapable);
-    const renderer = new Renderer(canvas, xrCapable);
+  /**
+   * Load everything and build the app. All the downloads start at once, and each tells `progress`
+   * when it is in and what it brought (the loading screen shows that: src/ui/Splash.ts). What
+   * the explorer cannot do without (the Solar System, the stars) stops the start if it fails;
+   * the rest is done without, with a warning.
+   */
+  static async create(canvas: HTMLCanvasElement, hudRoot: HTMLElement, labelRoot: HTMLElement, progress = new LoadProgress()): Promise<App> {
     const useGaia = new URLSearchParams(location.search).get('gaia') !== '0';
     const systems = new Systems();
-    const [system, catalog, gaia, named, manifest, rings, atmoData, blackHoles] = await Promise.all([
+    const today = SimClock.now();
+    const json = async <T>(url: string): Promise<T> => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url.split('/').pop()}: HTTP ${res.status}`);
+      return res.json() as Promise<T>;
+    };
+    const without = <T>(what: string, work: Promise<T>, instead: T): Promise<T> => work.catch((e) => { console.warn(what, e); return instead; });
+    const kinds = (list: Body[], kind: string) => list.filter((b) => b.kind === kind).length;
+
+    const solar = progress.run('solar', Promise.all([
       SolarSystem.load(DATA),
+      json<ConstructorParameters<typeof BodiesLayer>[1]>(`${DATA}/textures/manifest.json`),
+      json<ConstructorParameters<typeof BodiesLayer>[4]>(`${DATA}/solar/rings.json`),
+      json<AtmosphereData>(`${DATA}/solar/atmospheres.json`),
+    ]), ([s]) => `${count(kinds(s.bodies, 'planet'), 'planet')}, ${count(kinds(s.bodies, 'moon'), 'moon')}`);
+    const stars = progress.run('stars', Promise.all([
       StarCatalog.load('athyg', `${DATA}/stars`),
       useGaia ? StarCatalog.load('gaia', `${DATA}/stars-gaia`) : Promise.resolve(null),
-      NamedStars.load(`${DATA}/stars`),
-      fetch(`${DATA}/textures/manifest.json`).then((r) => r.json()),
-      fetch(`${DATA}/solar/rings.json`).then((r) => r.json()),
-      fetch(`${DATA}/solar/atmospheres.json`).then((r) => r.json()) as Promise<AtmosphereData>,
-      loadBlackHoles(DATA).catch((e) => { console.warn('black holes', e); return [] as BlackHole[]; }),
-      systems.load(DATA).catch((e) => console.warn('exoplanets', e)),
+    ]), ([a, g]) => count(a.totalStars + (g?.totalStars ?? 0), 'star'));
+    const names = progress.run('named', NamedStars.load(`${DATA}/stars`), (n) => n.list.length.toLocaleString('en-US'));
+    const exo = progress.run('exo', without('exoplanets', systems.load(DATA), undefined),
+      () => (systems.loaded ? `${count(systems.planetCount, 'planet')} of ${count(systems.count, 'star')}` : 'not available'));
+    const deep = progress.run('deep', Promise.all([
+      without('black holes', loadBlackHoles(DATA), [] as BlackHole[]),
+      without('galaxies', loadGalaxies(DATA), [] as Galaxy[]),
+      without('deep sky', loadDeepSky(DATA), [] as DeepSkyObject[]),
+    ]), ([holes, galaxies, dso]) => `${count(holes.length, 'black hole')}, ${count(galaxies.length, 'galaxy', 'galaxies')}, ${count(dso.length, 'nebula and cluster', 'nebulae and clusters')}`);
+    const smallBodies = progress.run('small', SmallBodiesLayer.fetch(DATA), (d) => `${count(d.orbits.length / 8, 'asteroid')}, ${count(d.comets.length, 'comet')}`);
+    // (the Milky Way's map is the largest single file: it comes down beside the rest, and is waited for in firstView)
+    const sky = new SkyLayer(`${DATA}/sky/milkyway_4k.jpg`);
+    const skyMap = progress.run('sky', sky.ready, (size) => (size ? `${size.width.toLocaleString('en-US')} × ${size.height.toLocaleString('en-US')} pixels` : 'not available'));
+    // (these two need the Solar System first)
+    const spacecraft = solar.then(([s]) => progress.run('craft', without('spacecraft', loadSpacecraft(DATA, s.sun, s.byId.get(399)!), [] as Spacecraft[]), (c) => count(c.length, 'spacecraft', 'spacecraft')));
+    const positions = solar.then(([s]) => progress.run('today', Promise.resolve(s.ephemeris.request(today.jdTdb)),
+      () => new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })));
+
+    const [xrCapable, [system, manifest, rings, atmoData], [catalog, gaia], named, , [blackHoles, galaxyList, dso], smallData, craft] = await Promise.all([
+      VRSupport.detect(), solar, stars, names, exo, deep, smallBodies, spacecraft, positions,
     ]);
+    const lean = leanDevice(xrCapable);
+    const renderer = new Renderer(canvas, xrCapable);
     // Titan's visible disk is the top of its haze: shade it with the measured albedo spectrum
     // (Karkoschka 1998) rather than the Cassini near-infrared surface map.
     const spectral = (manifest as { spectralColors?: Record<string, { linearRGB: [number, number, number]; visualAlbedo: number }> }).spectralColors;
@@ -218,13 +284,14 @@ export class App {
     const small = new SmallBodiesLayer(system, starField.psf);
     const near = new NearStarsLayer(starField.psf, bodies.surfaceExposure);
     const app = new App(canvas, hudRoot, labelRoot, system, catalogs, named, starFields, bodies, orbits, small, near, renderer, systems);
+    app.loading = progress;
     systems.indexNamed(named);
     const sc = blackbodyRGB(system.sun.teff);
     const sl = luminance(sc);
     const atmospheres = new AtmospheresLayer(system, atmoData, bodies.surfaceExposure, [sc[0] / sl, sc[1] / sl, sc[2] / sl]);
     bodies.atmosphere = (b) => atmospheres.spec(b);
-    const sky = new SkyLayer(`${DATA}/sky/milkyway_4k.jpg`);
     app.sky = sky;
+    app.skyMap = skyMap;
     app.atmospheres = atmospheres;
     app.blackHoles = blackHoles;
     app.holes = new BlackHoleLayer(blackHoles, bodies.surfaceExposure, renderer.depthMode === 'reversed-z');
@@ -234,20 +301,14 @@ export class App {
     app.exo = new ExoPlanetLayer(starField.psf, bodies.surfaceExposure);
     app.exo.gl = renderer.gl;
     app.tiles = new TileDetail(`${DATA}/tiles`, lean);
-    // scanned ground materials for close-up surfaces (loaded in the background)
-    void loadMaterials(DATA, lean, (t) => { void uploadTexture(t); }).catch((e) => console.warn('materials', e));
     app.rocks = new Rocks(app.terrain, lean);
     app.terrain.source = bodies.terrainSource;
     app.cometTails = new CometTails(bodies.surfaceExposure);
-    const earthBody = system.byId.get(399)!;
-    const craft = await loadSpacecraft(DATA, system.sun, earthBody).catch((e) => { console.warn('spacecraft', e); return [] as Spacecraft[]; });
     app.craft = new SpacecraftLayer(craft, bodies.surfaceExposure, starField.psf);
-    const galaxyList = await loadGalaxies(DATA).catch((e) => { console.warn('galaxies', e); return [] as Galaxy[]; });
     // M87's light is centred on its black hole
     const m87 = galaxyList.find((g) => g.name === 'M87'), m87bh = blackHoles.find((b) => b.name === 'M87*');
     if (m87 && m87bh) m87.upos.copy(m87bh.upos);
     app.galaxies = new GalaxiesLayer(galaxyList, starField.psf, lean);
-    const dso = await loadDeepSky(DATA).catch((e) => { console.warn('deep sky', e); return [] as DeepSkyObject[]; });
     app.deepSky = new DeepSkyLayer(dso, starField.psf, starField.colorLut, lean);
     // [catalog] real objects to search and visit; picked ones join the layers above
     app.objCatalog = new Catalog(`${DATA}/catalog`, {
@@ -261,8 +322,7 @@ export class App {
     const mw = new URLSearchParams(location.search).get('mw');
     if (mw !== null) sky.brightness = Number(mw);
     renderer.scene.add(sky.mesh, bodies.group, atmospheres.group, orbits.group, small.group, near.group, app.holes.group, app.jets.group, app.procStars.group, app.exo.group, app.terrain.group, app.rocks.group, app.mwVolume.mesh, app.cometTails.group, app.craft.group, app.galaxies.group, app.deepSky.group, ...starFields.map((f) => f.group));
-    await small.load(DATA);
-    await system.ephemeris.request(app.clock.jdTdb);
+    small.build(smallData);
     app.lean = lean;
     app.vr = new VRSupport(app, xrCapable, DATA);
     app.game = new Game(app);
@@ -276,11 +336,73 @@ export class App {
     app.applyUrl();
     app.bindKeys();
     window.addEventListener('resize', () => app.resize());
+    return app;
+  }
+
+  /**
+   * The first view, ready to be looked at: the Milky Way's map, the maps of the world the view
+   * starts at, the shaders compiled, and the stars of the sky around (all but the faintest) in.
+   * The frames must be running already (start()): they are what asks for all of this. Each piece
+   * is waited for FIRST_VIEW_WAIT at most: on a slow line the explorer starts with the rest
+   * still arriving, as it always could.
+   */
+  async firstView(progress: LoadProgress): Promise<void> {
+    const started = performance.now();
+    const late = () => performance.now() - started > FIRST_VIEW_WAIT;
+    /** wait for `frames` more frames to be drawn (or for time to be up) */
+    const drawn = (frames: number) => new Promise<void>((resolve) => {
+      const until = this.frameCount + frames;
+      const poll = () => (this.frameCount >= until || late() ? resolve() : void setTimeout(poll, 30));
+      poll();
+    });
+    const givenUp = new Promise<null>((resolve) => setTimeout(resolve, FIRST_VIEW_WAIT, null));
+
+    const shaders = progress.run('shaders', Promise.race([this.warmed, givenUp]),
+      () => count(this.renderer.gl.info.programs?.length ?? 0, 'shader'));
+
+    // the maps of the world in view (and whatever else the first frames ask for)
+    const at = this.rig.target instanceof Body && this.bodies.textureKey(this.rig.target) ? this.rig.target : null;
+    if (at) progress.begin('world', `Maps of ${at.name}`);
+    const world = progress.run('world', async () => {
+      const before = UPLOADS.maps;
+      await drawn(3);
+      for (let quiet = 0; quiet < 3 && !late();) {
+        quiet = UPLOADS.idle ? quiet + 1 : 0;
+        await drawn(1);
+      }
+      return UPLOADS.maps - before;
+    }, (maps) => (UPLOADS.loading > 0 ? `${count(maps, 'map')}, ${UPLOADS.loading} more on the way` : maps ? count(maps, 'map') : ''));
+
+    // the stars the sky here is made of: the catalogue's regions arrive brightest first
+    const field = progress.run('field', async () => {
+      const waiting = () => this.catalogs.reduce((n, c) => n + c.pending, 0);
+      const loaded = () => this.catalogs.reduce((n, c) => n + c.loadedStars, 0);
+      await drawn(3);
+      let most = 0;
+      for (let quiet = 0; quiet < 3 && !late();) {
+        const w = waiting();
+        most = Math.max(most, w);
+        const share = most > 0 ? 1 - w / most : 1;
+        quiet = share >= ENOUGH_STARS ? quiet + 1 : 0;
+        if (most > 0) progress.advance('field', share / ENOUGH_STARS, count(loaded(), 'star'));
+        await drawn(1);
+      }
+      return loaded();
+    }, (n) => count(n, 'star'));
+
+    await Promise.all([Promise.race([this.skyMap, givenUp]), shaders, world, field]);
+    // (the frames drawn while all that arrived were slow for reasons that are over now)
+    this.renderer.resetQuality();
+  }
+
+  /** What can wait until the explorer is on the screen: the close-up ground, the lists' pictures. */
+  afterStart(): void {
+    // scanned ground materials for close-up surfaces
+    void loadMaterials(DATA, this.lean, (t) => { void uploadTexture(t); }).catch((e) => console.warn('materials', e));
     // photographs of the worlds for the lists (the lists show plain discs until they arrive)
     void fetch(`${DATA}/textures/thumbs.json`).then((r) => r.json())
-      .then((t: { cols: number; rows: number; bodies: Record<string, [number, number]> }) => app.hud.setThumbs({ url: `${DATA}/textures/thumbs.jpg`, ...t }))
+      .then((t: { cols: number; rows: number; bodies: Record<string, [number, number]> }) => this.hud.setThumbs({ url: `${DATA}/textures/thumbs.jpg`, ...t }))
       .catch((e) => console.warn('thumbnails', e));
-    return app;
   }
 
   // ------------------------------------------------------------------ setup
@@ -292,7 +414,7 @@ export class App {
     this.rig.viewport.height = this.cssH;
     // what the camera is aimed at sits in the room the interface leaves (an upright phone: above the card)
     this.rig.aim = this.hud.subjectLift() * this.rig.pixelAngle;
-    this.renderer.setSize(this.cssW, this.cssH, Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setSize(this.cssW, this.cssH, canvasRatio(window.devicePixelRatio || 1, this.cssW, this.cssH));
   }
 
   private applyUrl(): void {
@@ -654,7 +776,7 @@ export class App {
     for (const o of objs) o.visible = true;
     // (into the HDR target the scene is drawn to: programs differ per output target)
     HITCH.markWarm(false);
-    void this.renderer.withSceneTarget(() => this.renderer.gl.compileAsync(this.renderer.scene, this.renderer.camera)).catch(() => undefined).finally(() => HITCH.markWarm());
+    void this.renderer.withSceneTarget(() => this.renderer.gl.compileAsync(this.renderer.scene, this.renderer.camera)).catch(() => undefined).finally(() => { HITCH.markWarm(); this.shadersReady(); });
     this.galaxy.compile(this.renderer.gl);
     objs.forEach((o, i) => { o.visible = was[i]; });
   }
@@ -1244,167 +1366,136 @@ export class App {
     return (0.6 * sunIrradianceAt(Math.max(sat.pos.distanceTo(this.system.sun.pos), 1))) / Math.PI;
   }
 
-  private bigCoverage(rel: Vector3, radius: number): number {
-    const d = rel.length();
-    const ar = Math.asin(Math.min(1, radius / Math.max(d, radius)));
-    if (ar < 0.35) return 0;
-    const th = rel.angleTo(new Vector3(0, 0, -1).applyQuaternion(this.view.quat));
-    const hv = (this.view.fovY * Math.PI) / 360;
-    return Math.max(0, Math.min(1, (ar + hv - th) / (2 * hv)));
-  }
-
   /** A body's albedo for the exposure: near its ground, the eye adapts to the ground around (TerrainPatch.exposureAlbedo). */
   private surfaceAlbedo(b: Body): number {
     return this.terrain.owner === b ? this.terrain.exposureAlbedo(b.albedo) : b.albedo;
   }
 
+  private seenScratch = new Vector3();
+
+  /**
+   * The exposures of this frame: `xSurf` for surfaces, `xStar` for the stars and what glows among
+   * them, the limiting magnitude that goes with it, and `xDark`, the exposure of an eye in the dark.
+   *
+   * The eye settles on the largest bright thing in view (a sunlit world at mid-grey, a star's or a
+   * hot disk's face brighter), and nothing in view is shown brighter than its limit. "In view" is
+   * measured by how much of the thing is in the frame (src/app/Exposure.ts), so the limits let go
+   * gradually as it leaves, and the eye opens up slowly and shuts quickly (adapt).
+   */
   private updateExposure(dt: number): { xStar: number; xSurf: number; mLim: number; xDark: number } {
     const pixSA = (this.view.pixelAngle * this.view.pixelRatio) ** 2; // per CSS pixel
     const xDark = (0.01 * pixSA) / magToIrradiance(this.starMagLimit);
-    let wBest = 0;
-    let lBest = 1;
-    // display level the eye settles a view-filling disk at: mid-grey for a lit surface, bright for
-    // a self-luminous one (a star's or an accretion disk's)
-    let keyBest = 0.45;
-    const screen = this.view.width * this.view.height;
-    for (const v of this.bodies.views.values()) {
-      if (!v.resolved || v.pixelRadius < 2) continue;
-      let coverage = this.bigCoverage(v.rel, v.body.radius);
-      if (coverage === 0) {
-        const p = this.project(v.rel);
-        if (!p) continue;
-        const pr = v.pixelRadius / this.view.pixelRatio;
-        if (p.x < -pr || p.y < -pr || p.x > this.view.width + pr || p.y > this.view.height + pr) continue;
-        coverage = Math.min(1, (Math.PI * pr * pr) / screen);
-      }
+    const open = Math.log(xDark);
+    const look = (rel: Vector3, radius: number) => seen(rel, radius, this.view, this.seenScratch, this.invQuat);
+    // what the eye settles on: the bright thing covering most of the frame, its radiance, and the
+    // display level a frame-filling one is shown at
+    let wBest = 0, lBest = 1, keyBest = 0.45;
+    const settle = (coverage: number, radiance: number, key: number) => {
       const w = smoothstep(0.0015, 0.08, coverage);
-      if (w <= wBest) continue;
+      if (w > wBest && radiance > 0) { wBest = w; lBest = radiance; keyBest = key; }
+    };
+    // the limits (log exposure): a lit surface holds the surface exposure down, a sun or a
+    // daylit sky the stars' too
+    let surfaceLimit = Infinity, lightLimit = Infinity;
+    const limitSurface = (level: number, radiance: number, presence: number) => {
+      if (radiance > 0) surfaceLimit = Math.min(surfaceLimit, released(Math.log(level / radiance), open, presence));
+    };
+    const limitLight = (level: number, radiance: number, presence: number) => {
+      if (radiance > 0) lightLimit = Math.min(lightLimit, released(Math.log(level / radiance), open, presence));
+    };
+    const litBy = (distToSun: number, albedo: number) => (albedo * sunIrradianceAt(Math.max(distToSun, 1))) / Math.PI;
+
+    for (const v of this.bodies.views.values()) {
+      if (!v.resolved || v.pixelRadius <= 1.5) continue;
       const b = v.body;
-      const L = b.kind === 'star'
-        ? (AU / SUN_RADIUS) ** 2
-        : ((Math.min(1, 1.5 * this.surfaceAlbedo(b)) * sunIrradianceAt(Math.max(b.pos.distanceTo(this.system.sun.pos), 1))) / Math.PI) * (this.bodies.sunlit.get(b) ?? 1);
-      wBest = w;
-      lBest = L;
-      keyBest = b.kind === 'star' ? STAR_KEY * (1 - 0.15 * smoothstep(0.3, 0.9, coverage)) : 0.45;
+      const s = look(v.rel, b.radius);
+      if (b.kind === 'star') {
+        const L = (AU / SUN_RADIUS) ** 2;
+        if (v.pixelRadius >= 2) settle(s.coverage, L, starKey(s.coverage));
+        // a small Sun is shown glaring; a disk big enough to have a face, under the display's white (as other stars' are, below)
+        limitLight(1.8 + (STAR_CAP - 1.8) * smoothstep(12, 90, v.pixelRadius / this.view.pixelRatio), L, s.presence);
+        continue;
+      }
+      const L = litBy(b.pos.distanceTo(this.system.sun.pos), Math.min(1, 1.5 * this.surfaceAlbedo(b))) * (this.bodies.sunlit.get(b) ?? 1);
+      if (v.pixelRadius >= 2) settle(s.coverage, L, 0.45);
+      // (its rings shine as it does, and reach well beyond the disc)
+      const rings = this.bodies.ringOuter(b);
+      limitSurface(1.6, L, rings > 0 ? Math.max(s.presence, look(v.rel, rings).presence) : s.presence);
     }
     for (const cv of this.craft.views) {
-      if (cv.pixelRadius < 2) continue;
-      const p = this.project(cv.rel);
-      const pr = cv.pixelRadius / this.view.pixelRatio;
-      if (!p || p.x < -pr || p.y < -pr || p.x > this.view.width + pr || p.y > this.view.height + pr) continue;
-      const w = smoothstep(0.0015, 0.08, Math.min(1, (Math.PI * pr * pr) / screen));
-      const L = (0.6 * sunIrradianceAt(Math.max(cv.craft.upos.sub(this.system.sun.upos, new Vector3()).length(), 1))) / Math.PI;
-      if (w > wBest) { wBest = w; lBest = L; keyBest = 0.45; }
+      if (cv.pixelRadius <= 1.5) continue;
+      const s = look(cv.rel, cv.craft.radius);
+      const L = litBy(cv.craft.upos.sub(this.system.sun.upos, new Vector3()).length(), 0.6);
+      if (cv.pixelRadius >= 2) settle(s.coverage, L, 0.45);
+      limitSurface(1.6, L, s.presence);
     }
-    const nv = this.cometTails.nucleusView;
-    if (nv) {
-      const p = this.project(nv.rel);
-      const pr = Math.asin(Math.min(1, nv.radius / Math.max(nv.rel.length(), nv.radius))) / this.view.pixelAngle / this.view.pixelRatio;
-      if (p && pr > 2) {
-        const w = smoothstep(0.0015, 0.08, Math.min(1, (Math.PI * pr * pr) / screen));
-        if (w > wBest) { wBest = w; lBest = nv.radiance; keyBest = 0.45; }
-      }
+    const nucleus = this.cometTails.nucleusView;
+    if (nucleus) {
+      const s = look(nucleus.rel, nucleus.radius);
+      if (s.size / this.view.pixelAngle / this.view.pixelRatio > 2) settle(s.coverage, nucleus.radiance, 0.45);
+      // (a comet nucleus is very dark rock: shown grey, not as bright as a planet's disc)
+      limitSurface(1.0, nucleus.radiance, s.presence);
     }
     for (const ev of this.exo.views) {
-      if (ev.pixelRadius < 2) continue;
-      // close up (or standing on it) the disk fills the view from off-screen
-      let coverage = this.bigCoverage(ev.rel, ev.planet.radius);
-      if (coverage === 0) {
-        const p = this.project(ev.rel);
-        const pr = ev.pixelRadius / this.view.pixelRatio;
-        if (!p || p.x < -pr || p.y < -pr || p.x > this.view.width + pr || p.y > this.view.height + pr) continue;
-        coverage = Math.min(1, (Math.PI * pr * pr) / screen);
-      }
-      const w = smoothstep(0.0015, 0.08, coverage);
-      if (w > wBest && ev.radiance > 0) { wBest = w; lBest = ev.radiance; keyBest = 0.45; }
+      if (ev.pixelRadius <= 1.5 || ev.radiance <= 0) continue;
+      const s = look(ev.rel, ev.planet.radius);
+      if (ev.pixelRadius >= 2) settle(s.coverage, ev.radiance, 0.45);
+      limitSurface(1.6, ev.radiance, ev.planet.spec.rings ? Math.max(s.presence, look(ev.rel, ev.planet.radius * EXO_RING_REACH).presence) : s.presence);
     }
     // inside Saturn's rings the ice around the explorer is a lit surface filling much of the view
     const ringL = this.ringRadiance();
     if (ringL > 0) {
-      const w = smoothstep(0.0015, 0.08, 0.12);
-      if (w > wBest) { wBest = w; lBest = ringL; keyBest = 0.45; }
+      settle(0.12, ringL, 0.45);
+      limitSurface(1.6, ringL, 1);
     }
     for (const hv of this.holes.views) {
       if (!hv.diskRadiance) continue;
-      const p = this.project(hv.rel);
-      const pr = hv.innerDiskPx / this.view.pixelRatio;
-      if (!p || p.x < -pr || p.y < -pr || p.x > this.view.width + pr || p.y > this.view.height + pr) continue;
-      const w = smoothstep(0.0015, 0.08, Math.min(1, (Math.PI * pr * pr) / screen));
-      if (w > wBest) { wBest = w; lBest = hv.diskRadiance; keyBest = 0.8; }
+      // A disk is brightest at its inner edge and fades outwards, and its centre is often out of
+      // frame while the disk fills it: the eye is set by the brightest part that is in view.
+      // Close to the hole its gravity wraps the disk's picture round it: there it is measured
+      // as a ball, out to four times the radius of the brightest part in view.
+      const whole = look(hv.rel, hv.bh.diskOuter);
+      const peak = hv.bh.diskInner * DISK_PEAK_RADIUS;
+      const nearest = Math.max(peak, hv.dist * Math.sin(Math.min(Math.PI / 2, Math.max(0, whole.angle - whole.halfFrame))));
+      // The inner edge is shown glaring (it blooms): with the hole itself in the frame, the eye is set for that.
+      const glare = smoothstep(3, 1, nearest / peak);
+      // Away from the hole the disk is flat, and from within its own radius it lies all round
+      // the eye: whichever part of it is in the frame holds the exposure, from any side, and
+      // is shown as a glowing surface, under the display's white.
+      const flat = diskSeen(hv.rel, hv.bh.diskNormal, hv.bh.diskInner, hv.bh.diskOuter, this.view, this.invQuat);
+      surfaceLimit = Math.min(surfaceLimit, diskLimit(flat, (r, approach) => this.holes.shownAt(hv.bh, r, approach), 0.9 * (1 + DISK_GLARE * glare), open));
+      const L = this.holes.radianceAt(hv.bh, nearest);
+      const bright = look(hv.rel, Math.min(4 * nearest, hv.bh.diskOuter));
+      if (bright.size / this.view.pixelAngle / this.view.pixelRatio <= 1.5) continue;
+      settle(bright.coverage, L, 0.8);
+      // (a hot inner disk only takes over the eye once it covers part of the view)
+      limitSurface((0.9 + 1.1 * glare) / Math.max(smoothstep(0.0015, 0.08, bright.coverage), 1e-6), L, whole.presence);
     }
-    for (const s of this.near.stars) {
-      const rel = s.upos.sub(this.rig.upos, new Vector3());
+    // (unresolved point sources never drive the exposure: their displayed glare is capped in the PSF)
+    for (const st of this.near.stars) {
+      const rel = st.upos.sub(this.rig.upos, new Vector3());
       const d = rel.length();
-      const pr = Math.asin(Math.min(1, s.radius / d)) / this.view.pixelAngle / this.view.pixelRatio;
-      const coverage = Math.min(1, (Math.PI * pr * pr) / screen);
-      const w = smoothstep(0.0015, 0.08, coverage);
-      if (w > wBest && this.project(rel)) {
-        wBest = w;
-        lBest = (magToIrradiance(s.absMag + 5 * Math.log10(d / PC) - 5) * d * d) / (Math.PI * s.radius * s.radius);
-        // a disk filling the view is shown a little darker, so its surface keeps its contrast and
-        // colour below the tone curve's shoulder
-        keyBest = STAR_KEY * (1 - 0.15 * smoothstep(0.3, 0.9, coverage));
-      }
-    }
-    const lx = Math.log(xDark);
-    let target = wBest > 0 ? Math.min(lx, lx + (Math.log(keyBest / lBest) - lx) * wBest) : lx;
-    // Eye adaptation to the brightest resolved disk in view: a planet disk should stay below ~1.6
-    // (bright but not washed out) and only limits surface exposure; a resolved star disk dims everything.
-    let diskCap = Infinity;
-    let lightCap = Infinity;
-    const margin = 40;
-    const onScreen = (rel: Vector3) => {
-      const p = this.project(rel);
-      return !!p && p.x > -margin && p.y > -margin && p.x < this.view.width + margin && p.y < this.view.height + margin;
-    };
-    for (const v of this.bodies.views.values()) {
-      if (!v.resolved || v.pixelRadius <= 1.5 || (!onScreen(v.rel) && this.bigCoverage(v.rel, v.body.radius) < 0.02)) continue;
-      const b = v.body;
-      if (b.kind === 'star') lightCap = Math.min(lightCap, 1.8 / (AU / SUN_RADIUS) ** 2);
-      else diskCap = Math.min(diskCap, 1.6 / (((Math.min(1, 1.5 * this.surfaceAlbedo(b)) * sunIrradianceAt(Math.max(b.pos.distanceTo(this.system.sun.pos), 1))) / Math.PI) * (this.bodies.sunlit.get(b) ?? 1)));
-    }
-    for (const cv of this.craft.views) {
-      if (cv.pixelRadius <= 1.5 || !onScreen(cv.rel)) continue;
-      diskCap = Math.min(diskCap, 1.6 / ((0.6 * sunIrradianceAt(Math.max(cv.craft.upos.sub(this.system.sun.upos, new Vector3()).length(), 1))) / Math.PI));
-    }
-    const nuc = this.cometTails.nucleusView;
-    // (a comet nucleus is very dark rock: shown grey, not as bright as a planet disk)
-    if (nuc && onScreen(nuc.rel)) diskCap = Math.min(diskCap, 1.0 / nuc.radiance);
-    for (const ev of this.exo.views) {
-      if (ev.pixelRadius <= 1.5 || ev.radiance <= 0 || (!onScreen(ev.rel) && this.bigCoverage(ev.rel, ev.planet.radius) < 0.02)) continue;
-      diskCap = Math.min(diskCap, 1.6 / ev.radiance);
-    }
-    if (ringL > 0) diskCap = Math.min(diskCap, 1.6 / ringL);
-    for (const hv of this.holes.views) {
-      // a hot inner disk only takes over the eye's adaptation once it covers part of the view
-      if (!hv.diskRadiance || hv.innerDiskPx <= 1.5 || !onScreen(hv.rel)) continue;
-      const pr = hv.innerDiskPx / this.view.pixelRatio;
-      const w = smoothstep(0.0015, 0.08, Math.min(1, (Math.PI * pr * pr) / screen));
-      diskCap = Math.min(diskCap, 2 / (hv.diskRadiance * Math.max(w, 1e-6)));
-    }
-    // Unresolved point sources never drive the exposure (their displayed glare is capped in the PSF).
-    for (const s of this.near.stars) {
-      const rel = s.upos.sub(this.rig.upos, new Vector3());
-      if (!onScreen(rel)) continue;
-      const d = rel.length();
-      const pr = Math.asin(Math.min(1, s.radius / d)) / this.view.pixelAngle;
-      if (pr <= 1.5) continue;
-      const E = magToIrradiance(s.absMag + 5 * Math.log10(d / PC) - 5);
+      const s = look(rel, st.radius);
+      const L = (magToIrradiance(st.absMag + 5 * Math.log10(d / PC) - 5) * d * d) / (Math.PI * st.radius * st.radius);
+      settle(s.coverage, L, starKey(s.coverage));
+      const px = s.size / this.view.pixelAngle;
+      if (px <= 1.5) continue;
       // a small star disk is shown bright (~1.4); a big one below the display's white, so its colour,
       // limb and surface show instead of a white blob
-      const cap = 1.4 + (STAR_CAP - 1.4) * smoothstep(12, 90, pr / this.view.pixelRatio);
-      lightCap = Math.min(lightCap, cap / ((E * d * d) / (Math.PI * s.radius * s.radius)));
+      limitLight(1.4 + (STAR_CAP - 1.4) * smoothstep(12, 90, px / this.view.pixelRatio), L, s.presence);
     }
     // under a daytime sky the eye adapts to the sky: the stars fade out
     const sky = this.skyRadiance();
-    if (sky > 0) lightCap = Math.min(lightCap, 1.2 / sky);
-    target = Math.min(target, Math.log(diskCap), Math.log(lightCap));
-    if (this.frameCount < 3) this.logExposure = target;
-    this.logExposure += (target - this.logExposure) * (1 - Math.exp(-dt * 2.5));
+    if (sky > 0) lightLimit = Math.min(lightLimit, Math.log(1.2 / sky));
+
+    const settled = wBest > 0 ? Math.min(open, open + (Math.log(keyBest / lBest) - open) * wBest) : open;
+    const target = Math.min(settled, surfaceLimit, lightLimit);
+    const first = this.frameCount < 3;
+    this.logExposure = first ? target : adapt(this.logExposure, target, dt);
     const xSurf = Math.exp(this.logExposure);
-    // Stars keep a floor exposure (artistic, SpaceEngine-like) unless a star/the Sun is in view.
-    this.logStarCap += (Math.log(Math.min(lightCap, 1e30)) - this.logStarCap) * (1 - Math.exp(-dt * 2.5));
-    if (this.frameCount < 3) this.logStarCap = Math.log(Math.min(lightCap, 1e30));
+    // Stars keep a floor exposure (artistic, SpaceEngine-like) unless a star or a daylit sky is in view.
+    const starTarget = Math.min(lightLimit, open);
+    this.logStarCap = first ? starTarget : adapt(this.logStarCap, starTarget, dt);
     const xStar = Math.max(xSurf, Math.min(xDark * this.starFloor, Math.exp(this.logStarCap)));
     const minEnergy = this.starFields[0].psf.uMinEnergy.value;
     const mLim = irradianceToMag((minEnergy * pixSA) / xStar);
@@ -1929,6 +2020,11 @@ export class App {
     // the Sun's glare (the desktop bloom alone leaves a resolved Sun a bare dot)
     this.bodies.glareOn = true;
     this.bodies.glareVr = this.vr.active;
+    const sunSeen = seen(this.system.sun.upos.sub(this.rig.upos, this.seenScratch), this.system.sun.radius, this.view, new Vector3(), this.invQuat);
+    this.bodies.glarePresence = sunSeen.presence;
+    // (the glare is a far-off Sun's: once its disk takes a twelfth of the frame's half-width it fades, gone by a third)
+    const halfY = (this.view.fovY * Math.PI) / 360;
+    this.bodies.glareFill = smoothstep(0.08, 0.35, sunSeen.size / Math.min(halfY, Math.atan(Math.tan(halfY) * this.view.aspect)));
     this.bodies.allowHi = !this.vr.active && !this.lean;
     this.bodies.update(this.rig.upos, pixelAngle, dt, this.view.quat);
     HITCH.lap('bodies');
@@ -1992,8 +2088,12 @@ export class App {
     const dpr = this.view.pixelRatio;
     psf.uPixelSA.value = (this.view.pixelAngle * dpr) ** 2;
     psf.uDpr.value = dpr;
-    // a headset's pixels are large and the head never still: slightly wider cores keep faint stars from shimmering
-    if (psf.uMinSigma) psf.uMinSigma.value = this.vr.active ? 0.8 : 0.6;
+    // The narrowest star is half a pixel of the screen wide, whatever the screen's density: a
+    // sharp point on each. (A headset's pixels are large and the head never still: wider there.)
+    // Its light is what a star 0.6 px wide had on the display: the faint stars are as bright as
+    // they were, in less room.
+    psf.uMinSigma.value = this.vr.active ? 0.8 : 0.5 / dpr;
+    psf.uPointLight.value = this.vr.active ? 1.41 : 0.79;
     this.bodies.surfaceExposure.value = xSurf;
     for (const c of this.catalogs) c.update(this.camPc, mLim, this.fieldMinDistPc);
     HITCH.lap('catalogs');
@@ -2147,6 +2247,7 @@ export class App {
       pendingTiles: this.catalogs.reduce((a, c) => a + c.pending, 0),
       exposure: this.bodies.surfaceExposure.value,
       starExposure: this.starFields[0].psf.uExposure.value,
+      glare: this.bodies.glareLevel,
       mLim: this.lastMLim,
       depthMode: this.renderer.depthMode,
       usingDE: this.system.usingDE,

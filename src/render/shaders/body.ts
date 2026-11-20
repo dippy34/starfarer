@@ -627,121 +627,32 @@ uniform float uGravDark;
 uniform vec3 uAxis;
 uniform float uFlares;
 uniform float uFlat;       // polar flattening of the drawn ellipsoid (fast rotators)
+uniform float uTurb;       // strength of the restless large-scale pattern seen from afar
+uniform float uLimbGain;   // keeps the disk's mean brightness under the steepened limb darkening
 `;
 
-/**
- * A star's photosphere: granulation (cellular, bright cells with dark lanes) at the star's own
- * scale, giant convection cells on supergiants, spots with umbra/penumbra in the star's active
- * latitudes, faculae brightening towards the limb, differential rotation, gravity darkening on fast
- * rotators, quadratic limb darkening, and occasional flares on active red dwarfs.
- */
-export const STAR_FRAG = /* glsl */ `
-#include <common>
-#include <logdepthbuf_pars_fragment>
-uniform vec3 uColor;        // luminance-normalised blackbody colour
-uniform float uRadiance;    // mean disk radiance (photometric units)
-uniform float uExposure;
-uniform float uTime;
-uniform mat3 uBodyToWorld;
-${STAR_LOOK_UNIFORMS}
-varying vec3 vNormalBF;
-varying vec3 vPosView;
-varying vec2 vUv;
-float h3(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
-vec3 h33(vec3 p) {
-  p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
-  return fract(sin(p) * 43758.5453123);
-}
-float n3(vec3 p) {
-  vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
-             mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z);
-}
-// cellular noise: x = distance to the nearest cell centre, y = to the second nearest
-vec2 cells(vec3 p) {
-  vec3 i = floor(p), f = fract(p);
-  float d1 = 9.0, d2 = 9.0;
-  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {
-    vec3 g = vec3(float(x), float(y), float(z));
-    vec3 o = h33(i + g);
-    float d = length(g + o - f);
-    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
-  }
-  return vec2(d1, d2);
-}
-float fbm3(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.1 + 7.0) + 0.15 * n3(p * 4.3 + 13.0); }
-vec3 rotateAbout(vec3 v, vec3 k, float a) { float c = cos(a), s = sin(a); return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c); }
-
-void main() {
-  vec3 nW = normalize(uBodyToWorld * vNormalBF);
-  vec3 V = normalize(-vPosView);
-  float mu = clamp(dot(nW, V), 0.0, 1.0);
-  // surface coordinates rotating with the star (equator faster: differential rotation)
-  float lat = dot(vNormalBF, uAxis);
-  vec3 q = rotateAbout(normalize(vNormalBF), uAxis, -uRotRate * uTime * (1.0 - 0.25 * lat * lat)) + uSeed;
-  // granulation: bright cell centres, dark intergranular lanes, slowly evolving. Cells are warped
-  // so they are irregular, and fade out once they are smaller than a pixel (no moiré).
-  vec3 gp = q * uGranFreq;
-  float cellPx = 1.0 / max(length(fwidth(gp)), 1e-6);           // pixels per cell
-  float gVis = smoothstep(1.5, 5.0, cellPx);
-  vec3 warp = vec3(n3(gp * 0.35 + 5.0), n3(gp * 0.35 + 17.0), n3(gp * 0.35 + 29.0)) - 0.5;
-  vec2 c = cells(gp + warp * 0.9 + vec3(0.0, 0.0, uTime * 0.03));
-  // few, huge cells (supergiants) have broad, soft lanes; many small cells (dwarfs) sharp ones
-  float soft = smoothstep(60.0, 6.0, uGranFreq);
-  float lanes = smoothstep(0.02, 0.28 + 0.2 * n3(gp * 0.5) + 0.5 * soft, c.y - c.x);
-  float blob = 1.0 - smoothstep(0.0, 0.75 + 0.4 * soft, c.x);   // bright cell centres
-  float gran = 1.0 + uGranAmp * gVis * (mix(lanes * 0.9 + blob * 0.5, lanes * 0.35 + blob * 1.1 + 0.6 * (fbm3(gp * 1.7) - 0.5), soft) - 0.8);
-  // giant convection cells / supergranulation (large on supergiants), visible from farther
-  float bigVis = smoothstep(1.5, 5.0, cellPx * 6.0);
-  gran *= 1.0 + 0.9 * uGranAmp * bigVis * (fbm3(q * max(1.6, uGranFreq * 0.12)) - 0.5);
-  // a faint large-scale mottling on every star, so a disk seen from afar is not a flat blob
-  // (white-light pictures of the Sun show little of it; this is artistic, kept subtle)
-  float mottVis = smoothstep(2.0, 8.0, cellPx * uGranFreq / 9.0);
-  gran *= 1.0 + 0.18 * mottVis * (fbm3(q * 9.0 + 41.0) - 0.5) * (uGranAmp > 0.02 ? 1.0 : 0.3);
-  // spots in the active latitudes: umbra and penumbra
-  float band = exp(-pow((abs(lat) - uSpotLat) / 0.22, 2.0));
-  float sf = fbm3(q * 7.0 + 31.0) * band;
-  float thr = 1.0 - clamp(uSpots * 2.2, 0.0, 0.95);
-  float pen = smoothstep(thr - 0.06, thr, sf);
-  float umb = smoothstep(thr + 0.03, thr + 0.08, sf);
-  float spot = pen * 0.45 + umb * 0.5;
-  // faculae: bright network around active regions, visible towards the limb
-  float fac = uFaculae * smoothstep(thr - 0.2, thr - 0.05, sf) * (1.0 - spot) * pow(1.0 - mu, 1.5) * 0.6;
-  // limb darkening (quadratic law, normalised to unit mean) and gravity darkening
-  float x = 1.0 - mu;
-  float ld = (1.0 - uLimbA * x - uLimbB * x * x) / (1.0 - uLimbA / 3.0 - uLimbB / 6.0);
-  float gd = 1.0 - uGravDark * (1.0 - lat * lat);
-  vec3 col = uColor * ld * gd * gran * (1.0 - spot) * (1.0 + fac);
-  // cooler (redder) spots, lanes and equator; hotter cell centres a little whiter; and a redder
-  // limb (the light there comes from higher, cooler layers: limb darkening is stronger in blue)
-  float cool = clamp(spot * 1.4 + uGravDark * (1.0 - lat * lat) + (1.0 - gran) * 1.5 + 0.7 * x * x, 0.0, 1.0);
-  col *= mix(vec3(1.0), vec3(1.0, 0.78, 0.6), cool);
-  // shown a little more saturated than the blackbody (bright disks otherwise wash out to white)
-  col = max(mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 1.6), 0.0);
-  // flares on active red dwarfs: a bright patch that flashes up and fades
-  if (uFlares > 0.0) {
-    float epoch = floor(uTime / 23.0);
-    if (h3(vec3(epoch, uSeed, 3.0)) < uFlares * 2.0) {
-      vec3 fp = normalize(h33(vec3(epoch, uSeed, 7.0)) * 2.0 - 1.0);
-      float age = fract(uTime / 23.0) * 23.0;
-      float f = exp(-age / 3.0) * smoothstep(0.0, 0.5, age) * 4.0;
-      col += vec3(0.9, 0.95, 1.0) * f * exp(-pow(length(normalize(vNormalBF) - fp) / 0.08, 2.0));
-    }
-  }
-  gl_FragColor = vec4(min(col * uRadiance * uExposure, vec3(6.0e4)), 1.0);
-${OUTPUT_FRAGMENT}
-  #include <logdepthbuf_fragment>
-}`;
-
-/** Camera-facing corona around a resolved star: inner glow, streamers, prominences. */
 export const CORONA_VERT = /* glsl */ `
 #include <common>
 #include <logdepthbuf_pars_vertex>
 ${PROJECT_PARS}
+uniform float uCopy;      // the quad is on a copy of the star this many times nearer the eye (StarCorona), and
+uniform float uRadiusM;   // the star's radius (m)
 varying vec2 vXY;
+varying vec3 vToFrag;     // from the eye to this point of the quad, and to the star's centre (view space)
+varying vec3 vToStar;
 void main() {
   vXY = position.xy;
-  gl_Position = projectView(modelViewMatrix * vec4(position, 1.0));
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vToFrag = mv.xyz;
+  vToStar = modelViewMatrix[3].xyz;
+  gl_Position = projectView(mv);
+  // In depth the glow lies just behind the star: the star's face hides what of it is behind
+  // (to the pixel: no gap at the limb, and no light laid over it), and so does whatever passes in
+  // front of the star.
+  float depth = -vToStar.z / uCopy + uRadiusM;
+  vec4 behind = projectionMatrix * vec4(0.0, 0.0, -depth, 1.0);
+  gl_Position.z = behind.z / behind.w * gl_Position.w;
+  gTrueDepth = depth;
   #include <logdepthbuf_vertex>
 ${FIX_LOGDEPTH}
 }`;
@@ -757,26 +668,37 @@ uniform float uSeed;
 uniform float uTime;
 uniform vec2 uAxis2;      // the star's spin axis projected on the quad (unit), and
 uniform float uMinor;     // the disk's half-width along it (a flattened star's disk is an ellipse)
+uniform float uSinLimb;   // sine of the disk's angular radius: where the sight lines graze the sphere
 varying vec2 vXY;
-float h2(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+varying vec3 vToFrag;
+varying vec3 vToStar;
+float h2(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.y); }
 float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y); }
 void main() {
   vec2 p = vXY * uQuad;                   // in star radii
-  // distance from the centre in units of the disk's (elliptical) edge: the glow starts at the limb
-  float r = length(vec2(dot(p, vec2(-uAxis2.y, uAxis2.x)), dot(p, uAxis2) / uMinor));
-  // (drawn in front of the star: leave its disk alone; the glow starts a little inside the true edge,
-  // under the faceted sphere's outline, so no dark sliver shows between the two)
-  if (r < 0.96) discard;
+  // Distance from the centre in units of the disk's edge: by the angle between this sight line
+  // and the one to the star's centre, so that 1 is where the sphere's outline is, wherever in the
+  // frame the star stands. A flattened star's outline is an ellipse: narrower along its axis.
+  float cosA = dot(normalize(vToFrag), normalize(vToStar));
+  float r = sqrt(max(1.0 - cosA * cosA, 0.0)) / uSinLimb;
+  r *= length(vec2(dot(p, vec2(-uAxis2.y, uAxis2.x)), dot(p, uAxis2) / uMinor)) / max(length(p), 1e-6);
+  // (The star hides the glow behind it. The glow is far fainter than the limb it rises from:
+  // a star's limb is its darkest part, and a glow that outshines it rims the star with light.)
+  float h = max(r - 1.0, 0.0);            // height over the limb, in radii
   float a = atan(vXY.y, vXY.x);
-  // streamers: angular structure that widens outwards (periodic in angle)
-  float st = n2(vec2(cos(a) * 3.0 + uSeed, sin(a) * 3.0 + uTime * 0.01)) * 0.7 + n2(vec2(cos(a) * 9.0, sin(a) * 9.0 + uSeed)) * 0.3;
-  float glow = uCorona * (0.55 * exp(-max(r - 1.0, 0.0) * 7.0) + (0.05 + 0.12 * st) / (r * r));
-  // (starts right at the disk's edge, faded in over about a pixel only: no dark gap around the disk)
-  glow *= (1.0 - smoothstep(0.7, 1.0, length(vXY))) * smoothstep(0.96, 1.0, r);
-  // prominences: bright loops just above the limb
+  vec2 ring = vec2(cos(a), sin(a));       // (noise on the circle: periodic in angle)
+  // streamers: in some directions the glow reaches far out, in others it hugs the limb; fine
+  // rays within them; all of it slowly changing
+  float broad = n2(ring * 1.7 + uSeed + vec2(0.0, uTime * 0.004));
+  float rays = 0.6 * n2(ring * 6.0 + uSeed * 1.7 + vec2(uTime * 0.008, 0.0)) + 0.4 * n2(ring * 17.0 + uSeed * 0.3 + h * 0.8);
+  float reach = 0.25 + 1.5 * broad * broad;
+  float streamer = (0.3 + 0.7 * rays) * exp(-h / reach) / (1.0 + 5.0 * h * h);
+  float glow = uCorona * (0.6 * exp(-h * 10.0) + 0.4 * streamer);
+  glow *= (1.0 - smoothstep(0.7, 1.0, length(vXY))) * smoothstep(0.9, 0.98, r);
+  // the chromosphere, a thin red skin on an active star's limb, and prominences: bright loops just above it
   float pn = n2(vec2(cos(a) * 14.0 + uSeed, sin(a) * 14.0 + r * 9.0 - uTime * 0.02));
-  float prom = uProm * pow(pn, 7.0) * 6.0 * smoothstep(1.16, 1.0, r);
+  float prom = uProm * (pow(pn, 7.0) * 6.0 * smoothstep(1.16, 1.0, r) + 0.5 * exp(-h * 90.0)) * smoothstep(0.9, 0.98, r);
   vec3 c = uColor * glow + vec3(1.0, 0.32, 0.42) * prom;
   gl_FragColor = vec4(c * uIntensity, 1.0);
 ${OUTPUT_FRAGMENT}

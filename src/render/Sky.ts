@@ -82,8 +82,16 @@ export class SkyLayer {
   static readonly MODEL_REF = 81.3;
   static readonly MAP_AT_REF = 0.125;
 
+  /** the map's size once it is in (null if it could not be had: the sky is then the stars alone) */
+  readonly ready: Promise<{ width: number; height: number } | null>;
+
   constructor(url: string) {
-    const tex = new TextureLoader().load(url);
+    let arrived!: (size: { width: number; height: number } | null) => void;
+    this.ready = new Promise((resolve) => { arrived = resolve; });
+    const tex = new TextureLoader().load(url, (t) => {
+      const img = t.image as { width: number; height: number };
+      arrived({ width: img.width, height: img.height });
+    }, undefined, (err) => { console.warn('sky map', err); arrived(null); });
     tex.colorSpace = SRGBColorSpace;
     tex.wrapS = RepeatWrapping;
     tex.minFilter = LinearMipmapLinearFilter;

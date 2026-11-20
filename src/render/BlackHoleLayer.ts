@@ -13,6 +13,10 @@ import { GLOBALS } from './shaders/xr';
 
 /** Radiance of the Sun's disk in the engine's units (white Lambertian at 1 AU = 1). */
 const SUN_DISK = (AU / SUN_RADIUS) ** 2;
+/** where a thin disk is hottest, in inner radii: the maximum of x^-3/4 (1 - x^-1/2)^1/4 */
+const DISK_PEAK = 49 / 36;
+/** how far the strongest colour of a glow may exceed its luminance before it counts as brighter for the exposure */
+const COLOUR_ROOM = 1.7;
 const LUT_LOG_MIN = 2.5;
 const LUT_LOG_SPAN = 5.5;
 const MAX_ACTIVE = 2;
@@ -54,7 +58,7 @@ export class BlackHoleLayer {
   private lut: DataTexture;
   private face = 0;
   private fullCapture = true;
-  private relY = new Map<number, number>();
+  private relY = new Map<number, [number, number]>();
   /** the eye at the previous update, and frames since a cube face was last refreshed */
   private lastCam: UPos | null = null;
   private moved = true;
@@ -113,15 +117,74 @@ export class BlackHoleLayer {
     return [this.mesh(0), inside];
   }
 
-  /** Radiance of a blackbody at T relative to the Sun's disk temperature (visual luminance). */
+  /**
+   * Radiance of a blackbody at T relative to the Sun's disk temperature (visual luminance). From a
+   * table every 1/50 dex, read between its entries: a cool disk's glow rises twentyfold for
+   * every tenth more of temperature, and must not do so in steps.
+   */
   private relLuminance(T: number): number {
-    const k = Math.round(Math.log10(T) * 50);
+    const f = Math.log10(Math.max(T, 1)) * 50, k = Math.floor(f);
+    const lo = this.blackbody(k), hi = this.blackbody(k + 1);
+    return Math.exp(lo[0] + (hi[0] - lo[0]) * (f - k));
+  }
+
+  /**
+   * The same, as hard as it drives the display: its luminance, or more for a strongly coloured
+   * glow. The tone curve keeps the hue only while the strongest colour fits the display; beyond
+   * that it bleaches (a deep red glow shown as bright as a white one comes out pink).
+   */
+  private relDrive(T: number): number {
+    const f = Math.log10(Math.max(T, 1)) * 50, k = Math.floor(f);
+    const lo = this.blackbody(k), hi = this.blackbody(k + 1);
+    return Math.exp(lo[1] + (hi[1] - lo[1]) * (f - k));
+  }
+
+  /** [log luminance (relative to the Sun's disk), log drive] of a blackbody at 10^(k/50) K */
+  private blackbody(k: number): [number, number] {
     let v = this.relY.get(k);
     if (v === undefined) {
-      v = blackbodySurface(10 ** (k / 50)).relY;
+      const { rgb, relY } = blackbodySurface(10 ** (k / 50));
+      // the strongest colour of a light of luminance 1, drawn a little more saturated (as the shader does)
+      const strongest = 1 + 1.3 * (Math.max(rgb[0], rgb[1], rgb[2]) - 1);
+      const y = Math.log(Math.max(relY, 1e-300));
+      v = [y, y + Math.log(Math.max(1, strongest / COLOUR_ROOM))];
       this.relY.set(k, v);
     }
     return v;
+  }
+
+  /**
+   * Radiance (engine units, before exposure) of a hole's disk at radius `r` (m) from its centre:
+   * the temperature profile the shader draws (shaders/blackhole.ts), brightest at 1.36 inner radii.
+   * Inside that the peak is returned: the eye is set by the brightest part in view. 0 beyond the disk.
+   */
+  radianceAt(bh: BlackHole, r: number): number {
+    if (!(bh.diskOuter > 0) || r > bh.diskOuter) return 0;
+    const x = Math.max(r / bh.diskInner, DISK_PEAK);
+    const profile = (x ** -0.75 * (1 - 1 / Math.sqrt(x)) ** 0.25) / 0.48795;
+    return SUN_DISK * this.relLuminance(bh.diskTmax * profile);
+  }
+
+  /**
+   * How bright the shader draws a hole's disk at radius `r` (m) where its gas moves as `approach`
+   * says (the cosine of the angle from its orbit's direction to the eye): engine units, before
+   * exposure. As shaders/blackhole.ts has it: the temperature there, shifted by the gas's speed
+   * and the hole's gravity (the side coming towards the eye is hotter to look at, and a cool disk
+   * many times brighter for it); a bright streak of the gas (1.4 times the mean); and how much
+   * the disk there hides of what is behind it (its outer reaches are thin). A strongly coloured
+   * glow counts for more than its luminance (relDrive).
+   */
+  shownAt(bh: BlackHole, r: number, approach: number): number {
+    if (!(bh.diskOuter > 0) || r > bh.diskOuter) return 0;
+    const x = Math.max(r / bh.diskInner, DISK_PEAK);
+    const profile = (x ** -0.75 * (1 - 1 / Math.sqrt(x)) ** 0.25) / 0.48795;
+    const rs = Math.max(r, bh.diskInner) / bh.radius;
+    const beta = Math.min(Math.sqrt(0.5 / Math.max(rs - 1, 0.5)), 0.995);
+    const shift = (Math.sqrt(Math.max(1 - 1 / rs, 1e-4)) * Math.sqrt(1 - beta * beta)) / (1 - beta * approach);
+    const cover = 1 - Math.exp(-7 * x ** -0.85 * 1.5);
+    const t = Math.min(1, Math.max(0, (r / bh.diskOuter - 0.45) / 0.55));
+    const rim = 1 - t * t * (3 - 2 * t);
+    return SUN_DISK * this.relDrive(bh.diskTmax * profile * shift) * 1.4 * cover * rim;
   }
 
   /** Choose the holes worth drawing from `cam` and set up their meshes. */
@@ -231,13 +294,14 @@ export class BlackHoleLayer {
     const prevFace = gl.getActiveCubeFace();
     const prevMip = gl.getActiveMipmapLevel();
     const xrWas = gl.xr.enabled;
-    const saved = { sa: psf.uPixelSA.value, dpr: psf.uDpr.value, pull: GLOBALS.uPullIn.value, dk: GLOBALS.uDepthK.value };
+    const saved = { sa: psf.uPixelSA.value, dpr: psf.uDpr.value, sigma: psf.uMinSigma.value, pull: GLOBALS.uPullIn.value, dk: GLOBALS.uDepthK.value };
     const hidden = [this.group, ...hide];
     const vis = hidden.map((o) => o.visible);
     for (const o of hidden) o.visible = false;
     gl.xr.enabled = false;
     psf.uPixelSA.value = (2 / size) ** 2;
     psf.uDpr.value = 1;
+    psf.uMinSigma.value = 0.5; // (half a pixel of the cube map's)
     GLOBALS.uPullIn.value = 0;
     GLOBALS.uDepthK.value = 1;
     for (const f of faces) {
@@ -248,6 +312,7 @@ export class BlackHoleLayer {
     }
     psf.uPixelSA.value = saved.sa;
     psf.uDpr.value = saved.dpr;
+    psf.uMinSigma.value = saved.sigma;
     GLOBALS.uPullIn.value = saved.pull;
     GLOBALS.uDepthK.value = saved.dk;
     hidden.forEach((o, i) => { o.visible = vis[i]; });

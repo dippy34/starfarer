@@ -8,7 +8,8 @@ import '../ui/start.css';
 /**
  * The title screen: "Simulator" (the explorer as it is) and "Story mode" (coming soon), over the
  * live renderer drifting slowly round the Earth. Keyboard, mouse, touch and gamepad; in a headset
- * the same choices on a panel in front of you (src/vr/Panel.ts).
+ * the same choices on a panel in front of you (src/vr/Panel.ts). It comes up when the loading
+ * screen (src/ui/Splash.ts) is through: everything on it can be chosen at once.
  *
  * Skipped when the URL carries a deep link (a target, a time, a camera position…, which is what
  * the test scripts use) or `?menu=0`; `?menu=1` shows it anyway.
@@ -30,10 +31,8 @@ export class StartMenu {
 
   private root: HTMLDivElement;
   private list: HTMLDivElement;
-  private status: HTMLDivElement;
   private credits: HTMLDivElement;
   private buttons = new Map<Item['id'], HTMLButtonElement>();
-  private app: App | null = null;
   private open = true;
   private focus = 0;
   private padPrev: boolean[] = [];
@@ -42,17 +41,16 @@ export class StartMenu {
   private vrPanel: Panel | null = null;
   private vrHover: string | null = null;
   private vrFrames = 0;
-  private labelsBefore = true;
-  private orbitsBefore = true;
-  private vrLabelsBefore = true;
+  private labelsBefore: boolean;
+  private orbitsBefore: boolean;
+  private vrLabelsBefore: boolean;
   private onKey = (e: KeyboardEvent) => this.key(e);
 
-  constructor(host: HTMLElement = document.body) {
+  constructor(private app: App, host: HTMLElement = document.body) {
     const root = document.createElement('div');
     root.id = 'start-menu';
     root.innerHTML = `
       <div class="sm-shade"></div>
-      <div class="sm-stars" aria-hidden="true"></div>
       <main class="sm-main" role="dialog" aria-label="${PRODUCT_NAME}">
         <header class="sm-head">
           <div class="sm-kicker">A real-scale universe</div>
@@ -68,7 +66,6 @@ export class StartMenu {
           <p>Ground materials: Poly Haven (CC0). Built with three.js.</p>
           <button class="sm-back" type="button">Back</button>
         </div>
-        <div class="sm-status" aria-live="polite"></div>
       </main>
       <footer class="sm-foot">
         <span class="sm-keys"><kbd>↑</kbd><kbd>↓</kbd> choose</span><span class="sm-keys"><kbd>Enter</kbd> start</span><span class="sm-keys">Gamepad <kbd>A</kbd></span><span class="sm-tap">Tap to choose</span>
@@ -76,11 +73,18 @@ export class StartMenu {
     host.appendChild(root);
     this.root = root;
     this.list = root.querySelector('.sm-list')!;
-    this.status = root.querySelector('.sm-status')!;
     this.credits = root.querySelector('.sm-credits')!;
     root.querySelector('.sm-back')!.addEventListener('click', () => this.showCredits(false));
+    // the explorer drifts behind the menu, bare: no names, no orbit lines (they would streak across), no interface
+    this.labelsBefore = app.labels.enabled;
+    this.orbitsBefore = app.orbits.enabled;
+    this.vrLabelsBefore = app.vr.settings.labels;
+    app.labels.enabled = false;
+    app.orbits.enabled = false;
+    app.vr.settings.labels = false;
+    app.hud.setHidden(true);
+    app.vr.holdMenu = true;
     this.build();
-    this.setLoading(true);
     window.addEventListener('keydown', this.onKey, true);
     const loop = () => { this.tick(); if (this.open) this.raf = requestAnimationFrame(loop); };
     this.raf = requestAnimationFrame(loop);
@@ -92,7 +96,7 @@ export class StartMenu {
   }
 
   private items(): Item[] {
-    const vr = !!this.app?.vr.supported;
+    const vr = this.app.vr.supported;
     return [
       { id: 'sim', label: 'Simulator', sub: 'Fly anywhere: planets, stars, galaxies, black holes. Land and walk.' },
       { id: 'story', label: 'Story mode', sub: 'A journey across the galaxy', disabled: true, badge: 'Coming soon' },
@@ -133,38 +137,10 @@ export class StartMenu {
     if (this.credits.hidden) this.buttons.get(ids[this.focus])?.focus({ preventScroll: true });
   }
 
-  private setLoading(on: boolean): void {
-    const sim = this.buttons.get('sim')!;
-    sim.disabled = on;
-    sim.classList.toggle('sm-loading', on);
-    this.status.textContent = on ? 'Loading the Solar System and 2.75 million stars…' : '';
-    if (!on) this.setFocus(0);
-  }
-
-  /** The app is ready: the renderer drifts behind the menu, and Simulator can start. */
-  attach(app: App): void {
-    this.app = app;
-    this.labelsBefore = app.labels.enabled;
-    this.orbitsBefore = app.orbits.enabled;
-    app.labels.enabled = false;
-    app.orbits.enabled = false; // orbit lines would streak across the backdrop
-    this.vrLabelsBefore = app.vr.settings.labels;
-    app.vr.settings.labels = false;
-    app.hud.setHidden(true);
-    app.vr.holdMenu = true;
-    this.build();
-    this.setLoading(false);
-  }
-
-  /** Something went wrong while loading: the menu steps aside for the error. */
-  fail(): void {
-    this.close(false);
-  }
-
   private choose(id: Item['id']): void {
-    if (id === 'sim') { if (this.app) this.start(); }
-    else if (id === 'vr') { void this.app?.vr.enter(); }
-    else if (id === 'bench') { if (this.app) { this.start(); PERF_TOOLS.runBench(); } }
+    if (id === 'sim') this.start();
+    else if (id === 'vr') void this.app.vr.enter();
+    else if (id === 'bench') { this.start(); PERF_TOOLS.runBench(); }
     else if (id === 'credits') this.showCredits(true);
   }
 
@@ -178,8 +154,8 @@ export class StartMenu {
   /** Simulator: the explorer as it is. */
   start(): void {
     const app = this.app;
-    if (!app || !this.open) return;
-    this.close(true);
+    if (!this.open) return;
+    this.close();
     app.hud.setHidden(false);
     app.labels.enabled = this.labelsBefore;
     app.orbits.enabled = this.orbitsBefore;
@@ -189,12 +165,11 @@ export class StartMenu {
     else app.hud.welcome(app.input.touch);
   }
 
-  private close(animate: boolean): void {
+  private close(): void {
     this.open = false;
     cancelAnimationFrame(this.raf);
     window.removeEventListener('keydown', this.onKey, true);
     this.dropVR();
-    if (!animate) { this.root.remove(); return; }
     this.root.classList.add('sm-out');
     setTimeout(() => this.root.remove(), 700);
   }
@@ -219,7 +194,6 @@ export class StartMenu {
   private tick(): void {
     this.pollGamepad();
     const app = this.app;
-    if (!app) return;
     // a slow drift round whatever the view is centred on
     if (app.rig.target && !app.rig.autopilot) app.rig.ext.orbitX = 0.006;
     if (app.vr.active) this.tickVR(app);
@@ -230,8 +204,8 @@ export class StartMenu {
     const p = this.vrPanel;
     if (!p) return;
     p.mesh.removeFromParent();
-    const list = this.app?.vr.extraPanels;
-    if (list && list.includes(p)) list.splice(list.indexOf(p), 1);
+    const list = this.app.vr.extraPanels;
+    if (list.includes(p)) list.splice(list.indexOf(p), 1);
     this.vrPanel = null;
     this.vrFrames = 0;
   }
@@ -294,6 +268,6 @@ export class StartMenu {
     p.button('sm:story', 120, 420, p.width - 240, 150, 'Story mode', () => undefined,
       { size: 48, sub: 'Coming soon', disabled: true });
     p.button('sm:bench', p.width / 2 - 320, 610, 300, 90, 'Run benchmark', () => { this.start(); PERF_TOOLS.runBench(); }, { size: 30 });
-    p.button('sm:exit', p.width / 2 + 20, 610, 300, 90, 'Exit VR', () => { void this.app?.vr.session?.end(); }, { size: 30, color: COLORS.warn });
+    p.button('sm:exit', p.width / 2 + 20, 610, 300, 90, 'Exit VR', () => { void this.app.vr.session?.end(); }, { size: 30, color: COLORS.warn });
   }
 }

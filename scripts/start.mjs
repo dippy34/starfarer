@@ -1,6 +1,8 @@
-// The title screen (src/app/StartMenu.ts) in headless Chromium: shown on the bare URL, skipped by
-// deep links and ?menu=0, keyboard / mouse navigation, Story mode disabled, credits, Simulator
-// starts the explorer; then in an emulated Meta Quest 3 (IWER): the in-headset choices.
+// Starting up, in headless Chromium. The loading screen (index.html, src/ui/Splash.ts): up before
+// the app, following the real loading, naming what failed and trying again. Then the title screen
+// (src/app/StartMenu.ts): shown on the bare URL, skipped by deep links and ?menu=0, keyboard /
+// mouse navigation, Story mode disabled, credits, Simulator starts the explorer; then in an
+// emulated Meta Quest 3 (IWER): the in-headset choices.
 // Usage: node scripts/start.mjs [baseUrl] [outDir] [desktop|vr|all]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
@@ -46,6 +48,22 @@ const menuState = (page) => page.evaluate(() => {
   };
 });
 
+/** The loading screen as it stands (shown: false once everything is in and it is on its way out). */
+const bootState = (page) => page.evaluate(() => {
+  const b = document.getElementById('boot');
+  const menu = !!document.getElementById('start-menu');
+  if (!b || b.classList.contains('ready')) return { shown: false, menu };
+  return {
+    shown: true, menu,
+    title: b.querySelector('.boot-title')?.textContent ?? '',
+    percent: parseInt(b.querySelector('.boot-percent')?.textContent ?? '0', 10),
+    bar: Number(/scaleX\(([\d.e-]+)\)/.exec(b.querySelector('.boot-meter i').style.transform)?.[1] ?? 0),
+    received: b.querySelector('.boot-received')?.textContent ?? '',
+    rows: [...b.querySelectorAll('.boot-log li')].map((li) => ({ state: li.dataset.state, text: `${li.querySelector('b').textContent} · ${li.querySelector('span').textContent}` })),
+    error: b.querySelector('.boot-error')?.innerText ?? null,
+  };
+});
+
 /** The title's letters all lie inside its heading (its gradient is clipped to that box: letters outside it vanish). */
 const titleFits = (page) => page.evaluate(() => {
   const h = document.querySelector('#start-menu .sm-title');
@@ -57,18 +75,42 @@ const titleFits = (page) => page.evaluate(() => {
 });
 
 if (which !== 'vr') {
-  // 1. the bare URL: the title screen, Simulator disabled while loading
-  let page = await openPage('');
-  await page.waitForSelector('#start-menu', { timeout: 30000 });
+  // 1. the bare URL: the loading screen first, following the real loading
+  let page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  collectErrors(page, errors);
+  await page.goto(base, { waitUntil: 'commit' });
+  await page.waitForSelector('#boot .boot-title', { timeout: 30000 });
+  const first = await bootState(page);
+  check('the loading screen is up before the app', first.shown && !first.menu && first.title === 'STARFARER' && first.percent === 0, JSON.stringify({ ...first, rows: undefined }));
+  const brought = [];
+  let back = false, early = false, most = 0, received = '', shot = false;
+  for (let b = first; b.shown; b = await bootState(page)) {
+    if (b.percent < most) back = true;
+    most = Math.max(most, b.percent);
+    if (b.menu) early = true;
+    received = b.received || received;
+    for (const r of b.rows) if (r.state === 'done' && !brought.includes(r.text)) brought.push(r.text);
+    if (!shot && b.percent >= 30) { shot = true; await page.screenshot({ path: path.join(outDir, 'start-0-loading.png'), timeout: 300000 }); }
+    await page.waitForTimeout(120);
+  }
+  check('the bar never goes back', !back && most > 50, `reached ${most} %`);
+  await page.waitForFunction(() => window.app && window.app.frameCount > 10 && !document.getElementById('boot'), null, { timeout: 300000 });
+  // (the last pieces finish as the screen goes: the app keeps the record of how the start went)
+  const record = await page.evaluate(() => window.app.loading.stages.map((s) => ({ state: s.state, text: `${s.label} · ${s.note}` })));
+  check('every piece shown as done was done', record.every((r) => r.state === 'done') && brought.every((t) => record.some((r) => r.text === t)), JSON.stringify(record.filter((r) => r.state !== 'done')));
+  const all = record.map((r) => r.text).join(' | ');
+  check('each piece says what it brought, read from the data',
+    /The Solar System · 8 planets, \d+ moons/.test(all) && /The star catalogue · [\d.]+ million stars/.test(all) && /Asteroids and comets · [\d,]+ asteroids, [\d,]+ comets/.test(all) && /Planets of other stars · [\d,]+ planets of [\d,]+ stars/.test(all), all);
+  check('the first view is part of the loading: maps, shaders, the sky', /Maps of Earth · \d+ map/.test(all) && /Preparing the graphics · \d+ shaders/.test(all) && /The Milky Way · [\d,]+ × [\d,]+ pixels/.test(all), all);
+  check('it tells how much was downloaded', /^[\d.]+ (MB|KB) received$|^Already on this device$/.test(received), received);
+  check('nothing can be chosen while it loads', !early);
+  // then the title screen
   let st = await menuState(page);
   check('title screen on the bare URL', st.shown, JSON.stringify(st));
   const title = await titleFits(page);
   check('the whole title is visible', title.ok && title.text.length > 0, JSON.stringify(title));
   check('Story mode is shown but disabled', st.story === true);
-  await page.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 300000 });
-  await page.waitForFunction(() => !document.querySelector('#start-menu [data-id="sim"]').disabled, null, { timeout: 60000 });
-  st = await menuState(page);
-  check('Simulator is enabled and focused once loaded', st.sim === false && st.focus === 'sim', JSON.stringify(st));
+  check('Simulator can be chosen at once, and has the focus', st.sim === false && st.focus === 'sim', JSON.stringify(st));
   const hud = await page.evaluate(() => getComputedStyle(document.querySelector('.hud-dock')).visibility);
   check('the HUD is hidden behind the title screen', hud === 'hidden', hud);
   // the live view drifts behind it
@@ -117,7 +159,7 @@ if (which !== 'vr') {
     const phone = await ctx.newPage();
     phone.on('pageerror', (e) => errors.push(String(e)));
     await phone.goto(base, { waitUntil: 'load' });
-    await phone.waitForFunction(() => window.app && !document.querySelector('#start-menu [data-id="sim"]').disabled, null, { timeout: 300000 });
+    await phone.waitForFunction(() => window.app && !!document.querySelector('#start-menu [data-id="sim"]') && !document.getElementById('boot'), null, { timeout: 300000 });
     const fits = await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
     check('phone: the title screen fits the width (no sideways scroll)', fits);
     const phoneTitle = await titleFits(phone);
@@ -129,7 +171,28 @@ if (which !== 'vr') {
     await ctx.close();
   }
 
-  // 2. deep links and ?menu=0 skip it; ?menu=1 forces it
+  // 1c. a piece the explorer cannot do without fails to arrive: the loading screen says which,
+  // and "Try again" starts over
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const phone = await ctx.newPage();
+    phone.on('pageerror', (e) => errors.push(String(e)));
+    let down = true;
+    await phone.route(/\/data\/solar\/system\.json/, (r) => (down ? r.fulfill({ status: 503, body: 'unavailable' }) : r.continue()));
+    await phone.goto(`${base}?target=Moon`, { waitUntil: 'commit' });
+    await phone.waitForSelector('#boot .boot-error', { timeout: 120000 });
+    const b = await bootState(phone);
+    check('a download that fails is named on the loading screen', /Could not load the Solar System\./.test(b.error) && /HTTP 503/.test(b.error) && /Try again/.test(b.error) && !b.menu, JSON.stringify(b.error));
+    check('and the piece that failed is marked', b.rows.some((r) => r.state === 'failed' && r.text.startsWith('The Solar System')), JSON.stringify(b.rows));
+    await phone.screenshot({ path: path.join(outDir, 'start-6-failed.png'), timeout: 300000 });
+    down = false;
+    await phone.tap('#boot .boot-error button');
+    await phone.waitForFunction(() => window.app && window.app.frameCount > 3 && !document.getElementById('boot'), null, { timeout: 300000 });
+    check('"Try again" starts over: this time it loads', (await phone.evaluate(() => window.app.selection?.name)) === 'Moon');
+    await ctx.close();
+  }
+
+  // 2. deep links and ?menu=0 skip the title screen; ?menu=1 forces it
   for (const [q, want] of [['?time=2026-10-01T20:00:00Z&paused=1&target=Moon&dist=3', false], ['?menu=0', false], ['?target=Mars', false], ['?menu=1&target=Moon', true]]) {
     page = await openPage(q);
     await page.waitForFunction(() => window.app && window.app.frameCount > 3, null, { timeout: 300000 });

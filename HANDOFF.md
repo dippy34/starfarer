@@ -288,14 +288,15 @@ binaries 419, brown dwarfs 250. Sources and licences: CREDITS.md.
 
 ## Checks before every deploy
 
-`npm run typecheck`, `npm test`, then with `npx vite preview --port 4173` running:
-`node scripts/interact.mjs http://127.0.0.1:4173/ out`, `node scripts/verify.mjs ...`,
-`node scripts/vr.mjs http://127.0.0.1:4173/ out` (IWER Quest 3 emulator; 27 checks),
-`node scripts/game.mjs http://127.0.0.1:4173/ out` (game mode; 16 checks),
-`node scripts/terrain.mjs http://127.0.0.1:4173/ out` (landing terrain),
-`node scripts/places.mjs http://127.0.0.1:4173/ out` (rings, comets, eclipses). Run them one at a time
-(parallel runs starve the software renderer and screenshots time out). On a machine
-with a real GPU these run far faster than in the cloud container (software rendering, ~1 fps).
+`npm run typecheck`, `npm test`, then `npm run build` and, with `npx vite preview --port 4173`
+running (a build, not the dev server: an edit reloads the page under a running suite), each of
+`node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
+`start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
+49), `interact` (mouse and keys; 11), `verify` (35 scenes), `exposure` (looking away from bright
+things and back; 47), `vr` (IWER Quest 3 emulator; 32), `game` (20), `walk` (45), `places` (rings,
+comets, eclipses; 14), `terrain` (14), `flight` (19). At most three at a time on four cores (more
+starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
+these run far faster than in the cloud container (software rendering, a few frames a second).
 Every script starts its browser through `scripts/lib/browser.mjs`; set `CHROMIUM_PATH` to use an
 installed Chromium when Playwright's own download is not available.
 
@@ -395,14 +396,123 @@ above is validated against JPL Horizons and stays as it is unless something is w
      phone held sideways the card covers a corner of it (no sideways aim yet); a
      link with `?target=` and no `dist` places the camera at 4 radii whatever the screen's shape
      (a little tight on an upright phone: `App.applyUrl` could use `rig.framing` as `goTo` does).
-3. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
+3. **The eye, the start and the stars: done** (the owner, after part 2: "when you look at any
+   planet and then look away from it, especially like stars and black holes, it will create this
+   giant burst of light"; "an actual loading screen ... shows you the real loading"; "the stars
+   don't look very good", "better models for stars"). The video the owner meant to send had not
+   arrived: the star work was judged on frames taken here at a phone's size and density.
+   - *The eye* (`src/app/Exposure.ts`, pure; `tests/exposure.test.ts`). What was wrong: a bright
+     thing held the exposure down only while its **centre** was on the screen (plus 40 px), the
+     adaptation was as quick to open as to shut, and the Sun's glare stayed at full strength
+     beside the frame. So a black-hole disk whose centre left the frame whited out the whole
+     screen, Saturn's rings flared once the globe was out, and turning back to the Sun flashed.
+     Now everything is measured from the edge of what shines to the edge of the frame (`seen`:
+     coverage, share shown, and `presence`, which falls to nothing only a margin beyond the
+     edge); a limit lets go in proportion to presence (`released`); the eye opens over 0.6 s and
+     shuts in 0.12 s, and is never more than e^0.3 too bright even for one frame (`adapt`). The
+     Sun's glare is multiplied by its presence. Rings count with their planet
+     (`BodiesLayer.ringOuter`; `Body.rings` was a dead field).
+   - *Accretion disks* are not balls: from inside a disk's own radius (Cygnus X-1's reaches
+     94,000 Schwarzschild radii, the arrival view is 40 from the hole) it lies all round the eye.
+     Close to the hole the disk is still measured as a ball (lensing wraps its picture round the
+     hole; the tuned arrival views are unchanged). Beyond that, `diskSeen` follows the frame's
+     sight lines to the disk's plane: 26 x 26 cells over the frame and its margin, each counting
+     for the part of it the disk takes (the rim is one smooth edge, `G = a - |q|`, so nothing
+     switches as the view turns), reading the radius at its hottest corner but never less than
+     the cell's own footprint on the plane (from far off one cell holds the whole core).
+     `diskLimit` then holds the exposure by the brightest part there is enough of (1.5 % of the
+     frame in full, less for less). How bright a part is drawn comes from
+     `BlackHoleLayer.shownAt`: the shader's own arithmetic (temperature profile, the Doppler and
+     gravitational shift of the gas moving towards or away from the eye, a bright streak, the
+     thinning outer disk), and counted by its strongest colour, not its luminance, where the two
+     differ (a deep red glow shown as bright as a white one came out pink).
+   - *The tone curve* brought a colour channel in only where it reached the display's top: a
+     corner in the curve, which a red star's face showed as a pale disc inside an orange ring. It
+     now starts at 80 % and has no corner (`shaders/tone.ts`).
+   - `scripts/exposure.mjs`: eight scenes (the Sun far and near, Sirius, the Earth twice, Saturn,
+     Cygnus X-1, Sagittarius A*). The app's loop is stopped and frames are stepped by hand, a
+     tenth of a second each, so every run is the same; each frame is metered (how much is burnt
+     out, white or a single colour driven to the top; how bright; the exposure; the glare). The
+     view turns 120 degrees away, waits, and turns back twice as fast. On the commit before, the
+     Sun, Cygnus X-1 and Sagittarius A* fail it (97.9 %, 100 % and 26 % of the frame burnt out).
+   - *The start* (`src/app/Loading.ts`, pure, `tests/loading.test.ts`; `src/ui/Splash.ts`; the
+     markup and styles are in `index.html`, so the screen is up before any script). `App.create`
+     starts every download at once (they waited on WebXR detection, and four of them on each
+     other) and tells a `LoadProgress` when each is in and what it brought: the counts are read
+     from the data ("8 planets, 459 moons", "6,333 planets of 4,743 stars"), the bytes from the
+     browser's own resource timings. The bar is the share of the stages done, by weight; it never
+     runs ahead and never goes back. Then `App.firstView`: with the frames already drawing behind
+     the screen, it waits for the Milky Way's map, the maps of the world in view, the shaders,
+     and 65 % of the star regions the sky needs (they arrive brightest first), each for 12 s at
+     most. The quality governor starts afresh after that (its window was full of the loading's
+     slow frames). The title screen is made when all of it is through and no longer has a
+     loading state; `window.app` is set at that moment too (the scripts wait for it; the page's
+     own element is `#stage` now: as `#app` it was `window.app` from the first byte, and truthy).
+     The title screen shows the live view as it is, dimmed: it used to blur it by 5 px and drift
+     a tile of drawn points over it (very likely the "stars don't look very good" of the
+     beginning: the real sky smeared, under a fake one; the blur was also a full-screen filter
+     over the canvas every frame). A piece the
+     explorer cannot do without that fails names itself on the screen, with "Try again"; one it
+     can do without says "not available". Put off until the explorer is on the screen: the
+     ground materials (24 files, 7.4 MB, were fetched first thing) and the lists' thumbnails.
+   - *Star points* (`shaders/psf.ts`). They were Gaussians 0.6 CSS px wide and up, read at
+     pixel centres, on a canvas of at most 2 pixels per CSS pixel: a phone of 3 stretches that
+     canvas one and a half times, so every star was a soft blob and the dither showed as a faint
+     mesh. Now: the canvas has the screen's own density up to 3.2 million pixels
+     (`core/device.ts canvasRatio`; 2 samples a pixel instead of 4 above 2.4 million; the
+     governor's steps reach down to the same 1.2 render pixels per CSS pixel, `renderScale`); a
+     star's light is summed over each pixel's area, so the narrowest star is half a pixel wide
+     and does not flicker as it drifts; a faint star is as bright as its light makes it at that
+     size, a brighter one goes white-hot (to 3 times white) and a little wider, and the stars of
+     the constellation figures get a glow that carries their brightness and colour. The light of
+     a faint star is what it was (`uPointLight`); the headset keeps its wider cores. The final
+     dither no longer uses a sine hash: where a GPU's sine of a large number is coarse (the
+     software renderer here, and many phones) it came out as a regular one-level mesh in the
+     dark, not as noise (`Renderer.ts`, interleaved gradient noise).
+   - *A star up close* (`shaders/star.ts`, `StarLook.ts`, `StarCorona.ts`). It was a flat, pale
+     disc with a bright rim: the face was shown at 0.9 to 1.8 of white, where the tone curve
+     flattens everything; the glow layer started inside the limb and outshone it; and the true
+     limb darkening does its work in the last hundredths of the radius. Now a face large in the
+     view is shown at 0.52 (`starKey`; small it is as brilliant as before); the limb darkening
+     is per colour (the limb is redder, as it is) and drawn to the power 2.2 with the disk's mean
+     kept (`limbGain`; a small disk keeps the true law); from afar, where granules are far below
+     a pixel, a restless larger pattern stands in for them (`uTurb`, stylised and said so in the
+     code); blue stars keep their blue. The glow is written at the star's own depth, so the face
+     hides what is behind it to the pixel (measured in its quad's plane it left a dark sliver on
+     one side of any star off the middle of the frame), and it stays under the limb's brightness.
+     A small cool star is a red dwarf, not a white dwarf, whatever its estimated radius
+     (Proxima comes out at 0.022 solar radii; see below). The Sun's glare fades with the share of
+     the frame its disk takes, not with pixels. A dead copy of the star shader in
+     `shaders/body.ts` is gone.
+   - Verification: see "Checks before every deploy" for the commands. Run for this part (headless
+     Chromium, software WebGL, against a production build): 350 unit tests;
+     the 35 scenes of verify, start 34/34, touch 49/49, interact 11/11, exposure 48/48, vr 32/32,
+     game 20/20, walk 45/45, places 14/14, terrain 14/14, flight 19/19 (bench not run). The same
+     suites passed on a build of the first two things alone, before the stars were touched. The
+     README's pictures are from this run.
+   - Not tried on a real phone, and worth watching there: the frame rate at the screen's own
+     density (the governor should bring the scene's resolution down within seconds if it is too
+     much; `?governor=0` and the perf HUD show what it does) and the memory. If stars soften on
+     weaker phones whenever the governor steps down, the answer is to draw the points in their
+     own pass at the canvas's resolution after the composite (occluded by one read of the scene's
+     depth per star); it was left out here as too large a change to the renderer for one part.
+   - Seen and left: star radii are estimated without a bolometric correction, so red dwarfs come
+     out several times too small (the info card says "estimated"; the README lists it); the
+     bloom adds about 40 % of a large bright area's own level over it (a veil that lowers
+     contrast on a planet filling the view); the Sun's glare from 10 to 30 radii greys the whole
+     frame; the bodies' shader still has a sine hash (`shaders/body.ts` h33, for the generated
+     craters): on a GPU with a coarse sine its cells may line up, as the star shader's did.
+4. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
+   walking, then the ship, missions and the benchmark as screens of the app.
+5. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.
-4. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
-5. App core: `app/App.ts` is 2,100 lines doing exposure, picking, labels, navigation and the frame
-   loop; to be split into modules behind the same behaviour.
-6. Stars and sky. 7. Deep space (galaxies, nebulae, black holes, exoplanets). 8. Terrain, landing,
-   walking. 9. Game mode. 10. VR.
+6. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
+7. App core: `app/App.ts` is 2,300 lines doing exposure, picking, labels, navigation, loading and
+   the frame loop; to be split into modules behind the same behaviour (the eye's arithmetic and
+   the loading's state are out already: `Exposure.ts`, `Loading.ts`).
+8. Stars and sky (the rest). 9. Deep space (galaxies, nebulae, black holes, exoplanets).
+   10. Terrain, landing, walking. 11. Game mode. 12. VR.
 
 To look at when their part comes (seen in the scenario screenshots): Pluto's lit side washes out to
 white from 12 radii; 51 Peg b shows a flat black disc on its cloud deck; the Sun's glare hides the

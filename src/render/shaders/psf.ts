@@ -25,23 +25,51 @@ uniform float uDpr;
 uniform float uMaxEnergy;
 uniform float uSat;
 uniform float uHalo;   // halo/spike strength (1 for stars; small bodies use less)
-uniform float uMinSigma; // core width of the faintest stars (px): wider in the headset, against shimmer
+uniform float uMinSigma; // width of the narrowest core (CSS px): half a pixel of the screen; wider in the headset
+uniform float uPointLight; // a core's light per unit of energy (display value x CSS px^2)
 `;
 
 /*
  * Appearance of a point source. `energy` E is the displayed energy (physical, pre-exposed
  * irradiance per pixel compressed by a perceptual power law); `g` = log2(raw / threshold) is how
  * many factors of two the source is above the visibility limit. Modelled on how stars look in a
- * good wide-field photograph (and to the eye): every star is a sharp point; brighter ones are
- * larger points (the core widens from ~0.6 to ~2.5 px as its peak saturates), and only the few
- * brightest get a soft glow and, the very brightest, faint diffraction spikes.
- *  - core: a Gaussian whose peak saturates softly at ~1 and whose width grows with g;
- *  - halo: a faint coloured glow from ~3 factors of two above the limit, growing with g;
+ * good wide-field photograph (and to the eye): every star is a sharp point; a brighter one is a
+ * bigger point, and only the few brightest get a soft glow and, the very brightest, faint
+ * diffraction spikes.
+ *  - core: the star's light (uPointLight * E, and up to 2.5 times that for the bright ones) in
+ *    a Gaussian. A faint star's is as narrow as the screen can show, half a pixel, and only as
+ *    bright as its light makes it; a brighter one's middle goes white, then white-hot (up to
+ *    PSF_HOT times white, which the tone curve bleaches of its colour), and it grows wider, but
+ *    stays a point: the brightest are a few pixels across, not disks. The light is summed over
+ *    each pixel's area (as a sensor collects it), not read at the pixel's middle: so a star a
+ *    pixel wide is one, and it keeps its brightness as it drifts across the pixels (read at
+ *    their middles such stars flicker, and look soft once made wide enough not to);
+ *  - halo: a soft coloured glow round the brighter ones, from ~4 factors of two above the limit
+ *    (the stars of the constellations' figures), wider and stronger with g: it, more than the
+ *    core's size, says how bright a star is, and carries its colour;
  *  - spikes: four thin spikes from ~10 factors of two (uGlare scales them).
  * Values are display-referred (~0..1.3), so hue survives the tone curve; uSat sets the colour
  * saturation (1 = blackbody chromaticity).
  */
+const PSF_CORE = /* glsl */ `
+// the widest core (CSS px), and how many times white its middle may be
+const float PSF_MAX_SIGMA = 1.2;
+const float PSF_HOT = 3.0;
+// x: the core's width (CSS px), y: the value at its middle; g: factors of two above the limit
+vec2 psfCore(float energy, float g) {
+  float light = uPointLight * energy * (1.0 + 1.5 * smoothstep(3.0, 10.0, g));
+  float top = 1.0 + (PSF_HOT - 1.0) * smoothstep(5.0, 12.0, g);
+  float sigma = clamp(sqrt(light / (6.2831853 * top)), uMinSigma, PSF_MAX_SIGMA);
+  return vec2(sigma, min(light / (6.2831853 * sigma * sigma), top));
+}
+// the glow round a bright one: x its radius (CSS px), y its strength
+vec2 psfHalo(float g) {
+  return vec2(1.2 + 0.5 * max(g - 4.5, 0.0), 0.36 * smoothstep(4.0, 12.0, g));
+}
+`;
+
 export const PSF_VERTEX = /* glsl */ `
+${PSF_CORE}
 float magToIrradiance(float m) { return 3.14159265 * exp2(-1.3287712 * (clamp(m, -60.0, 60.0) + 26.74)); }
 // Returns sprite radius in CSS pixels (0 => cull). uPixelSA is the solid angle of one CSS pixel;
 // callers set gl_PointSize = 2 * radius * uDpr so sprites keep their size on HiDPI screens.
@@ -50,27 +78,43 @@ float psfSetup(float irradiance, out float energy) {
   if (!(raw >= uMinEnergy)) { energy = 0.0; return 0.0; }
   energy = min(uPointGain * pow(raw, uPointGamma), uMaxEnergy);
   float g = max(0.0, log2(raw / uMinEnergy));
-  float sigma = uMinSigma + 0.16 * clamp(g - 2.0, 0.0, 12.0);
-  float rh = 1.3 + 0.55 * max(g - 4.0, 0.0);
-  float halo = g > 3.0 ? rh * 3.0 * uHalo : 0.0;
+  float rh = psfHalo(g).x;
+  float halo = g > 4.0 ? rh * 3.0 * uHalo : 0.0;
   float spikes = g > 10.0 ? 5.0 * rh * uGlare * uHalo : 0.0;
-  return min(uMaxRadius, max(sigma * 3.2 + 0.5, max(halo, spikes)));
+  // (the core's tails, and never less than the pixels a point half a pixel wide falls on)
+  float core = max(psfCore(energy, g).x * 3.4 + 0.5, 1.5 / uDpr);
+  return min(uMaxRadius, max(core, max(halo, spikes)));
 }
 `;
 
 export const PSF_FRAGMENT = /* glsl */ `
+${PSF_CORE}
+// erf (Winitzki's approximation, within 2e-4), and with it the share of a Gaussian of width s,
+// centred x from a pixel's middle, that falls on that pixel (all in the screen's pixels)
+float psfErf(float x) {
+  float x2 = x * x;
+  return sign(x) * sqrt(1.0 - exp(-x2 * (1.2732395 + 0.147 * x2) / (1.0 + 0.147 * x2)));
+}
+float psfOnPixel(float x, float s) {
+  float k = 0.70710678 / s;
+  return 0.5 * (psfErf((x + 0.5) * k) - psfErf((x - 0.5) * k));
+}
 vec3 psfShade(vec2 pointCoord, float radius, float energy, vec3 color) {
   vec2 p = (pointCoord - 0.5) * 2.0 * radius;   // CSS pixels from centre
   float r2 = dot(p, p);
   float raw = pow(max(energy, 1e-6) / uPointGain, 1.0 / uPointGamma);
   float g = max(0.0, log2(raw / uMinEnergy));
-  float sigma = uMinSigma + 0.16 * clamp(g - 2.0, 0.0, 12.0);
-  // the core's peak saturates softly at ~1; brighter stars are wider points
-  float core = (1.0 - exp(-energy * 0.35)) * exp(-r2 / (2.0 * sigma * sigma));
+  // the core: summed over the pixel where it is narrow, read off where it is wide (the same there)
+  vec2 cw = psfCore(energy, g);
+  float sigma = cw.x, sp = sigma * uDpr;
+  float core = sp > 1.6
+    ? cw.y * exp(-r2 / (2.0 * sigma * sigma))
+    : cw.y * 6.2831853 * sp * sp * psfOnPixel(p.x * uDpr, sp) * psfOnPixel(p.y * uDpr, sp);
   float halo = 0.0, spikes = 0.0;
-  if (g > 3.0) {
-    float rh = 1.3 + 0.55 * max(g - 4.0, 0.0);
-    halo = uHalo * (0.05 + 0.25 * smoothstep(7.0, 13.0, g)) * smoothstep(3.0, 5.5, g) * min(1.0, energy) / pow(1.0 + r2 / (rh * rh), 1.5);
+  if (g > 4.0) {
+    vec2 hw = psfHalo(g);
+    float rh = hw.x;
+    halo = uHalo * hw.y * min(1.0, energy) / pow(1.0 + r2 / (rh * rh), 1.5);
     if (g > 10.0 && uGlare > 0.0) {
       float L = 5.0 * rh;
       vec2 a = abs(p);

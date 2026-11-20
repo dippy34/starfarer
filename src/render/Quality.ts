@@ -34,8 +34,23 @@ function setLevel(l: number): void {
   QUALITY_LEVEL.uQuality.value = l;
 }
 
-/** internal render resolution per level (desktop) */
+/** internal render resolution per level, as a share of the canvas's (a screen of ordinary density) */
 export const RENDER_SCALE = [1, 0.85, 0.72, 0.6];
+/** the scene is never drawn at fewer pixels per CSS pixel than this where the canvas has more to give */
+export const LOWEST_RATIO = 1.2;
+
+/**
+ * The share of the canvas's resolution the scene is drawn at, for a quality level and a canvas of
+ * `canvasRatio` pixels per CSS pixel. A dense canvas (a phone's, 3 to a CSS pixel) has farther to
+ * come down before the picture is coarse: its steps reach LOWEST_RATIO, evenly in ratio
+ * (3: 1, 0.74, 0.54, 0.4), where a canvas of 2 or fewer stops at 0.6 of its own.
+ */
+export function renderScale(level: number, canvasRatio: number): number {
+  const lowest = LOWEST_RATIO / Math.max(canvasRatio, 1);
+  const last = RENDER_SCALE.length - 1;
+  const l = Math.min(Math.max(level, 0), last);
+  return lowest >= RENDER_SCALE[last] ? RENDER_SCALE[l] : lowest ** (l / last);
+}
 /** headset: the volume pass's resolution relative to its own scale, per level */
 export const XR_VOLUME_FACTOR = [1, 0.85, 0.72, 0.6];
 /** headset: the terrain's pixels per cell (split threshold) relative to its own, per level */
@@ -52,6 +67,23 @@ export class Governor {
 
   constructor(enabled: boolean) {
     QUALITY.enabled = enabled;
+  }
+
+  /**
+   * Start afresh at full quality: what the frames took until now says nothing about those to
+   * come (the loading, with its compiling and uploading, is over). True if the level changed.
+   */
+  reset(): boolean {
+    this.last = 0;
+    this.misses = [];
+    this.cpuLate = [];
+    this.sinceChange = 0;
+    this.upWait = 5000;
+    this.lastUpAt = -1e9;
+    QUALITY.cpuBound = false;
+    if (QUALITY.level === 0) return false;
+    setLevel(0);
+    return true;
   }
 
   /** Whether the governor runs here (see the class comment). */

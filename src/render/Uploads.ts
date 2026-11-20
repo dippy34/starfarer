@@ -43,10 +43,16 @@ export class UploadQueue {
   /** pieces uploaded since the start, and in the last frame */
   uploaded = 0;
   lastFrame = 0;
+  /** maps on their way (being fetched, decoded or uploaded), and maps finished since the start */
+  loading = 0;
+  maps = 0;
 
   constructor(private readonly now: () => number = () => performance.now()) {}
 
   get pending(): number { return this.pieces.length; }
+
+  /** nothing on its way: every map asked for so far is on the GPU */
+  get idle(): boolean { return this.loading === 0 && this.pieces.length === 0; }
 
   /** queue work; resolves after its last piece ran */
   add(run: () => void): Promise<void> {
@@ -105,18 +111,24 @@ export function strips(w: number, h: number, bytes = STRIP_BYTES): [number, numb
  * Resolves with the finished texture (and its mean luminance when asked).
  */
 export async function loadMap(url: string, opts: MapOptions = {}): Promise<MapResult> {
-  const blob = await (await fetch(url)).blob();
-  const base: ImageBitmapOptions = { imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
-  let bmp = await createImageBitmap(blob, base);
-  if (opts.maxWidth && bmp.width > opts.maxWidth) {
-    const w = opts.maxWidth, h = Math.round(bmp.height * w / bmp.width);
-    const small = await createImageBitmap(bmp, { ...base, imageOrientation: 'none', resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-    bmp.close();
-    bmp = small;
+  UPLOADS.loading++;
+  try {
+    const blob = await (await fetch(url)).blob();
+    const base: ImageBitmapOptions = { imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
+    let bmp = await createImageBitmap(blob, base);
+    if (opts.maxWidth && bmp.width > opts.maxWidth) {
+      const w = opts.maxWidth, h = Math.round(bmp.height * w / bmp.width);
+      const small = await createImageBitmap(bmp, { ...base, imageOrientation: 'none', resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+      bmp.close();
+      bmp = small;
+    }
+    const meanLum = opts.lum ? await meanLinearLuminance(bmp) : 0.3;
+    const tex = await uploadBitmap(bmp, opts.setup);
+    UPLOADS.maps++;
+    return { tex, meanLum };
+  } finally {
+    UPLOADS.loading--;
   }
-  const meanLum = opts.lum ? await meanLinearLuminance(bmp) : 0.3;
-  const tex = await uploadBitmap(bmp, opts.setup);
-  return { tex, meanLum };
 }
 
 /** Upload a decoded bitmap (already oriented for flipY = false) in strips; resolves when complete. */

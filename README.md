@@ -33,9 +33,10 @@ computer takes over), landing on solid worlds, missions and a discovery log.
 
 ### ▶ Live: **https://dippy34.github.io/starfarer/**
 
-On a **phone or tablet** it is laid out as an app: drag to turn round the world in front of you,
-pinch to zoom all the way down to the ground, tap anything to see what it is (add it to the home
-screen to lose the browser's bars). On a **desktop** browser with WebGL 2: keyboard + mouse, press
+On a **phone or tablet** it is laid out as an app: it opens on a loading screen that follows the
+real loading (what has arrived, what it brought, how much was downloaded), then drag to turn round
+the world in front of you, pinch to zoom all the way down to the ground, tap anything to see what
+it is (add it to the home screen to lose the browser's bars). On a **desktop** browser with WebGL 2: keyboard + mouse, press
 **H** for controls. With a **VR headset**: open the link in the headset's browser (Meta Quest
 Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER VR**.
 
@@ -49,6 +50,8 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 | ![Gaia BH1 bending the Milky Way into an Einstein ring](docs/img/bh-gaia-bh1.jpg) | ![Cygnus X-1's accretion disk lensed over the shadow](docs/img/bh-cygnus-x1.jpg) |
 | ![The Moon from 5 km: LOLA heights, generated craters](docs/img/terrain-moon-5km.jpg) | ![Standing in a lunar crater at sunrise](docs/img/terrain-moon-ground.jpg) |
 | ![Over Olympus Mons (MOLA heights) under the Martian sky](docs/img/terrain-mars-olympus.jpg) | ![On Proxima Cen b, lit by its red dwarf (generated surface)](docs/img/terrain-proxima-b.jpg) |
+
+<img src="docs/img/stars-up-close.jpg" width="640" alt="Stars up close: the Sun, Sirius, Betelgeuse and Proxima Centauri, each with the surface of its kind"> <img src="docs/img/loading.jpg" width="640" alt="The loading screen: what has arrived, what it brought, how much was downloaded">
 
 *Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
 verification run, not hand-picked renders.*
@@ -218,8 +221,16 @@ matching functions.
 
 ### What works (each verified before it went live)
 
-Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `vr.mjs`, `game.mjs`,
-`terrain.mjs`, `places.mjs`; see HANDOFF.md):
+Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `start.mjs`,
+`touch.mjs`, `interact.mjs`, `exposure.mjs`, `vr.mjs`, `game.mjs`, `walk.mjs`, `terrain.mjs`,
+`places.mjs`, `flight.mjs`; see HANDOFF.md):
+
+* The eye adapts like one: it shuts down at once for something bright, opens over a moment in the
+  dark, and holds its exposure for as long as any of a bright thing is in the frame, so looking
+  away from the Sun, a planet's rings or a black hole's disk, and back, never flashes
+  (`src/app/Exposure.ts`, `scripts/exposure.mjs`).
+* Stars are sharp points on any screen: each one's light is summed over the pixels it falls on, at
+  the screen's own density; the bright ones are white-hot points in a soft glow, not disks.
 
 * Seamless scale from metres above a planet to kiloparsecs, floating origin, reversed-Z depth.
 * 2,751,164 real stars streamed from two separately-licensed octrees (AT-HYG+HYG; Gaia DR3 100 pc
@@ -305,8 +316,12 @@ Known limitations (planned for later phases unless noted):
 * Game-mode ships are fictional. The ISS and Hubble are propagated from one set of orbital elements
   (2026-10-01), so they drift from their real positions over weeks. Procedural stars beyond the catalogues
   are plausible, not real: their densities, colours and luminosities follow the model.
-* Star radii are estimated from V magnitude and temperature (no bolometric correction). Gaia DR3
-  places Sirius B 0.033 pc from Sirius A (a known astrometry problem for that binary).
+* Star radii are estimated from V magnitude and temperature (no bolometric correction): red dwarfs,
+  whose light is nearly all infrared, come out several times too small (Proxima Centauri 0.022
+  solar radii; it is 0.15). Gaia DR3 places Sirius B 0.033 pc from Sirius A (a known astrometry
+  problem for that binary).
+* A star's face up close is drawn to be read, not measured: its limb darkening is steeper than the
+  real law, and the restless pattern on it from afar stands in for granules far too small to see.
 * Moons without published sizes get a deterministic procedural radius, flagged "estimated".
 * Comet comas and tails are a model: their size follows each comet's catalogued total-magnitude
   parameters (M1, K1) and distance from the Sun, the ion tail points straight away from the Sun and

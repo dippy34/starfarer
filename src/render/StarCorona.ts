@@ -10,10 +10,13 @@ const NEAR = 1e7;
 const geo = new PlaneGeometry(2, 2);
 
 /**
- * The glow around a resolved star (inner corona, streamers, prominences) as a camera-facing quad.
- * Artistic in strength — a real corona is a millionth of the disk's brightness — like the glow
- * SpaceEngine and photographs show; its shape and activity follow the star's look.
+ * The glow around a resolved star (inner corona, streamers, chromosphere, prominences) as a
+ * camera-facing quad. Artistic in strength — a real corona is a millionth of the disk's
+ * brightness — like the glow photographs show; its shape and activity follow the star's look.
+ * It stays well under the brightness of the limb it rises from (GLOW of the disk's mean): a
+ * star's limb is its darkest part, and a glow that outshines it rims the star with light.
  */
+const GLOW = 0.26;
 export class StarCorona {
   readonly mesh: Mesh;
   private mat: ShaderMaterial;
@@ -24,7 +27,7 @@ export class StarCorona {
       uniforms: {
         uColor: { value: new Vector3(1, 1, 1) }, uIntensity: { value: 1 }, uQuad: { value: QUAD },
         uCorona: { value: 0.6 }, uProm: { value: 0 }, uSeed: { value: 0 }, uTime: { value: 0 },
-        uAxis2: { value: new Vector2(0, 1) }, uMinor: { value: 1 },
+        uAxis2: { value: new Vector2(0, 1) }, uMinor: { value: 1 }, uSinLimb: { value: 1 }, uCopy: { value: 1 }, uRadiusM: { value: 1 },
         uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       transparent: true, depthWrite: false, blending: AdditiveBlending,
@@ -47,7 +50,7 @@ export class StarCorona {
     // (close to a star the eye is adapted to the surface filling the view: the corona, a millionth
     // of its brightness, fades from sight)
     const near = Math.min(1, Math.max(0, (rel.length() / radius - 1.4) / 4.6));
-    u.uIntensity.value = 0.85 * Math.min(1, display * 3) * (0.12 + 0.88 * near * near * (3 - 2 * near));
+    u.uIntensity.value = GLOW * Math.min(1.2, display) * (0.3 + 0.7 * near * near * (3 - 2 * near));
     u.uCorona.value = look.corona;
     u.uProm.value = look.prominences;
     u.uSeed.value = look.seed;
@@ -60,12 +63,15 @@ export class StarCorona {
     u.uMinor.value = Math.sqrt(ax.z * ax.z + (1 - look.flattening) ** 2 * sin2);
     // Drawn on a scaled-down copy nearer the eye (same directions, same angular size): a quad
     // around a giant star is ~1e12 m across, and triangles that size come out garbled (seen in
-    // software rasterisers: one triangle missing, the glow smeared into a slab). The disk itself
-    // is left clear by the shader, so the glow need not lie behind the star.
+    // software rasterisers: one triangle missing, the glow smeared into a slab). Its depth is
+    // written as the star's own (CORONA_VERT), so the star's face hides the glow behind it.
     const k = Math.min(1, NEAR / Math.max(rel.length(), 1));
+    u.uCopy.value = k;
+    u.uRadiusM.value = radius;
     // up close the disk's visible edge (where the sight lines graze the sphere) lies outside the
     // radius in the quad's plane through the centre: size the quad so r = 1 is that edge
     const d = Math.max(rel.length(), radius * 1.0001);
+    u.uSinLimb.value = radius / d;
     const limb = d / Math.sqrt(d * d - radius * radius);
     const s = radius * QUAD * k * Math.min(limb, 8);
     this.mesh.matrix.compose(rel.clone().multiplyScalar(k), viewQuat, new Vector3(s, s, s));

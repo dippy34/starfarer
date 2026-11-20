@@ -19,12 +19,6 @@ export interface SpaceObject {
   info(): [string, string][];
 }
 
-export interface RingInfo {
-  innerKm: number;
-  outerKm: number;
-  texture: string;
-}
-
 export class Body implements SpaceObject {
   readonly key: string;
   readonly kind: BodyType;
@@ -43,7 +37,6 @@ export class Body implements SpaceObject {
   texture: string | null = null;
   color: [number, number, number] = [0.6, 0.6, 0.6];
   rotation: RotationModel | null = null;
-  rings: RingInfo | null = null;
   /** effective temperature for stars */
   teff = 0;
   absMag = 0;

@@ -28,6 +28,8 @@ export interface StarLook {
   /** quadratic limb-darkening coefficients */
   limbA: number;
   limbB: number;
+  /** what the steepened limb darkening is multiplied by, so the disk's mean brightness stays 1 (limbGain) */
+  limbGain: number;
   /** visible rotation of surface features (rad/s, sped up so they can be seen move) */
   rotRate: number;
   /** polar flattening (0 = sphere) and equatorial gravity darkening */
@@ -40,6 +42,29 @@ export interface StarLook {
   prominences: number;
   /** chance of a flare being under way at any moment */
   flares: number;
+  /** strength of the restless large-scale pattern a star shows from afar (0: a smooth disk) */
+  turbulence: number;
+}
+
+/**
+ * The limb darkening is drawn to this power of the quadratic law: steeper than it is. The true
+ * law does most of its darkening within a few hundredths of the radius from the edge; on a
+ * screen, under the glow and the tone curve, that leaves a flat plate.
+ */
+export const LIMB_POWER = 2.2;
+
+/**
+ * The factor that keeps a disk's mean brightness (in the visual) at 1 under the steepened law:
+ * one over the mean of (1 - a (1 - mu) - b (1 - mu)^2)^LIMB_POWER over the disk (weight mu).
+ */
+export function limbGain(a: number, b: number): number {
+  const n = 64;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const mu = (i + 0.5) / n, x = 1 - mu;
+    sum += Math.max(1 - a * x - b * x * x, 0) ** LIMB_POWER * mu;
+  }
+  return n / (2 * sum);
 }
 
 export function hashString(s: string): number {
@@ -61,7 +86,9 @@ export function starLook(key: string, teff: number, radiusSun: number, absMag: n
   const r1 = hashString(key), r2 = hashString(key + '#2'), r3 = hashString(key + '#3'), r4 = hashString(key + '#4');
   const T = Math.max(teff || 5800, 1500);
   const R = Math.max(radiusSun, 1e-3);
-  const whiteDwarf = R < 0.05;
+  // (the radius is estimated without a bolometric correction: a red dwarf, nearly all of whose
+  // light is infrared, comes out several times too small. Small and cool is a red dwarf.)
+  const whiteDwarf = R < 0.05 && T >= 4500;
   const supergiant = R > 80 || absMag < -4.5;
   const giant = !supergiant && R > 3.5;
   // mass: main sequence from temperature, typical values for evolved stars
@@ -97,13 +124,16 @@ export function starLook(key: string, teff: number, radiusSun: number, absMag: n
   return {
     seed: r1 * 1000,
     granFreq, granAmp, spots, spotLat: fast ? 0.75 : 0.25 + 0.15 * r2, faculae: Math.min(1, activity * 1.6),
-    limbA, limbB,
+    limbA, limbB, limbGain: limbGain(limbA, limbB),
     rotRate: (fast ? 0.05 : 0.012) * (supergiant ? 0.2 : giant ? 0.4 : 1) * (0.6 + 0.8 * r2),
     flattening, gravDark: flattening * 1.4,
     axis,
     corona: whiteDwarf ? 0.2 : supergiant ? 0.9 : 0.5 + 0.5 * activity + (T > 15000 ? 0.4 : 0),
     prominences: convective && !supergiant ? Math.min(1, activity * 1.4) : 0,
     flares: T < 3900 && !giant && !supergiant ? activity * 0.25 : 0,
+    // convective stars seethe (the more active the more); supergiants show it in their giant cells
+    // already; the smooth, radiative surfaces of hot stars and white dwarfs only faintly
+    turbulence: whiteDwarf ? 0.04 : supergiant ? 0.15 : convective ? 0.5 + 0.2 * activity : 0.1 + 0.05 * r3,
   };
 }
 
@@ -114,6 +144,7 @@ export function starLookUniforms(look: StarLook, axisBF = new Vector3(0, 0, 1)):
     uSpots: { value: look.spots }, uSpotLat: { value: look.spotLat }, uFaculae: { value: look.faculae },
     uLimbA: { value: look.limbA }, uLimbB: { value: look.limbB }, uRotRate: { value: look.rotRate },
     uGravDark: { value: look.gravDark }, uAxis: { value: axisBF.clone() }, uFlares: { value: look.flares }, uFlat: { value: look.flattening },
+    uTurb: { value: look.turbulence }, uLimbGain: { value: look.limbGain },
   };
 }
 
@@ -124,4 +155,6 @@ export function applyStarLook(u: Record<string, { value: unknown }>, look: StarL
   u.uLimbA.value = look.limbA; u.uLimbB.value = look.limbB; u.uRotRate.value = look.rotRate;
   u.uGravDark.value = look.gravDark; u.uFlares.value = look.flares;
   if (u.uFlat) u.uFlat.value = look.flattening;
+  if (u.uTurb) u.uTurb.value = look.turbulence;
+  if (u.uLimbGain) u.uLimbGain.value = look.limbGain;
 }

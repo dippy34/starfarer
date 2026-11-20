@@ -1,4 +1,4 @@
-/* Title screen (src/app/StartMenu.ts): over the live renderer, darkened and blurred. */
+/* Title screen (src/app/StartMenu.ts): over the live renderer, darkened. */
 #start-menu {
   --sm-accent: #8fc0ff;
   --sm-text: #eef3fb;
@@ -21,31 +21,14 @@
 #start-menu.sm-in { opacity: 1; }
 #start-menu.sm-out { opacity: 0; transform: scale(1.02); transition: opacity 0.6s ease, transform 0.6s ease; pointer-events: none; }
 
-/* the live view behind: dimmed, blurred, a vignette */
+/* The live view behind: dimmed towards the edges and under the menu, nothing else. (It used to
+   be blurred, with a few drawn points drifting over it: the real sky, smeared, under a fake one.) */
 #start-menu .sm-shade {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 50% 42%, rgba(4, 8, 18, 0.25) 0%, rgba(2, 4, 10, 0.72) 62%, rgba(0, 0, 0, 0.92) 100%);
-  -webkit-backdrop-filter: blur(5px) saturate(1.15);
-  backdrop-filter: blur(5px) saturate(1.15);
+    radial-gradient(ellipse at 50% 42%, rgba(3, 6, 14, 0.38) 0%, rgba(2, 4, 10, 0.74) 62%, rgba(0, 0, 0, 0.92) 100%);
 }
-/* a few slow, twinkling points on top, so the screen is never quite still */
-#start-menu .sm-stars {
-  position: absolute;
-  inset: -50%;
-  background-image:
-    radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, 0.7), transparent 60%),
-    radial-gradient(1px 1px at 72% 32%, rgba(200, 220, 255, 0.6), transparent 60%),
-    radial-gradient(1.5px 1.5px at 38% 74%, rgba(255, 240, 220, 0.6), transparent 60%),
-    radial-gradient(1px 1px at 86% 82%, rgba(255, 255, 255, 0.5), transparent 60%),
-    radial-gradient(1px 1px at 55% 8%, rgba(220, 230, 255, 0.55), transparent 60%);
-  background-size: 420px 420px;
-  animation: sm-drift 140s linear infinite, sm-twinkle 6s ease-in-out infinite alternate;
-  pointer-events: none;
-}
-@keyframes sm-drift { to { transform: translate3d(-420px, -210px, 0); } }
-@keyframes sm-twinkle { from { opacity: 0.35; } to { opacity: 0.8; } }
 
 #start-menu .sm-main {
   position: relative;
@@ -143,18 +126,6 @@
 #start-menu .sm-item.sm-small .sm-label { font-size: 15px; font-weight: 500; color: var(--sm-dim); }
 #start-menu .sm-item.sm-small .sm-desc { display: none; }
 #start-menu .sm-item.sm-small.sm-focus .sm-label { color: var(--sm-text); }
-#start-menu .sm-item.sm-loading .sm-label::after {
-  content: 'Loading…';
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--sm-accent);
-  animation: sm-pulse 1.4s ease-in-out infinite;
-}
-@keyframes sm-pulse { 50% { opacity: 0.35; } }
-
-#start-menu .sm-status { min-height: 18px; text-align: center; font-size: 12px; color: var(--sm-dim); }
 #start-menu .sm-credits {
   padding: 22px 26px;
   border-radius: 14px;
@@ -213,7 +184,7 @@
   #start-menu .sm-item { padding-top: 10px; padding-bottom: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #start-menu .sm-stars, #start-menu .sm-title { animation: none; }
+  #start-menu .sm-title { animation: none; }
 }
 /* the [hidden] attribute must win over the display rules above (credits ⇄ menu) */
 #start-menu [hidden] { display: none !important; }

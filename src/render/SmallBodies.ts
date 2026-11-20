@@ -123,6 +123,9 @@ export class Comet implements SpaceObject {
   }
 }
 
+/** The small bodies as downloaded: eight numbers of orbit per asteroid, a row per comet. */
+export interface SmallBodyData { refEpochJd: number; orbits: Float32Array; comets: CometRow[] }
+
 export class SmallBodiesLayer {
   readonly group = new Group();
   asteroids: Points | null = null;
@@ -141,14 +144,23 @@ export class SmallBodiesLayer {
     this.group.name = 'small-bodies';
   }
 
-  async load(base: string): Promise<void> {
+  /** Download the asteroids' and comets' orbits (build() makes them drawable). */
+  static async fetch(base: string): Promise<SmallBodyData> {
+    const get = async (file: string) => {
+      const res = await fetch(`${base}/solar/${file}`);
+      if (!res.ok) throw new Error(`${file}: HTTP ${res.status}`);
+      return res;
+    };
     const [meta, bin, comets] = await Promise.all([
-      fetch(`${base}/solar/asteroids.json`).then((r) => r.json()),
-      fetch(`${base}/solar/asteroids.bin`).then((r) => r.arrayBuffer()),
-      fetch(`${base}/solar/comets.json`).then((r) => r.json()),
+      get('asteroids.json').then((r) => r.json()) as Promise<{ refEpochJd: number }>,
+      get('asteroids.bin').then((r) => r.arrayBuffer()),
+      get('comets.json').then((r) => r.json()) as Promise<{ comets: CometRow[] }>,
     ]);
-    this.refEpoch = meta.refEpochJd;
-    const data = new Float32Array(bin);
+    return { refEpochJd: meta.refEpochJd, orbits: new Float32Array(bin), comets: comets.comets };
+  }
+
+  build({ refEpochJd, orbits: data, comets: rows }: SmallBodyData): void {
+    this.refEpoch = refEpochJd;
     const ib = new InterleavedBuffer(data, 8);
     const geo = new BufferGeometry();
     geo.setAttribute('aOrb0', new InterleavedBufferAttribute(ib, 4, 0));
@@ -165,7 +177,6 @@ export class SmallBodiesLayer {
     this.asteroids.name = 'asteroids';
     this.group.add(this.asteroids);
 
-    const rows = comets.comets as CometRow[];
     rows.forEach((r) => this.cometObjects.push(new Comet(`comet:${r[11]}`, r[0], r)));
     const cgeo = new BufferGeometry();
     cgeo.setAttribute('position', new BufferAttribute(new Float32Array(rows.length * 3), 3).setUsage(DynamicDrawUsage));

@@ -63,11 +63,12 @@ for (const sc of scenarios) {
   const t0 = Date.now();
   await page.goto(`${base}?${sc.query}`, { waitUntil: 'load' });
   try {
-    await page.waitForFunction(() => window.app || window.appError, null, { timeout: 60000 });
+    // (the explorer is there once the loading screen is through: the downloads, then the first view)
+    await page.waitForFunction(() => window.app || window.appError, null, { timeout: 240000 });
     const appError = await page.evaluate(() => window.appError);
     if (appError) throw new Error(appError);
     // let tiles stream and exposure settle
-    await page.waitForFunction(() => window.app.frameCount > 20 && window.app.debugState().pendingTiles === 0, null, { timeout: 120000 });
+    await page.waitForFunction(() => window.app.frameCount > 20 && window.app.debugState().pendingTiles === 0, null, { timeout: 240000 });
     await page.waitForTimeout(2500);
   } catch (e) {
     errors.push(`scenario error: ${e.message}`);
