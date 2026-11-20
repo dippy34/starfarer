@@ -35,7 +35,7 @@ import { DeepSkyLayer } from '../render/DeepSkyLayer';
 import { DeepSkyObject, loadDeepSky } from '../universe/DeepSky';
 import { Galaxy, loadGalaxies } from '../universe/Galaxies';
 import { loadSpacecraft, Spacecraft } from '../universe/Spacecraft';
-import { Hud } from '../ui/Hud';
+import { Hud, type HudAction, type HudState } from '../ui/Hud';
 import { BlackHole, loadBlackHoles } from '../universe/BlackHoles';
 import { Awe } from './Awe';
 import { Body, type SpaceObject } from '../universe/Body';
@@ -52,6 +52,8 @@ import { Game } from '../game/Game';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { Input } from './Input';
+import { leanDevice } from '../core/device';
+import { describe, distanceText, distanceTo, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
 import { Systems } from './Systems';
 import { VRSupport } from './VR';
 import { Walk } from './Walk';
@@ -67,6 +69,13 @@ const NEAR_STAR_RADIUS = 0.02;
 const COMPANION_RADIUS = 2;
 /** black holes are labelled within this distance (pc) */
 const BH_LABEL_PC = 400;
+/** the eye's height above the ground when standing on it (m) */
+const EYE_HEIGHT = 1.6;
+/** a double tap on the world the camera is at brings it this many times closer */
+const DOUBLE_TAP_ZOOM = 6;
+/** a click picks what is drawn within this many pixels of it; a finger reaches farther */
+const POINTER_REACH = 9;
+const FINGER_REACH = 22;
 const RATE_STEPS = [1, 10, 60, 600, 3600, 21600, DAY, 7 * DAY, 30.4375 * DAY, 365.25 * DAY, 3652.5 * DAY, 36525 * DAY];
 
 export class App {
@@ -127,6 +136,8 @@ export class App {
   craft!: SpacecraftLayer;
   /** close-up map tiles for the body being approached */
   tiles!: TileDetail;
+  /** the lighter set of content, for devices with little memory (src/core/device.ts) */
+  lean = false;
   /** photo mode (U): panels and labels hidden (read by Walk for its own HUD line) */
   photoMode = false;
   private labelsBeforePhoto = true;
@@ -165,13 +176,14 @@ export class App {
   ) {
     this.renderer = renderer;
     this.input = new Input(canvas);
-    this.hud = new Hud(hudRoot);
+    this.hud = new Hud(hudRoot, this);
     this.labels = new Labels(labelRoot);
     this.clock = SimClock.now();
   }
 
   static async create(canvas: HTMLCanvasElement, hudRoot: HTMLElement, labelRoot: HTMLElement): Promise<App> {
     const xrCapable = await VRSupport.detect();
+    const lean = leanDevice(xrCapable);
     const renderer = new Renderer(canvas, xrCapable);
     const useGaia = new URLSearchParams(location.search).get('gaia') !== '0';
     const systems = new Systems();
@@ -218,13 +230,13 @@ export class App {
     app.holes = new BlackHoleLayer(blackHoles, bodies.surfaceExposure, renderer.depthMode === 'reversed-z');
     app.jets = new JetsLayer(blackHoles);
     app.galaxy = new GalaxyGlow();
-    app.procStars = new ProceduralStarLayer(starField.psf, starField.colorLut, xrCapable);
+    app.procStars = new ProceduralStarLayer(starField.psf, starField.colorLut, lean);
     app.exo = new ExoPlanetLayer(starField.psf, bodies.surfaceExposure);
     app.exo.gl = renderer.gl;
-    app.tiles = new TileDetail(`${DATA}/tiles`, xrCapable);
+    app.tiles = new TileDetail(`${DATA}/tiles`, lean);
     // scanned ground materials for close-up surfaces (loaded in the background)
-    void loadMaterials(DATA, xrCapable, (t) => { void uploadTexture(t); }).catch((e) => console.warn('materials', e));
-    app.rocks = new Rocks(app.terrain, xrCapable);
+    void loadMaterials(DATA, lean, (t) => { void uploadTexture(t); }).catch((e) => console.warn('materials', e));
+    app.rocks = new Rocks(app.terrain, lean);
     app.terrain.source = bodies.terrainSource;
     app.cometTails = new CometTails(bodies.surfaceExposure);
     const earthBody = system.byId.get(399)!;
@@ -234,14 +246,14 @@ export class App {
     // M87's light is centred on its black hole
     const m87 = galaxyList.find((g) => g.name === 'M87'), m87bh = blackHoles.find((b) => b.name === 'M87*');
     if (m87 && m87bh) m87.upos.copy(m87bh.upos);
-    app.galaxies = new GalaxiesLayer(galaxyList, starField.psf, xrCapable);
+    app.galaxies = new GalaxiesLayer(galaxyList, starField.psf, lean);
     const dso = await loadDeepSky(DATA).catch((e) => { console.warn('deep sky', e); return [] as DeepSkyObject[]; });
-    app.deepSky = new DeepSkyLayer(dso, starField.psf, starField.colorLut, xrCapable);
+    app.deepSky = new DeepSkyLayer(dso, starField.psf, starField.colorLut, lean);
     // [catalog] real objects to search and visit; picked ones join the layers above
     app.objCatalog = new Catalog(`${DATA}/catalog`, {
       addBlackHole: (d) => { const b = new BlackHole(app.blackHoles.length, d); app.blackHoles.push(b); return b; },
       addGalaxy: (d, make) => { const g = make(d, app.galaxies.galaxies.length); app.galaxies.add(g); return g; },
-      addDeepSky: (d, make) => { const o = make(d, app.deepSky.objects.length); app.deepSky.add(o, starField.psf, starField.colorLut, xrCapable); return o; },
+      addDeepSky: (d, make) => { const o = make(d, app.deepSky.objects.length); app.deepSky.add(o, starField.psf, starField.colorLut, lean); return o; },
       existing: (names) => app.catalogExisting(names),
     });
     app.objCatalog.onUpdate = () => { app.hud.refreshSearch(); if (app.vr) app.vr.menu.panel.dirty = true; };
@@ -251,6 +263,7 @@ export class App {
     renderer.scene.add(sky.mesh, bodies.group, atmospheres.group, orbits.group, small.group, near.group, app.holes.group, app.jets.group, app.procStars.group, app.exo.group, app.terrain.group, app.rocks.group, app.mwVolume.mesh, app.cometTails.group, app.craft.group, app.galaxies.group, app.deepSky.group, ...starFields.map((f) => f.group));
     await small.load(DATA);
     await system.ephemeris.request(app.clock.jdTdb);
+    app.lean = lean;
     app.vr = new VRSupport(app, xrCapable, DATA);
     app.game = new Game(app);
     app.game.flight.setAtmospheres(atmoData);
@@ -259,10 +272,14 @@ export class App {
     setUploadRenderer(renderer.gl);
     bodies.uploader = (t) => { void uploadTexture(t); };
     app.warmupPending = true;
+    app.resize(); // (first: how far back the camera starts depends on the view's shape)
     app.applyUrl();
     app.bindKeys();
-    app.resize();
     window.addEventListener('resize', () => app.resize());
+    // photographs of the worlds for the lists (the lists show plain discs until they arrive)
+    void fetch(`${DATA}/textures/thumbs.json`).then((r) => r.json())
+      .then((t: { cols: number; rows: number; bodies: Record<string, [number, number]> }) => app.hud.setThumbs({ url: `${DATA}/textures/thumbs.jpg`, ...t }))
+      .catch((e) => console.warn('thumbnails', e));
     return app;
   }
 
@@ -271,6 +288,10 @@ export class App {
     const c = this.renderer.canvas;
     this.cssW = c.clientWidth || window.innerWidth;
     this.cssH = c.clientHeight || window.innerHeight;
+    this.rig.viewport.width = this.cssW;
+    this.rig.viewport.height = this.cssH;
+    // what the camera is aimed at sits in the room the interface leaves (an upright phone: above the card)
+    this.rig.aim = this.hud.subjectLift() * this.rig.pixelAngle;
     this.renderer.setSize(this.cssW, this.cssH, Math.min(window.devicePixelRatio || 1, 2));
   }
 
@@ -317,7 +338,7 @@ export class App {
       else void this.objCatalog?.lookup(target).then((o) => { if (o) place(o); });
     } else {
       const earth = this.system.byId.get(399)!;
-      this.placeNear(earth, 3.4 * earth.radius, 35, 12);
+      this.placeNear(earth, 3.4 * earth.radius * this.rig.framing, 35, 12);
       this.select(earth);
     }
     if (look) {
@@ -340,6 +361,7 @@ export class App {
     const dir = sunDir.clone().applyAxisAngle(north, (az * Math.PI) / 180).applyAxisAngle(axis, (el * Math.PI) / 180);
     this.rig.upos.copy(obj.upos).addVec(dir, dist);
     this.rig.lookAt(dir.clone().negate(), north);
+    this.rig.target = obj;
     this.rig.setAnchor(obj instanceof Body || obj instanceof Comet || obj instanceof ExoPlanet || obj instanceof Spacecraft || this.isCompanion(obj) ? obj : null);
   }
 
@@ -349,48 +371,38 @@ export class App {
   }
 
   private bindKeys(): void {
-    this.input.onClick = (x, y) => {
-      if (this.walk.onClick()) return; // walking: the click grabs the mouse
-      const hit = this.pick(x, y);
+    this.input.onTap = (x, y, touch) => {
+      if (!touch && this.walk.onClick()) return; // walking: the click grabs the mouse
+      if (touch && this.photoMode) { this.act('photo'); return; } // a tap brings the controls back
+      this.select(this.pickAt(x, y, touch));
+    };
+    this.input.onDoubleTap = (x, y, touch) => {
+      const hit = this.pickAt(x, y, touch);
+      if (!hit) return;
       this.select(hit);
-    };
-    this.input.onDoubleClick = (x, y) => {
-      const hit = this.pick(x, y);
-      if (hit) { this.select(hit); this.goTo(hit); }
-    };
-    this.hud.onSearch = (q) => this.searchItems(q);
-    this.hud.onSearchPick = (id) => {
-      if (id.startsWith('tour:')) { this.tourAction(id.slice(5)); return; }
-      const obj = this.resolveSearchId(id);
-      if (obj) { this.select(obj); this.goTo(obj); }
+      // already there: come closer to the place that was tapped (as on a map); else fly there
+      if (hit === this.rig.target && !this.rig.autopilot) this.rig.zoomToward({ x, y }, -Math.log(DOUBLE_TAP_ZOOM));
+      else this.goTo(hit);
     };
     this.input.onKey = (e) => {
       if (this.game?.active) this.game.audio.start();
-      if (this.hud.searchOpen) return;
       if (this.walk.onKey(e)) return; // walking: B, Space jumps, ...
       switch (e.code) {
-        case 'Space': this.togglePause(); e.preventDefault(); break;
-        case 'BracketRight': this.timeFaster(); break;
-        case 'BracketLeft': this.timeSlower(); break;
-        case 'Backslash': this.timeReverse(); break;
-        case 'Backspace': this.realTime(); e.preventDefault(); break;
-        case 'KeyG': if (this.selection) this.goTo(this.selection); break;
-        case 'KeyC': if (this.selection) this.center(this.selection); break;
-        case 'KeyL': this.labels.enabled = !this.labels.enabled; this.hud.toast(`Labels ${this.labels.enabled ? 'on' : 'off'}`); break;
-        case 'KeyU': {
-          // photo mode: panels and labels off (or back to how they were)
-          this.photoMode = !this.photoMode;
-          this.hud.setHidden(this.photoMode);
-          if (this.photoMode) { this.labelsBeforePhoto = this.labels.enabled; this.labels.enabled = false; } else this.labels.enabled = this.labelsBeforePhoto;
-          this.hud.toast(this.photoMode ? 'Photo mode (U to leave, P to save a PNG)' : 'Photo mode off', 1.5);
-          break;
-        }
-        case 'KeyO': this.orbits.enabled = !this.orbits.enabled; this.hud.toast(`Orbits ${this.orbits.enabled ? 'on' : 'off'}`); break;
-        case 'KeyM': this.orbits.showMinor = !this.orbits.showMinor; this.hud.toast(`Minor-body orbits ${this.orbits.showMinor ? 'on' : 'off'}`); break;
+        case 'Space': this.act('pause'); e.preventDefault(); break;
+        case 'BracketRight': this.act('faster'); break;
+        case 'BracketLeft': this.act('slower'); break;
+        case 'Backslash': this.act('reverse'); break;
+        case 'Backspace': this.act('now'); e.preventDefault(); break;
+        case 'KeyG': this.act('go'); break;
+        case 'KeyC': this.act('centre'); break;
+        case 'KeyL': this.act('labels'); break;
+        case 'KeyU': this.act('photo'); break;
+        case 'KeyO': this.act('orbits'); break;
+        case 'KeyM': this.act('minor'); break;
         case 'KeyH': case 'F1': this.hud.toggleHelp(); e.preventDefault(); break;
-        case 'KeyP': this.screenshot(); break;
+        case 'KeyP': this.act('screenshot'); break;
         case 'Enter': case 'Slash': this.hud.openSearch(); e.preventDefault(); break;
-        case 'KeyT': this.hud.openList('Tour: pick a place (or type to search)', this.tourItems()); e.preventDefault(); break;
+        case 'KeyT': this.hud.openExplore('tour'); e.preventDefault(); break;
         case 'Equal': case 'NumpadAdd': this.rig.speedFactor *= 2; break;
         case 'Minus': case 'NumpadSubtract': this.rig.speedFactor /= 2; break;
         case 'Escape': this.cancelOrDeselect(); break;
@@ -409,6 +421,69 @@ export class App {
           }
       }
     };
+  }
+
+  // ------------------------------------------------------------------ the interface's requests (HudHost)
+  /** What a button of the interface, or the key that stands for it, does. */
+  act(action: HudAction): void {
+    switch (action) {
+      case 'go': if (this.selection) this.goTo(this.selection); break;
+      case 'centre': if (this.selection) this.center(this.selection); break;
+      // the place chip: look at where the camera is; in open space, choose somewhere to go
+      case 'home': if (this.rig.target) this.center(this.rig.target); else this.hud.openExplore(); break;
+      case 'deselect': this.select(null); break;
+      case 'stop': this.rig.cancelGoto(); break;
+      case 'pause': this.togglePause(); break;
+      case 'faster': this.timeFaster(); break;
+      case 'slower': this.timeSlower(); break;
+      case 'reverse': this.timeReverse(); break;
+      case 'now': this.realTime(); break;
+      case 'labels': this.labels.enabled = !this.labels.enabled; this.hud.toast(`Names ${this.labels.enabled ? 'on' : 'off'}`); break;
+      case 'orbits': this.orbits.enabled = !this.orbits.enabled; this.hud.toast(`Orbits ${this.orbits.enabled ? 'on' : 'off'}`); break;
+      case 'minor': this.orbits.showMinor = !this.orbits.showMinor; this.hud.toast(`Orbits of asteroids and comets ${this.orbits.showMinor ? 'on' : 'off'}`); break;
+      case 'look':
+        this.rig.touchDrag = this.rig.touchDrag === 'look' ? 'orbit' : 'look';
+        this.hud.toast(this.rig.touchDrag === 'look' ? 'One finger looks around' : 'One finger turns round where you are');
+        break;
+      case 'photo': this.togglePhoto(); break;
+      case 'screenshot': this.screenshot(); break;
+    }
+  }
+
+  /** Photo mode: every control and name off (or back to how they were). */
+  private togglePhoto(): void {
+    this.photoMode = !this.photoMode;
+    this.hud.setHidden(this.photoMode);
+    if (this.photoMode) { this.labelsBeforePhoto = this.labels.enabled; this.labels.enabled = false; } else this.labels.enabled = this.labelsBeforePhoto;
+    const leave = this.input.touch ? 'tap to leave' : 'U to leave, P to save a PNG';
+    this.hud.toast(this.photoMode ? `Photo mode (${leave})` : 'Photo mode off', 1.8);
+  }
+
+  /** The places of a section of the Explore sheet, described from where the camera is. */
+  browse(category: Category): Destination[] {
+    if (category === 'tour') {
+      // (an event is pictured by the world it happens on)
+      const world: Record<string, string> = { 'tour:walk17': 'Moon', 'tour:shadow': 'Jupiter', 'tour:eclipse': 'Moon', 'tour:proxima': 'Proxima Cen b' };
+      return this.tourItems().map((t) => {
+        if (t.id === 'tour:comet') return { ...t, picture: { shape: 'comet', tint: [0.62, 0.92, 1] } };
+        const o = world[t.id] ? this.findByName(world[t.id]) : this.resolveSearchId(t.id);
+        return { ...t, picture: o ? pictureOf(o) : undefined };
+      });
+    }
+    this.offered.clear();
+    return objectsOf(this, category).map((o) => {
+      this.offered.set(o.key, o);
+      return { label: o.name, detail: describe(this, o), id: `obj:${o.key}`, picture: pictureOf(o) };
+    });
+  }
+  /** the objects of the list last shown, by key */
+  private offered = new Map<string, SpaceObject>();
+
+  /** A place was chosen from a list: select it and go. */
+  pickDestination(id: string): void {
+    if (id.startsWith('tour:')) { this.tourAction(id.slice(5)); return; }
+    const obj = this.resolveSearchId(id);
+    if (obj) { this.select(obj); this.goTo(obj); }
   }
 
   // ------------------------------------------------------------------ actions
@@ -456,7 +531,7 @@ export class App {
       { label: 'Grand Canyon', detail: 'Earth · fly down into the canyon', id: `lm:${lm('Grand Canyon')}` },
       { label: 'Olympus Mons', detail: 'Mars · the tallest volcano known (real elevation data)', id: `lm:${lm('Olympus Mons')}` },
       { label: 'Valles Marineris', detail: 'Mars · a canyon 4,000 km long', id: `lm:${lm('Valles Marineris')}` },
-      { label: 'Apollo 11 landing site', detail: 'the Moon · fly down and walk', id: `lm:${lm('Apollo 11 landing site')}` },
+      { label: 'Apollo 11 landing site', detail: 'the Moon · where people first landed', id: `lm:${lm('Apollo 11 landing site')}` },
       { label: 'Walk on the Moon at Apollo 17', detail: 'land in the Taurus-Littrow valley and walk (B: walk / fly)', id: 'tour:walk17' },
       { label: 'Shackleton crater', detail: 'the Moon\'s south pole · long shadows', id: `lm:${lm('Shackleton (lunar south pole)')}` },
       { label: 'A moon\'s shadow on Jupiter', detail: 'jumps to the next shadow transit', id: 'tour:shadow' },
@@ -468,7 +543,8 @@ export class App {
       { label: 'Andromeda Galaxy', detail: '2.5 million light years', id: `gx:${this.galaxies.galaxies.findIndex((g) => g.name.startsWith('Andromeda'))}` },
       { label: 'The Milky Way from outside', detail: 'our galaxy, 100,000 light years across', id: 'mw:0' },
     ];
-    return items.filter((i) => !/:-1$/.test(i.id));
+    // (walking needs keys for now: it is not offered where there are none)
+    return items.filter((i) => !/:-1$/.test(i.id) && !(i.id === 'tour:walk17' && this.input.touch));
   }
 
   /** Tour destinations that need more than a fly-to (a time jump, a search): desktop flies there. */
@@ -538,8 +614,10 @@ export class App {
     this.hud.toast(`Missions ${m.doneCount}/${m.total}\n${lines}${recent ? `\nRecently discovered: ${recent}` : ''}`, 9);
   }
 
+  /** Escape: stop the flight, or close the open panel, or let go of the selection. */
   cancelOrDeselect(): void {
     if (this.rig.autopilot) this.rig.cancelGoto();
+    else if (this.hud.open) this.hud.closeSheet();
     else this.select(null);
   }
   /** Human-readable time rate. */
@@ -550,9 +628,12 @@ export class App {
     return `${this.clock.rate < 0 ? '◀ ' : ''}${t}`;
   }
 
+  /**
+   * Choose what the explorer is asking about: its name and facts are shown, and "go to" flies there.
+   * The camera stays with what it is at (rig.target) until it does.
+   */
   select(obj: SpaceObject | null): void {
     this.selection = obj;
-    this.rig.target = obj;
     this.orbits.selected = obj instanceof Body ? obj : null;
     if (obj instanceof CatalogStar) obj.resolve(this.named, () => undefined);
   }
@@ -580,19 +661,19 @@ export class App {
 
   goTo(obj: SpaceObject): void {
     if (obj instanceof Body) this.bodies.prefetch(obj);
+    // arrival distances are those of a wide view; an upright one stands back to frame the same
+    const fit = this.rig.framing;
     if (obj instanceof BlackHole) {
-      this.rig.flyTo(obj, obj.radius * 30, undefined, true, obj.approachDir(this.rig.upos.sub(obj.upos, new Vector3())));
-      this.hud.toast(`Going to ${obj.name}`);
+      this.rig.flyTo(obj, obj.radius * 30 * fit, undefined, true, obj.approachDir(this.rig.upos.sub(obj.upos, new Vector3())));
       return;
     }
     if (obj instanceof MilkyWay) {
-      this.rig.flyTo(obj, obj.radius * 2.6, undefined, true, obj.viewDir());
+      this.rig.flyTo(obj, obj.radius * 2.6 * fit, undefined, true, obj.viewDir());
       this.hud.toast('Leaving the galaxy');
       return;
     }
     if (obj instanceof DeepSkyObject) {
-      this.rig.flyTo(obj, obj.radius * (obj.data.kind === 'open' ? 1.6 : 2.6));
-      this.hud.toast(`Going to ${obj.name}`);
+      this.rig.flyTo(obj, obj.radius * (obj.data.kind === 'open' ? 1.6 : 2.6) * fit);
       return;
     }
     if (obj instanceof Galaxy) {
@@ -603,7 +684,7 @@ export class App {
         this.hud.toast(`Flying into ${obj.name}`);
         return;
       }
-      this.rig.flyTo(obj, obj.radius * 2.4, undefined, true, obj.viewDir(from));
+      this.rig.flyTo(obj, obj.radius * 2.4 * fit, undefined, true, obj.viewDir(from));
       this.hud.toast(`Going to ${obj.name} (go again to fly into it)`);
       return;
     }
@@ -622,17 +703,14 @@ export class App {
     else if (obj instanceof Comet) d = Math.max(obj.radius, 2000) * 40;   // close enough to see the nucleus
     else if (obj instanceof RingSpot) {
       this.rig.flyTo(obj, 60, undefined, true, obj.approachDir());
-      this.hud.toast(`Going to ${obj.name}`);
       return;
     } else if (obj instanceof Landmark) {
       // arrive above the place from the side lit by the Sun, looking down at it
-      this.rig.flyTo(obj, obj.def.view, undefined, true, obj.approachDir(this.system.sun.upos.sub(obj.world.upos, new Vector3()).normalize()));
-      this.hud.toast(`Going to ${obj.name}`);
+      this.rig.flyTo(obj, obj.def.view * fit, undefined, true, obj.approachDir(this.system.sun.upos.sub(obj.world.upos, new Vector3()).normalize()));
       return;
     }
     else d = Math.max(obj.radius * 4, 1e6);
-    this.rig.flyTo(obj, d);
-    this.hud.toast(`Going to ${obj.name}`);
+    this.rig.flyTo(obj, d * fit);
   }
 
   center(obj: SpaceObject): void {
@@ -702,7 +780,7 @@ export class App {
     return null;
   }
 
-  searchItems(q: string): { label: string; detail: string; id: string }[] {
+  searchItems(q: string): Destination[] {
     const n = q.toLowerCase();
     const out: { label: string; detail: string; id: string; score: number }[] = [];
     const score = (name: string) => {
@@ -770,7 +848,18 @@ export class App {
       }
     }
     out.sort((a, b) => a.score - b.score);
-    return out.slice(0, 14);
+    return out.slice(0, 14).map(({ label, detail, id }) => ({ label, detail, id, picture: this.pictureFor(id) }));
+  }
+
+  /** The picture beside a search result (what can be told without loading anything for it). */
+  private pictureFor(id: string): Picture | undefined {
+    const [kind, v] = id.split(':');
+    if (kind === 'star') return { shape: 'star', tint: starTint(this.named.list[Number(v)]?.teff ?? 0) };
+    if (kind === 'xh' || kind === 'bhc') return { shape: 'star', tint: starTint(0) };
+    if (kind === 'xp') return { shape: 'world', tint: [0.55, 0.66, 0.78] };
+    if (kind === 'cat') return undefined; // (a catalogue entry becomes an object only when it is chosen)
+    const o = this.resolveSearchId(id);
+    return o ? pictureOf(o) : undefined;
   }
 
   /** [catalog] The app's own object for a catalogue entry, if it has one under any of these names. */
@@ -791,6 +880,7 @@ export class App {
 
   resolveSearchId(id: string): SpaceObject | null {
     const [kind, v] = id.split(':');
+    if (kind === 'obj') return this.offered.get(id.slice(4)) ?? null;
     if (kind === 'body') return this.system.byId.get(Number(v)) ?? null;
     if (kind === 'comet') return this.small.cometObjects[Number(v)] ?? null;
     if (kind === 'bh') return this.blackHoles[Number(v)] ?? null;
@@ -884,28 +974,93 @@ export class App {
     this.rig.setAnchor(best);
   }
 
+  /** the world (a body, or a planet of another star) whose surface is the nearest thing to the camera, and how high above it */
+  private nearWorld: { obj: SpaceObject; alt: number } | null = null;
+
   private computeAltitude(): number {
     let alt = Infinity;
+    let world: SpaceObject | null = null;
     const rel = new Vector3();
     // above the landing terrain, the height of the ground below
     const tb = this.terrain.owner;
     const below = this.terrain.below(this.rig.upos);
-    if (below) alt = below.dist - below.ground;
+    if (below) { alt = below.dist - below.ground; world = tb as SpaceObject; }
     for (const b of this.system.bodies) {
       if (!b.valid || b === tb) continue;
       const d = b.upos.sub(this.rig.upos, rel).length() - b.radius;
-      if (d < alt) alt = d;
+      if (d < alt) { alt = d; world = b; }
     }
+    for (const ev of this.exo.views) if (ev.planet !== tb && ev.dist - ev.planet.radius < alt) { alt = ev.dist - ev.planet.radius; world = ev.planet; }
+    const worldAlt = alt;
     if (this.selection instanceof Comet) alt = Math.min(alt, this.selection.upos.sub(this.rig.upos, rel).length() - Math.max(this.selection.radius, 2000));
     alt = Math.min(alt, this.nearestStarDist);
-    for (const ev of this.exo.views) if (ev.planet !== tb) alt = Math.min(alt, ev.dist - ev.planet.radius);
     for (const cv of this.craft.views) alt = Math.min(alt, cv.dist - cv.craft.radius);
     for (const st of this.game.traffic.stations) alt = Math.min(alt, st.upos.sub(this.rig.upos, rel).length() - st.radius * 0.5);
     for (const h of this.blackHoles) {
       alt = Math.min(alt, h.upos.sub(this.rig.upos, rel).length() - h.radius);
       if (h.companion) alt = Math.min(alt, h.companion.upos.sub(this.rig.upos, rel).length() - h.companion.radius);
     }
+    this.nearWorld = world && worldAlt <= alt ? { obj: world, alt: Math.max(worldAlt, 0) } : null;
     return Math.max(alt, 0.5);
+  }
+
+  /** the orientation, at the previous frame, of the world whose ground is under the camera */
+  private carried: { owner: object; q: Quaternion } | null = null;
+
+  /**
+   * Near the ground the camera turns with the world, so the ground stays put under it instead of
+   * sliding by at the world's spin (465 m/s at Earth's equator), and the sky wheels overhead when
+   * time runs fast. From afar it does not: a planet is seen to rotate. Fully below 2 % of the
+   * radius above the ground, not at all above 20 %, part of the turn in between. Walking and the
+   * ship have frames of their own, and a flight under way is flown about the centre.
+   */
+  private carryWithGround(): void {
+    const world = this.terrain.current;
+    const below = world ? this.terrain.below(this.rig.upos) : null;
+    if (!world || !below) { this.carried = null; return; }
+    const q = new Quaternion().setFromRotationMatrix(world.orient);
+    const before = this.carried?.owner === world.ground.owner ? this.carried.q : null;
+    this.carried = { owner: world.ground.owner, q };
+    // (only a camera that moves with that world's centre: beside a spacecraft in orbit it keeps to the spacecraft)
+    if (!before || this.rig.anchor !== world.ground.owner || this.rig.autopilot || this.walk.walking || this.game.flight.on) return;
+    const share = 1 - smoothstep(0.02, 0.2, (below.dist - below.ground) / below.ground);
+    if (share <= 0) return;
+    // the world's turn since the last frame, and the share of it the camera takes
+    const turn = q.clone().multiply(before.clone().invert());
+    this.rig.carry(below.centre, new Quaternion().slerp(turn, share));
+  }
+
+  /**
+   * Tell the camera what it has to work with this frame: its target as a pointer finds it (the
+   * surface under the camera, how close zooming may come) and which way is up when a world is near.
+   */
+  private describeSurroundings(): void {
+    const rig = this.rig, t = rig.target;
+    const below = this.terrain.below(rig.upos);
+    rig.surface = 0;
+    rig.closest = 1;
+    if (t && t === this.terrain.owner && below) {
+      // over the landing terrain: the ground itself, down to eye height
+      rig.surface = below.ground;
+      rig.closest = below.ground + EYE_HEIGHT;
+    } else if (t instanceof Body || t instanceof ExoPlanet || t instanceof CatalogStar) {
+      rig.surface = t.radius;
+      rig.closest = t.radius * 1.002;
+    } else if (t instanceof BlackHole) rig.closest = t.radius * 1.5;
+    else if (t instanceof Galaxy || t instanceof DeepSkyObject || t instanceof MilkyWay) rig.closest = t.radius * 0.02; // into it
+    else if (t instanceof Landmark) rig.closest = 30;
+    else if (t instanceof RingSpot) rig.closest = 5;
+    else if (t) rig.closest = Math.max(t.radius * 1.5, 2);
+    // within a radius of a world its vertical takes over: looking round keeps the horizon level
+    const w = this.nearWorld;
+    rig.verticalWeight = 0;
+    if (w) {
+      const d = rig.upos.sub(w.obj.upos, rig.vertical).length();
+      if (d > 0) {
+        rig.vertical.divideScalar(d);
+        rig.verticalWeight = 1 - smoothstep(0.25, 1, w.alt / Math.max(w.obj.radius, 1));
+      }
+    }
   }
 
   /** Registry of selectable catalogue stars, keyed by octree node and slot. */
@@ -1256,13 +1411,24 @@ export class App {
     return { xStar, xSurf, mLim, xDark };
   }
 
-  private pick(cx: number, cy: number): SpaceObject | null {
+  /**
+   * What a click or a tap at a point of the view means: the object under it, or the one whose label
+   * is under it. A finger covers more than a mouse pointer: it reaches FINGER_REACH pixels.
+   */
+  pickAt(x: number, y: number, touch = false): SpaceObject | null {
+    const reach = touch ? FINGER_REACH : POINTER_REACH;
+    const label = this.labels.at(x, y, touch ? 8 : 2);
+    return (label ? this.pick(label.x, label.y, reach) : null) ?? this.pick(x, y, reach);
+  }
+
+  /** The object drawn nearest to a point of the view (CSS px), within `reach` pixels of it or under it. */
+  private pick(cx: number, cy: number, reach = POINTER_REACH): SpaceObject | null {
     let best: SpaceObject | null = null;
     let bestScore = Infinity;
     const consider = (obj: SpaceObject, p: { x: number; y: number } | null, radiusPx: number, bias: number) => {
       if (!p) return;
       const d = Math.hypot(p.x - cx, p.y - cy);
-      if (d > Math.max(radiusPx, 9)) return;
+      if (d > Math.max(radiusPx, reach)) return;
       const s = d + bias;
       if (s < bestScore) { bestScore = s; best = obj; }
     };
@@ -1302,7 +1468,7 @@ export class App {
         const p = this.project(rel);
         if (!p) continue;
         const ds = Math.hypot(p.x - cx, p.y - cy);
-        if (ds > 9) continue;
+        if (ds > starReach(reach, m)) continue;
         const s = ds + 0.4 * m;
         if (s < bestScore) { bestScore = s; bestRef = { cat, node: n.id, slot: i }; }
       }
@@ -1313,7 +1479,7 @@ export class App {
       const p = this.project(r);
       if (!p) return;
       const ds = Math.hypot(p.x - cx, p.y - cy);
-      if (ds > 9) return;
+      if (ds > starReach(reach, m)) return;
       const sc = ds + 0.4 * m;
       if (sc < bestScore) { bestScore = sc; bestProc = star; }
     });
@@ -1528,12 +1694,12 @@ export class App {
   private keepAboveGround(dt: number): void {
     const below = this.terrain.below(this.rig.upos);
     if (!below) return;
-    const EYE = 1.6;
+    const EYE = EYE_HEIGHT;
     const h = below.dist - below.ground;
     const out = this.rig.upos.sub(below.centre, new Vector3()).normalize();
     let target = h;
     if (h < EYE) target = EYE;
-    else if (h < 4 && !this.rig.autopilot && this.rig.vel.dot(out) < 0.05 && !this.input.keys.has('KeyR')) {
+    else if (h < 4 && !this.rig.autopilot && this.rig.vel.dot(out) < 0.05 && this.rig.rising <= 0 && !this.input.keys.has('KeyR')) {
       target = h + (EYE - h) * (1 - Math.exp(-dt * 6));
     }
     if (target !== h) this.rig.upos.addVec(out, target - h);
@@ -1706,8 +1872,9 @@ export class App {
       const r = this.selection.ref;
       this.getStar(r.catalog, r.node.id, r.slot);
     }
-    // 2. camera: co-move with the reference body, then apply controls
+    // 2. camera: co-move with the reference body (and, near its ground, turn with it), then apply controls
     this.rig.followAnchor();
+    this.carryWithGround();
     this.chooseAnchor();
     this.awe?.beginFrame();
     this.camPc.set((this.rig.upos.xh + this.rig.upos.xl) / PC, (this.rig.upos.yh + this.rig.upos.yl) / PC, (this.rig.upos.zh + this.rig.upos.zl) / PC);
@@ -1718,6 +1885,7 @@ export class App {
       HITCH.lap('nearScan');
     }
     this.rig.altitude = this.computeAltitude();
+    this.describeSurroundings();
     HITCH.lap('altitude');
     if (this.vr.active) this.vr.updateInput(dt);
     this.rig.braking = this.input.keys.has('KeyX');
@@ -1740,7 +1908,7 @@ export class App {
     this.renderer.rig.updateMatrixWorld(true);
     PERF.lap('cam');
     const cam = this.renderer.camera;
-    cam.fov = this.rig.fov;
+    cam.fov = this.rig.fovY;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld(true);
     this.view = this.renderer.viewInfo();
@@ -1761,7 +1929,7 @@ export class App {
     // the Sun's glare (the desktop bloom alone leaves a resolved Sun a bare dot)
     this.bodies.glareOn = true;
     this.bodies.glareVr = this.vr.active;
-    this.bodies.allowHi = !this.vr.active;
+    this.bodies.allowHi = !this.vr.active && !this.lean;
     this.bodies.update(this.rig.upos, pixelAngle, dt, this.view.quat);
     HITCH.lap('bodies');
     this.bodies.updateDetail(this.renderer.gl, this.tiles, pixelAngle, new Vector3(0, 0, -1).applyQuaternion(this.view.quat));
@@ -1906,36 +2074,56 @@ export class App {
   }
 
   private updateHud(): void {
-    const c = this.clock;
-    let selection = null;
+    const c = this.clock, rig = this.rig;
+    let selection: HudState['selection'] = null;
     if (this.selection) {
-      const d = this.selection.upos.sub(this.rig.upos, new Vector3()).length();
-      const rows = this.selection.info();
-      rows.push(...this.awe.rows(this.selection, d));
-      if (this.selection instanceof CatalogStar && !this.isCompanion(this.selection)) {
-        const sys = this.systems.of(this.selection);
+      const sel = this.selection;
+      const d = sel.upos.sub(rig.upos, new Vector3()).length();
+      const rows: [string, string][] = [['Distance', distanceText(distanceTo(this, sel))], ...sel.info(), ...this.awe.rows(sel, d)];
+      if (sel instanceof CatalogStar && !this.isCompanion(sel)) {
+        const sys = this.systems.of(sel);
         if (sys) rows.push(['Planets', sys.real ? `${sys.planets.length} confirmed (NASA Exoplanet Archive)` : `${sys.planets.length} generated (not observed)`]);
       }
-      selection = { name: this.selection.name, rows, distance: formatDistance(d) };
+      selection = { key: sel.key, name: sel.name, detail: describe(this, sel), rows, picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot };
     }
+    // where the camera is: at its target (how high above it, or how far from it), or in open space
+    const t = rig.target;
+    let place = rig.anchor ? `Near ${rig.anchor.name}` : 'Open space';
+    let placeDetail = 'no destination';
+    if (t) {
+      const d = t.upos.sub(rig.upos, new Vector3()).length();
+      place = t.name;
+      // close to a world it is a height; from afar, or with nothing to stand on, a distance
+      const h = Math.max(d - rig.surface, 0);
+      placeDetail = rig.surface > 0 && h < 10 * rig.surface ? `${formatDistance(h)} up` : `${distanceText(rig.surface > 0 ? h : d)} away`;
+    }
+    if (rig.speed > 0) placeDetail = t ? `${placeDetail} · ${formatSpeed(rig.speed)}` : formatSpeed(rig.speed);
     const drawn = this.starFields.reduce((a, f) => a + f.drawnStars, 0) + this.procStars.drawnStars;
-    const loaded = this.catalogs.reduce((a, c) => a + c.loadedStars, 0);
-    const total = this.catalogs.reduce((a, c) => a + c.totalStars, 0);
-    const pending = this.catalogs.reduce((a, c) => a + c.pending, 0);
+    const loaded = this.catalogs.reduce((a, cat) => a + cat.loadedStars, 0);
+    const total = this.catalogs.reduce((a, cat) => a + cat.totalStars, 0);
+    const pending = this.catalogs.reduce((a, cat) => a + cat.pending, 0);
     this.hud.update({
+      place,
+      placeDetail,
       date: formatUtc(c.jdTdb),
       rate: this.rateText(),
       paused: c.paused,
-      fps: this.fps,
-      speed: formatSpeed(this.rig.speed),
-      altitude: formatDistance(this.rig.altitude),
-      reference: this.rig.anchor?.name ?? 'none (free space)',
+      reversed: c.rate < 0,
       selection,
-      stars: `${(drawn / 1e3).toFixed(0)}k stars drawn · ${(loaded / 1e6).toFixed(2)}M of ${(total / 1e6).toFixed(2)}M loaded`,
-      loading: pending ? `streaming ${pending} star tiles` : '',
-      depthMode: this.renderer.depthMode,
-      ephemeris: this.system.usingDE ? 'Ephemeris: JPL DE442S' : 'Ephemeris: approximate elements',
-      autopilot: this.rig.autopilot,
+      flying: rig.autopilot && t ? t.name : null,
+      labels: this.labels.enabled,
+      orbits: this.orbits.enabled,
+      minor: this.orbits.showMinor,
+      look: rig.touchDrag === 'look',
+      mode: this.walk.active ? 'walk' : this.game.active ? 'ship' : 'explore',
+      touch: this.input.touch,
+      status: [
+        `${this.fps.toFixed(0)} fps`,
+        `${(drawn / 1e3).toFixed(0)}k stars drawn, ${(loaded / 1e6).toFixed(2)}M of ${(total / 1e6).toFixed(2)}M loaded`,
+        ...(pending ? [`streaming ${pending} star tiles`] : []),
+        this.system.usingDE ? 'ephemeris JPL DE442S' : 'ephemeris: approximate elements',
+        `depth ${this.renderer.depthMode}`,
+      ].join(' · '),
     });
   }
 
@@ -1951,6 +2139,7 @@ export class App {
       camera: this.rig.upos.toVector3().toArray(),
       anchor: this.rig.anchor?.name ?? null,
       selection: this.selection?.name ?? null,
+      target: this.rig.target?.name ?? null,
       starsDrawn: this.starFields.reduce((a, f) => a + f.drawnStars, 0),
       proceduralDrawn: this.procStars.drawnStars,
       proceduralPending: this.procStars.pending,
@@ -1969,6 +2158,15 @@ export class App {
 
 /** `?simfocus=0`: update every body every frame (A/B of the focus-scaled update) */
 const SIM_FOCUS_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simfocus') === '0';
+
+/**
+ * How near a star a tap must be to pick it (px): the whole reach for a bright star, down to a
+ * pointer's for a faint one. The sky is full of faint stars: a finger put down between them is
+ * not asking for one.
+ */
+function starReach(reach: number, magnitude: number): number {
+  return Math.max(Math.min(reach, POINTER_REACH), Math.min(reach, reach - 3 * (magnitude - 2)));
+}
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));

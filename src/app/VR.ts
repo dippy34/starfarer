@@ -151,10 +151,11 @@ export class VRSupport {
   private createButton(): void {
     const b = document.createElement('button');
     b.id = 'vr-button';
+    b.type = 'button';
     b.textContent = 'ENTER VR';
     b.title = 'Enter immersive VR';
     b.addEventListener('click', () => (this.session ? this.session.end() : this.enter()));
-    document.getElementById('app')!.appendChild(b);
+    this.app.hud.addFab(b); // with the interface's round buttons (src/ui/Hud.ts)
     this.button = b;
   }
 
@@ -315,8 +316,10 @@ export class VRSupport {
       }
       return;
     }
-    if (this.travel) return;
     const hit = this.app.pickRay(origin, dir);
+    // on the way somewhere: a trigger or a pinch away from the destination stops the flight. (The
+    // sky is never empty: the ray always passes close to some star, so "nothing was hit" will not do.)
+    if (this.travel) { if (hit !== this.travel.target) this.back(); return; }
     if (hit && hit === this.app.selection) {
       this.travelTo(hit);
       return;

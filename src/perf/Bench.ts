@@ -197,7 +197,7 @@ export class Bench {
   private snapshot(): () => void {
     const app = this.app, c = app.clock;
     const paused = c.paused, rate = c.rate, jd = c.jdTdb;
-    const upos = app.rig.upos.clone(), quat = app.rig.quat.clone(), sel = app.selection, anchor = app.rig.anchor;
+    const upos = app.rig.upos.clone(), quat = app.rig.quat.clone(), sel = app.selection, anchor = app.rig.anchor, target = app.rig.target;
     const gameMode = app.game.mode;
     return () => {
       if (app.game.mode !== gameMode) app.game.setMode(gameMode);
@@ -207,6 +207,7 @@ export class Bench {
       app.rig.upos.copy(upos);
       app.rig.quat.copy(quat);
       app.rig.setAnchor(anchor);
+      app.rig.target = target;
       app.select(sel);
     };
   }

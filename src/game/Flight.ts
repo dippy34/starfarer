@@ -526,8 +526,8 @@ export class Flight {
     );
     const drag = app.input.consume();
     // mouse: drag to turn (a rate command that decays when the mouse stops)
-    this.mouseRot.x = this.mouseRot.x * Math.exp(-dt * 10) - drag.left.dy * 0.04;
-    this.mouseRot.y = this.mouseRot.y * Math.exp(-dt * 10) - drag.left.dx * 0.04;
+    this.mouseRot.x = this.mouseRot.x * Math.exp(-dt * 10) - drag.look.dy * 0.04;
+    this.mouseRot.y = this.mouseRot.y * Math.exp(-dt * 10) - drag.look.dx * 0.04;
     cmd.add(this.mouseRot).add(ext.rot);
     cmd.clampScalar(-1, 1);
     // zoom out/in the chase camera / field of view is the wheel's job; nothing else consumes input here

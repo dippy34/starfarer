@@ -1,13 +1,13 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CameraRig } from '../src/app/CameraRig';
-import type { Input } from '../src/app/Input';
+import { emptyFrame, type Input } from '../src/app/Input';
 import { UPos } from '../src/core/upos';
 import type { SpaceObject } from '../src/universe/Body';
 
 const idle = {
   keys: new Set<string>(),
-  consume: () => ({ left: { dx: 0, dy: 0 }, right: { dx: 0, dy: 0 }, wheel: 0 }),
+  consume: emptyFrame,
 } as unknown as Input;
 
 function target(radius: number): SpaceObject {

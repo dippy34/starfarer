@@ -1,21 +1,20 @@
-import { Vector3 } from 'three';
 import { PRODUCT_NAME } from '../core/product';
 import { PERF_TOOLS } from '../perf/tools';
 import { Landmark } from '../universe/Landmarks';
 import { RingSpot } from '../universe/RingSpot';
 import type { App } from '../app/App';
 import { formatUtc } from '../core/time';
-import { formatDistance, LY } from '../core/units';
 import { BlackHole } from '../universe/BlackHoles';
 import { Body, type SpaceObject } from '../universe/Body';
 import { MilkyWay } from '../universe/MilkyWay';
 import { Galaxy } from '../universe/Galaxies';
-import { ExoPlanet, type PlanetType } from '../universe/Planets';
+import { ExoPlanet } from '../universe/Planets';
 import { Spacecraft } from '../universe/Spacecraft';
 import { DeepSkyObject } from '../universe/DeepSky';
 import { CatalogStar } from '../universe/Stars';
 import type { CatCode } from '../universe/CatalogSearch';
 import { COLORS, Panel } from './Panel';
+import { comets, describe, EXO_COLOR, EXOPLANETS, GALAXIES, HIGHLIGHTS, HOLES, measuredMoons, MOON_PARENTS, NEBULAE, nonNull, PLANETS, smallWorlds, starTint, STARS } from '../app/destinations';
 
 export interface VRSettings {
   travel: 'smooth' | 'blink';
@@ -34,26 +33,8 @@ export interface MenuHost {
 
 type Tab = 'planets' | 'moons' | 'small' | 'stars' | 'exo' | 'nebulae' | 'holes' | 'craft' | 'places' | 'search' | 'settings';
 const TABS: [Tab, string][] = [['planets', 'Planets'], ['moons', 'Moons'], ['small', 'Small'], ['stars', 'Stars'], ['exo', 'Exoplanets'], ['nebulae', 'Nebulae'], ['holes', 'Galaxies'], ['craft', 'Craft'], ['places', 'Places'], ['search', 'Search'], ['settings', 'Settings']];
-const NEBULAE = ['Orion Nebula', 'Carina Nebula', 'Eagle Nebula', 'Lagoon Nebula', 'Ring Nebula', 'Helix Nebula', 'Crab Nebula', 'Veil Nebula (Cygnus Loop)',
-  'Tarantula Nebula', 'Pleiades', 'Omega Centauri', 'Hercules Cluster (M13)'];
-/** famous confirmed planets of other stars (NASA Exoplanet Archive names) */
-const EXOPLANETS = ['Proxima Cen b', 'TRAPPIST-1 e', 'Kepler-186 f', '51 Peg b', 'HD 189733 b', '55 Cnc e', 'eps Eri b', 'TOI-700 d',
-  'LHS 1140 b', 'K2-18 b', 'Kepler-452 b', 'HR 8799 e'];
-const EXO_COLOR: Record<PlanetType, [number, number, number]> = {
-  lava: [0.55, 0.18, 0.08], hot: [0.62, 0.55, 0.5], desert: [0.85, 0.6, 0.35], terran: [0.35, 0.55, 0.45], ocean: [0.2, 0.42, 0.8],
-  ice: [0.88, 0.92, 0.98], subneptune: [0.55, 0.75, 0.85], icegiant: [0.35, 0.55, 0.95], giant: [0.85, 0.72, 0.55], hotgiant: [0.3, 0.22, 0.4],
-};
-const HOLES = ['Sagittarius A*', 'M87*', 'Cygnus X-1', 'Gaia BH1', 'Gaia BH2', 'Gaia BH3', '3A 0620-003', 'GS 2023+338', 'GRS 1915+105',
-  'XTE J1118+480', '4U 1543-475'];
-const GALAXIES = ['Andromeda Galaxy', 'Triangulum Galaxy', 'Large Magellanic Cloud', 'Small Magellanic Cloud', 'Whirlpool Galaxy', 'Sombrero Galaxy', 'Centaurus A', 'Pinwheel Galaxy', 'M87'];
-const PLANETS = ['Sun', 'Mercury', 'Venus', 'Earth', 'Moon', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Ceres'];
-const MOON_PARENTS = ['Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'];
-/** Places tab: the groups on the left, and the landmarks shown under Highlights */
+/** Places tab: the groups on the left */
 const PLACE_GROUPS = ['Highlights', 'Earth', 'Moon', 'Mars', 'Mercury', 'Ceres'];
-const HIGHLIGHTS = ['Mount Everest', 'Grand Canyon', 'Olympus Mons', 'Valles Marineris', 'Apollo 11 landing site', 'Tycho'];
-const STARS = ['Proxima Centauri', 'Rigil Kentaurus', 'Sirius', 'Betelgeuse', 'Rigel', 'Vega', 'Polaris', 'Arcturus', 'Antares', 'Aldebaran',
-  'Canopus', 'Deneb', "Barnard's Star", 'Tau Ceti', 'Altair', 'Capella', 'Spica', 'Fomalhaut', 'Procyon', 'Mira'];
-const COMETS = ['Halley', 'Hale-Bopp', 'Churyumov', 'Encke', 'Tempel 1', 'Wild 2', 'Hartley 2', 'Swift-Tuttle'];
 const KEYS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL\'', 'ZXCVBNM-/'];
 
 export class VRMenu {
@@ -136,36 +117,7 @@ export class VRMenu {
   }
 
   private subtitle(o: SpaceObject): string {
-    const app = this.host.app;
-    const d = o.upos.sub(app.rig.upos, new Vector3()).length();
-    if (o instanceof CatalogStar) return `${(d / LY).toFixed(d < 10 * LY ? 2 : 1)} light years`;
-    if (o instanceof MilkyWay) return 'our galaxy, from outside';
-    if (o instanceof Landmark) return `on ${o.def.body} · ${o.def.about}`;
-    if (o instanceof TourEvent) return o.about;
-    if (o instanceof RingSpot) return 'among the ice of the B ring';
-    if (o instanceof Galaxy) {
-      const mly = d / LY / 1e6;
-      return `galaxy · ${mly < 1 ? `${Math.round(mly * 1000)} thousand ly` : `${mly.toFixed(mly < 10 ? 1 : 0)} million ly`}`;
-    }
-    if (o instanceof DeepSkyObject) return `${o.kind} · ${Math.round(d / LY).toLocaleString()} ly`;
-    if (o instanceof Spacecraft) {
-      const au = o.upos.sub(app.system.sun.upos, new Vector3()).length() / 1.495978707e11;
-      return o.isOrbiter ? `Earth orbit · ${formatDistance(d)}` : o.parentObject ? `near Earth · ${formatDistance(d)}` : `${au.toFixed(au > 10 ? 0 : 2)} AU from the Sun`;
-    }
-    if (o instanceof ExoPlanet) {
-      const ly = o.system.host.upos.sub(app.rig.upos, new Vector3()).length() / LY;
-      return `${o.info()[0][1].replace(/^Exoplanet: /, '').replace(/, found.*$/, '')} · ${ly < 0.01 ? formatDistance(d) : `${ly.toFixed(ly < 10 ? 2 : 0)} ly`}`;
-    }
-    if (o instanceof BlackHole) {
-      const ly = d / LY;
-      const dist = ly > 1e6 ? `${(ly / 1e6).toFixed(0)} million ly` : ly > 0.01 ? `${Math.round(ly).toLocaleString()} ly` : formatDistance(d);
-      return `${o.supermassive ? `${(o.massSun / 1e6).toPrecision(3)} million Suns` : `${o.massSun.toFixed(1)} Suns`} · ${dist}`;
-    }
-    if (o instanceof Body) {
-      const kind = o.kind === 'moon' ? `moon of ${o.parent?.name}` : o.kind === 'star' ? 'star' : o.kind === 'dwarf' ? 'dwarf planet' : o.kind;
-      return `${kind} · ${formatDistance(d)}`;
-    }
-    return `${o.kind} · ${formatDistance(d)}`;
+    return o instanceof TourEvent ? o.about : describe(this.host.app, o);
   }
 
   private drawThumb(p: Panel, o: SpaceObject, cx: number, cy: number, r: number): void {
@@ -218,7 +170,7 @@ export class VRMenu {
       c.fill();
       return;
     }
-    const col = o instanceof CatalogStar ? starColor(o) : o instanceof Body ? o.color : o instanceof ExoPlanet ? EXO_COLOR[o.spec.type] : o instanceof Spacecraft ? [0.95, 0.78, 0.4] : o instanceof DeepSkyObject ? (o.data.kind === 'emission' ? [1, 0.35, 0.45] : o.data.kind === 'planetary' ? [0.4, 0.95, 0.9] : o.data.kind === 'snr' ? [0.6, 0.7, 1] : [1, 0.92, 0.75]) : [0.7, 0.7, 0.7];
+    const col = o instanceof CatalogStar ? starTint(o.teff) : o instanceof Body ? o.color : o instanceof ExoPlanet ? EXO_COLOR[o.spec.type] : o instanceof Spacecraft ? [0.95, 0.78, 0.4] : o instanceof DeepSkyObject ? (o.data.kind === 'emission' ? [1, 0.35, 0.45] : o.data.kind === 'planetary' ? [0.4, 0.95, 0.9] : o.data.kind === 'snr' ? [0.6, 0.7, 1] : [1, 0.92, 0.75]) : [0.7, 0.7, 0.7];
     const g = c.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
     const css = (k: number) => `rgb(${Math.round(255 * Math.min(1, col[0] * k))},${Math.round(255 * Math.min(1, col[1] * k))},${Math.round(255 * Math.min(1, col[2] * k))})`;
     const glow = o instanceof CatalogStar;
@@ -283,26 +235,14 @@ export class VRMenu {
     MOON_PARENTS.forEach((n, i) => {
       p.button(`parent:${n}`, a.x, a.y + i * 104, 250, 90, n, () => { this.moonParent = n; p.dirty = true; }, { active: this.moonParent === n, size: 30 });
     });
-    const parent = app.system.bodies.find((b) => b.name === this.moonParent);
-    const moons = app.system.bodies
-      .filter((b) => b.kind === 'moon' && b.parent === parent && !b.radiusEstimated)
-      .sort((x, y) => y.radius - x.radius);
+    const moons = measuredMoons(app, this.moonParent);
     this.paintGrid(p, { x: a.x + 280, y: a.y, w: a.w - 280, h: a.h }, moons, 3, 4);
     if (!moons.length) p.text('No moons with measured sizes', a.x + 300, a.y + 40, 28, COLORS.dim);
   }
 
   private paintSmall(p: Panel, a: { x: number; y: number; w: number; h: number }): void {
     const app = this.host.app;
-    const worlds = app.system.bodies
-      .filter((b) => (b.kind === 'dwarf' || b.kind === 'asteroid' || b.kind === 'tno') && !b.radiusEstimated)
-      .sort((x, y) => y.radius - x.radius)
-      .slice(0, 8);
-    const comets: SpaceObject[] = [];
-    for (const n of COMETS) {
-      const c = app.small.cometObjects.find((x) => x.name.includes(n));
-      if (c && comets.length < 4) comets.push(c);
-    }
-    this.paintGrid(p, a, [...worlds, ...comets], 4, 3);
+    this.paintGrid(p, a, [...smallWorlds(app), ...comets(app).slice(0, 4)], 4, 3);
   }
 
   private paintSearch(p: Panel, a: { x: number; y: number; w: number; h: number }): void {
@@ -434,19 +374,3 @@ class TourEvent implements SpaceObject {
   get upos() { return this.world.upos; }
   info(): [string, string][] { return [['Event', this.about]]; }
 }
-
-function nonNull<T>(x: T | null | undefined): x is T {
-  return x !== null && x !== undefined;
-}
-
-function starColor(s: CatalogStar): [number, number, number] {
-  const t = s.teff || 5800;
-  // compact Planck-ish tint for the menu thumbnails only
-  if (t > 9000) return [0.75, 0.85, 1.0];
-  if (t > 6500) return [0.92, 0.94, 1.0];
-  if (t > 5200) return [1.0, 0.95, 0.85];
-  if (t > 4000) return [1.0, 0.82, 0.6];
-  return [1.0, 0.7, 0.45];
-}
-
-

@@ -12,15 +12,20 @@ export interface LabelCandidate {
   cls: string;
 }
 
+/** a label on the screen: its box, and where the object it names is (CSS px) */
+interface Shown { x: number; y: number; w: number; h: number; ox: number; oy: number }
+
 export class Labels {
   enabled = true;
   private nodes = new Map<string, HTMLDivElement>();
   private used = new Set<string>();
+  private shown: Shown[] = [];
 
   constructor(private container: HTMLElement) {}
 
   update(cands: LabelCandidate[], width: number, height: number): void {
     this.used.clear();
+    this.shown.length = 0;
     if (this.enabled) {
       cands.sort((a, b) => b.priority - a.priority);
       const boxes: [number, number, number, number][] = [];
@@ -37,6 +42,7 @@ export class Labels {
         }
         if (overlap) continue;
         boxes.push([x, y, w, h]);
+        this.shown.push({ x, y, w, h, ox: c.x, oy: c.y });
         let el = this.nodes.get(c.key);
         if (!el) {
           el = document.createElement('div');
@@ -52,6 +58,22 @@ export class Labels {
         shown++;
       }
     }
+    this.sweep();
+  }
+
+  /**
+   * The object named by the label at a point of the view (within `pad` px of its text): where that
+   * object is on the screen, or null. People tap the name as readily as the dot beside it.
+   */
+  at(x: number, y: number, pad = 0): { x: number; y: number } | null {
+    for (const b of this.shown) {
+      if (x >= b.x - pad && x <= b.x + b.w + pad && y >= b.y - pad && y <= b.y + b.h + pad) return { x: b.ox, y: b.oy };
+    }
+    return null;
+  }
+
+  /** Hide the labels not shown this frame (and drop them once there are many). */
+  private sweep(): void {
     for (const [k, el] of this.nodes) {
       if (!this.used.has(k)) {
         if (this.nodes.size > 400) {

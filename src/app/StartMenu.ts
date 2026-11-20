@@ -186,7 +186,7 @@ export class StartMenu {
     app.vr.settings.labels = this.vrLabelsBefore;
     app.vr.holdMenu = false;
     if (app.vr.active) app.vr.flash('Trigger: select · A: fly there · Y: menu');
-    else app.hud.toast('H: help · T: tour · B: walk on the ground below', 4);
+    else app.hud.welcome(app.input.touch);
   }
 
   private close(animate: boolean): void {

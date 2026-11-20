@@ -1,147 +1,338 @@
-import { PRODUCT_NAME } from '../core/product';
+import { CATEGORIES, type Category, type Destination, type Picture } from '../app/destinations';
+import { touchFirst } from '../core/device';
+import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
+import { ICON } from './icons';
 
-/** Minimal Phase-1 heads-up display. Full UI (search panel, bookmarks, settings) arrives in Phase 5. */
-export interface HudState {
-  date: string;
-  rate: string;
-  paused: boolean;
-  fps: number;
-  speed: string;
-  altitude: string;
-  reference: string;
-  selection: { name: string; rows: [string, string][]; distance: string } | null;
-  stars: string;
-  loading: string;
-  depthMode: string;
-  ephemeris: string;
-  autopilot: boolean;
+/**
+ * The interface over the view, laid out as a phone app: two chips at the top (where you are, what
+ * time it is), a tab bar under the thumb, and one panel above it at a time — the card of what is
+ * selected, or the sheet a tab opens (search and places to go, time, settings and help). On a wide
+ * screen the tab bar stands at the left edge and the panel beside it (src/ui/styles.css).
+ *
+ * The Hud draws and reports; what a button does is the host's business (src/app/App.ts): it is
+ * told the action's name and decides. Texts are updated in place ten times a second, never
+ * rebuilt: a button being pressed must still be there when the finger lifts.
+ */
+
+/** what the interface can ask the app to do */
+export type HudAction =
+  | 'go' | 'centre' | 'deselect' | 'stop' | 'home'
+  | 'pause' | 'faster' | 'slower' | 'reverse' | 'now'
+  | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot';
+
+export interface HudHost {
+  act(action: HudAction): void;
+  /** places matching what was typed */
+  searchItems(query: string): Destination[];
+  /** the places of a section of the Explore sheet */
+  browse(category: Category): Destination[];
+  /** a place was chosen from a list */
+  pickDestination(id: string): void;
 }
 
-const HELP: [string, string][] = [
+export interface HudState {
+  /** where the camera is: the name of what it is at, and how high or far */
+  place: string;
+  placeDetail: string;
+  /** the simulated time, "YYYY-MM-DD HH:MM:SS UTC" */
+  date: string;
+  /** how fast it runs, in words */
+  rate: string;
+  paused: boolean;
+  reversed: boolean;
+  selection: { key: string; name: string; detail: string; rows: [string, string][]; picture: Picture; here: boolean } | null;
+  /** the destination of the flight in progress */
+  flying: string | null;
+  labels: boolean;
+  orbits: boolean;
+  minor: boolean;
+  /** one finger looks around instead of orbiting */
+  look: boolean;
+  /** exploring, or in a mode that brings its own controls */
+  mode: 'explore' | 'ship' | 'walk';
+  /** a finger has been used: speak of taps, show the touch controls */
+  touch: boolean;
+  /** small print: frame rate, stars, the data in use */
+  status: string;
+}
+
+/** the thumbnail sheet of world photographs (public/data/textures/thumbs.json) */
+export interface ThumbSheet { url: string; cols: number; rows: number; bodies: Record<string, [number, number]> }
+
+type Sheet = 'explore' | 'time' | 'more';
+
+/** the height the selection's card takes above the tab bar, with its gap (px) */
+const CARD_ROOM = 134;
+
+const TOUCH_HELP: [string, string][] = [
+  ['Drag', 'Turn round the world you are at'],
+  ['Pinch', 'Zoom, all the way down to the ground'],
+  ['Two-finger drag', 'Look around'],
+  ['Twist', 'Roll the view'],
+  ['Tap', 'Select what you tapped (its name works too)'],
+  ['Double-tap', 'Fly there; on the world you are at, come closer'],
+];
+
+const KEY_HELP: [string, string][] = [
   ['Left drag', 'Look around'],
-  ['Right drag / Shift+drag', 'Orbit around selection'],
-  ['Wheel', 'Zoom to selection (or change flight speed)'],
+  ['Right drag / Shift+drag', 'Turn round the world you are at'],
+  ['Wheel', 'Zoom (in open space: flying speed)'],
   ['W A S D  R F', 'Fly (speed scales with altitude)'],
   ['Shift / Ctrl', '×10 / ×0.1 speed'],
   ['Q / E', 'Roll'],
-  ['Click', 'Select object'],
-  ['G', 'Go to selection'],
-  ['C', 'Centre selection'],
-  ['Enter or /', 'Find object by name'],
+  ['Click · double-click', 'Select · fly there (or come closer)'],
+  ['G · C', 'Go to the selection · look at it'],
+  ['Enter or /', 'Search'],
+  ['T', 'Tour: places worth a visit'],
   ['Space', 'Pause / resume time'],
-  ['[  ]', 'Slower / faster time'],
-  ['\\', 'Reverse time'],
+  ['[  ]  \\', 'Slower / faster / reverse time'],
   ['Backspace', 'Real time, now'],
-  ['L / O / M', 'Labels / orbits / minor-body orbits'],
-  ['P', 'Screenshot (PNG)'],
-  ['Esc', 'Stop autopilot / clear selection'],
+  ['L / O / M', 'Names / orbits / minor-body orbits'],
+  ['U · P', 'Photo mode · save a picture'],
+  ['Esc', 'Stop a flight / clear the selection / close a panel'],
   ['B', 'Walk on the ground (land first if high up); B again to fly'],
   ['Walking', 'W A S D move · mouse look · Shift run · Space jump · C crouch'],
   ['V', 'Spaceship: cockpit view / chase view / off'],
   ['J', 'Warp drive to the selection'],
-  ['In the ship', 'real physics: W/S throttle · Z/X full/cut · arrows or drag to turn · Q/E roll'],
-  ['', 'A/D R/F Shift+W/S RCS · Y SAS mode (Shift+Y back) · I boosted drive · [ ] time warp'],
-  ['K / N', 'Missions & discoveries / ship sound on-off'],
-  ['T', 'Tour: places worth a visit'],
-  ['U', 'Photo mode: hide panels and labels'],
-  ['H', 'Toggle this help'],
+  ['In the ship', 'W/S throttle · Z/X full/cut · arrows or drag to turn · Q/E roll'],
+  ['', 'A/D R/F Shift+W/S RCS · Y SAS mode · I boosted drive · [ ] time warp'],
+  ['K / N', 'Missions and discoveries / ship sound'],
+  ['H', 'This help'],
 ];
 
-export class Hud {
-  private el: HTMLElement;
-  private top: HTMLElement;
-  private time: HTMLElement;
-  private info: HTMLElement;
-  private bottom: HTMLElement;
-  private help: HTMLElement;
-  private toastEl: HTMLElement;
-  private search: HTMLElement;
-  private searchInput: HTMLInputElement;
-  private searchList: HTMLElement;
-  private toastTimer = 0;
-  onSearch: ((q: string) => { label: string; detail: string; id: string }[]) | null = null;
-  onSearchPick: ((id: string) => void) | null = null;
+const TEMPLATE = `
+  <header class="hud-top">
+    <button class="chip place" type="button" data-act="home" aria-label="Where you are. Tap to look at it">
+      <span class="chip-icon">${ICON.centre}</span><span class="chip-text"><b></b><small></small></span>
+    </button>
+    <button class="chip clock" type="button" data-tab="time" aria-label="Date and time">
+      <span class="chip-text"><b></b><small></small></span>
+    </button>
+  </header>
+  <div class="hud-toast" role="status" aria-live="polite"></div>
+  <div class="hud-dock">
+    <div class="hud-fabs">
+      <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What one finger does: orbit, or look around">${ICON.orbit}${ICON.look}<span></span></button>
+    </div>
+    <div class="hud-slot">
+      <div class="hud-flight" hidden><span></span><button type="button" data-act="stop">${ICON.stop}Stop</button></div>
+      <section class="sheet card" data-sheet="card" aria-label="Selected">
+        <div class="card-head">
+          <span class="thumb"></span>
+          <div class="card-title"><h2></h2><p></p></div>
+          <button class="icon-btn" type="button" data-act="deselect" aria-label="Close">${ICON.close}</button>
+        </div>
+        <div class="card-actions">
+          <button class="btn primary" type="button" data-act="go">${ICON.go}<span>Go there</span></button>
+          <button class="btn" type="button" data-act="centre">${ICON.centre}<span>Look at</span></button>
+          <button class="btn" type="button" data-details aria-expanded="false">${ICON.info}<span>Details</span></button>
+        </div>
+        <dl class="facts" hidden></dl>
+      </section>
+      <section class="sheet explore" data-sheet="explore" aria-label="Search and places to go">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <label class="searchbox">${ICON.search}<input type="search" enterkeyhint="go" placeholder="Search planets, stars, galaxies…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Search"/></label>
+          <button class="icon-btn cancel" type="button" data-close aria-label="Close">${ICON.close}<span>Cancel</span></button>
+        </div>
+        <div class="cats" role="tablist">${CATEGORIES.map(([id, label]) => `<button type="button" role="tab" data-cat="${id}">${label}</button>`).join('')}</div>
+        <div class="list" role="list"></div>
+      </section>
+      <section class="sheet time" data-sheet="time" aria-label="Time">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head"><h2>Time</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
+        <div class="time-now"><div class="time-date"></div><div class="time-clock"></div><div class="time-rate"></div></div>
+        <div class="transport">
+          <button type="button" data-act="reverse" aria-pressed="false">${ICON.reverse}<span>Reverse</span></button>
+          <button type="button" data-act="slower">${ICON.slower}<span>Slower</span></button>
+          <button type="button" class="big" data-act="pause" aria-label="Pause or resume time">${ICON.pause}${ICON.play}</button>
+          <button type="button" data-act="faster">${ICON.faster}<span>Faster</span></button>
+          <button type="button" data-act="now">${ICON.now}<span>Now</span></button>
+        </div>
+      </section>
+      <section class="sheet more" data-sheet="more" aria-label="Settings and help">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head"><h2>${PRODUCT_NAME}</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
+        <div class="list">
+          <h3>Show</h3>
+          <button class="switch" type="button" role="switch" data-act="labels" aria-checked="true"><span><b>Names</b></span><i></i></button>
+          <button class="switch" type="button" role="switch" data-act="orbits" aria-checked="true"><span><b>Orbits</b></span><i></i></button>
+          <button class="switch" type="button" role="switch" data-act="minor" aria-checked="false"><span><b>Orbits of asteroids and comets</b></span><i></i></button>
+          <h3>Camera</h3>
+          <button class="switch touch-only" type="button" role="switch" data-act="look" aria-checked="false"><span><b>One finger looks around</b><small>instead of turning round the world you are at</small></span><i></i></button>
+          <button class="row" type="button" data-act="photo">${ICON.photo}<span class="row-text"><b>Photo mode</b><small class="touch-only">Hides everything; tap to bring it back</small><small class="mouse-only">Hides everything; U brings it back</small></span></button>
+          <button class="row" type="button" data-act="screenshot">${ICON.camera}<span class="row-text"><b>Save a picture</b><small>The view as a PNG</small></span></button>
+          <button class="row" type="button" data-fullscreen hidden>${ICON.fullscreen}<span class="row-text"><b>Full screen</b><small>Without the browser around it</small></span></button>
+          <h3 class="help-title">How to move</h3>
+          <table class="help touch-only">${TOUCH_HELP.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
+          <table class="help mouse-only">${KEY_HELP.map(([k, v]) => `<tr><th>${k ? `<kbd>${escapeHtml(k)}</kbd>` : ''}</th><td>${v}</td></tr>`).join('')}</table>
+          <p class="status"></p>
+        </div>
+      </section>
+    </div>
+    <nav class="hud-tabs" aria-label="Main">
+      <button type="button" data-tab="search">${ICON.search}<span>Search</span></button>
+      <button type="button" data-tab="explore">${ICON.explore}<span>Explore</span></button>
+      <button type="button" data-tab="time">${ICON.time}<span>Time</span></button>
+      <button type="button" data-tab="more">${ICON.more}<span>More</span></button>
+    </nav>
+  </div>
+  <div class="hud-coach" hidden>
+    <div class="coach-card" role="dialog" aria-label="Getting around">
+      <h2>Getting around</h2>
+      <ul>
+        <li><b>Drag</b> to turn round the world in front of you</li>
+        <li><b>Pinch</b> to zoom, all the way down to the ground</li>
+        <li><b>Two fingers</b> to look around</li>
+        <li><b>Tap</b> anything to see what it is, <b>double-tap</b> to fly there</li>
+      </ul>
+      <button class="btn primary" type="button" data-coach>Start exploring</button>
+    </div>
+  </div>`;
 
-  constructor(root: HTMLElement) {
-    this.el = root;
-    root.innerHTML = `
-      <div class="hud-top"></div>
-      <div class="hud-time"></div>
-      <div class="hud-info"></div>
-      <div class="hud-bottom"></div>
-      <div class="hud-help hidden"><h3>Controls</h3><table>${HELP.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join('')}</table></div>
-      <div class="hud-toast"></div>
-      <div class="hud-search hidden"><input type="text" placeholder="Find: planet, moon, star, comet, black hole…" spellcheck="false"/><div class="results"></div></div>`;
-    this.top = root.querySelector('.hud-top')!;
-    this.time = root.querySelector('.hud-time')!;
-    this.info = root.querySelector('.hud-info')!;
-    this.bottom = root.querySelector('.hud-bottom')!;
-    this.help = root.querySelector('.hud-help')!;
-    this.toastEl = root.querySelector('.hud-toast')!;
-    this.search = root.querySelector('.hud-search')!;
-    this.searchInput = this.search.querySelector('input')!;
-    this.searchList = this.search.querySelector('.results')!;
-    this.searchInput.addEventListener('input', () => this.refreshSearch());
-    this.searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') this.closeSearch();
+export class Hud {
+  private sheet: Sheet | null = null;
+  /** the Explore sheet is being typed in: it takes the screen, above the keyboard */
+  private typing = false;
+  private category: Category = 'tour';
+  private state: HudState | null = null;
+  private selectionKey: string | null = null;
+  private details = false;
+  private thumbs: ThumbSheet | null = null;
+  private toastTimer = 0;
+  private coarse: boolean;
+  /** the card's picture is to be drawn again (another selection, or the photographs have arrived) */
+  private pictureStale = true;
+  private factKeys = '';
+  private factValues: HTMLElement[] = [];
+
+  private readonly slot: HTMLElement;
+  private readonly input: HTMLInputElement;
+  private readonly cats: HTMLElement;
+  private readonly list: HTMLElement;
+  private readonly toastEl: HTMLElement;
+  private readonly fabs: HTMLElement;
+  private readonly coach: HTMLElement;
+  private readonly $: (sel: string) => HTMLElement;
+
+  constructor(private el: HTMLElement, private host: HudHost) {
+    el.innerHTML = TEMPLATE;
+    // (the elements looked up here are never replaced: each is found once)
+    const found = new Map<string, HTMLElement>();
+    this.$ = (sel) => found.get(sel) ?? found.set(sel, el.querySelector<HTMLElement>(sel)!).get(sel)!;
+    this.slot = this.$('.hud-slot');
+    this.input = el.querySelector<HTMLInputElement>('.searchbox input')!;
+    this.cats = this.$('.cats');
+    this.list = this.$('.explore .list');
+    this.toastEl = this.$('.hud-toast');
+    this.fabs = this.$('.hud-fabs');
+    this.coach = this.$('.hud-coach');
+    // a phone or a tablet: touch wording from the start (a finger on the view says so too, see update)
+    this.coarse = touchFirst();
+    el.classList.toggle('touch', this.coarse);
+    el.addEventListener('click', (e) => this.click(e));
+    this.input.addEventListener('input', () => this.renderList());
+    this.input.addEventListener('focus', () => this.setTyping(true));
+    this.input.addEventListener('blur', () => { if (!this.input.value.trim()) this.setTyping(false); });
+    this.input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this.closeSheet();
       if (e.key === 'Enter') {
-        const first = this.searchList.querySelector<HTMLElement>('[data-id]');
+        const first = this.list.querySelector<HTMLElement>('[data-id]');
         if (first) this.pick(first.dataset.id!);
       }
-      e.stopPropagation();
+      e.stopPropagation(); // typing a name is not flying
     });
-    this.searchList.addEventListener('click', (e) => {
-      const t = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
-      if (t) this.pick(t.dataset.id!);
-    });
+    for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
+    // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
+    const full = this.$('[data-fullscreen]');
+    full.hidden = !document.fullscreenEnabled;
+    document.addEventListener('fullscreenchange', () => setText(full.querySelector('b')!, document.fullscreenElement ? 'Leave full screen' : 'Full screen'));
+    this.trackKeyboard();
+    this.showSlot();
   }
 
-  get searchOpen(): boolean {
-    return !this.search.classList.contains('hidden');
+  get root(): HTMLElement {
+    return this.el;
   }
 
+  /** the sheet that is open, if any */
+  get open(): Sheet | null {
+    return this.sheet;
+  }
+
+  // ------------------------------------------------------------------ sheets
+  /** Open the search field, ready to type. */
   openSearch(): void {
-    this.search.classList.remove('hidden');
-    this.searchInput.value = '';
-    this.searchInput.placeholder = 'Find: planet, moon, star, comet, black hole…';
-    this.searchList.innerHTML = '';
-    this.searchInput.focus();
+    this.openSheet('explore');
+    this.input.value = '';
+    this.renderList();
+    this.input.focus();
   }
 
-  /** A fixed list of destinations in the search panel (typing still searches everything). */
-  openList(title: string, items: { label: string; detail: string; id: string }[]): void {
-    this.openSearch();
-    this.searchInput.placeholder = title;
-    this.searchList.innerHTML = items
-      .map((r) => `<div class="result" data-id="${escapeHtml(r.id)}"><span>${escapeHtml(r.label)}</span><small>${escapeHtml(r.detail)}</small></div>`)
-      .join('');
+  /** Open the places to go, at a section. */
+  openExplore(category?: Category): void {
+    if (category) this.category = category;
+    this.input.value = '';
+    this.setTyping(false);
+    this.openSheet('explore');
+    this.renderList();
   }
 
-  closeSearch(): void {
-    this.search.classList.add('hidden');
-    this.searchInput.blur();
+  openSheet(sheet: Sheet): void {
+    if (this.sheet === sheet) return;
+    if (this.sheet === 'explore') this.leaveSearch();
+    this.sheet = sheet;
+    this.showSlot();
   }
 
-  private pick(id: string): void {
-    this.closeSearch();
-    this.onSearchPick?.(id);
+  closeSheet(): void {
+    if (!this.sheet) return;
+    if (this.sheet === 'explore') this.leaveSearch();
+    this.sheet = null;
+    this.showSlot();
   }
 
-  refreshSearch(): void {
-    const q = this.searchInput.value.trim();
-    const res = q && this.onSearch ? this.onSearch(q) : [];
-    this.searchList.innerHTML = res
-      .map((r) => `<div class="result" data-id="${escapeHtml(r.id)}"><span>${escapeHtml(r.label)}</span><small>${escapeHtml(r.detail)}</small></div>`)
-      .join('');
-  }
-
-  /** Photo mode: hide every panel (toasts still show briefly). */
-  setHidden(hidden: boolean): void {
-    for (const el of [this.top, this.time, this.info, this.bottom, this.help]) el.style.visibility = hidden ? 'hidden' : '';
-  }
-
+  /** H: the help, in the More sheet. */
   toggleHelp(): void {
-    this.help.classList.toggle('hidden');
+    if (this.sheet === 'more') { this.closeSheet(); return; }
+    this.openSheet('more');
+    this.$('.more .help-title').scrollIntoView({ block: 'start' });
+  }
+
+  /** A catalogue finished loading: what was typed may now find more. */
+  refreshSearch(): void {
+    if (this.sheet === 'explore') this.renderList();
+  }
+
+  /** Hide every control (the title screen, photo mode); messages still show. */
+  setHidden(hidden: boolean): void {
+    this.el.classList.toggle('ui-off', hidden);
+  }
+
+  /**
+   * How far above the middle of the view (px) a subject sits best. Upright, the chips take the top
+   * and the tab bar with the card above it take the foot of the screen: the middle of what is left.
+   * In the wide layout the panels stand at the side and the middle is the middle: 0.
+   */
+  subjectLift(): number {
+    if (getComputedStyle(this.$('.hud-dock')).flexDirection !== 'column') return 0;
+    const top = this.$('.hud-top').getBoundingClientRect().bottom;
+    const bottom = this.$('.hud-tabs').getBoundingClientRect().top - CARD_ROOM;
+    return Math.max(0, window.innerHeight / 2 - (top + bottom) / 2);
+  }
+
+  /** A control from elsewhere that belongs with the round buttons (the headset's "Enter VR"). */
+  addFab(button: HTMLElement): void {
+    this.fabs.appendChild(button);
+  }
+
+  setThumbs(sheet: ThumbSheet): void {
+    this.thumbs = sheet;
+    // (absolute: a relative address in a custom property is taken from the stylesheet that uses it)
+    this.el.style.setProperty('--thumbs', `url("${new URL(sheet.url, document.baseURI).href}")`);
+    this.el.style.setProperty('--thumbs-size', `${sheet.cols * 100}% ${sheet.rows * 100}%`);
+    this.pictureStale = true;
+    if (this.sheet === 'explore') this.renderList();
   }
 
   toast(msg: string, seconds = 2.2): void {
@@ -151,23 +342,221 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), seconds * 1000);
   }
 
-  update(s: HudState): void {
-    this.top.innerHTML = `<b>${PRODUCT_NAME.toUpperCase()}</b> &nbsp; ${s.fps.toFixed(0)} fps · ${s.stars}${s.loading ? ` · <span class="warn">${s.loading}</span>` : ''} &nbsp; <span class="dim">H: help · T: tour</span>`;
-    this.time.innerHTML = `<div class="date">${s.date}</div><div class="rate">${s.paused ? '<span class="warn">PAUSED</span>' : s.rate}</div><div class="dim small">${s.ephemeris}</div>`;
-    if (s.selection) {
-      this.info.innerHTML = `<div class="name">${escapeHtml(s.selection.name)}</div>
-        <table>${[['Distance', s.selection.distance] as [string, string], ...s.selection.rows].map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`).join('')}</table>
-        <div class="dim small">G: go to · C: centre · right-drag: orbit</div>`;
-      this.info.classList.remove('hidden');
-    } else {
-      this.info.classList.add('hidden');
-    }
-    this.bottom.innerHTML = `${s.autopilot ? '<span class="warn">AUTOPILOT</span> · ' : ''}Speed ${s.speed} · Altitude ${s.altitude} · Reference: ${escapeHtml(s.reference)} <span class="dim">· depth: ${s.depthMode}</span>`;
+  /** After the title screen: how to get around, once, for fingers; a line of keys otherwise. */
+  welcome(touch = this.coarse): void {
+    if (!touch) { this.toast('H: help · T: tour · Enter: search', 4); return; }
+    if (stored('coached')) return;
+    this.coach.hidden = false;
   }
 
-  get root(): HTMLElement {
-    return this.el;
+  // ------------------------------------------------------------------ state
+  update(s: HudState): void {
+    this.state = s;
+    const el = this.el;
+    el.classList.toggle('touch', this.coarse || s.touch);
+    el.dataset.mode = s.mode;
+    setText(this.$('.place b'), s.place);
+    setText(this.$('.place small'), s.placeDetail);
+    const [day, clock] = splitDate(s.date);
+    setText(this.$('.clock b'), `${shortDay(day)}, ${clock.slice(0, 5)}`);
+    setText(this.$('.clock small'), s.paused ? 'paused' : s.rate);
+    this.$('.clock').classList.toggle('paused', s.paused);
+    setText(this.$('.time-date'), longDay(day));
+    setText(this.$('.time-clock'), `${clock} UTC`);
+    setText(this.$('.time-rate'), s.paused ? 'Paused' : s.rate === 'real time' ? 'Real time' : `${s.rate}`);
+    this.$('.time').classList.toggle('paused', s.paused);
+    this.$('.transport [data-act="reverse"]').setAttribute('aria-pressed', String(s.reversed));
+    const flight = this.$('.hud-flight');
+    flight.hidden = !s.flying;
+    if (s.flying) setText(flight.firstElementChild as HTMLElement, `Flying to ${s.flying}`);
+    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['look', s.look]] as const) {
+      this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
+    }
+    this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
+    setText(this.$('.look-fab span'), s.look ? 'Look' : 'Orbit');
+    setText(this.$('.status'), s.status);
+    this.renderCard(s);
+    this.showSlot();
   }
+
+  private renderCard(s: HudState): void {
+    const sel = s.selection;
+    if (!sel) { this.selectionKey = null; return; }
+    const card = this.$('.card');
+    if (sel.key !== this.selectionKey) {
+      // something new was chosen: its card takes the panel
+      this.selectionKey = sel.key;
+      this.details = false;
+      this.pictureStale = true;
+      this.closeSheet();
+      setText(card.querySelector('h2')!, sel.name);
+    }
+    if (this.pictureStale) {
+      this.pictureStale = false;
+      card.querySelector('.thumb')!.outerHTML = this.thumb(sel.picture);
+    }
+    setText(card.querySelector('.card-title p')!, sel.detail);
+    setText(card.querySelector('[data-act="go"] span')!, sel.here ? 'Recentre' : 'Go there');
+    const facts = card.querySelector<HTMLElement>('.facts')!;
+    facts.hidden = !this.details;
+    card.querySelector('[data-details]')!.setAttribute('aria-expanded', String(this.details));
+    if (!this.details) return;
+    // the facts: rebuilt when their headings change, otherwise only the values are refreshed
+    const keys = sel.rows.map((r) => r[0]).join('\n');
+    if (keys !== this.factKeys) {
+      this.factKeys = keys;
+      facts.innerHTML = sel.rows.map(([k]) => `<div><dt>${escapeHtml(k)}</dt><dd></dd></div>`).join('');
+      this.factValues = [...facts.querySelectorAll<HTMLElement>('dd')];
+    }
+    sel.rows.forEach((r, i) => setText(this.factValues[i], r[1]));
+  }
+
+  /** One panel at a time: the open sheet, else the card of the selection. */
+  private showSlot(): void {
+    const show = this.sheet ?? (this.state?.selection ? 'card' : null);
+    for (const s of this.slot.children) s.classList.toggle('on', (s as HTMLElement).dataset.sheet === show);
+    this.el.dataset.sheet = show ?? 'none';
+    const tab = this.sheet === 'explore' ? (this.typing ? 'search' : 'explore') : this.sheet;
+    for (const b of this.el.querySelectorAll<HTMLElement>('.hud-tabs [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  }
+
+  // ------------------------------------------------------------------ lists
+  /** The Explore sheet's list: what matches the text typed, or the chosen section. */
+  private renderList(): void {
+    const q = this.input.value.trim();
+    this.cats.hidden = q !== '';
+    for (const b of this.cats.children) {
+      const on = (b as HTMLElement).dataset.cat === this.category;
+      b.setAttribute('aria-selected', String(on));
+      // (the chosen section stays in sight in the row of sections)
+      if (on && !q) this.cats.scrollTo({ left: (b as HTMLElement).offsetLeft - (this.cats.clientWidth - (b as HTMLElement).offsetWidth) / 2 });
+    }
+    const items = q ? this.host.searchItems(q) : this.host.browse(this.category);
+    this.list.innerHTML = items.length
+      ? items.map((d) => `<button class="row" type="button" role="listitem" data-id="${escapeHtml(d.id)}">${this.thumb(d.picture)}<span class="row-text"><b>${escapeHtml(d.label)}</b><small>${escapeHtml(d.detail)}</small></span>${ICON.chevron}</button>`).join('')
+      : `<p class="empty">${q ? 'Nothing by that name' : 'Loading…'}</p>`;
+    this.list.scrollTop = 0;
+  }
+
+  /** A destination's picture: a world's photograph, or a shape in its colour. */
+  private thumb(p?: Picture): string {
+    if (!p) return '<span class="thumb plain"></span>';
+    const cell = p.world ? this.thumbs?.bodies[p.world] : undefined;
+    if (cell && this.thumbs) {
+      const { cols, rows } = this.thumbs;
+      return `<span class="thumb photo" style="background-position:${(cell[0] / (cols - 1)) * 100}% ${(cell[1] / (rows - 1)) * 100}%"></span>`;
+    }
+    const c = (k: number) => `rgb(${p.tint.map((v) => Math.round(255 * Math.min(1, v * k))).join(' ')})`;
+    return `<span class="thumb ${p.shape}" style="--lit:${c(1.25)};--tint:${c(1)};--dark:${c(0.18)}"></span>`;
+  }
+
+  private pick(id: string): void {
+    this.closeSheet();
+    this.host.pickDestination(id);
+  }
+
+  // ------------------------------------------------------------------ input
+  private click(e: MouseEvent): void {
+    const t = e.target as HTMLElement;
+    const b = t.closest<HTMLElement>('button');
+    if (!b || !this.el.contains(b)) return;
+    // a button pressed with a pointer does not keep the keyboard: Space is "pause", not "press again"
+    if (e.detail > 0) b.blur();
+    const d = b.dataset;
+    if (d.id !== undefined) this.pick(d.id);
+    else if (d.cat) { this.category = d.cat as Category; this.renderList(); }
+    else if (d.tab) this.tab(d.tab);
+    else if ('close' in d) this.closeSheet();
+    else if ('details' in d) { this.details = !this.details; if (this.state) this.renderCard(this.state); }
+    else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
+    else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
+    else if (d.act) {
+      if (d.act === 'photo') this.closeSheet(); // (nothing is left open behind the picture)
+      this.host.act(d.act as HudAction);
+    }
+  }
+
+  private tab(name: string): void {
+    if (name === 'search') {
+      if (this.sheet === 'explore' && this.typing) this.closeSheet();
+      else this.openSearch();
+    } else if (name === 'explore') {
+      if (this.sheet === 'explore' && !this.typing) this.closeSheet();
+      else this.openExplore();
+    } else if (this.sheet === name) this.closeSheet();
+    else this.openSheet(name as Sheet);
+  }
+
+  private setTyping(on: boolean): void {
+    if (this.typing === on) return;
+    this.typing = on;
+    this.$('.explore').classList.toggle('typing', on);
+    this.showSlot();
+  }
+
+  private leaveSearch(): void {
+    this.input.blur();
+    this.input.value = '';
+    this.setTyping(false);
+  }
+
+  /** A sheet is pulled down by its handle or its heading to close it. */
+  private swipeToClose(sheet: HTMLElement): void {
+    const handles = sheet.querySelectorAll<HTMLElement>('.sheet-grab, .sheet-head h2');
+    let y0 = 0, id = -1;
+    const end = (close: boolean) => {
+      id = -1;
+      sheet.style.transform = '';
+      sheet.style.transition = '';
+      if (close) this.closeSheet();
+    };
+    for (const h of handles) {
+      h.addEventListener('pointerdown', (e) => { id = e.pointerId; y0 = e.clientY; h.setPointerCapture(id); sheet.style.transition = 'none'; });
+      h.addEventListener('pointermove', (e) => { if (e.pointerId === id) sheet.style.transform = `translateY(${Math.max(0, e.clientY - y0)}px)`; });
+      h.addEventListener('pointerup', (e) => { if (e.pointerId === id) end(e.clientY - y0 > 60); });
+      h.addEventListener('pointercancel', () => end(false));
+    }
+  }
+
+  /** The on-screen keyboard covers the bottom of the page: the search sheet is sized to what is left above it. */
+  private trackKeyboard(): void {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv) return;
+    const fit = () => this.el.style.setProperty('--visible-height', `${vv.height}px`);
+    vv.addEventListener('resize', fit);
+    fit();
+  }
+}
+
+function setText(el: Element, text: string): void {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+/** "YYYY-MM-DD HH:MM:SS UTC" -> the day and the time of day */
+function splitDate(date: string): [string, string] {
+  const i = date.indexOf(' ');
+  return [date.slice(0, i), date.slice(i + 1).replace(' UTC', '')];
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** "2026-10-01" -> "1 October 2026" (years before 1 keep their sign: "-0500" -> "-500") */
+function longDay(day: string, months = MONTHS): string {
+  const m = /^(-?\d+)-(\d\d)-(\d\d)$/.exec(day);
+  if (!m) return day;
+  return `${Number(m[3])} ${months[Number(m[2]) - 1] ?? m[2]} ${Number(m[1])}`;
+}
+
+function shortDay(day: string): string {
+  return longDay(day, MONTHS.map((n) => n.slice(0, 3)));
+}
+
+function stored(key: string): boolean {
+  try { return localStorage.getItem(`${STORAGE_PREFIX}-${key}`) === '1'; } catch { return false; }
+}
+
+function store(key: string): void {
+  try { localStorage.setItem(`${STORAGE_PREFIX}-${key}`, '1'); } catch { /* private browsing: shown again next time */ }
 }
 
 function escapeHtml(s: string): string {

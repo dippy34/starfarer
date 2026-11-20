@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CameraRig } from '../src/app/CameraRig';
-import type { Input } from '../src/app/Input';
+import { emptyFrame, type Input } from '../src/app/Input';
 import { UPos } from '../src/core/upos';
 import type { SpaceObject } from '../src/universe/Body';
 import { dustAlpha, earthPlacement } from '../src/render/ScaleCues';
@@ -137,7 +137,7 @@ describe('scale cues', () => {
 });
 
 describe('heavy arrival at giants', () => {
-  const idle = { keys: new Set<string>(), consume: () => ({ left: { dx: 0, dy: 0 }, right: { dx: 0, dy: 0 }, wheel: 0 }) } as unknown as Input;
+  const idle = { keys: new Set<string>(), consume: emptyFrame } as unknown as Input;
   /** seconds spent within 300 radii (where the body is a visible disc), flying in from 1e4 radii to 3 */
   const visibleTime = (R: number) => {
     const rig = new CameraRig();

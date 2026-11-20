@@ -913,7 +913,7 @@ export class Walk {
     // look (desktop): pointer lock motion or left drag
     const consumed = app.input.consume();
     const look = app.input.look;
-    const dx = look.dx + consumed.left.dx, dy = look.dy + consumed.left.dy;
+    const dx = look.dx + consumed.look.dx, dy = look.dy + consumed.look.dy;
     look.dx = look.dy = 0;
     if (!vrOn && (dx || dy)) {
       const k = (app.rig.fov / 50) * 0.0022;
