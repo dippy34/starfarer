@@ -14,6 +14,7 @@
     "data": "bash pipeline/run_all.sh",
     "verify": "node scripts/verify.mjs http://127.0.0.1:5173/ screenshots",
     "verify:interact": "node scripts/interact.mjs http://127.0.0.1:5173/ screenshots",
+    "verify:touch": "node scripts/touch.mjs http://127.0.0.1:5173/ screenshots",
     "verify:vr": "node scripts/vr.mjs http://127.0.0.1:5173/ screenshots",
     "verify:game": "node scripts/game.mjs http://127.0.0.1:5173/ screenshots"
   },

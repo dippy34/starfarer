@@ -69,7 +69,7 @@ if (which !== 'vr') {
   await page.waitForFunction(() => !document.querySelector('#start-menu [data-id="sim"]').disabled, null, { timeout: 60000 });
   st = await menuState(page);
   check('Simulator is enabled and focused once loaded', st.sim === false && st.focus === 'sim', JSON.stringify(st));
-  const hud = await page.evaluate(() => getComputedStyle(document.querySelector('.hud-bottom')).visibility);
+  const hud = await page.evaluate(() => getComputedStyle(document.querySelector('.hud-dock')).visibility);
   check('the HUD is hidden behind the title screen', hud === 'hidden', hud);
   // the live view drifts behind it
   const frames = framesOn(page);
@@ -102,7 +102,7 @@ if (which !== 'vr') {
   await page.hover('#start-menu [data-id="sim"]');
   await page.click('#start-menu [data-id="sim"]');
   await page.waitForFunction(() => !document.getElementById('start-menu'), null, { timeout: 30000 });
-  const after = await page.evaluate(() => ({ hud: getComputedStyle(document.querySelector('.hud-bottom')).visibility, labels: window.app.labels.enabled, menu: !!window.startMenu?.isOpen }));
+  const after = await page.evaluate(() => ({ hud: getComputedStyle(document.querySelector('.hud-dock')).visibility, labels: window.app.labels.enabled, menu: !!window.startMenu?.isOpen }));
   check('Simulator starts the explorer (menu gone, HUD and labels back)', after.hud !== 'hidden' && after.labels && !after.menu, JSON.stringify(after));
   await frames(3);
   await page.keyboard.press('KeyL');

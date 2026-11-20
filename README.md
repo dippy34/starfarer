@@ -31,11 +31,13 @@ a chase view, inertial flight, a warp drive with streaks and engine sound, ficti
 rotating space station orbiting the world you are near (fly up to its docking port and the docking
 computer takes over), landing on solid worlds, missions and a discovery log.
 
-### ▶ Live: **https://dippy34.github.io/starfarer/** (once GitHub Pages is switched on, see below)
+### ▶ Live: **https://dippy34.github.io/starfarer/**
 
-Desktop browser with WebGL 2 (keyboard + mouse; press **H** for controls) — or a **VR headset**: open
-the link in the headset's browser (Meta Quest Browser, or Chrome/Edge on a PC with a Link/SteamVR
-headset) and press **ENTER VR**.
+On a **phone or tablet** it is laid out as an app: drag to turn round the world in front of you,
+pinch to zoom all the way down to the ground, tap anything to see what it is (add it to the home
+screen to lose the browser's bars). On a **desktop** browser with WebGL 2: keyboard + mouse, press
+**H** for controls. With a **VR headset**: open the link in the headset's browser (Meta Quest
+Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER VR**.
 
 ![Earth](docs/img/01-earth.jpg)
 
@@ -65,32 +67,56 @@ pipeline. To rebuild every data file from the original sources, see [`pipeline/`
 Production build: `npm run build && npm run preview`.
 Deploy to GitHub Pages: automatic. `.github/workflows/deploy-pages.yml` runs `npm run check`
 (typecheck, unit tests, production build) on every push to `main` and, if it passes, publishes
-`dist/` to the `gh-pages` branch. Switch Pages on once: **Settings → Pages → Build and deployment →
-Source: Deploy from a branch → `gh-pages` / `(root)`**.
+`dist/` to the `gh-pages` branch, which GitHub Pages serves (**Settings → Pages → Build and
+deployment → Source: Deploy from a branch → `gh-pages` / `(root)`**).
 
 Starfarer began as a copy of [Space Explorer](https://github.com/dippy34/nextjs-boilerplate) (same
 owner) without its God mode (the universe editor and N-body sandbox), which is not included yet.
 
 ### Controls
 
+**On a phone or tablet** it works like an app: two chips at the top (where you are, what time it
+is), a tab bar under your thumb (Search · Explore · Time · More) and one panel at a time above it.
+Add it to the home screen to open it without the browser around it.
+
+![The interface on a phone: Saturn's card, places to go, search, standing on the Moon, and a phone on its side](docs/img/phone.jpg)
+
+| Touch | Action |
+|---|---|
+| Drag | Turn round the world you are at — its surface follows your finger (close up, the ground slides under it) |
+| Pinch | Zoom, all the way down to standing height; what is between your fingers stays there |
+| Two-finger drag | Look around (near the ground the horizon stays level) |
+| Twist | Roll the view |
+| Tap | Select what you tapped (or the name beside it) · tap empty sky to let go |
+| Double-tap | Fly there; on the world you are already at, come six times closer to the spot you tapped |
+| **Orbit / Look** button | What one finger does: turn round the world, or look around |
+
+The card of what you selected has **Go there**, **Look at** and **Details**; nothing moves the
+camera until you go. A flight in progress shows a **Stop** button.
+
+**With a mouse and keyboard** the same interface stands at the left edge, and every key still works:
+
 | Input | Action |
 |---|---|
 | Left drag | Look around |
-| Right drag / Shift + drag | Orbit around the selection |
-| Wheel | Zoom towards the selection (free flight: change speed) |
+| Right drag / Shift + drag | Turn round the world you are at (its surface follows the pointer) |
+| Wheel | Zoom towards what is under the pointer (in open space: change flying speed) |
 | W A S D, R F | Fly; speed scales with altitude above the nearest surface |
 | Shift / Ctrl | ×10 / ×0.1 speed · Q / E roll |
-| Click / double-click | Select / select and go to |
-| G · C | Go to selection (autopilot) · centre selection |
+| Click / double-click | Select / select and go to (on the world you are at: come closer) |
+| G · C | Go to selection (autopilot) · look at it |
 | Enter or `/` | Find by name (planets, 459 moons, 302 large asteroids/TNOs, 4,077 comets, 12,585 named stars, 6,333 exoplanets, spacecraft, galaxies) |
 | 0–9 | Sun, Mercury … Pluto |
 | Space · `[` `]` · `\` · Backspace | Pause · slower/faster time · reverse · real time now |
-| L · O · M | Labels · orbits · minor-body orbits |
-| P · H · Esc | Screenshot · help · stop autopilot / deselect |
+| L · O · M | Names · orbits · minor-body orbits |
+| P · H · Esc | Screenshot · help · stop autopilot / close a panel / deselect |
 | V · J · X | Spaceship (cockpit / chase / off) · warp drive to the selection · brake |
 | K · N | Missions and discoveries · ship sound on/off |
 | T | Tour: Saturn's rings, Olympus Mons, the Apollo 11 site, an eclipse, a comet, a black hole … |
-| U | Photo mode: hide panels and labels (P saves a PNG) |
+| U | Photo mode: hide the interface and names (P saves a PNG) |
+
+Flying freely, walking and the ship still need the keyboard (or a headset); their touch controls
+come next.
 
 **Landing:** go to a solid world (the Moon, Mars, Mercury, Ganymede, Callisto … or a rocky planet of
 another star) and keep descending (F; in VR, point the left controller down and push the left stick): below about 40 km the sphere turns

@@ -52,6 +52,9 @@ st = await page.evaluate(() => ({ ...window.app.game.cockpit.readout }));
 check('cockpit shows the target', st.target === 'Moon' && st.warp === 'ready' && st.distance.length > 0, `${st.target} ${st.distance} ${st.warp}`);
 st = await page.evaluate(() => { const h = window.app.game.hud; return { hud: h.group.visible, target: h.group.children[0].visible }; });
 check('canopy HUD brackets the target', st.hud && st.target, JSON.stringify(st));
+// the instrument panel keeps its own compact rows (the interface's styles must not reach into it)
+st = await page.evaluate(() => { const p = document.querySelector('.fl-panel'); const r = p.querySelector('.row').getBoundingClientRect(); return { panel: p.getBoundingClientRect().height, row: r.height, rows: p.querySelectorAll('.row').length }; });
+check('the flight instruments are a compact panel', st.row < 22 && st.panel < 26 * st.rows, JSON.stringify(st));
 await page.screenshot({ path: path.join(outDir, 'g1b-hud.png'), timeout: 180000 });
 // (deep in Earth's gravity the drive is mass-locked: climb out first)
 await page.keyboard.press('KeyJ');

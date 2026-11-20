@@ -319,15 +319,93 @@ above is validated against JPL Horizons and stays as it is unless something is w
      independent of the browser locale (`tests/units.test.ts`).
    - Black-hole scale row: stellar holes read "the horizon is 125 km across; Earth is 102 times
      wider" instead of "0 Earths would fit inside the horizon".
-2. **Data streaming** (star tiles, map uploads, elevation, catalogue): next. Known from a run in
+2. **The interface, as a phone app, and the basics under the finger: done** (the owner asked for
+   this next: "revamp the whole UI so it's like a mobile app", basics first, then work up).
+   - *Touch* (`src/app/Gestures.ts`, pure and unit-tested; `src/app/Input.ts` feeds it pointer
+     events): one finger drags (and glides on after a flick), taps and double-taps; two fingers
+     either drag together or pinch-and-twist, decided once per gesture from their first pixels (a
+     pinch never tilts, a two-finger drag never zooms); a finger left down after the other lifts
+     does nothing. The page itself never scrolls or zooms (`touch-action`, viewport, fixed body).
+   - *What the camera is at is not what is selected.* `rig.target` (orbit and zoom centre) is the
+     last destination: `goTo`/`placeNear` set it, `select()` no longer does. Tapping the Moon from
+     Earth shows its card; the camera keeps turning round Earth until "Go there". Before, the first
+     drag after a tap swung the camera round the far object. Stopping a flight (`cancelGoto`)
+     leaves no target: open space, where a drag looks and a pinch moves along the view.
+   - *Pointers hold the world* (`CameraRig.orbitBy/zoomBy/lookBy`, `tests/pointer.test.ts`): a
+     drag that starts on the target's surface carries that point with the pointer (exact, by ray
+     and sphere; off the surface it turns at a steady rate capped by what the ground below would
+     do; towards the horizon a pixel carries at most 30 times what it does straight down). Zoom
+     (pinch, wheel, double tap) multiplies the height above the surface, so it eases down to eye
+     height on the landing terrain, and keeps what is under the fingers or the pointer under them.
+     Looking round within a radius of a world turns about its vertical: level horizon, no flip over
+     the zenith. The mouse got the same (right-drag grab, wheel towards the pointer). The app
+     tells the rig each frame what the target offers (`App.describeSurroundings`: surface radius
+     under the camera, closest approach, local vertical).
+   - *Upright screens* (`verticalFov`, `rig.framing`, `rig.aim`): `fov` is the vertical field of a
+     wide view; upright it opens to at most 1.5 times (50° → 70° on a phone), and arrivals stand
+     back so the object fills the same share of the narrow side (Earth at 4.9 radii instead of
+     3.4). The foot of an upright screen is under the tab bar and the card, so the camera holds
+     what it is aimed at above the middle (`Hud.subjectLift` → `rig.aim`, used by `lookAt` and the
+     autopilot's turn): the subject sits in the room the interface leaves. Orientation only: no
+     lens shift, so `project()`/`ray()` and the shaders are untouched.
+   - *Near the ground the camera turns with the world* (`App.carryWithGround`, `rig.carry`): fully
+     below 2 % of the radius above the ground, not at all above 20 %. Before, a camera brought
+     down to the surface stayed fixed against the stars while the ground slid away under it
+     (4.6 m/s on the Moon, 465 m/s at Earth's equator); from afar a planet is still seen to turn.
+     Walking and the ship keep their own frames; a flight under way is flown about the centre.
+   - A double tap (or double click) on the world the camera is at comes six times closer to the
+     tapped spot (`rig.zoomToward`); on anything else it flies there. After a zoom out the camera
+     counts as climbing for 1.5 s (`rig.rising`), or standing height would pull it back down.
+   - *Interface* (`src/ui/Hud.ts`, `styles.css`, `icons.ts`): top chips (place, clock), a tab bar
+     (Search, Explore, Time, More) and one panel above it: the card of the selection (Go there /
+     Look at / Details) or the open sheet. Wide screens put the tab bar at the left edge and the
+     panel beside it. The Hud only draws and reports: `App.act(name)` does what a button or its
+     key asks (`HudHost`). Texts are updated in place, never rebuilt. Lists of places come from
+     `src/app/destinations.ts` (shared with the headset's menu), pictured from the thumbnail sheet.
+     Names on the sky are tappable (`Labels.at`); a finger reaches 22 px, a pointer 9, and a faint
+     star needs a closer tap. First run on a touch device explains the gestures once.
+   - *Phones are lean* (`src/core/device.ts`): a touch-first device gets the headset's content
+     budgets (fewer procedural stars and galaxy particles, smaller tile cache and ground
+     materials, no 8k maps); shaders stay at full quality, the governor scales resolution.
+     Decided without a phone at hand: memory is what closes a tab. `?lean=0/1` overrides.
+   - *Installable*: `public/manifest.webmanifest`, icons, `viewport-fit=cover`; added to a home
+     screen it opens without the browser around it. (The name also lives in `index.html` and the
+     manifest; `src/core/product.ts` covers the code.)
+   - Verification: `scripts/touch.mjs` (real multi-touch through the DevTools protocol, upright and
+     sideways; `scripts/lib/touch.mjs`) and the mouse checks added to `scripts/interact.mjs`, next
+     to the unit tests above. Run for this part (headless Chromium, software WebGL): 301 unit
+     tests; touch 49/49, start 24/24, interact 11/11, the 35 scenes of verify, vr 32/32, game
+     20/20, walk 45/45, places 14/14, terrain 14/14, flight 19/19 (bench not run). Three suites at
+     once on four cores made start and walk time out once each; one at a time they pass.
+     Not yet tried on a real phone: the gestures and the layout are checked in an emulated one,
+     the frame rate and the memory are not.
+   - Fixed on the way (found by running every suite against the commit before): in the headset a
+     trigger or a pinch away from the destination during a flight now stops it. `scripts/vr.mjs`
+     had the check ("pinching empty sky stops the flight") and it failed before this part too:
+     `VR.onSelect` ignored everything while travelling, and the sky is never empty (the ray
+     "straight up" picks the star HR 8702 within its 1.5°). Tried only in the emulated headset:
+     worth a minute in a real one (a second pinch too soon after the one that starts a flight
+     would now stop it).
+   - Not done here, next in this order: **free flight on touch** (a thumb-stick; with it, manual
+     flight hands the target over to whatever the camera is near), **landing and walking on touch**
+     (a "land here" button; the walk mode's look and move), then the ship, missions and the
+     benchmark as screens of the app. Smaller: a sheet is not yet draggable to a taller size; on
+     the ground a one-finger drag on the sky does nothing (two fingers look, or the Orbit/Look
+     button); with a tall sheet open the subject is behind it (the aim allows for the card only), and on a
+     phone held sideways the card covers a corner of it (no sideways aim yet); a
+     link with `?target=` and no `dist` places the camera at 4 radii whatever the screen's shape
+     (a little tight on an upright phone: `App.applyUrl` could use `rig.framing` as `goTo` does).
+3. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.
-3. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
-4. App core: `app/App.ts` is 2,000 lines doing exposure, picking, labels, navigation and the frame
+4. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
+5. App core: `app/App.ts` is 2,100 lines doing exposure, picking, labels, navigation and the frame
    loop; to be split into modules behind the same behaviour.
-5. Stars and sky. 6. Deep space (galaxies, nebulae, black holes, exoplanets). 7. Terrain, landing,
-   walking. 8. Game mode. 9. VR. 10. HUD, search, and touch controls for phones.
+6. Stars and sky. 7. Deep space (galaxies, nebulae, black holes, exoplanets). 8. Terrain, landing,
+   walking. 9. Game mode. 10. VR.
 
 To look at when their part comes (seen in the scenario screenshots): Pluto's lit side washes out to
 white from 12 radii; 51 Peg b shows a flat black disc on its cloud deck; the Sun's glare hides the
-labels of the inner planets from 2.8 AU.
+labels of the inner planets from 2.8 AU. The details card prints masses as "5.9722e+24 kg"; the
+headset's travel still flies to distances tuned for its own field of view (`VR.arrivalDistance`)
+and its grip-stick orbit now turns round the place the camera is at, not round a far selection.
