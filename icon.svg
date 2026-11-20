@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="38%" r="80%">
+      <stop offset="0" stop-color="#18284a"/>
+      <stop offset="1" stop-color="#02040a"/>
+    </radialGradient>
+    <radialGradient id="world" cx="36%" cy="30%" r="78%">
+      <stop offset="0" stop-color="#cfe6ff"/>
+      <stop offset="0.42" stop-color="#5b97ea"/>
+      <stop offset="1" stop-color="#0a1a3c"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <g fill="#fff">
+    <circle cx="104" cy="118" r="5"/>
+    <circle cx="398" cy="104" r="4"/>
+    <circle cx="420" cy="388" r="3.5"/>
+    <circle cx="92" cy="396" r="3"/>
+    <circle cx="318" cy="72" r="2.5"/>
+    <circle cx="170" cy="438" r="2.5"/>
+  </g>
+  <g transform="rotate(-22 256 262)" fill="none" stroke="#a9ccff" stroke-width="11" stroke-linecap="round">
+    <path d="M82 262A174 54 0 0 1 430 262" opacity="0.55"/>
+    <circle cx="256" cy="262" r="98" fill="url(#world)" stroke="none"/>
+    <path d="M82 262A174 54 0 0 0 430 262"/>
+  </g>
+</svg>
