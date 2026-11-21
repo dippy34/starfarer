@@ -33,23 +33,6 @@ export const SHOTS = [
     },
   },
   {
-    // Earth half lit, the terminator across it, turning in a time-lapse (10 minutes a second);
-    // smaller in the frame: its cloud layer is flat close up in daylight
-    id: 'earth',
-    url: '?menu=0&earthref=0&target=Earth&dist=3&paused=1&time=2026-11-21T14:00:00Z',
-    date: { at: '2026-11-21T14:00:00Z', rate: 600 },
-    seconds: 3.5,
-    preroll: 1,
-    pose: (T, a, s) => {
-      const E = T.body('Earth');
-      const p = T.pole(E);
-      const d = T.around(E, p, 102 - s * 3, 20);
-      T.put(E, d, E.radius * T.lerp(3.2, 2.85, T.ease(s / 3.5)), d.clone().negate(), p);
-      T.turn(0, 4, 15);
-      a.rig.fov = 50;
-    },
-  },
-  {
     // Saturn with the rings wide open (2017) and the planet's shadow across them; a slow turn
     id: 'saturn',
     url: '?menu=0&earthref=0&target=Saturn&dist=6&paused=1&time=2017-06-15T00:00:00Z',
@@ -90,14 +73,6 @@ export const SHOTS = [
     seconds: 2,
     preroll: 1,
     pose: (T, a, s) => { const o = T.body('Mars'); T.place(o, o.radius * T.lerp(2.4, 2.05, T.ease(s / 2)), 36 + s * 5, 15); a.rig.fov = 50; },
-  },
-  {
-    id: 'moon',
-    url: '?menu=0&earthref=0&target=Moon&dist=1.6&az=80&el=10&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 0 },
-    seconds: 2,
-    preroll: 1,
-    pose: (T, a, s) => { const o = T.body('Moon'); T.place(o, o.radius * T.lerp(1.65, 1.5, T.ease(s / 2)), 78 + s * 3, 10); a.rig.fov = 50; },
   },
   {
     // the brightest comet within 3 AU of the Sun on the date (as scripts/shots/comet.mjs picks it)
@@ -145,14 +120,54 @@ export const SHOTS = [
     pose: (T, a, s) => { const o = T.body('Andromeda'); T.place(o, o.radius * T.lerp(2.7, 2.3, T.ease(s / 2)), 30 + s * 4, 30); a.rig.fov = 50; },
   },
   {
+    // M87*: from far off a steady point on its jet, growing into its disk as the camera comes in
+    // from 6,000 to 20 times the horizon's radius, a little above the disk and turning round it
+    id: 'm87',
+    url: '?menu=0&earthref=0&target=M87*&dist=6000&paused=1&time=2026-11-21T12:00:00Z',
+    date: { at: '2026-11-21T12:00:00Z', rate: 1 },
+    seconds: 4.6,
+    preroll: 1,
+    pose: (T, a, s) => {
+      const h = T.body('M87*'), n = h.diskNormal.clone();
+      const sun = T.sunward(h);
+      const flat = sun.clone().addScaledVector(n, -sun.dot(n)).normalize().applyAxisAngle(n, s * 6 * T.DEG);
+      const dir = flat.multiplyScalar(Math.cos(8 * T.DEG)).addScaledVector(n, Math.sin(8 * T.DEG)).normalize();
+      a.rig.upos.copy(h.upos).addVec(dir, h.radius * T.logLerp(6000, 20, T.ease(Math.max(0, s) / 4.6)));
+      a.rig.lookAt(dir.clone().negate(), n);
+      T.turn(0, -4 * T.ease(s / 4.6));
+      a.rig.target = h;
+      a.rig.setAnchor(null);
+      a.rig.fov = 50;
+    },
+  },
+  {
+    // Cygnus X-1: its disk, and the blue supergiant it draws gas from
+    id: 'cygnus',
+    url: '?menu=0&earthref=0&target=Cygnus%20X-1&dist=95&paused=1&time=2026-11-21T12:00:00Z',
+    date: { at: '2026-11-21T12:00:00Z', rate: 1 },
+    seconds: 1.7,
+    preroll: 1,
+    pose: (T, a, s) => {
+      const h = T.body('Cygnus X-1'), n = h.diskNormal.clone();
+      const sun = T.sunward(h);
+      const flat = sun.clone().addScaledVector(n, -sun.dot(n)).normalize().applyAxisAngle(n, (40 + s * 6) * T.DEG);
+      const dir = flat.multiplyScalar(Math.cos(15 * T.DEG)).addScaledVector(n, Math.sin(15 * T.DEG)).normalize();
+      a.rig.upos.copy(h.upos).addVec(dir, h.radius * T.logLerp(95, 40, T.ease(Math.max(0, s) / 1.7)));
+      a.rig.lookAt(dir.clone().negate(), n);
+      a.rig.target = h;
+      a.rig.setAnchor(null);
+      a.rig.fov = 50;
+    },
+  },
+  {
     // the app in a hand: tap the Moon, its card comes up, Go there, the flight
     id: 'ui',
     ui: true,
     view: { width: 390, height: 844 },
     scale: 1.5,
-    url: '?menu=0&earthref=0&target=Earth&dist=4&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 0 },
-    seconds: 6.5,
+    url: '?menu=0&earthref=0&target=Earth&dist=4&paused=1&time=2026-11-21T20:00:00Z',
+    date: { at: '2026-11-21T20:00:00Z', rate: 0 },
+    seconds: 5,
     preroll: 1,
     taps: [{ at: 0.6, label: 'Moon' }, { at: 1.4, button: 'Go there' }],
     setup: (T, a) => { a.select(null); },
@@ -171,20 +186,56 @@ export const SHOTS = [
     },
   },
   {
+    // live gravity: the Solar System from over the ecliptic's pole, every world simulated from the
+    // first frame (nothing changed yet: the same physics, now stepped), each leaving its trail
+    // (orbit lines off, trails on). At 2.25 s Jupiter is given a thousand times its mass (Mass,
+    // at the top of its slider: about the Sun's) and the planets' paths go wild. Filmed at half
+    // density, so the one-pixel trails are two pixels wide on the 1080 frame. The camera keeps
+    // the two heavy bodies' centre of mass in the middle. (The simulation is let finish each
+    // frame's step whatever it takes: `sim.now`, the clock it budgets by, is held still.)
+    id: 'live',
+    scale: 1.5,
+    url: '?menu=0&earthref=0&target=Sun&dist=3000&paused=1&time=2026-11-21T12:00:00Z',
+    date: { at: '2026-11-21T12:00:00Z', rate: 1.5e7, from: 0 },
+    seconds: 7.6,
+    preroll: 1,
+    setup: (T, a) => {
+      a.orbits.enabled = true;
+      const up = a.orbits.update.bind(a.orbits);
+      a.orbits.update = (...x) => { up(...x); for (const o of a.orbits.objs.values()) o.line.visible = false; };
+    },
+    pose: (T, a, s) => {
+      const S = a.system.sun, J = T.body('Jupiter');
+      const ecl = T.V(0, -0.3978, 0.9175);
+      T.ref ??= J.upos.sub(S.upos, T.V()).normalize();
+      const flat = T.ref.clone().addScaledVector(ecl, -T.ref.dot(ecl)).normalize();
+      const dir = ecl.clone().multiplyScalar(Math.sin(78 * T.DEG)).addScaledVector(flat, -Math.cos(78 * T.DEG)).normalize();
+      const w = (J.gm / (J.gm + S.gm)) * T.ease((s - 2.25) / 2);
+      a.rig.upos.copy(S.upos).addVec(J.pos.clone().sub(S.pos).multiplyScalar(w), 1).addVec(dir, 11 * T.AU);
+      a.rig.lookAt(dir.clone().negate(), flat);
+      a.rig.target = S;
+      a.rig.setAnchor(null);
+      a.rig.fov = 50;
+      if (s >= 0 && !a.physics.on) a.physics.setMass(S, S.gm, a.clock.jdTdb);
+      if (s >= 2.25 && !T.did) { T.did = true; a.select(J); a.setMass(3); a.select(null); }
+      if (a.physics.live) a.physics.live.sim.now = () => 0;
+    },
+  },
+  {
     // one continuous pull-out: Earth, the Moon's orbit, the planets' orbits, the nearby stars,
     // the Milky Way from outside with the Magellanic Clouds (other galaxies); then a slow drift
     // under the title. Distance is exponential in time (an even pace in scale).
     id: 'pullout',
-    url: '?menu=0&earthref=0&target=Earth&dist=3&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 0 },
-    seconds: 13.5,
+    url: '?menu=0&earthref=0&target=Earth&dist=3&paused=1&time=2026-11-21T23:00:00Z',
+    date: { at: '2026-11-21T23:00:00Z', rate: 0 },
+    seconds: 12.1,
     preroll: 1,
     waitLoad: true,
     setup: (T, a) => { a.orbits.enabled = true; },
     pose: (T, a, s) => {
       const E = T.body('Earth'), S = a.system.sun, mw = a.milkyWay;
       const PULL = 7.3; // (the galaxy is seen whole about 6 s in: on the title's beat)
-      const L0 = Math.log(E.radius * 3.2), L1 = Math.log(2.2e21);
+      const L0 = Math.log(E.radius * 4), L1 = Math.log(2.2e21);
       const D = Math.exp(L0 + (L1 - L0) * T.ease5(s / PULL)) * Math.exp(0.04 * Math.max(0, s - PULL));
       const L = Math.log(D);
       const sm = (x, a0, a1) => T.ease((x - a0) / (a1 - a0));
