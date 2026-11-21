@@ -19,6 +19,7 @@ import { JetsLayer } from '../render/Jets';
 import { Labels, type LabelCandidate } from '../render/Labels';
 import { NearStarsLayer } from '../render/NearStars';
 import { OrbitsLayer } from '../render/Orbits';
+import { TrailsLayer } from '../render/Trails';
 import { ProceduralStarLayer } from '../render/ProceduralStarLayer';
 import { Renderer, type ViewInfo, VOLUMES } from '../render/Renderer';
 import { GLOBALS, LITE, depthK } from '../render/shaders/xr';
@@ -54,6 +55,8 @@ import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskSeen, hidden, released, seen, TAU_STARS } from './Exposure';
 import { canHaveMoon, MADE_FIRST_ID, newMoon } from './WhatIf';
+import { LivePhysics } from './LivePhysics';
+import { massFactor, massOf, massSlider, massTheory, massWords, rateWords, timesWords } from './Powers';
 import { type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
@@ -105,6 +108,8 @@ const DOUBLE_TAP_ZOOM = 6;
 const POINTER_REACH = 9;
 const FINGER_REACH = 22;
 const RATE_STEPS = [1, 10, 60, 600, 3600, 21600, DAY, 7 * DAY, 30.4375 * DAY, 365.25 * DAY, 3652.5 * DAY, 36525 * DAY];
+/** in live physics time can be asked to run faster still: a thousand years a second (it runs as fast as the stepping allows) */
+const LIVE_RATE = 365250 * DAY;
 
 export class App {
   readonly renderer: Renderer;
@@ -195,6 +200,10 @@ export class App {
   private rateIndex = 0;
   private rateSign = 1;
   frameCount = 0;
+  /** the Solar System under its own gravity, once the explorer has changed something in it (src/app/LivePhysics.ts) */
+  readonly physics: LivePhysics;
+  /** where the simulated bodies have been */
+  readonly trails = new TrailsLayer();
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -216,6 +225,10 @@ export class App {
     this.hud = new Hud(hudRoot, this);
     this.labels = new Labels(labelRoot);
     this.clock = SimClock.now();
+    this.physics = new LivePhysics(system, { left: (b, into) => this.bodyLeft(b, into) });
+    orbits.simulated = (b) => this.physics.simulated(b);
+    // (with the orbit lines: what hides them hides these)
+    orbits.group.add(this.trails.group);
   }
 
   /**
@@ -561,6 +574,8 @@ export class App {
       case 'deselect': this.select(null); break;
       case 'add-moon': if (this.selection instanceof Body) this.addMoon(this.selection); break;
       case 'unmake': if (this.selection instanceof Body) this.unmake(this.selection); break;
+      case 'remove': if (this.selection instanceof Body) this.removeBody(this.selection); break;
+      case 'reality': this.backToReality(); break;
       case 'stop': this.rig.cancelGoto(); break;
       case 'pause': this.togglePause(); break;
       case 'faster': this.timeFaster(); break;
@@ -600,7 +615,7 @@ export class App {
       });
     }
     this.offered.clear();
-    return objectsOf(this, category).map((o) => {
+    return objectsOf(this, category).filter((o) => !(o instanceof Body && this.system.isGone(o))).map((o) => {
       this.offered.set(o.key, o);
       return { label: o.name, detail: describe(this, o), id: `obj:${o.key}`, picture: pictureOf(o) };
     });
@@ -619,19 +634,24 @@ export class App {
   togglePause(): void {
     this.clock.paused = !this.clock.paused;
   }
+  /** the rate of step `i` (one past the list's end: live physics' own) */
+  private rateAt(i: number): number {
+    return this.rateSign * (RATE_STEPS[i] ?? LIVE_RATE);
+  }
   timeFaster(): void {
-    this.rateIndex = Math.min(RATE_STEPS.length - 1, this.rateIndex + 1);
-    this.clock.rate = this.rateSign * RATE_STEPS[this.rateIndex];
+    this.rateIndex = Math.min(RATE_STEPS.length - (this.physics.on ? 0 : 1), this.rateIndex + 1);
+    this.clock.rate = this.rateAt(this.rateIndex);
     this.clock.paused = false;
   }
   timeSlower(): void {
     this.rateIndex = Math.max(0, this.rateIndex - 1);
-    this.clock.rate = this.rateSign * RATE_STEPS[this.rateIndex];
+    this.clock.rate = this.rateAt(this.rateIndex);
   }
   timeReverse(): void {
     this.rateSign *= -1;
-    this.clock.rate = this.rateSign * RATE_STEPS[this.rateIndex];
-    this.hud.toast(this.rateSign < 0 ? 'Time reversed' : 'Time forward');
+    this.clock.rate = this.rateAt(this.rateIndex);
+    // (a simulation run backwards undoes what its gravity did; two bodies that became one stay one)
+    this.hud.toast(this.rateSign > 0 ? 'Time forward' : this.physics.on ? 'Time reversed: what has merged stays merged' : 'Time reversed');
   }
   /** Boarding the ship: time runs, at 1x (the date is kept). */
   flightClock(): void {
@@ -643,12 +663,13 @@ export class App {
     }
   }
   realTime(): void {
-    this.clock.setUtcNow();
+    // (in live physics the date is the simulation's: only the pace goes back to real time)
+    if (!this.physics.on) this.clock.setUtcNow();
     this.rateIndex = 0;
     this.rateSign = 1;
     this.clock.rate = 1;
     this.clock.paused = false;
-    this.hud.toast('Real time');
+    this.hud.toast(this.physics.on ? 'Real time, from the date live physics has reached' : 'Real time');
   }
   /** T: a short list of places that show what the explorer can do. */
   tourItems(): { label: string; detail: string; id: string }[] {
@@ -689,6 +710,8 @@ export class App {
    */
   prepareTour(what: string): SpaceObject | null {
     if (what === 'proxima') return this.findByName('Proxima Cen b');
+    // (an eclipse or a shadow at its real date: only the real Solar System has those)
+    if (what === 'eclipse' || what === 'shadow') this.backToReality();
     if (what === 'eclipse') {
       this.clock.jdTdb = utcToTdb(dateToJdUtc(new Date('2026-03-03T11:33:00Z')));
       this.clock.paused = true;
@@ -787,6 +810,8 @@ export class App {
     // (where it is now, before anything asks: the whole system once, as after a jump in time)
     this.system.update(jd);
     this.made.push(moon);
+    // (with physics live it is a simulated body like any other from the start)
+    this.physics.join(moon);
     this.bodies.changed();
     this.select(moon);
     this.hud.toast(`${moon.name}: ${formatDistance(plan.orbit - parent.radius)} up, once round in ${plan.periodDays < 2 ? `${(plan.periodDays * 24).toFixed(1)} hours` : `${plan.periodDays.toFixed(1)} days`}`);
@@ -797,18 +822,78 @@ export class App {
   unmake(b: Body): void {
     const i = this.made.indexOf(b);
     if (i < 0) return;
-    const parent = b.parent;
     this.made.splice(i, 1);
-    if (this.rig.target === b || this.rig.anchor === b) {
-      this.rig.cancelGoto();
-      this.rig.target = parent;
-      this.rig.setAnchor(parent);
-    }
+    // (out of the simulation too, if it is in one: that tells the scene)
+    if (this.physics.on) this.physics.remove(b, this.clock.jdTdb);
+    else this.bodyLeft(b, null);
     this.system.remove(b);
     this.bodies.changed(b);
-    this.orbits.forget(b);
-    this.select(parent);
+    this.physics.takeNews();
     this.hud.toast(`${b.name} is gone`);
+  }
+
+  // ------------------------------------------------------------------ the powers (src/app/LivePhysics.ts)
+  /**
+   * A body is no longer there (taken away, or made one with `into`): the camera and the selection
+   * go to what took it in, or to what it went round.
+   */
+  private bodyLeft(b: Body, into: Body | null): void {
+    const to = into ?? (b.parent && !this.system.isGone(b.parent) ? b.parent : null);
+    if (this.rig.target === b || this.rig.anchor === b) {
+      this.rig.cancelGoto();
+      this.rig.target = to;
+      this.rig.setAnchor(to);
+    }
+    if (this.selection === b) {
+      this.hud.selectionMoved();
+      this.select(to);
+    }
+    this.orbits.forget(b);
+    this.trails.forget(b);
+    this.bodies.changed();
+  }
+
+  /** Tell what live physics has to tell (and, the first time, that it is on). */
+  private tellNews(wasOn = true): void {
+    const news = this.physics.takeNews().slice(-3);
+    if (!wasOn && this.physics.on) news.unshift('Live physics is on: from now on everything here pulls on everything else.');
+    if (news.length) this.hud.toast(news.join('\n'), 3 + 1.5 * news.length);
+  }
+
+  /** The mass slider of the selected world was moved: it has that many times its real mass from now on. */
+  setMass(slider: number): void {
+    const b = this.selection;
+    if (!(b instanceof Body) || !b.valid) return;
+    const real = this.physics.realGm(b), gm = massFactor(slider) * real;
+    // (put back where it stood, with nothing changed yet: nothing to simulate)
+    if (!(real > 0) || gm === b.gm) return;
+    const wasOn = this.physics.on;
+    this.physics.setMass(b, gm, this.clock.jdTdb);
+    this.tellNews(wasOn);
+  }
+
+  /** Take a world away: everything else carries on without it. */
+  removeBody(b: Body): void {
+    if (!b.valid || !this.system.bodies.includes(b)) return;
+    if (this.made.includes(b)) { this.unmake(b); return; }
+    const wasOn = this.physics.on;
+    this.physics.remove(b, this.clock.jdTdb);
+    this.tellNews(wasOn);
+  }
+
+  /** Undo everything: the real Solar System again, what was made taken away, what the simulation drew cleared. */
+  backToReality(): void {
+    if (!this.physics.on) return;
+    const said = this.physics.backToReality(this.clock);
+    for (const b of this.made.splice(0)) {
+      this.bodyLeft(b, null);
+      this.system.remove(b);
+      this.bodies.changed(b);
+    }
+    this.trails.clear();
+    this.bodies.changed();
+    if (this.rateIndex >= RATE_STEPS.length) { this.rateIndex = RATE_STEPS.length - 1; this.clock.rate = this.rateAt(this.rateIndex); }
+    this.hud.toast(said, 4);
   }
 
   /**
@@ -822,7 +907,7 @@ export class App {
     const terrain = [bodyObjs.find((m) => m.name === 'Saturn'), exoObjs[0]].filter((m) => !!m).map((m) => this.terrain.warmupMesh(m.material as ShaderMaterial));
     const air = this.atmospheres.warmupObjects()[0];
     if (air) terrain.push(this.terrain.warmupHaze(air.material as ShaderMaterial));
-    const objs = [...bodyObjs, ...terrain, ...this.atmospheres.warmupObjects(), ...this.holes.warmupObjects(), ...this.near.warmupObjects(), ...exoObjs, ...this.craft.warmupObjects(), ...this.game.warmupObjects(), ...this.deepSky.warmupObjects(), ...this.galaxies.warmupObjects(), ...this.rocks.warmupObjects(), this.mwVolume.mesh, ...this.cometTails.warmupObjects(), ...this.jets.warmupObjects(), ...this.awe.cues.warmupObjects()];
+    const objs = [...bodyObjs, ...terrain, ...this.atmospheres.warmupObjects(), ...this.holes.warmupObjects(), ...this.near.warmupObjects(), ...exoObjs, ...this.craft.warmupObjects(), ...this.game.warmupObjects(), ...this.deepSky.warmupObjects(), ...this.galaxies.warmupObjects(), ...this.rocks.warmupObjects(), this.mwVolume.mesh, ...this.cometTails.warmupObjects(), ...this.jets.warmupObjects(), ...this.awe.cues.warmupObjects(), (this.trailWarm ??= this.trails.warmupObject())];
     const was = objs.map((o) => o.visible);
     for (const o of objs) o.visible = true;
     // (into the HDR target the scene is drawn to: programs differ per output target)
@@ -831,6 +916,8 @@ export class App {
     this.galaxy.compile(this.renderer.gl);
     objs.forEach((o, i) => { o.visible = was[i]; });
   }
+
+  private trailWarm: ReturnType<TrailsLayer['warmupObject']> | null = null;
 
   goTo(obj: SpaceObject): void {
     if (obj instanceof Body) this.bodies.prefetch(obj);
@@ -966,7 +1053,7 @@ export class App {
       return -1;
     };
     for (const b of this.system.bodies) {
-      const s = score(b.name);
+      const s = this.system.isGone(b) ? -1 : score(b.name);
       if (s >= 0) out.push({ label: b.name, detail: b.kind === 'moon' ? `moon of ${b.parent?.name}` : b.kind, id: `body:${b.id}`, score: s - (b.kind === 'planet' ? 0.5 : 0) });
     }
     this.small.cometObjects.forEach((c, i) => {
@@ -1399,10 +1486,11 @@ export class App {
       if (!v.resolved || v.body.kind === 'star') continue;
       const spec = this.atmospheres.spec(v.body);
       if (!spec || v.dist > v.body.radius + spec.top * 0.5) continue;
+      if (!v.sun) continue;
       const up = rel.copy(v.rel).negate().normalize();
-      const toSun = this.system.sun.upos.sub(v.body.upos, new Vector3());
+      const toSun = v.sun.upos.sub(v.body.upos, new Vector3());
       const d = toSun.length();
-      sky(spec.betaR[1] * spec.HR, up.clone(), toSun.divideScalar(d), sunIrradianceAt(d));
+      sky(spec.betaR[1] * spec.HR, up.clone(), toSun.divideScalar(d), sunIrradianceAt(d, this.system.brightness(v.sun)));
     }
     for (const e of this.exo.atmospheres()) {
       if (e.rel.length() > e.radius + e.spec.top * 0.5) continue;
@@ -1415,8 +1503,9 @@ export class App {
   private ringRadiance(): number {
     const rp = this.bodies.ringParticles;
     const sat = this.system.bodies.find((b) => b.name === 'Saturn');
-    if (!(rp?.mesh.visible || rp?.slabActive) || !sat) return 0;
-    return (0.6 * sunIrradianceAt(Math.max(sat.pos.distanceTo(this.system.sun.pos), 1))) / Math.PI;
+    const sun = sat && this.system.sunAt(sat.pos);
+    if (!(rp?.mesh.visible || rp?.slabActive) || !sat || !sun) return 0;
+    return (0.6 * sunIrradianceAt(Math.max(sat.pos.distanceTo(sun.pos), 1), this.system.brightness(sun))) / Math.PI;
   }
 
   /** A body's albedo for the exposure: near its ground, the eye adapts to the ground around (TerrainPatch.exposureAlbedo). */
@@ -1475,8 +1564,8 @@ export class App {
     const limitLight = (level: number, radiance: number, presence: number) => {
       if (radiance > 0) lightLimit = Math.min(lightLimit, released(Math.log(level / radiance), open, presence));
     };
-    const litBy = (distToSun: number, albedo: number) => (albedo * sunIrradianceAt(Math.max(distToSun, 1))) / Math.PI;
-    const sunRel = this.system.sun.upos.sub(this.rig.upos, new Vector3());
+    // (lit by the sun brightest in its sky; in a system without one, by nothing)
+    const litBy = (sun: Body | null, distToSun: number, albedo: number) => (sun ? (albedo * sunIrradianceAt(Math.max(distToSun, 1), this.system.brightness(sun))) / Math.PI : 0);
 
     // A lit disc holds the surfaces' exposure from the size at which it is drawn as one (each
     // layer's own: BodiesLayer `resolved`, a planet of another star 0.8 px, a spacecraft 0.6): a
@@ -1501,15 +1590,18 @@ export class App {
       // and the twilight round its limb, is NIGHT times fainter at the most.
       // (Rings reach out of the shadow and shine as the world does, well beyond its disc.)
       const rings = this.bodies.ringOuter(b);
-      const night = rings > 0 ? 1 : 1 + (NIGHT - 1) * hidden(sunRel, SUN_RADIUS, v.rel, b.radius);
-      const L = (litBy(b.pos.distanceTo(this.system.sun.pos), Math.min(1, 1.5 * this.surfaceAlbedo(b))) * (this.bodies.sunlit.get(b) ?? 1)) / night;
+      const sunRel = v.sun && this.bodies.views.get(v.sun)?.rel;
+      const night = rings > 0 || !sunRel ? 1 : 1 + (NIGHT - 1) * hidden(sunRel, SUN_RADIUS, v.rel, b.radius);
+      // (in a system without a sun a world is seen by its own lights, if it has any)
+      const L = v.sun ? (litBy(v.sun, b.pos.distanceTo(v.sun.pos), Math.min(1, 1.5 * this.surfaceAlbedo(b))) * (this.bodies.sunlit.get(b) ?? 1)) / night : this.bodies.ownLight(b);
       if (v.pixelRadius >= 2) settle(s.coverage, L, 0.45);
       limitSurface(1.6, L, rings > 0 ? Math.max(s.presence, look(v.rel, rings).presence) : s.presence);
     }
     for (const cv of this.craft.views) {
       if (cv.pixelRadius <= 0.6) continue;
       const s = look(cv.rel, cv.craft.radius);
-      const L = litBy(cv.craft.upos.sub(this.system.sun.upos, new Vector3()).length(), 0.6);
+      const sun = this.system.suns[0] ?? null;
+      const L = litBy(sun, sun ? cv.craft.upos.sub(sun.upos, new Vector3()).length() : 0, 0.6);
       if (cv.pixelRadius >= 2) settle(s.coverage, L, 0.45);
       limitSurface(1.6, L, s.presence);
     }
@@ -1615,7 +1707,7 @@ export class App {
     };
     const mLim = this.lastMLim;
     for (const v of this.bodies.views.values()) {
-      if (!v.resolved && v.apparentMag > mLim + 1.5) continue;
+      if (!v.resolved && v.apparentMag > mLim + 1.5 && !this.namedInTheDark(v)) continue;
       consider(v.body, this.project(v.rel), v.pixelRadius / this.view.pixelRatio, v.resolved ? -6 : -3);
     }
     const rel = new Vector3();
@@ -1867,6 +1959,14 @@ export class App {
     return out;
   }
 
+  /**
+   * A planet with no sun to light it cannot be seen from afar, and would be lost for good: its
+   * name stays on the sky, and a tap on it finds it.
+   */
+  private namedInTheDark(v: { body: Body; sun: Body | null }): boolean {
+    return !v.sun && v.body.kind === 'planet';
+  }
+
   /** Never let the camera reach an event horizon. */
   /**
    * Never below the landing terrain: an eye height above the ground. Within a few metres of it and
@@ -1921,7 +2021,7 @@ export class App {
       let show = isSel;
       let prio = 0;
       if (b.kind === 'star') { show = true; prio = 600; }
-      else if (b.kind === 'planet') { show = show || v.apparentMag < mLim + 2 || v.resolved; prio = 500 - v.apparentMag; }
+      else if (b.kind === 'planet') { show = show || v.apparentMag < mLim + 2 || v.resolved || this.namedInTheDark(v); prio = 500 - v.apparentMag; }
       else if (b.kind === 'dwarf') { show = show || v.apparentMag < mLim || v.resolved; prio = 380 - v.apparentMag; }
       else if (b.kind === 'moon') {
         const parentView = b.parent ? this.bodies.views.get(b.parent) : undefined;
@@ -2035,17 +2135,29 @@ export class App {
     const jd0 = this.clock.jdTdb;
     if (flight.on) this.clock.jdTdb += flight.before(rawDt, dt) / DAY;
     else this.clock.advance(Math.min(rawDt, 1));
+    // (live physics: the simulation goes where the clock asks as far as a frame allows, and the clock shows where it got)
+    this.physics.follow(this.clock, rawDt);
     if (flight.on) {
       flight.simDt = Math.max(0, (this.clock.jdTdb - jd0) * DAY);
       flight.step();
     }
     const jd = this.clock.jdTdb;
     this.system.update(jd, this.clock.paused ? 0 : Math.sign(this.clock.rate), this.simFocus());
+    if (this.physics.on) {
+      this.physics.place(jd);
+      this.trails.record(this.physics.bodies());
+      this.tellNews();
+    }
+    this.small.present = this.physics.sunAsWas;
     HITCH.lap('solarSystem');
     for (const h of this.blackHoles) h.update(jd);
     // planets and spacecraft move before the camera follows its anchor (which may be one of them)
     for (const sys of this.activeSystems) sys.update(jd);
-    for (const c of this.craft.craft) c.update(jd);
+    // (the real spacecraft flew their paths in the real Solar System: in live physics they have none)
+    for (const c of this.craft.craft) {
+      if (this.physics.on) c.valid = false;
+      else c.update(jd);
+    }
     HITCH.lap('ephemeris');
     PERF.lap('sim');
 
@@ -2124,7 +2236,7 @@ export class App {
     HITCH.lap('bodyDetail');
     PERF.lap('bodies');
     this.atmospheres.steps = this.vr.active ? 10 : 16;
-    this.atmospheres.update(this.rig.upos, this.bodies.views);
+    this.atmospheres.update(this.bodies.views);
     HITCH.lap('atmospheres');
     PERF.lap('atmo');
     this.updateActiveSystems();
@@ -2205,6 +2317,10 @@ export class App {
     PERF.lap('stars');
     this.orbits.focus = this.rig.anchor instanceof Body ? this.rig.anchor : null;
     this.orbits.update(this.rig.upos, pixelAngle, jd);
+    this.trails.enabled = this.orbits.enabled;
+    this.trails.showMinor = this.orbits.showMinor;
+    this.trails.selected = this.orbits.selected;
+    this.trails.update(this.rig.upos, pixelAngle);
     HITCH.lap('orbits');
     this.small.update(this.rig.upos, jd);
     HITCH.lap('smallBodies');
@@ -2291,8 +2407,21 @@ export class App {
       selection = {
         key: sel.key, name: sel.name, detail: describe(this, sel), rows, worked, picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
         canAddMoon: sel instanceof Body && canHaveMoon(sel, this.made.length), made: sel instanceof Body && this.made.includes(sel),
+        mass: null, removable: false,
       };
+      // the powers over a world of the Solar System (what the explorer made keeps its own button, in the details)
+      if (sel instanceof Body && sel.valid && !this.made.includes(sel)) {
+        selection.rows.splice(1, 0, ...this.physics.rows(sel));
+        selection.removable = true;
+        const real = this.physics.realGm(sel);
+        if (real > 0) {
+          const factor = sel.gm / real;
+          selection.mass = { slider: massSlider(factor), words: massWords(massOf(sel.gm)), times: timesWords(factor), theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '' };
+        }
+      }
     }
+    const status = this.physics.status();
+    const slow = status && !c.paused && status.share < 0.9 ? `getting ${rateWords(c.rate * status.share)}` : '';
     // where the camera is: at its target (how high above it, or how far from it), or in open space
     const t = rig.target;
     let place = rig.anchor ? `Near ${rig.anchor.name}` : 'Open space';
@@ -2317,6 +2446,7 @@ export class App {
       paused: c.paused,
       reversed: c.rate < 0,
       selection,
+      live: status && { since: status.since, slow, rails: status.rails, leftOut: status.leftOut, log: status.log },
       flying: rig.autopilot && t ? t.name : null,
       labels: this.labels.enabled,
       orbits: this.orbits.enabled,

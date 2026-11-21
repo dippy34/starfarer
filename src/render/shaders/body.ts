@@ -609,7 +609,8 @@ void main() {
   }
 
   if (uHasNight > 0.5) {
-    float night = smoothstep(0.05, -0.15, mu0g);
+    // (with no sun at all it is night everywhere)
+    float night = uSunIrr > 0.0 ? smoothstep(0.05, -0.15, mu0g) : 1.0;
     vec3 lights = srgbToLinear(texture2D(uNight, vUv).rgb);
     radiance += lights * lights * vec3(1.0, 0.8, 0.55) * 0.02 * night * (1.0 - cloud);
   }

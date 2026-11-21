@@ -42,6 +42,11 @@ export interface BodyInit {
   rs?: number;
   /** a flattened body's equatorial bulge: J₂ at the reference radius (m), about the pole (a unit vector, in the frame of `pos`) */
   zonal?: { j2: number; radius: number; pole: ArrayLike<number> };
+  /**
+   * What goes round this body is always stepped, never carried on rails (see `railsBelow`). For a
+   * star: what its planets do to one another over thousands of turns is what a long run is for.
+   */
+  stepped?: boolean;
   /** position (m) and velocity (m/s) in any one inertial frame */
   pos: ArrayLike<number>;
   vel: ArrayLike<number>;
@@ -64,13 +69,16 @@ export type SimEvent =
   /** the body `id` goes round `around` now (a capture, or a moon lost to its star), where it went round `was` (-1: nothing) */
   | { kind: 'orbit'; time: number; id: number; around: number; was: number };
 
-/** What the simulation leaves out or does in a simpler way, always (the app can show these as they are). */
+/**
+ * What the simulation leaves out or does in a simpler way, always: in plain words, for the app to
+ * show as they are. (The same, with the numbers: docs/notes/gravity-engine.md.)
+ */
 export const LEFT_OUT: readonly string[] = [
-  'Bodies are points, but for the equatorial bulge (J₂) of the planets given one; a bulge\'s pole is held fixed, and nothing has tides or spin.',
-  'Relativity only as the Paczyński–Wiita pull of a black hole: the Sun\'s pull is Newton\'s (Mercury\'s perihelion turns 43″ a century slower than it does).',
-  'A body without a mass is pulled but does not pull, and is stepped on its own: it wobbles about its true path by its disturbance times (2π / steps)².',
-  'Bodies that touch are made one at once, keeping their mass, momentum and volume: nothing breaks up, and the heat of the impact is told, not kept.',
-  'On rails (`railsBelow`), a family moves as one point and its members on fixed two-body orbits: nothing pulls between them, and the orbits of the smallest may cross.',
+  'Every body pulls as if all its mass were at its centre. The giant planets\' bulging equators are counted, but nothing has tides, and nothing spins up or slows down.',
+  'Gravity is Newton\'s. Einstein\'s corrections are left out (Mercury\'s orbit turns a little more slowly here than it really does), except close to a black hole.',
+  'A world whose mass nobody has measured is pulled by everything and pulls on nothing.',
+  'Two bodies that touch become one at once, with their mass and their motion added up. Nothing breaks apart, melts or throws out debris.',
+  'When time runs fast, close families (a planet and its moons) are carried on rails: each moon keeps the oval it was on, nothing else pulls on it until something comes near, and moons whose paths cross pass each other untouched.',
 ];
 
 export interface SimReport {
@@ -116,7 +124,7 @@ const STICK = 0.85, STICK5 = STICK ** 5;
 const RELAX = 0.8;
 /** within this many times the sum of two radii the step follows the pair */
 const CONTACT = 4;
-/** on rails, the orbits of members lighter than this part of their family may cross (Pluto's small moons are 1 to 3 millionths of it) */
+/** on rails, the orbits of members lighter than this part of their family may cross, unless told otherwise (`railsCross`; Pluto's small moons are 1 to 3 millionths of it) */
 const CROSS = 1e-5;
 /** a family goes on rails only if it reaches less than this part of its Hill sphere... */
 const HILL_SHARE = 0.5;
@@ -138,12 +146,14 @@ const TOUCH = 1, OPEN = 2, FOLLOW = 4, FAR = 8;
 
 /** Everything that persists: a copy of it is a snapshot. */
 interface State {
-  n: number; nextId: number;
+  n: number; nextId: number; layout: number;
   id: Int32Array; gm: Float64Array; radius: Float64Array; rs: Float64Array;
   /** J₂ times the reference radius squared (m²), and the pole it is about (three numbers a body) */
   zon: Float64Array; pole: Float64Array;
   /** 0 bound, 1 unbound (announced), 2 past the edge (announced) */
   free: Uint8Array;
+  /** 1: no family of which this body is the heaviest goes on rails (`BodyInit.stepped`) */
+  pin: Uint8Array;
   /** the body each goes round, as last told (-1 nothing, -2 not yet known) */
   around: Int32Array;
   /** where a body is kept: its leaf of the hierarchy (>= 0), or -1 - its number among the light bodies */
@@ -277,9 +287,9 @@ export class NBody {
   misses = 0;
 
   private s: State = {
-    n: 0, nextId: 1,
+    n: 0, nextId: 1, layout: 0,
     id: new Int32Array(0), gm: new Float64Array(0), radius: new Float64Array(0), rs: new Float64Array(0),
-    zon: new Float64Array(0), pole: new Float64Array(0), free: new Uint8Array(0), around: new Int32Array(0),
+    zon: new Float64Array(0), pole: new Float64Array(0), free: new Uint8Array(0), pin: new Uint8Array(0), around: new Int32Array(0),
     slot: new Int32Array(0), x: new Float64Array(0), v: new Float64Array(0),
     dirty: true, planned: false,
     time: 0, at: 0, t0: 0, tick: 0, h: Infinity, rate: 0, seen: 0, span: 0,
@@ -341,6 +351,8 @@ export class NBody {
   /** milliseconds a step has cost lately (for `fit`) */
   private cost = 0;
   private limit = 0;
+  private lightLimit = 0;
+  private cross = CROSS;
   private perTurn = 16;
 
   // ------------------------------------------------------------------ the bodies
@@ -356,12 +368,44 @@ export class NBody {
     this.limit = seconds;
     this.review = true;
   }
+  /**
+   * The same for the bodies without a mass, where it is more than `railsBelow`: they disturb
+   * nothing, so they are the first to be carried when time must run faster than everything can
+   * be stepped.
+   */
+  get lightRailsBelow(): number { return this.lightLimit; }
+  set lightRailsBelow(seconds: number) {
+    if (seconds === this.lightLimit) return;
+    this.lightLimit = seconds;
+    this.review = true;
+  }
+  /**
+   * On rails, the orbits of members lighter than this share of their family may cross one another
+   * (they neither pull on nor hit each other there); a heavier member must stay clear of the rest
+   * for its family to be carried. A hundred-thousandth unless set; 1: any member's may, and a
+   * family whose moons have been thrown onto crossing orbits can be carried all the same, each
+   * passing the others untouched. Every member must still clear the body it goes round.
+   */
+  get railsCross(): number { return this.cross; }
+  set railsCross(share: number) {
+    if (share === this.cross) return;
+    this.cross = share;
+    this.review = true;
+  }
 
   get count(): number { return this.s.n; }
+  /** goes up whenever the list of bodies changes (one added, removed or absorbed): what is kept by a body's place in the arrays is then stale */
+  get layout(): number { return this.s.layout; }
   /** seconds since the simulation's own zero */
   get time(): number { return this.s.time; }
   /** numbers, G x masses (m³/s²), radii and Schwarzschild radii (m) of the bodies, in the order of `pos` */
   get ids(): Int32Array { return this.s.id.subarray(0, this.s.n); }
+  /**
+   * The number of the body each goes round, in the order of `pos`, as last looked at (at the
+   * start, and every few steps: see the `orbit` event): -1 for nothing (it is the heaviest of what
+   * it is bound to, or bound to nothing), -2 for a body added since.
+   */
+  get primaries(): Int32Array { return this.s.around.subarray(0, this.s.n); }
   get gm(): Float64Array { return this.s.gm.subarray(0, this.s.n); }
   get radius(): Float64Array { return this.s.radius.subarray(0, this.s.n); }
   get rs(): Float64Array { return this.s.rs.subarray(0, this.s.n); }
@@ -383,13 +427,14 @@ export class NBody {
     if (s.n === s.id.length) this.room(Math.max(8, 2 * s.n));
     const i = s.n++;
     s.nextId = Math.max(s.nextId, id + 1);
-    s.id[i] = id; s.gm[i] = b.gm; s.radius[i] = b.radius; s.rs[i] = b.rs ?? 0; s.free[i] = 0; s.around[i] = -2;
+    s.id[i] = id; s.gm[i] = b.gm; s.radius[i] = b.radius; s.rs[i] = b.rs ?? 0; s.free[i] = 0; s.pin[i] = b.stepped ? 1 : 0; s.around[i] = -2;
     for (let c = 0; c < 3; c++) { s.x[3 * i + c] = b.pos[c]; s.v[3 * i + c] = b.vel[c]; }
     const z = b.zonal;
     s.zon[i] = z ? z.j2 * z.radius * z.radius : 0;
     const len = z ? Math.hypot(z.pole[0], z.pole[1], z.pole[2]) : 1;
     for (let c = 0; c < 3; c++) s.pole[3 * i + c] = z ? z.pole[c] / len : 0;
     s.planned = false;
+    s.layout++;
     return id;
   }
 
@@ -437,18 +482,19 @@ export class NBody {
     };
     s.id = grow(s.id, cap); s.gm = grow(s.gm, cap); s.radius = grow(s.radius, cap); s.rs = grow(s.rs, cap);
     s.zon = grow(s.zon, cap); s.pole = grow(s.pole, 3 * cap);
-    s.free = grow(s.free, cap); s.around = grow(s.around, cap); s.slot = grow(s.slot, cap); s.x = grow(s.x, 3 * cap); s.v = grow(s.v, 3 * cap);
+    s.free = grow(s.free, cap); s.pin = grow(s.pin, cap); s.around = grow(s.around, cap); s.slot = grow(s.slot, cap); s.x = grow(s.x, 3 * cap); s.v = grow(s.v, 3 * cap);
   }
 
   private drop(i: number): void {
     const s = this.s;
     for (let j = i + 1; j < s.n; j++) {
-      s.id[j - 1] = s.id[j]; s.gm[j - 1] = s.gm[j]; s.radius[j - 1] = s.radius[j]; s.rs[j - 1] = s.rs[j]; s.zon[j - 1] = s.zon[j]; s.free[j - 1] = s.free[j]; s.around[j - 1] = s.around[j];
+      s.id[j - 1] = s.id[j]; s.gm[j - 1] = s.gm[j]; s.radius[j - 1] = s.radius[j]; s.rs[j - 1] = s.rs[j]; s.zon[j - 1] = s.zon[j]; s.free[j - 1] = s.free[j]; s.pin[j - 1] = s.pin[j]; s.around[j - 1] = s.around[j];
       for (let c = 0; c < 3; c++) s.pole[3 * j - 3 + c] = s.pole[3 * j + c];
       for (let c = 0; c < 3; c++) { s.x[3 * j - 3 + c] = s.x[3 * j + c]; s.v[3 * j - 3 + c] = s.v[3 * j + c]; }
     }
     s.n--;
     s.planned = false;
+    s.layout++;
   }
 
   // ------------------------------------------------------------------ time
@@ -875,24 +921,24 @@ export class NBody {
    * `wKind`, each light body's mode to `wMode`, and their paces.
    */
   private rails(): void {
-    const s = this.s, nm = s.nm, nn = s.nn, limit = this.limit;
+    const s = this.s, nm = s.nm, nn = s.nn, limit = this.limit, lightLimit = Math.max(limit, this.lightLimit);
     const ext = this.wExt, peri = this.wPeri, pace = this.wPace, ok = this.wOk, kind = this.wKind;
     // from the tightest pair up: how far each cluster reaches from its centre, and whether it could
     // go on rails: a closed orbit, shorter than the limit, of clusters themselves on rails, that
-    // stays clear of them. (Members of less than CROSS of the pair's mass, as Saturn's small
-    // co-orbitals and trojans are, may cross: `reach` leaves them out, and rails leave out their
-    // trading of orbits.)
+    // stays clear of them, about a body that allows it. (Members of less than `cross` of the pair's
+    // mass, as Saturn's small co-orbitals and trojans are, may cross each other: `reach` leaves
+    // them out, and rails leave out their trading of orbits.)
     const reach = this.wReach;
     for (let l = 0; l < nm; l++) { ext[l] = reach[l] = s.radius[s.leaf[l]]; ok[l] = 1; }
     for (let k = nm; k < nn; k++) {
       conic(s.jr, s.jv, 3 * k, this.seen(k, s.jr, 3 * k));
       const A = s.cA[k], B = s.cB[k];
       ext[k] = Math.max(s.fb[k] * oApo + ext[A], s.fa[k] * oApo + ext[B]);
-      const light = s.ngm[B] < CROSS * s.ngm[k];
+      const light = s.ngm[B] < this.cross * s.ngm[k];
       reach[k] = light ? reach[A] : Math.max(s.fb[k] * oApo + reach[A], s.fa[k] * oApo + reach[B]);
       peri[k] = oBound ? oPeri : Math.sqrt(s.jr[3 * k] ** 2 + s.jr[3 * k + 1] ** 2 + s.jr[3 * k + 2] ** 2);
       pace[k] = oPace;
-      ok[k] = oBound && oPeriod < limit && ok[A] && ok[B] && (light || oPeri > reach[A] + reach[B]) ? 1 : 0;
+      ok[k] = oBound && oPeriod < limit && ok[A] && ok[B] && !s.pin[s.leaf[s.top[k]]] && oPeri > reach[A] + reach[B] ? 1 : 0;
     }
     for (let again = true; again;) {
       again = false;
@@ -904,8 +950,8 @@ export class NBody {
         else kind[k] = ok[k] && this.alone(k) ? FROZEN : ACTIVE;
       }
       // a light body rides the rails of the family it is inside; elsewhere it goes on rails of its
-      // own if its orbit is short, closed and clear. One passing through a family on rails takes
-      // the family off them.
+      // own if its orbit is short, closed and clear of what it goes round (of the members it may
+      // not cross: `reach`). One passing through a family on rails takes the family off them.
       for (let p = 0; p < s.np; p++) {
         const host = s.phost[p];
         conic(s.pr, s.pv, 3 * p, host >= 0 ? this.seen(host, s.pr, 3 * p) : 0);
@@ -913,7 +959,7 @@ export class NBody {
         let mode = LIVE;
         if (host >= 0 && oBound) {
           if (kind[host] === INSIDE) mode = RAILS;
-          else if (oPeriod < limit && oPeri > ext[host] + s.radius[s.pbody[p]] && oApo < HILL_SHARE * this.hill(host)) mode = RAILS;
+          else if (oPeriod < lightLimit && oPeri > reach[host] + s.radius[s.pbody[p]] && oApo < HILL_SHARE * this.hill(host)) mode = RAILS;
         } else if (host >= 0 && kind[host] === INSIDE) {
           let root = host;
           while (kind[root] !== FROZEN) root = s.par[root];
@@ -1733,14 +1779,16 @@ export class NBody {
 
   /** Everything the simulation is, as plain numbers and arrays: `restore` carries on from it exactly. */
   snapshot(): NBodySnapshot {
-    return { state: copyState(this.s), railsBelow: this.limit, steps: this.perTurn, edge: this.edge, review: this.review } as unknown as NBodySnapshot;
+    return { state: copyState(this.s), railsBelow: this.limit, lightRailsBelow: this.lightLimit, railsCross: this.cross, steps: this.perTurn, edge: this.edge, review: this.review } as unknown as NBodySnapshot;
   }
 
   static restore(snap: NBodySnapshot): NBody {
     const sim = new NBody();
-    const from = snap as unknown as { state: State; railsBelow: number; steps: number; edge: number; review: boolean };
+    const from = snap as unknown as { state: State; railsBelow: number; lightRailsBelow: number; railsCross: number; steps: number; edge: number; review: boolean };
     sim.s = copyState(from.state);
     sim.limit = from.railsBelow;
+    sim.lightLimit = from.lightRailsBelow;
+    sim.cross = from.railsCross;
     sim.perTurn = from.steps;
     sim.edge = from.edge;
     sim.review = from.review;

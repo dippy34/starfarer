@@ -48,6 +48,9 @@ exactly. So the engine never approximates an orbit, only what disturbs it.
   are all shorter than the limit, that is small inside its Hill sphere and that nothing is near,
   moves as one mass, and its members keep their two-body orbits inside it. It comes off the
   rails by itself when something approaches. The default is 0: everything pulls on everything.
+  A body can ask that what goes round it is never carried (`stepped`: a star); the bodies without
+  a mass have a limit of their own (`lightRailsBelow`); and which members may cross each other's
+  orbits on rails is a share of the family's mass (`railsCross`: a hundred-thousandth unless set).
 * **Reading out.** Between steps, `read()` gives the state at exactly the time asked for: each
   pair along its orbit from the true state half a step before, plus the departure from that
   orbit that the true state half a step after shows, as a cubic in time. Nothing jumps from one
@@ -62,7 +65,7 @@ Everything is plain numbers and typed arrays in SI units, nothing is allocated p
 
 ## What is approximate
 
-Always (the engine's `LEFT_OUT`):
+Always (the engine's `LEFT_OUT` says these in plain words, for the app to show as they are):
 
 * Bodies are points, but for the equatorial bulge (J₂) of the planets given one (Earth, Mars,
   Jupiter, Saturn, Uranus, Neptune: the values and their sources are in `SystemSim.ts`). A
@@ -76,7 +79,7 @@ Always (the engine's `LEFT_OUT`):
   its horizon for its mass). Nothing breaks up; the heat of the impact is told in the event and
   not kept.
 * On rails, nothing pulls between the members of a family, and the orbits of members lighter
-  than a hundred-thousandth of it may cross.
+  than a hundred-thousandth of it (or than `railsCross`) may cross: they pass each other untouched.
 
 Now (`report()`): the step in use and what sets it (an orbit, an encounter, bodies about to
 touch), the body whose orbit is the quickest stepped, the families on rails, the bodies whose
@@ -91,7 +94,7 @@ Kepler velocity is not that: Io's is 0.4 % too fast).
 
 ## What was measured
 
-From `tests/systemsim.test.ts`, starting from the app's bodies on 2026-10-20:
+From `tests/systemsim.test.ts`, starting from the app's bodies on 2026-09-17:
 
 | | |
 |---|---|
@@ -142,11 +145,13 @@ const sim = new NBody();
 const id = sim.add({ gm, radius, pos, vel });   // id?, rs? (black hole), zonal? (J₂ bulge)
 sim.advance(dt, budgetMs);                        // returns the seconds moved; dt of either sign
 sim.read();                                       // sim.pos, sim.vel at sim.time (order of sim.ids)
+sim.primaries;                                    // the body each goes round now (-1: nothing)
 sim.setMass(id, gm, radius?); sim.setState(id, pos, vel); sim.remove(id);
 for (const e of sim.takeEvents()) { /* collision, encounter, unbound, escape, orbit */ }
 sim.report();                                     // what is approximated now
 sim.energy(); sim.momentum(); sim.angularMomentum();
-sim.railsBelow = seconds; sim.fit(rate, msPerSecond); sim.steps = 16; sim.edge = metres;
+sim.railsBelow = seconds; sim.lightRailsBelow = seconds; sim.railsCross = share;
+sim.fit(rate, msPerSecond); sim.steps = 16; sim.edge = metres;
 const copy = NBody.restore(sim.snapshot());
 ```
 
@@ -160,8 +165,67 @@ const live = capture(system, jd);        // a simulation of the app's bodies at 
 live.sim.advance(dt, budgetMs);
 system.update(liveDate(live));           // each body's own motion at the date reached...
 apply(live, system);                     // ...moved to where the simulation has it
-release(live, system, body);             // simulate a body that so far rode along
+release(live, system, bodies);           // simulate bodies that so far rode along
+riders(live, system, body);              // the bodies that ride on one
 ```
 
-The app does not use the engine yet: wiring it in, with the first powers (change a mass, remove,
-move, add), is the next part, and this note will say how it was done.
+## In the app: live physics
+
+`src/app/LivePhysics.ts` is the engine's place in the app (the owner's rule: the real Solar System
+stays real until you touch it; then it is simulated, and one button goes back to reality).
+Nothing of it runs until a power is used: a user who never touches one has the ephemeris, the same
+pictures and the same frame as before.
+
+* **The first change** (a mass, a body taken away) starts a simulation from where every body is at
+  that date and how it moves (`capture`). Simulated from the start: the Sun, the planets, Pluto,
+  Ceres and the seven asteroids that have been weighed, and the twenty moons with GM of 1 km³/s²
+  or more (Mimas and up): 38 bodies. Every other body rides on what it goes round in the
+  catalogue, on its catalogued path, until that body or it is changed or taken away; then it is
+  simulated too (`release`), one of unknown mass as a body that is pulled and does not pull. Why
+  not every moon with a known mass from the start: the catalogue's places for the smallest are not
+  a state their orbits can keep. Stepped from there, Saturn's Helene, which shares Dione's orbit,
+  ran into Dione within twenty years of a change to Jupiter.
+* **Each frame**: `follow` takes the simulation to the clock's date, or as near as a quarter of
+  the frame allows (between 3 and 12 ms), and sets the clock to where it got: in live physics the
+  simulation keeps the time, and a rate that cannot be kept shows as "getting…". Then
+  `SolarSystem.update` (the bodies left out need their own motion, and everything its rotation),
+  then `place`: the bodies where the simulation has them (`apply`), `Body.parent` set to what
+  each goes round now (`NBody.primaries`; the catalogue's parent stays in `SolarSystem.homeOf`,
+  and the ephemeris is worked out from that), a moon's face turned to it.
+* **What is carried on rails** follows the rate of time, in stages, each tried only when the one
+  before cannot keep up for 40 frames: families whose every orbit would go round in under 2
+  seconds on the screen; then under 20 seconds; then also families whose moons have been thrown
+  onto crossing orbits, each passing the others untouched (`railsCross`). What goes round a star
+  is always stepped (`BodyInit.stepped`): what the planets do to one another over thousands of
+  turns is what a long run is for. The Time sheet says what is on rails at the moment.
+* **What happens is told** (`hear`): a collision (the absorbed body leaves the scene with whatever
+  rode on it; the survivor has the mass and the volume of both; the camera and the selection go to
+  it), a world set free or gone for good, a change of what a world goes round. Worlds by name,
+  asteroids only counted. Each is logged for the moment it happened.
+* **Back to reality** puts back every mass, size and parent, takes away what was made, and gives
+  the bodies to the ephemeris again at the date reached, or, if that is outside 1849 to 2150, at
+  the date it began. `tests/livephysics.test.ts` compares every body with a system that was never
+  touched: the same to the last bit.
+* **Light.** A system may have no sun, or more than one: `SolarSystem.suns` and `sunAt` (the one
+  brightest at a place), and each body's `BodyView.sun`. With none: no sunlight on anything, no
+  glare, no shadows, no air glow; the Earth's cities are what is left to see of it; a planet's
+  name stays on the sky so it can be found. Not followed yet: the ship's own lamp and the heat on
+  its hull still take a Sun to be there (`src/game/Game.ts updateLight`, `Flight.ts frameEnv`).
+
+Also left out, and said so in the app's list (`ALSO_LEFT_OUT`): a world keeps its size and look
+whatever its mass; the belt's 75,000 small asteroids and the comets, which are drawn from their
+orbits and cannot be stepped one by one, are left out once the Sun is changed or gone; the real
+spacecraft are left out as soon as physics is live.
+
+What it manages (`tests/livephysics.test.ts`, "speed": frames of a sixtieth of a second, a
+quarter of each for the stepping, on the machine above; a phone has not been measured):
+
+| The change | a day, a month, a year a second | 100 years a second | 1,000 asked |
+|---|---|---|---|
+| Ceres taken away (every planet there) | all of it, under 0.5 ms a frame | about two thirds of it | about 90 years a second |
+| Jupiter twice as heavy | all of it | nearly all of it | about 130 |
+| The Sun taken away | all of it | all of it | all of it |
+
+With the Sun and its planets there, Mercury's 88 days set the step (3 days), and a quarter of one
+core is good for about a hundred years a second. Thousands would take the stepping off the main
+thread (the engine is written for a Web Worker; the app does not use one yet) or coarser steps.

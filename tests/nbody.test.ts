@@ -410,6 +410,28 @@ describe('fidelity', () => {
     expect(rails.report().rails).toEqual([]);
   });
 
+  it('always steps what goes round a body that asks for it, and carries the bodies without a mass by a limit of their own', () => {
+    // the star's planets are to be stepped whatever the limit: only the Earth's moon may ride
+    const sim = new NBody();
+    const e = orbit(AU, 0.05, GM_SUN + GM_EARTH, 0.02), j = orbit(5.2 * AU, 0.05, GM_SUN + GM_JUPITER, 0.03), m = orbit(3.84e8, 0.05, GM_EARTH, 0.1);
+    sim.add({ id: 1, gm: GM_SUN, radius: 6.96e8, pos: [0, 0, 0], vel: [0, 0, 0], stepped: true });
+    sim.add({ id: 2, gm: GM_EARTH, radius: 6.37e6, pos: e.pos, vel: e.vel });
+    sim.add({ id: 3, gm: GM_EARTH / 81.3, radius: 1.737e6, pos: [e.pos[0] + m.pos[0], m.pos[1], m.pos[2]], vel: [e.vel[0] + m.vel[0], e.vel[1] + m.vel[1], e.vel[2] + m.vel[2]] });
+    sim.add({ id: 4, gm: GM_JUPITER, radius: 7e7, pos: [-j.pos[0], -j.pos[1], j.pos[2]], vel: [-j.vel[0], -j.vel[1], j.vel[2]] });
+    // an asteroid without a mass, on a circle at 2.8 AU
+    const a = orbit(2.8 * AU, 0, GM_SUN, 0.1);
+    sim.add({ id: 5, gm: 0, radius: 4e5, pos: [0, a.pos[0], 0], vel: [-a.vel[1], 0, a.vel[2]] });
+    sim.railsBelow = 1000 * YEAR;
+    expect(sim.report().rails).toEqual([{ primary: 2, members: [2, 3] }, { primary: 5, members: [5] }]);
+    // (without the asking, the whole system is one family on rails: the test after this one)
+    sim.railsBelow = 0;
+    expect(sim.report().rails).toEqual([]);
+    sim.lightRailsBelow = 10 * YEAR;
+    expect(sim.report().rails).toEqual([{ primary: 5, members: [5] }]);
+    // and it survives a snapshot
+    expect(NBody.restore(sim.snapshot()).report().rails).toEqual([{ primary: 5, members: [5] }]);
+  });
+
   it('chooses what goes on rails for a rate of time from what a step costs', () => {
     const sim = quiet();
     let clock = 0;

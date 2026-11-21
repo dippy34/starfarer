@@ -45,6 +45,11 @@ const HI_WANT_PX = 260;
 const HI_KEEP_PX = 140;
 const HI_RELEASE_S = 20;
 const RELIEF_WANT_PX = 40;
+/**
+ * the radiance the Earth's night side is exposed for in sunlight (its sunlit face over the app's
+ * NIGHT): with no sun, the eye is held there by the cities' lights (BODY_FRAG draws them up to 0.02)
+ */
+const CITY_LIGHT = 0.03;
 /** pixel radius above which the Sun's own map is wanted (smaller, its disk shows none of it) */
 const FACE_WANT_PX = 24;
 
@@ -135,6 +140,8 @@ export interface BodyView {
   irradiance: number;    // at the observer
   apparentMag: number;
   resolved: boolean;
+  /** the sun that lights it (the brightest in its sky), or null: there is none, or it is one itself */
+  sun: Body | null;
 }
 
 export class BodiesLayer {
@@ -344,6 +351,16 @@ export class BodiesLayer {
   /** How strongly the Sun's glare is drawn now (0: not at all); for tests and diagnostics. */
   get glareLevel(): number {
     return this.glare?.visible ? ((this.glare.material as ShaderMaterial).uniforms.uIntensity.value as number) : 0;
+  }
+
+  /**
+   * How bright a world's own lights are (radiance: 1 is a white surface in sunlight at 1 AU), for
+   * the eye when no sun lights the world: the Earth's cities, shown as on its night side. 0 for a
+   * world without lights of its own.
+   */
+  ownLight(b: Body): number {
+    const m = this.meshes.get(b);
+    return m && ((m.material as ShaderMaterial).uniforms.uHasNight.value as number) > 0.5 ? CITY_LIGHT : 0;
   }
 
   /** The outer radius of a body's rings (m); 0 if it has none. */
@@ -595,8 +612,9 @@ export class BodiesLayer {
     this.time += dt;
     if (this.clouds) this.clouds.mesh.visible = false;   // shown again below while Earth is near
     const now = performance.now() / 1000;
-    const sun = this.system.sun;
-    const sunRel = sun.upos.sub(cam, new Vector3());
+    // each sun from the eye
+    const suns = this.system.suns;
+    for (let k = 0; k < suns.length; k++) suns[k].upos.sub(cam, this.sunRels[k] ??= new Vector3());
     let n = 0;
     const m4 = new Matrix4();
     const rot3 = new Matrix3();
@@ -609,30 +627,37 @@ export class BodiesLayer {
         if (m) m.visible = false;
         const ring = this.rings.get(b);
         if (ring) ring.visible = false;
+        if (this.ringParticles && b === this.ringParticlesBody) this.ringParticles.update(null, b.orientation, b.radius, new Vector3(), 0);
         continue;
       }
-      const view = this.views.get(b) ?? { body: b, rel: new Vector3(), dist: 0, pixelRadius: 0, irradiance: 0, apparentMag: 99, resolved: false };
+      const view = this.views.get(b) ?? { body: b, rel: new Vector3(), dist: 0, pixelRadius: 0, irradiance: 0, apparentMag: 99, resolved: false, sun: null };
       b.upos.sub(cam, view.rel);
       const dist = view.rel.length();
       view.dist = dist;
       const ang = b.radius / Math.max(dist, b.radius * 1.0001);
       view.pixelRadius = Math.asin(Math.min(1, ang)) / pixelAngle;
-      // Irradiance at the observer
-      let irr: number;
+      // Irradiance at the observer: a sun's own light, or what a world reflects of its sun's (none in the dark)
+      let irr = 0;
       let color: [number, number, number];
+      const sun = b.kind === 'star' ? null : this.system.sunAt(b.pos);
+      const sunRel = sun ? this.sunRels[suns.indexOf(sun)] : null;
+      const sunLight = sun ? this.system.brightness(sun) : 0;
+      view.sun = sun;
       if (b.kind === 'star') {
-        irr = sunIrradianceAt(Math.max(dist, b.radius));
+        irr = sunIrradianceAt(Math.max(dist, b.radius), this.system.brightness(b));
         color = this.sunColor;
       } else {
-        const toSun = tmp.copy(sunRel).sub(view.rel);
-        const rSun = toSun.length();
-        const cosPhase = toSun.dot(view.rel) / (rSun * dist) * -1;
-        const phase = Math.acos(Math.max(-1, Math.min(1, cosPhase)));
-        irr = sunIrradianceAt(rSun) * b.albedo * (b.radius / Math.max(dist, b.radius)) ** 2 * lambertPhase(phase);
+        if (sunRel) {
+          const toSun = tmp.copy(sunRel).sub(view.rel);
+          const rSun = toSun.length();
+          const cosPhase = toSun.dot(view.rel) / (rSun * dist) * -1;
+          const phase = Math.acos(Math.max(-1, Math.min(1, cosPhase)));
+          irr = sunIrradianceAt(rSun, sunLight) * b.albedo * (b.radius / Math.max(dist, b.radius)) ** 2 * lambertPhase(phase);
+        }
         color = b.color;
       }
       view.irradiance = irr;
-      view.apparentMag = -26.74 - 2.5 * Math.log10(irr / Math.PI);
+      view.apparentMag = irr > 0 ? -26.74 - 2.5 * Math.log10(irr / Math.PI) : 99;
       view.resolved = view.pixelRadius > 0.6;
       this.views.set(b, view);
 
@@ -664,12 +689,12 @@ export class BodiesLayer {
           this.sunTurned += dt * turnShare(this.sunLook, b.radius, view.rel.length(), Math.sqrt(this.psf.uPixelSA.value));
           applyStarLook(u, this.sunLook, this.time, this.sunTurned);
         }
-        if (b.kind !== 'star') {
+        if (sunRel) {
           const toSun = tmp.copy(sunRel).sub(view.rel);
           const rSun = toSun.length();
           u.uSunDir.value.copy(toSun).divideScalar(rSun);
-          u.uSunIrr.value = sunIrradianceAt(rSun);
-        }
+          u.uSunIrr.value = sunIrradianceAt(rSun, sunLight);
+        } else if (b.kind !== 'star') u.uSunIrr.value = 0;
         // the cloud layer is painted on the surface: close up it would lie on the mountains, so it
         // fades out on descent, between 150 and 50 km up (no cloud layer to fly through yet)
         if (u.uHasClouds.value) {
@@ -710,7 +735,7 @@ export class BodiesLayer {
       const ringMesh = this.rings.get(b);
       if (ringMesh && !view.resolved) ringMesh.visible = false;
     }
-    this.updateEclipses(sunRel);
+    this.updateEclipses();
     this.updateGlare(viewQuat);
     this.releaseHi(now);
     this.sprites.geometry.setDrawRange(0, n);
@@ -737,6 +762,8 @@ export class BodiesLayer {
   }
 
   private occluders: Body[] | null = null;
+  /** each sun's place from the eye this frame, in the order of `SolarSystem.suns` */
+  private sunRels: Vector3[] = [];
   /**
    * How much of its sunlight each body's sunlit face gets this frame (eclipses), for the eye's
    * adaptation: all of it but the share in another body's shadow (core/discs.ts: shadowShare),
@@ -750,18 +777,26 @@ export class BodiesLayer {
     return !!m && ((m.material as ShaderMaterial).uniforms.uOccN?.value as number) > 0;
   }
   /**
-   * Eclipses: for each resolved body, up to four bodies that can stand between it and the Sun
-   * this frame (moons on their planet, the planet on its moons, moons on each other).
+   * Eclipses: for each resolved body, up to four bodies that can stand between it and its sun
+   * this frame (moons on their planet, the planet on its moons, moons on each other). In the dark
+   * nothing casts a shadow.
    */
-  private updateEclipses(sunRel: Vector3): void {
+  private updateEclipses(): void {
     this.occluders ??= this.system.bodies.filter((o) => o.kind !== 'star' && o.radius > 50e3);
     const toSun = new Vector3(), v = new Vector3();
+    const suns = this.system.suns;
     for (const view of this.views.values()) {
       const b = view.body;
       const mesh = this.meshes.get(b);
       if (!view.resolved || !mesh || b.kind === 'star') continue;
       const u = (mesh.material as ShaderMaterial).uniforms;
       if (!u.uOcc) continue;
+      if (!view.sun) {
+        this.sunlit.set(b, 1);
+        u.uOccN.value = 0;
+        continue;
+      }
+      const sunRel = this.sunRels[suns.indexOf(view.sun)];
       toSun.copy(sunRel).sub(view.rel);
       const dS = toSun.length();
       toSun.divideScalar(dS);

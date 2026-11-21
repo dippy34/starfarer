@@ -12,7 +12,7 @@ const PUBLIC = join(fileURLToPath(new URL('..', import.meta.url)), 'public');
 globalThis.fetch = (async (url: string | URL) => new Response(readFileSync(join(PUBLIC, String(url).replace(/^\//, ''))))) as typeof fetch;
 
 const AU = 149_597_870_700, DAY = 86_400, YEAR = 365.25 * DAY;
-const JD = 2461300.5; // 2026-10-20 (TDB)
+const JD = 2461300.5; // 2026-09-17 (TDB)
 let sys: SolarSystem;
 
 /** The system at a date, the ephemeris for it loaded. */

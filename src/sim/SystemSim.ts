@@ -14,12 +14,14 @@ import { NBody } from './NBody';
  * orbit 1 % too slow; its planet's velocity, taken from its family's, carries a share of that.
  *
  * Not every body need be simulated. A body left out rides on the nearest simulated body it goes
- * round (a small moon on its planet, an asteroid on the Sun): it keeps its own motion about it,
- * from the ephemeris, and moves as that body has moved in the simulation. A planet whose moons
- * are left out stands for its family: its mass is theirs together, its place and motion the
- * family's centre of mass. (Taken alone, a planet carries its moons' pull in its motion: Jupiter
- * goes round the centre of its family at 2 m/s, which would take it 60,000 km a year off its path.)
- * Only moons make a family: the Sun's minor bodies ride along on their own orbits.
+ * round in the catalogue (a small moon on its planet, an asteroid on the Sun): it keeps its own
+ * motion about it, from the ephemeris, and moves as that body has moved in the simulation. A
+ * planet whose moons are left out stands for its family: its mass is theirs together, its place
+ * and motion the family's centre of mass. (Taken alone, a planet carries its moons' pull in its
+ * motion: Jupiter goes round the centre of its family at 2 m/s, which would take it 60,000 km a
+ * year off its path.) Only moons make a family: the Sun's minor bodies ride along on their own
+ * orbits. "Goes round in the catalogue" is `SolarSystem.homeOf`: what a simulated body goes round
+ * now is the simulation's to say (`NBody.primaries`), and the app's `Body.parent` follows that.
  */
 
 /**
@@ -46,6 +48,10 @@ export interface Live {
   readonly jd0: number;
   /** for each simulated body, the moons it stands for besides itself (left out, with a mass) */
   readonly carried: Map<number, Body[]>;
+  /** working room of `apply`: each simulated body's place in the simulation's arrays, as of `layout`, and how far each has been moved */
+  readonly index: Map<Body, number>;
+  layout: number;
+  shift: Float64Array;
 }
 
 /** The date (TDB Julian) the simulation has reached. */
@@ -68,6 +74,7 @@ export function capture(system: SolarSystem, jd: number, include: (b: Body) => b
   for (const b of system.bodies) {
     if (!b.valid || !include(b)) continue;
     const family = b.children.filter((m) => moon(m) && !include(m));
+    if (family.some((m) => system.homeOf(m) !== b)) throw new Error('a simulation starts from the catalogue: bodies going round what they do there');
     let gm = b.gm;
     const bv = velOf.get(b)!;
     pos[0] = b.pos.x; pos[1] = b.pos.y; pos[2] = b.pos.z;
@@ -87,79 +94,118 @@ export function capture(system: SolarSystem, jd: number, include: (b: Body) => b
     // (the pole of its rotation: the body-fixed z axis)
     const bulge = BULGES[b.id], o = b.orientation.elements;
     const zonal = bulge ? { j2: bulge[0], radius: bulge[1] * 1e3, pole: [o[8], o[9], o[10]] } : undefined;
-    sim.add({ id: b.id, gm, radius: b.radius, pos, vel, zonal });
+    // (a star's planets are always stepped: see `BodyInit.stepped`)
+    sim.add({ id: b.id, gm, radius: b.radius, pos, vel, zonal, stepped: b.kind === 'star' });
   }
-  return { sim, jd0: jd, carried };
+  return { sim, jd0: jd, carried, index: new Map(), layout: -1, shift: new Float64Array(0) };
 }
 
 /**
  * Put the app's bodies where the simulation has them at its time, and those it leaves out where
  * they ride (see above). `system.update(liveDate(live))` must have been made first: it gives
- * every body its own motion, which is then moved with the simulation.
+ * every body its own motion, which is then moved with the simulation. A simulated body is exactly
+ * where the simulation has it, whatever the ephemeris says of it by then.
  */
 export function apply(live: Live, system: SolarSystem): void {
   const sim = live.sim;
   sim.read();
-  const shift = new Map<number, [number, number, number, number, number, number]>();
-  const ids = sim.ids;
-  for (let i = 0; i < ids.length; i++) {
-    const b = system.byId.get(ids[i]);
-    if (!b) continue;
-    // where the ephemeris has what this body stands for (its family's centre, if it carries moons)
-    let gm = b.gm, x = b.pos.x, y = b.pos.y, z = b.pos.z, u = b.vel.x, v = b.vel.y, w = b.vel.z;
+  const ids = sim.ids, n = ids.length, index = live.index;
+  if (live.layout !== sim.layout) {
+    index.clear();
+    for (let i = 0; i < n; i++) {
+      const b = system.byId.get(ids[i]);
+      if (b) index.set(b, i);
+    }
+    live.layout = sim.layout;
+    if (live.shift.length < 6 * n) live.shift = new Float64Array(6 * Math.max(n, 64));
+  }
+  // how far each simulated body is from where the ephemeris has what it stands for (itself, or
+  // its family's centre if it carries moons)
+  const shift = live.shift;
+  for (const [b, i] of index) {
+    let x = b.pos.x, y = b.pos.y, z = b.pos.z, u = b.vel.x, v = b.vel.y, w = b.vel.z;
     const family = live.carried.get(b.id);
     if (family) {
-      gm = sim.gm[i];
+      const gm = sim.gm[i];
       for (const m of family) {
         const f = m.gm / gm;
         x += f * (m.pos.x - b.pos.x); y += f * (m.pos.y - b.pos.y); z += f * (m.pos.z - b.pos.z);
         u += f * (m.vel.x - b.vel.x); v += f * (m.vel.y - b.vel.y); w += f * (m.vel.z - b.vel.z);
       }
     }
-    const o = 3 * i;
-    shift.set(b.id, [sim.pos[o] - x, sim.pos[o + 1] - y, sim.pos[o + 2] - z, sim.vel[o] - u, sim.vel[o + 1] - v, sim.vel[o + 2] - w]);
+    const o = 3 * i, k = 6 * i;
+    shift[k] = sim.pos[o] - x; shift[k + 1] = sim.pos[o + 1] - y; shift[k + 2] = sim.pos[o + 2] - z;
+    shift[k + 3] = sim.vel[o] - u; shift[k + 4] = sim.vel[o + 1] - v; shift[k + 5] = sim.vel[o + 2] - w;
   }
   for (const b of system.bodies) {
-    let a: Body | null = b;
-    while (a && !shift.has(a.id)) a = a.parent;
-    if (!a) continue;
-    const d = shift.get(a.id)!;
-    b.pos.set(b.pos.x + d[0], b.pos.y + d[1], b.pos.z + d[2]);
-    b.vel.set(b.vel.x + d[3], b.vel.y + d[4], b.vel.z + d[5]);
+    let i = index.get(b);
+    if (i !== undefined && !live.carried.has(b.id)) {
+      const o = 3 * i;
+      b.pos.set(sim.pos[o], sim.pos[o + 1], sim.pos[o + 2]);
+      b.vel.set(sim.vel[o], sim.vel[o + 1], sim.vel[o + 2]);
+    } else {
+      for (let a = i === undefined ? system.homeOf(b) : b; a && i === undefined; a = system.homeOf(a)) i = index.get(a);
+      if (i === undefined) continue;
+      const k = 6 * i;
+      b.pos.set(b.pos.x + shift[k], b.pos.y + shift[k + 1], b.pos.z + shift[k + 2]);
+      b.vel.set(b.vel.x + shift[k + 3], b.vel.y + shift[k + 4], b.vel.z + shift[k + 5]);
+    }
     b.upos.set(b.pos.x, b.pos.y, b.pos.z);
   }
 }
 
 /**
- * Simulate a body that so far rode along (to change it, or because what it rode on is about to
- * be taken away), from where it is now: its place as `apply` puts it, and its motion likewise (the
- * rate the app moves it, plus what the body it rode on has gained in the simulation). A moon its
- * planet stood for is taken out of the planet's share: the planet keeps the rest of the family's
- * mass, and its centre.
+ * The bodies that ride on `host` (see above): left out of the simulation themselves, with `host`
+ * the first body they go round in the catalogue that is simulated, or `host` itself if it is one
+ * the simulation no longer has (absorbed by another: what rode on it has nothing to ride on).
  */
-export function release(live: Live, system: SolarSystem, b: Body): void {
+export function riders(live: Live, system: SolarSystem, host: Body): Body[] {
+  const simulated = new Set<number>(live.sim.ids);
+  return system.bodies.filter((b) => {
+    if (simulated.has(b.id) || !b.valid) return false;
+    let a = system.homeOf(b);
+    while (a && a !== host && !simulated.has(a.id)) a = system.homeOf(a);
+    return a === host;
+  });
+}
+
+/**
+ * Simulate bodies that so far rode along (to change them, or because what they rode on is about
+ * to be changed or taken away), from where they are now: each one's place as `apply` puts it, and
+ * its motion likewise (the rate the app moves it, plus what the body it rode on has gained in the
+ * simulation). A moon its planet stood for is taken out of the planet's share: the planet keeps
+ * the rest of the family's mass, and its centre.
+ */
+export function release(live: Live, system: SolarSystem, bodies: Body | readonly Body[]): void {
   const sim = live.sim;
-  if (sim.indexOf(b.id) >= 0) return;
+  const list = (bodies instanceof Array ? bodies : [bodies as Body]).filter((b) => b.valid && sim.indexOf(b.id) < 0);
+  if (!list.length) return;
   sim.settle();
-  const motion = motions(system, liveDate(live)), k = system.bodies.indexOf(b);
-  // (the rate the app moves it, where the ephemeris's own velocity stood in what `apply` gives it)
-  const own = [0, 1, 2].map((c) => motion[3 * k + c] - b.vel.getComponent(c));
+  const motion = motions(system, liveDate(live));
+  // (the rate the app moves each, where the ephemeris's own velocity stood in what `apply` gives it)
+  const own = list.map((b) => {
+    const k = 3 * system.bodies.indexOf(b);
+    return [motion[k] - b.vel.x, motion[k + 1] - b.vel.y, motion[k + 2] - b.vel.z];
+  });
   apply(live, system);
-  const vel = own.map((d, c) => b.vel.getComponent(c) + d);
-  const holder = b.parent ? live.carried.get(b.parent.id) : undefined;
-  if (holder && b.parent && holder.includes(b)) {
-    const i = sim.indexOf(b.parent.id), o = 3 * i;
-    const total = sim.gm[i], rest = total - b.gm;
-    sim.setMass(b.parent.id, rest);
-    sim.setState(
-      b.parent.id,
-      [0, 1, 2].map((c) => (total * sim.pos[o + c] - b.gm * b.pos.getComponent(c)) / rest),
-      [0, 1, 2].map((c) => (total * sim.vel[o + c] - b.gm * vel[c]) / rest),
-    );
-    holder.splice(holder.indexOf(b), 1);
-    if (!holder.length) live.carried.delete(b.parent.id);
-  }
-  sim.add({ id: b.id, gm: b.gm, radius: b.radius, pos: [b.pos.x, b.pos.y, b.pos.z], vel });
+  list.forEach((b, n) => {
+    const vel = [b.vel.x + own[n][0], b.vel.y + own[n][1], b.vel.z + own[n][2]];
+    const home = system.homeOf(b);
+    const holder = home ? live.carried.get(home.id) : undefined;
+    if (holder && home && holder.includes(b)) {
+      const i = sim.indexOf(home.id), o = 3 * i;
+      const total = sim.gm[i], rest = total - b.gm;
+      sim.setMass(home.id, rest);
+      sim.setState(
+        home.id,
+        [0, 1, 2].map((c) => (total * sim.pos[o + c] - b.gm * b.pos.getComponent(c)) / rest),
+        [0, 1, 2].map((c) => (total * sim.vel[o + c] - b.gm * vel[c]) / rest),
+      );
+      holder.splice(holder.indexOf(b), 1);
+      if (!holder.length) live.carried.delete(home.id);
+    }
+    sim.add({ id: b.id, gm: b.gm, radius: b.radius, pos: [b.pos.x, b.pos.y, b.pos.z], vel, stepped: b.kind === 'star' });
+  });
 }
 
 /** central differences of the seventh order: offsets in steps and their weights (over 60 steps) */

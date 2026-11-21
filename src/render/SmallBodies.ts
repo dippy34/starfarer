@@ -214,11 +214,25 @@ export class SmallBodiesLayer {
     for (let i = 0; i < this.cometObjects.length; i++) {
       const c = this.cometObjects[i];
       c.upos.copy(sun.upos).addXYZ(p[i * 3] * AU, p[i * 3 + 1] * AU, p[i * 3 + 2] * AU);
-      c.apparentMag = m[i];
+      c.apparentMag = this.shown ? m[i] : 99;
     }
   }
 
+  /**
+   * The belt's asteroids and the comets go round the Sun on their catalogued paths, each worked
+   * out from its orbit alone. With the Sun changed or taken away (live physics) those are paths
+   * round something that is no longer there: they are left out, the comets too faint to be found.
+   */
+  set present(on: boolean) {
+    if (on === this.shown) return;
+    this.shown = on;
+    this.group.visible = on;
+    if (this.cometPos) this.syncCometObjects();
+  }
+  private shown = true;
+
   update(cam: UPos, jd: number): void {
+    if (!this.shown) return;
     const sunRel = this.system.sun.upos.sub(cam, new Vector3());
     if (this.asteroids) {
       const u = (this.asteroids.material as ShaderMaterial).uniforms;

@@ -62,6 +62,17 @@ export class SolarSystem {
   jd = J2000_JD;
 
   private ephemOf = new Map<Body, BodyJson['ephem']>();
+  /**
+   * What each body goes round in the catalogue, and each one's moons there. The ephemeris is
+   * worked out from these, whatever `Body.parent` says a body goes round now (live physics may
+   * have had it captured or set free: src/app/LivePhysics.ts).
+   */
+  private home = new Map<Body, Body | null>();
+  private homeMoons = new Map<Body, Body[]>();
+  /** bodies the explorer has taken away: not there, whatever the ephemeris says */
+  private gone = new Set<Body>();
+  /** the stars that shine in the system now */
+  private lit: Body[] = [];
   private satFrames = new Map<Body, Matrix3>();
   private keplerEl = new Map<Body, OrbitalElements>();
   private angles: NutPrecAngles;
@@ -82,6 +93,7 @@ export class SolarSystem {
     for (const bj of data.bodies) this.link(bj);
     this.sun = this.byId.get(10)!;
     for (const b of this.bodies) this.prepare(b);
+    this.listSuns();
   }
 
   /** A body from its description: size, mass, look. */
@@ -117,11 +129,89 @@ export class SolarSystem {
 
   /** Its place in the family: what it goes round. */
   private link(bj: BodyJson): void {
-    if (bj.parent === null) return;
     const b = this.byId.get(bj.id)!;
-    const p = this.byId.get(bj.parent) ?? null;
+    const p = bj.parent === null ? null : this.byId.get(bj.parent) ?? null;
+    this.home.set(b, p);
+    if (!p) return;
     b.parent = p;
-    p?.children.push(b);
+    p.children.push(b);
+    const moons = this.homeMoons.get(p);
+    if (moons) moons.push(b);
+    else this.homeMoons.set(p, [b]);
+  }
+
+  /** What a body goes round in the catalogue (see `home`). */
+  homeOf(b: Body): Body | null {
+    return this.home.get(b) ?? null;
+  }
+
+  /**
+   * A body goes round another now, or round nothing (live physics: a capture, a moon lost to its
+   * star, a planet set free). The ephemeris takes no notice; `settle` puts it back.
+   */
+  adopt(b: Body, parent: Body | null): void {
+    if (b.parent === parent) return;
+    if (b.parent) b.parent.children.splice(b.parent.children.indexOf(b), 1);
+    b.parent = parent;
+    parent?.children.push(b);
+  }
+
+  /**
+   * Take a body away, or bring it back (live physics): one that is away is not drawn, named,
+   * found or stood on, casts no shadow and gives no light.
+   */
+  setGone(b: Body, gone: boolean): void {
+    if (gone) this.gone.add(b);
+    else this.gone.delete(b);
+    // (there again: `update` will say if the ephemeris has no place for it at the date)
+    b.valid = !gone;
+    this.listSuns();
+  }
+
+  isGone(b: Body): boolean {
+    return this.gone.has(b);
+  }
+
+  /** Back to the catalogue: everything there again, each body going round what it does there, its moons in their order. */
+  settle(): void {
+    for (const b of this.gone) b.valid = true;
+    this.gone.clear();
+    for (const b of this.bodies) b.children.length = 0;
+    for (const b of this.bodies) {
+      const p = this.homeOf(b);
+      b.parent = p;
+      p?.children.push(b);
+    }
+    this.listSuns();
+  }
+
+  private listSuns(): void {
+    this.lit = this.bodies.filter((b) => b.kind === 'star' && !this.gone.has(b));
+  }
+
+  /** The stars that shine in the system now: the Sun, unless it has been taken away, and any the explorer has made. */
+  get suns(): readonly Body[] {
+    return this.lit;
+  }
+
+  /**
+   * The sun that lights a place (m, from the barycentre): the one brightest there, or null in a
+   * system without one. (A world is lit by one sun at a time.)
+   */
+  sunAt(pos: Vector3): Body | null {
+    const lit = this.lit;
+    if (lit.length < 2) return lit[0] ?? null;
+    let best = lit[0], most = 0;
+    for (const s of lit) {
+      const e = this.brightness(s) / Math.max(pos.distanceToSquared(s.pos), s.radius * s.radius);
+      if (e > most) { most = e; best = s; }
+    }
+    return best;
+  }
+
+  /** A star's light as a multiple of the Sun's, from its absolute magnitude. */
+  brightness(star: Body): number {
+    return star === this.sun ? 1 : Math.pow(10, -0.4 * (star.absMag - this.sun.absMag));
   }
 
   /** The frame its orbit is given in, or its elements: worked out once. */
@@ -156,6 +246,7 @@ export class SolarSystem {
     const b = this.make(bj);
     this.link(bj);
     this.prepare(b);
+    this.listSuns();
     return b;
   }
 
@@ -185,8 +276,13 @@ export class SolarSystem {
     this.satFrames.delete(b);
     this.keplerEl.delete(b);
     this.rel.delete(b);
-    if (b.parent) b.parent.children.splice(b.parent.children.indexOf(b), 1);
+    this.gone.delete(b);
+    this.adopt(b, null);
+    const moons = this.homeMoons.get(this.homeOf(b)!);
+    if (moons) moons.splice(moons.indexOf(b), 1);
+    this.home.delete(b);
     b.valid = false;
+    this.listSuns();
   }
 
   static async load(baseUrl: string): Promise<SolarSystem> {
@@ -199,8 +295,8 @@ export class SolarSystem {
 
   /** Osculating-ish elements of a satellite's mean orbit at `jd` (in its own plane frame), with secular precession. */
   satelliteElements(b: Body, jd: number): { el: OrbitalElements; frame: Matrix3 } | null {
-    const e = this.ephemOf.get(b);
-    if (!e || e.kind !== 'satellite' || !b.parent) return null;
+    const e = this.ephemOf.get(b), parent = this.homeOf(b);
+    if (!e || e.kind !== 'satellite' || !parent) return null;
     if (e.osculating) {
       // Nearest-epoch osculating elements (Horizons), propagated as a two-body orbit.
       const rows = e.osculating.rows;
@@ -229,7 +325,7 @@ export class SolarSystem {
       M += fit.dM + fit.dn * dt + fit.dn2 * dt * dt;
       if (fit.libAmp && fit.libPeriod) M += fit.libAmp * Math.sin((2 * Math.PI * dt) / fit.libPeriod + (fit.libPhase ?? 0));
     }
-    const mu = (b.parent.gm || b.parent.systemGm) + b.gm;
+    const mu = (parent.gm || parent.systemGm) + b.gm;
     // Mean motion from the tabulated period (mu-consistent elements keep the period exact).
     const n = (2 * Math.PI) / (o.P * DAY);
     const a = o.a * 1e3;
@@ -293,7 +389,7 @@ export class SolarSystem {
     }
 
     // 2) Moons relative to their planet (mean elements); fall back for the Moon outside DE.
-    const hot = (b: Body) => !focus || focus.has(b) || (b.parent !== null && focus.has(b.parent));
+    const hot = (b: Body) => !focus || focus.has(b) || focus.has(this.homeOf(b)!);
     for (const b of this.bodies) {
       const e = this.ephemOf.get(b);
       if (!e) continue;
@@ -327,7 +423,7 @@ export class SolarSystem {
       const e = this.ephemOf.get(p);
       if (!e) continue;
       if (e.kind !== 'spk' || !e.barycenter || !p.systemGm) continue;
-      for (const m of p.children) {
+      for (const m of this.homeMoons.get(p) ?? []) {
         const r = this.rel.get(m);
         if (!r || !(m.gm > 0)) continue;
         // (the velocity likewise, the moons' momentum about the barycentre: a planet moving with its
@@ -351,7 +447,7 @@ export class SolarSystem {
       if (!e || e.kind !== 'satellite') continue;
       const r = this.rel.get(b);
       if (!r) continue;
-      const p = b.parent!;
+      const p = this.homeOf(b)!;
       b.pos.copy(p.pos).add(r.pos);
       b.vel.copy(r.vel).add(p.vel);
       b.valid = p.valid;
@@ -380,9 +476,15 @@ export class SolarSystem {
       b.upos.set(b.pos.x, b.pos.y, b.pos.z);
       if (!focus || b.kind === 'star' || b.kind === 'planet' || focus.has(b) || (i & 15) === (frame & 15)) this.updateOrientation(b, jd);
     }
+    for (const b of this.gone) b.valid = false;
   }
 
-  private updateOrientation(b: Body, jd: number): void {
+  /**
+   * A body's orientation at `jd` for where it is and how it moves now. (`update` works it out for
+   * where the ephemeris has the body: one that has since been put elsewhere, and keeps a face
+   * turned to what it goes round, is turned again with this.)
+   */
+  updateOrientation(b: Body, jd: number): void {
     if (b.rotation) {
       evaluateRotation(b.rotation, this.angles, jd, this.orient);
       orientationMatrix(this.orient, b.orientation);
@@ -391,7 +493,7 @@ export class SolarSystem {
     const p = b.parent;
     const hours = (b.meta.rotPeriodHours as number | undefined) ?? null;
     if (b.kind === 'moon' && p) {
-      // Synchronous rotation (tidal locking): prime meridian faces the planet, pole along the orbit normal.
+      // Synchronous rotation (tidal locking): prime meridian faces what it goes round, pole along the orbit normal.
       const r = this.tmp.copy(p.pos).sub(b.pos).normalize();
       const relVel = this.tmp2.copy(b.vel).sub(p.vel);
       const n = this.tmp3.crossVectors(r, relVel).normalize().negate();

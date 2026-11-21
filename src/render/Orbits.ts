@@ -31,7 +31,7 @@ const BASE_SAMPLES = 192;
 const REFINE = 14; // geometric refinement steps on each side of the body
 const MAX_VERTS = BASE_SAMPLES + 2 * REFINE + 2;
 
-const COLORS: Record<string, [number, number, number]> = {
+export const COLORS: Record<string, [number, number, number]> = {
   planet: [0.35, 0.55, 1.0],
   dwarf: [1.0, 0.65, 0.3],
   moon: [0.45, 0.85, 0.6],
@@ -55,6 +55,12 @@ export class OrbitsLayer {
   selected: Body | null = null;
   /** body the camera is currently co-moving with */
   focus: Body | null = null;
+  /**
+   * Live physics: the bodies whose motion is the simulation's. Their line is the orbit each is on
+   * now, from where it is and how it moves about what it goes round now; the catalogue's orbit
+   * is no longer theirs. Null: every line is the catalogue's.
+   */
+  simulated: ((b: Body) => boolean) | null = null;
   private objs = new Map<Body, OrbitObj>();
   private angles = new Float64Array(MAX_VERTS);
   private tmpR = new Vector3();
@@ -100,13 +106,13 @@ export class OrbitsLayer {
 
   /** Orbit elements of `b` about its primary, plus the frame matrix to ICRF. */
   private elements(b: Body, jd: number): { el: OrbitalElements; frame: Matrix3 } | null {
-    const kind = this.system.ephemerisKind(b);
+    const kind = this.simulated?.(b) ? 'simulated' : this.system.ephemerisKind(b);
     if (kind === 'satellite' && b.id !== 301) return this.system.satelliteElements(b, jd);
     if (kind === 'kepler') {
       const el = this.system.heliocentricElements(b);
       return el ? { el, frame: ECL_TO_EQU } : null;
     }
-    // Osculating elements from the DE state (planets, Moon)
+    // Osculating elements from the body's state (planets and the Moon from the ephemeris; any simulated body)
     const p = b.parent;
     if (!p) return null;
     const r = this.tmpR.copy(b.pos).sub(p.pos);

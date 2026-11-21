@@ -67,8 +67,9 @@ export class Awe {
     // Earth beside a black hole is sub-pixel; the info card carries that comparison)
     const sel = app.selection;
     const fwd = new Vector3(0, 0, -1).applyQuaternion(app.view.quat);
-    if (sel && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth') {
-      const sun = app.system.sun;
+    // (it is lit as the worlds are: in a system with no sun left there is nothing to see it by)
+    const sun = app.system.suns[0];
+    if (sel && sun && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth') {
       const star = sel instanceof CatalogStar || (sel instanceof Body && sel.kind === 'star');
       this.cues.updateEarth({
         rel: sel.upos.sub(cam, new Vector3()), radius: sel.radius, sunRel: sun.upos.sub(cam, new Vector3()),

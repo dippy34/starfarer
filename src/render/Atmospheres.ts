@@ -3,7 +3,6 @@ import {
   SphereGeometry, Vector3,
 } from 'three';
 import { sunIrradianceAt } from '../astro/photometry';
-import type { UPos } from '../core/upos';
 import type { Body } from '../universe/Body';
 import type { SolarSystem } from '../universe/SolarSystem';
 import type { BodyView } from './Bodies';
@@ -218,14 +217,16 @@ export class AtmospheresLayer {
     return out;
   }
 
-  update(cam: UPos, views: Map<Body, BodyView>): void {
-    const sunRel = this.system.sun.upos.sub(cam, new Vector3());
+  update(views: Map<Body, BodyView>): void {
     const rot = new Matrix3();
     const m4 = new Matrix4();
     const tmp = new Vector3();
     for (const s of this.shells.values()) s.mesh.visible = false;
     for (const [b, v] of views) {
       if (!v.resolved || v.pixelRadius < 2.5) continue;
+      // (air is seen by the sunlight it scatters: without a sun there is nothing of it to draw)
+      const sunRel = v.sun ? views.get(v.sun)?.rel : undefined;
+      if (!v.sun || !sunRel) continue;
       const s = this.shell(b);
       if (!s) continue;
       const a = b.radii[0];
@@ -249,7 +250,7 @@ export class AtmospheresLayer {
       const toSun = tmp.copy(sunRel).sub(v.rel);
       const rSun = toSun.length();
       (u.uSun.value as Vector3).copy(toSun).divideScalar(rSun).applyMatrix3(u.uToBody.value).normalize();
-      u.uSunIrr.value = sunIrradianceAt(rSun);
+      u.uSunIrr.value = sunIrradianceAt(rSun, this.system.brightness(v.sun));
       const Rt = a + s.spec.top;
       const inside = (u.uO.value as Vector3).length() < Rt * 1.002;
       if (s.mat.side !== (inside ? BackSide : FrontSide)) {

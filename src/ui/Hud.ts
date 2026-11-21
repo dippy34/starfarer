@@ -22,7 +22,9 @@ export type HudAction =
   // board the ship (src/game/Game.ts) or leave it
   | 'ship'
   // what if (src/app/WhatIf.ts): give the selected world a moon; take away one that was made
-  | 'add-moon' | 'unmake';
+  | 'add-moon' | 'unmake'
+  // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed
+  | 'remove' | 'reality';
 
 export interface HudHost {
   act(action: HudAction): void;
@@ -32,6 +34,8 @@ export interface HudHost {
   browse(category: Category): Destination[];
   /** a place was chosen from a list */
   pickDestination(id: string): void;
+  /** the mass slider of the selected world was put at `slider` (src/app/Powers.ts: massFactor) */
+  setMass(slider: number): void;
 }
 
 export interface HudState {
@@ -51,7 +55,20 @@ export interface HudState {
     /** what can be done to it (src/app/WhatIf.ts): given a moon; taken away again, if the explorer made it */
     canAddMoon: boolean;
     made: boolean;
+    /**
+     * Its mass, where it has a known one to change: where the slider stands, the mass and its factor
+     * in words, and what the textbook predicts of a body of that mass ('' where it says nothing).
+     */
+    mass: { slider: number; words: string; times: string; theory: string } | null;
+    /** it can be taken away (a world of the Solar System) */
+    removable: boolean;
   } | null;
+  /**
+   * Live physics, or null while the Solar System is the real one: since when, how fast time gets on
+   * when that is slower than asked ('' otherwise), what is carried on rails ('' when nothing is),
+   * what the simulation leaves out, and what has happened, newest first.
+   */
+  live: { since: string; slow: string; rails: string; leftOut: readonly string[]; log: { day: string; text: string }[] } | null;
   /** the destination of the flight in progress */
   flying: string | null;
   labels: boolean;
@@ -72,8 +89,8 @@ export interface ThumbSheet { url: string; cols: number; rows: number; bodies: R
 
 type Sheet = 'explore' | 'time' | 'more';
 
-/** the height the selection's card takes above the tab bar, with its gap (px) */
-const CARD_ROOM = 134;
+/** the height the selection's card takes above the tab bar, with its gap (px): its three buttons, and the powers under them */
+const CARD_ROOM = 188;
 
 const TOUCH_HELP: [string, string][] = [
   ['Drag', 'Turn round the world you are at'],
@@ -120,6 +137,10 @@ const TEMPLATE = `
       <span class="chip-text"><b></b><small></small></span>
     </button>
   </header>
+  <div class="live-mark" hidden>
+    <button class="live-what" type="button" data-live aria-label="Live physics: what is simulated, and what has happened">${ICON.live}<span><b>Live physics</b><small></small></span></button>
+    <button class="live-back" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
+  </div>
   <div class="hud-toast" role="status" aria-live="polite"></div>
   <div class="hud-dock">
     <div class="hud-fabs">
@@ -137,6 +158,16 @@ const TEMPLATE = `
           <button class="btn primary" type="button" data-act="go">${ICON.go}<span>Go there</span></button>
           <button class="btn" type="button" data-act="centre">${ICON.centre}<span>Look at</span></button>
           <button class="btn" type="button" data-details aria-expanded="false">${ICON.info}<span>Details</span></button>
+        </div>
+        <div class="card-powers" hidden>
+          <button class="power" type="button" data-power="mass" aria-expanded="false">${ICON.mass}<span>Mass</span></button>
+          <button class="power" type="button" data-act="remove">${ICON.unmake}<span>Remove</span></button>
+        </div>
+        <div class="power-panel" data-panel="mass" hidden>
+          <div class="power-read"><span><b></b><small></small></span><button type="button" data-mass-real>Real mass</button></div>
+          <input class="slider" type="range" min="-3" max="3" step="0.01" value="0" aria-label="Its mass, from a thousandth of its real mass to a thousand times it"/>
+          <div class="slider-ends"><span>÷ 1,000</span><span>Only its pull changes, not its size or look</span><span>× 1,000</span></div>
+          <p class="theory" hidden><b>Theory predicts</b><span></span></p>
         </div>
         <div class="facts" hidden>
           <dl></dl>
@@ -167,6 +198,13 @@ const TEMPLATE = `
           <button type="button" class="big" data-act="pause" aria-label="Pause or resume time">${ICON.pause}${ICON.play}</button>
           <button type="button" data-act="faster">${ICON.faster}<span>Faster</span></button>
           <button type="button" data-act="now">${ICON.now}<span>Now</span></button>
+        </div>
+        <div class="live-sheet" hidden>
+          <h3>Live physics</h3>
+          <p class="live-about"></p>
+          <div class="live-log"></div>
+          <details class="live-left"><summary><span>What the simulation leaves out</span>${ICON.chevron}</summary><ul></ul></details>
+          <button class="btn" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
         </div>
       </section>
       <section class="sheet more" data-sheet="more" aria-label="Settings and help">
@@ -219,6 +257,14 @@ export class Hud {
   private state: HudState | null = null;
   private selectionKey: string | null = null;
   private details = false;
+  /** the selection has changed by itself: the open sheet is not to give way to its card (see `selectionMoved`) */
+  private moved = false;
+  /** the power whose panel is open on the card */
+  private power: 'mass' | null = null;
+  /** a finger is on the mass slider: where it stands is the finger's business */
+  private sliding = false;
+  private logKey = '';
+  private leftOutKey = '';
   private thumbs: ThumbSheet | null = null;
   private toastTimer = 0;
   private coarse: boolean;
@@ -231,6 +277,7 @@ export class Hud {
 
   private readonly slot: HTMLElement;
   private readonly input: HTMLInputElement;
+  private readonly slider: HTMLInputElement;
   private readonly cats: HTMLElement;
   private readonly list: HTMLElement;
   private readonly toastEl: HTMLElement;
@@ -245,6 +292,7 @@ export class Hud {
     this.$ = (sel) => found.get(sel) ?? found.set(sel, el.querySelector<HTMLElement>(sel)!).get(sel)!;
     this.slot = this.$('.hud-slot');
     this.input = el.querySelector<HTMLInputElement>('.searchbox input')!;
+    this.slider = el.querySelector<HTMLInputElement>('.card .slider')!;
     this.cats = this.$('.cats');
     this.list = this.$('.explore .list');
     this.toastEl = this.$('.hud-toast');
@@ -265,6 +313,11 @@ export class Hud {
       }
       e.stopPropagation(); // typing a name is not flying
     });
+    // the mass slider reports where it is put, as it is moved
+    this.slider.addEventListener('input', () => this.host.setMass(Number(this.slider.value)));
+    this.slider.addEventListener('pointerdown', () => { this.sliding = true; });
+    for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.slider.addEventListener(done, () => { this.sliding = false; });
+    this.slider.addEventListener('keydown', (e) => e.stopPropagation()); // (its arrow keys are its own)
     for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
     // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
     const full = this.$('[data-fullscreen]');
@@ -320,6 +373,15 @@ export class Hud {
     if (this.sheet === 'more') { this.closeSheet(); return; }
     this.openSheet('more');
     this.$('.more .help-title').scrollIntoView({ block: 'start' });
+  }
+
+  /**
+   * The selection is about to change without the explorer having chosen anything (what was
+   * selected has become part of another body, which is selected in its place): whatever sheet is
+   * open stays open. A button under a finger must not vanish because two moons collided.
+   */
+  selectionMoved(): void {
+    this.moved = true;
   }
 
   /** A catalogue finished loading: what was typed may now find more. */
@@ -386,7 +448,7 @@ export class Hud {
     this.$('.clock').classList.toggle('paused', s.paused);
     setText(this.$('.time-date'), longDay(day));
     setText(this.$('.time-clock'), `${clock} UTC`);
-    setText(this.$('.time-rate'), s.paused ? 'Paused' : s.rate === 'real time' ? 'Real time' : `${s.rate}`);
+    setText(this.$('.time-rate'), s.paused ? 'Paused' : s.rate === 'real time' ? 'Real time' : s.live?.slow ? `${s.rate} asked, ${s.live.slow}` : `${s.rate}`);
     this.$('.time').classList.toggle('paused', s.paused);
     this.$('.transport [data-act="reverse"]').setAttribute('aria-pressed', String(s.reversed));
     const flight = this.$('.hud-flight');
@@ -398,8 +460,33 @@ export class Hud {
     this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
     setText(this.$('.look-fab span'), s.look ? 'Look' : 'Orbit');
     setText(this.$('.status'), s.status);
+    this.renderLive(s);
     this.renderCard(s);
     this.showSlot();
+  }
+
+  /** Live physics: the mark at the top, with the way back; in the Time sheet, what has happened and what is left out. */
+  private renderLive(s: HudState): void {
+    const live = s.live;
+    this.el.toggleAttribute('data-live', !!live);
+    this.$('.live-mark').hidden = !live;
+    const sheet = this.$('.live-sheet');
+    sheet.hidden = !live;
+    if (!live) return;
+    setText(this.$('.live-what small'), live.slow || `since ${live.since}`);
+    setText(this.$('.live-about'), `Since ${live.since} everything here moves under its own gravity: each world pulls on every other, and nothing is on its catalogued path any more.${live.rails ? ` Carried on rails while time runs this fast: ${live.rails}.` : ''}`);
+    const key = live.log.map((e) => `${e.day}\n${e.text}`).join('\n');
+    if (key !== this.logKey) {
+      this.logKey = key;
+      this.$('.live-log').innerHTML = live.log.length
+        ? live.log.map((e) => `<p><small>${escapeHtml(e.day)}</small>${escapeHtml(e.text)}</p>`).join('')
+        : '<p class="quiet">Nothing has collided, been thrown out or been captured yet.</p>';
+    }
+    const left = live.leftOut.join('\n');
+    if (left !== this.leftOutKey) {
+      this.leftOutKey = left;
+      this.$('.live-left ul').innerHTML = live.leftOut.map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+    }
   }
 
   private renderCard(s: HudState): void {
@@ -410,8 +497,10 @@ export class Hud {
       // something new was chosen: its card takes the panel
       this.selectionKey = sel.key;
       this.details = false;
+      this.power = null;
       this.pictureStale = true;
-      this.closeSheet();
+      if (!this.moved) this.closeSheet();
+      this.moved = false;
       setText(card.querySelector('h2')!, sel.name);
     }
     if (this.pictureStale) {
@@ -420,6 +509,24 @@ export class Hud {
     }
     setText(card.querySelector('.card-title p')!, sel.detail);
     setText(card.querySelector('[data-act="go"] span')!, sel.here ? 'Recentre' : 'Go there');
+    // what can be done to it: its buttons, and the panel of the one that is open
+    const powers = card.querySelector<HTMLElement>('.card-powers')!;
+    powers.hidden = !sel.mass && !sel.removable;
+    const massButton = powers.querySelector<HTMLElement>('[data-power="mass"]')!;
+    massButton.hidden = !sel.mass;
+    powers.querySelector<HTMLElement>('[data-act="remove"]')!.hidden = !sel.removable;
+    if (!sel.mass) this.power = null;
+    massButton.setAttribute('aria-expanded', String(this.power === 'mass'));
+    const panel = card.querySelector<HTMLElement>('.power-panel')!;
+    panel.hidden = this.power !== 'mass';
+    if (sel.mass && this.power === 'mass') {
+      setText(panel.querySelector('.power-read b')!, sel.mass.words);
+      setText(panel.querySelector('.power-read small')!, sel.mass.times);
+      if (!this.sliding && Math.abs(Number(this.slider.value) - sel.mass.slider) > 0.004) this.slider.value = String(sel.mass.slider);
+      const theory = panel.querySelector<HTMLElement>('.theory')!;
+      theory.hidden = !sel.mass.theory;
+      setText(theory.querySelector('span')!, sel.mass.theory);
+    }
     const facts = card.querySelector<HTMLElement>('.facts')!;
     facts.hidden = !this.details;
     card.querySelector('[data-details]')!.setAttribute('aria-expanded', String(this.details));
@@ -507,7 +614,10 @@ export class Hud {
     else if (d.cat) { this.category = d.cat as Category; this.renderList(); }
     else if (d.tab) this.tab(d.tab);
     else if ('close' in d) this.closeSheet();
-    else if ('details' in d) { this.details = !this.details; if (this.state) this.renderCard(this.state); }
+    else if ('details' in d) { this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
+    else if (d.power) { this.power = this.power === d.power ? null : 'mass'; this.details = false; if (this.state) this.renderCard(this.state); }
+    else if ('massReal' in d) { this.slider.value = '0'; this.host.setMass(0); }
+    else if ('live' in d) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
     else if (d.act) {

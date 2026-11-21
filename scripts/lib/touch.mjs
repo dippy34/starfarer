@@ -45,6 +45,10 @@ export async function fingers(page) {
       await send('touchEnd', []);
       await frames(1);
     },
+    /** one finger put down, slid and lifted a call at a time: for looking at what happens while it is still down */
+    async press(p) { await send('touchStart', [p]); await frames(1); },
+    async slide(p) { await send('touchMove', [p]); await frames(1); },
+    async lift() { clock += 0.3; await send('touchEnd', []); await frames(1); },
     /** one finger from `a` to `b`; `rest` seconds still before lifting (0: a flick) */
     async drag(a, b, { steps = 12, rest = 0.3 } = {}) {
       await send('touchStart', [a]);

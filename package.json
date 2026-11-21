@@ -18,6 +18,7 @@
     "verify:start": "node scripts/start.mjs http://127.0.0.1:5173/ screenshots",
     "verify:exposure": "node scripts/exposure.mjs http://127.0.0.1:5173/ screenshots",
     "verify:whatif": "node scripts/whatif.mjs http://127.0.0.1:5173/ screenshots",
+    "verify:live": "node scripts/live.mjs http://127.0.0.1:5173/ screenshots",
     "verify:stars": "node scripts/stars.mjs http://127.0.0.1:5173/ screenshots",
     "verify:vr": "node scripts/vr.mjs http://127.0.0.1:5173/ screenshots",
     "verify:game": "node scripts/game.mjs http://127.0.0.1:5173/ screenshots"
