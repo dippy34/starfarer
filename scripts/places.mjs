@@ -137,6 +137,24 @@ check('particles are only drawn inside the ring layer', st === false);
   await page.screenshot({ path: path.join(outDir, 'p2b-saturn-limb.png') });
 }
 
+// 4c. Titan from 3 radii is the orange of its haze (its measured spectrum), not the grey
+// near-infrared mosaic of its ground, which showed in patches with seams between them
+{
+  await page.evaluate(() => { const a = window.app, t = a.findByName('Titan'); a.select(t); a.placeNear(t, t.radius * 3, 40, 10); });
+  await frames(8);
+  const st = await page.evaluate(() => {
+    const a = window.app, t = a.findByName('Titan');
+    const p = a.project(t.upos.sub(a.rig.upos));
+    const v = a.renderer.lightAt(p.x, p.y, 4);
+    const rgb = [0, 0, 0];
+    for (let i = 0; i < v.length; i++) rgb[i % 3] += v[i] / (v.length / 3);
+    return { map: a.bodies.meshes.get(t).material.uniforms.uHasMap.value, rgb: rgb.map((x) => +x.toPrecision(3)) };
+  });
+  const [r, g, b] = st.rgb;
+  check('Titan is the orange of its haze, without the map of its ground', st.map === 0 && r > 1.15 * g && g > 1.15 * b, JSON.stringify(st));
+  await page.screenshot({ path: path.join(outDir, 'p2c-titan.png') });
+}
+
 // 5. a comet near the Sun: coma and tails (the brightest active one in the catalogue right now)
 st = await page.evaluate(() => {
   const a = window.app;

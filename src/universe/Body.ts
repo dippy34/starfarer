@@ -35,6 +35,11 @@ export class Body implements SpaceObject {
   systemGm = 0;
   albedo = 0.3;
   texture: string | null = null;
+  /**
+   * Drawn without a map even where the textures have one by its name (Titan: that map is its
+   * ground in the near infrared, which its haze hides in visible light).
+   */
+  noMap = false;
   color: [number, number, number] = [0.6, 0.6, 0.6];
   rotation: RotationModel | null = null;
   /** effective temperature for stars */

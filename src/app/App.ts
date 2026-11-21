@@ -298,7 +298,9 @@ export class App {
     if (titan && spectral?.titan) {
       const [r, g, bl] = spectral.titan.linearRGB;
       const m = Math.max(r, g, bl);
-      titan.texture = null;
+      // (not texture = null: a body with none takes the map of its name, and Titan's is the grey
+      // near-infrared mosaic of its ground, in patches with seams between them)
+      titan.noMap = true;
       titan.color = [r / m, g / m, bl / m];
       titan.albedo = spectral.titan.visualAlbedo;
       titan.meta.albedo = spectral.titan.visualAlbedo;

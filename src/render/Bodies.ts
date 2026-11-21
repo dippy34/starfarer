@@ -272,6 +272,7 @@ export class BodiesLayer {
 
   /** map key for a body: its catalogue texture, or a map named after it (e.g. the OPAL giant-planet maps) */
   textureKey(b: Body): string | null {
+    if (b.noMap) return null;
     if (b.texture) return b.texture;
     const k = b.name.toLowerCase();
     return this.manifest.maps[k] ? k : null;

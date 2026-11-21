@@ -343,7 +343,7 @@ running (a build, not the dev server: an edit reloads the page under a running s
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
-`vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 15),
+`vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
 `terrain` (14), `flight` (28). At most three at a time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
@@ -989,6 +989,15 @@ above is validated against JPL Horizons and stays as it is unless something is w
        placeholder while the number is on its way is "Star", and "Unnamed star" is kept for a
        star that has none; a failed download is tried again the next time the star is chosen.
        `scripts/interact.mjs` chooses such a star before its number is in (14 checks now).
+     - *Titan up close was a grey patchwork with seams and none of its orange haze.* It was meant
+       to be drawn in the colour of its measured spectrum (the haze top, Karkoschka 1998; see
+       CREDITS) without a map, and `App.create` set `titan.texture = null` for that; but a body
+       with no texture takes the map of its own name (`BodiesLayer.textureKey`), and Titan's is
+       the Cassini near-infrared mosaic of its ground (grey, in patches from different flybys).
+       `Body.noMap` now says "no map" outright. Titan is the even orange it is in visible light,
+       its limb hazed by its air shell, as its card's picture always showed it. The mosaic
+       (`textures/titan.jpg`, 1.4 MB) is no longer downloaded by the app; the pipeline still
+       makes it. `scripts/places.mjs` checks the colour and that no map is bound (16 checks).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
    touch already), missions and the benchmark as screens of the app.
