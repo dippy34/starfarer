@@ -107,6 +107,8 @@ const FIRST_VIEW_WAIT = 12_000;
 const ENOUGH_STARS = 0.65;
 /** the eye's height above the ground when standing on it (m) */
 const EYE_HEIGHT = 1.6;
+/** how far a black hole's glint and its tight glare reach round it on the screen (CSS px) */
+const HOLE_GLINT_PX = 5;
 /** a double tap on the world the camera is at brings it this many times closer */
 const DOUBLE_TAP_ZOOM = 6;
 /** a click picks what is drawn within this many pixels of it; a finger reaches farther */
@@ -2002,13 +2004,13 @@ export class App {
   private occluders: { body: object; rel: Vector3; dist: number; radius: number }[] = [];
 
   /** Black holes worth a label/pick: near ones, ones being drawn, and the selection. */
-  private labelledHoles(): { bh: BlackHole; rel: Vector3; shadowPx: number }[] {
-    const out: { bh: BlackHole; rel: Vector3; shadowPx: number }[] = [];
+  private labelledHoles(): { bh: BlackHole; rel: Vector3; shadowPx: number; diskPx: number }[] {
+    const out: { bh: BlackHole; rel: Vector3; shadowPx: number; diskPx: number }[] = [];
     for (const bh of this.blackHoles) {
       const v = this.holes.views.find((x) => x.bh === bh);
-      if (v) { out.push({ bh, rel: v.rel, shadowPx: v.shadowPx }); continue; }
+      if (v) { out.push({ bh, rel: v.rel, shadowPx: v.shadowPx, diskPx: v.innerDiskPx }); continue; }
       const rel = bh.upos.sub(this.rig.upos, new Vector3());
-      if (bh === this.selection || rel.length() < BH_LABEL_PC * PC) out.push({ bh, rel, shadowPx: 0 });
+      if (bh === this.selection || rel.length() < BH_LABEL_PC * PC) out.push({ bh, rel, shadowPx: 0, diskPx: 0 });
     }
     return out;
   }
@@ -2135,9 +2137,12 @@ export class App {
         out.push({ rel: ev.rel.clone(), key: ev.planet.key, text: ev.planet.name, x: p.x, y: p.y, radius: ev.pixelRadius / dpr, priority: isSel ? 1e4 : 470 + Math.min(ev.pixelRadius, 20), cls: isSel ? 'selected' : 'exoplanet' });
       }
     }
-    for (const { bh, rel: r, shadowPx } of this.labelledHoles()) {
+    for (const { bh, rel: r, shadowPx, diskPx } of this.labelledHoles()) {
       const p = this.project(r);
-      if (p && !this.occluded(r, bh)) out.push({ rel: r, key: bh.key, text: bh.name, x: p.x, y: p.y, radius: shadowPx / dpr, priority: bh === sel ? 1e4 : 420, cls: bh === sel ? 'selected' : 'blackhole' });
+      // the name clears what shines: the bright inner disk, or a glint and its glare (HOLE_GLINT_PX)
+      // when that is smaller; set by the shadow alone it stood on the glowing disk
+      const radius = Math.max(shadowPx / dpr, diskPx / dpr, HOLE_GLINT_PX);
+      if (p && !this.occluded(r, bh)) out.push({ rel: r, key: bh.key, text: bh.name, x: p.x, y: p.y, radius, priority: bh === sel ? 1e4 : 420, cls: bh === sel ? 'selected' : 'blackhole' });
     }
     for (const dv of this.deepSky.views) {
       const isSel = dv.obj === sel;
@@ -2169,7 +2174,7 @@ export class App {
     if (earth) {
       const p = this.project(earth);
       const px = this.awe.cues.earthAngle / this.view.pixelAngle / dpr;
-      if (p) out.push({ rel: earth.clone(), key: 'earth-for-scale', text: EARTH_FOR_SCALE, x: p.x, y: p.y, radius: px, priority: 2e4, cls: 'planet' });
+      if (p) out.push({ rel: earth.clone(), key: 'earth-for-scale', text: EARTH_FOR_SCALE, x: p.x, y: p.y, radius: px, priority: 2e4, cls: 'planet', over: true });
     }
     return out;
   }

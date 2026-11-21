@@ -339,7 +339,7 @@ measurements in `docs/notes/relativistic-ship.md`):
 running (a build, not the dev server: an edit reloads the page under a running suite), each of
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
-49), `interact` (mouse and keys; 12), `verify` (35 scenes), `exposure` (looking away from bright
+49), `interact` (mouse and keys; 13), `verify` (35 scenes), `exposure` (looking away from bright
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
@@ -946,7 +946,7 @@ above is validated against JPL Horizons and stays as it is unless something is w
      notched at the region's edge until the eye rests (older than this part; the notes say two
      ways out). Where no miniature is shown (a hole large in the frame, or one without a disk)
      a star's second picture beside the shadow still comes and goes a pixel at a time as the eye
-     moves. The names "M87" and "M87*" stand on each other and on the hole. From hundreds of
+     moves. From hundreds of
      light years M87's jets are a hairline across the frame. (The sine hash of `Jets.ts` listed
      under part 4 went with the old jets.)
    - *Visual faults, one at a time* (reported by other agents or seen in the trailer; each
@@ -970,6 +970,15 @@ above is validated against JPL Horizons and stays as it is unless something is w
        without (15 checks now): on the build of before 1.5 % of those pixels lost a tenth of their
        light or more, the worst 71 % (at a phone's density 9 %, the worst 95 %); now 0.1 %, the
        worst 12 % (0.6 % and 19 %).
+     - *"M87" and "M87\*" stood on each other and on the hole*: the galaxy and the hole at its
+       heart are at one point, and each name was set up and to the right of it by its own size,
+       so the two stood in a stack; and a hole's name was set by its shadow alone, which from
+       afar is a speck inside the glowing middle of its disk. Now one point has one name, the
+       first by priority (`layoutLabels` in `render/Labels.ts`, pure, `ONE_POINT` 3 px; Earth
+       for scale, set over its giant on purpose, is exempt: `over`), and a hole's name clears the
+       bright inner disk or a glint (`App.labelCandidates`, `HOLE_GLINT_PX`). Close by, where
+       the disk fills the view, the name stands on it as a planet's does on its disc.
+       `tests/labels.test.ts`; `scripts/interact.mjs` at M87* from 1,000 radii.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
    touch already), missions and the benchmark as screens of the app.

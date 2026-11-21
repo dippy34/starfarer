@@ -230,7 +230,6 @@ clock in hand.
 * **A star's second picture beside the shadow comes and goes** a pixel at a time as the eye
   moves, where no miniature is shown: at a hole large in the frame, and at one without a disk
   (Gaia BH1 to 3).
-* The names "M87" and "M87*" stand on each other and on the hole.
 * From hundreds of light years M87's jets are a hairline across the frame; the knots drift along
   them far faster than any gas.
 * Not tried on a real phone, nor in a headset (the headset traces the miniature too; the `vr`

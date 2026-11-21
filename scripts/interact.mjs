@@ -130,6 +130,26 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   check('Earth for scale is named beside it, and hidden with the names', on.drawn && on.named && on.gap !== null && on.gap < 30 && !off.drawn && !off.named, JSON.stringify({ on, off }));
 }
 
+// 4c. M87* from 1,000 of its radii (two light years): one name for the one point (the galaxy M87's
+// name stood on the hole's), and that name clear of the glowing middle of its disk
+{
+  const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 120000 }); };
+  await page.evaluate(() => { const a = window.app; const h = a.findByName('M87*'); a.select(h); a.placeNear(h, h.radius * 1000, 30, 10); });
+  await frames(8);
+  const st = await page.evaluate(() => {
+    const a = window.app, h = a.findByName('M87*');
+    const p = a.project(h.upos.sub(a.rig.upos));
+    const v = a.holes.views.find((x) => x.bh === h);
+    const disk = v ? v.innerDiskPx / a.view.pixelRatio : 0;
+    const names = [...document.querySelectorAll('.label')].filter((e) => e.style.display !== 'none' && /^M87\*?$/.test(e.textContent)).map((e) => {
+      const r = e.getBoundingClientRect();
+      return { text: e.textContent, clear: Math.hypot(Math.max(r.left - p.x, 0), Math.max(p.y - r.bottom, 0)) };
+    });
+    return { names, disk };
+  });
+  check('at M87* one name stands for the hole, clear of its disk', st.names.length === 1 && st.names[0].text === 'M87*' && st.names[0].clear >= st.disk, JSON.stringify(st));
+}
+
 // 5. Search and go to a star
 await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');
