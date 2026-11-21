@@ -44,6 +44,9 @@ export function estimateStarRadius(absMag: number, teff: number): number {
   return SUN_RADIUS * (SUN_TEFF / teff) ** 2 * Math.pow(10, -0.2 * (absMag - SUN_ABS_MAG));
 }
 
+/** what a star with no name or number in any catalogue the app has is called */
+const UNNAMED = 'Unnamed star';
+
 /** A star from the catalogue presented as a selectable object. */
 export class CatalogStar implements SpaceObject {
   readonly kind = 'star';
@@ -71,7 +74,8 @@ export class CatalogStar implements SpaceObject {
   ) {
     this.upos = UPos.from(posPc.x * PC, posPc.y * PC, posPc.z * PC);
     this.radius = estimateStarRadius(absMag, teff);
-    this.name = names[0] ?? 'Unnamed star';
+    // a star of the catalogue whose number is still on its way is "Star" until it comes (resolve)
+    this.name = names[0] ?? (ref ? 'Star' : UNNAMED);
     this.designations = names;
     this.measure();
   }
@@ -99,10 +103,10 @@ export class CatalogStar implements SpaceObject {
       } else if (d.text) {
         this.designations = [d.text];
       }
-      this.name = this.designations[0] ?? this.name;
+      this.name = this.designations[0] ?? UNNAMED;
       this.measure();
       onDone();
-    }).catch(() => undefined);
+    }).catch(() => { this.resolving = false; }); // (asked again the next time it is chosen)
   }
 
   info(): [string, string][] {

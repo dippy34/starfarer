@@ -339,7 +339,7 @@ measurements in `docs/notes/relativistic-ship.md`):
 running (a build, not the dev server: an edit reloads the page under a running suite), each of
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
-49), `interact` (mouse and keys; 13), `verify` (35 scenes), `exposure` (looking away from bright
+49), `interact` (mouse and keys; 14), `verify` (35 scenes), `exposure` (looking away from bright
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
@@ -979,6 +979,16 @@ above is validated against JPL Horizons and stays as it is unless something is w
        bright inner disk or a glint (`App.labelCandidates`, `HOLE_GLINT_PX`). Close by, where
        the disk fills the view, the name stands on it as a planet's does on its disc.
        `tests/labels.test.ts`; `scripts/interact.mjs` at M87* from 1,000 radii.
+     - *"Unnamed star" on the card of a star with a number* (the owner's screenshot: the card
+       said "Unnamed star · 263 light years" while the ship's marker and instruments said
+       "HIP 12941 · 263.1 ly"). A catalogue star without a proper name gets its number (HIP, HD,
+       TYC, Gaia DR3) from its region's list of numbers, which is downloaded when the first of
+       its stars is chosen (`CatalogStar.resolve`); the card wrote the name once, when the
+       choice was made (`Hud.renderCard`), so it kept the placeholder while everything that
+       reads the name each frame showed the number. The card's title follows the name now; the
+       placeholder while the number is on its way is "Star", and "Unnamed star" is kept for a
+       star that has none; a failed download is tried again the next time the star is chosen.
+       `scripts/interact.mjs` chooses such a star before its number is in (14 checks now).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
    touch already), missions and the benchmark as screens of the app.

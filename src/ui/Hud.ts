@@ -561,8 +561,9 @@ export class Hud {
       this.pictureStale = true;
       if (!this.moved) this.closeSheet();
       this.moved = false;
-      setText(card.querySelector('h2')!, sel.name);
     }
+    // (every time: a catalogue star's name or number arrives after it is chosen)
+    setText(card.querySelector('h2')!, sel.name);
     if (this.pictureStale) {
       this.pictureStale = false;
       card.querySelector('.thumb')!.outerHTML = this.thumb(sel.picture);

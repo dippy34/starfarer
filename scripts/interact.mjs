@@ -150,6 +150,31 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   check('at M87* one name stands for the hole, clear of its disk', st.names.length === 1 && st.names[0].text === 'M87*' && st.names[0].clear >= st.disk, JSON.stringify(st));
 }
 
+// 4d. A star with no proper name, chosen before its number has arrived (its region's numbers not
+// yet downloaded): the card goes by its catalogue number once it comes, as the ship's instruments
+// and the name on the sky do (it said "Unnamed star" for good)
+{
+  const st0 = await page.evaluate(() => {
+    const a = window.app, cat = a.catalog;
+    for (let i = 0; i < cat.nodes.length; i++) {
+      const n = cat.nodes[i];
+      if (n.state !== 'ready' || n.idsState !== 'none' || !n.count) continue;
+      for (let slot = 0; slot < n.count; slot++) {
+        if (a.named.byNodeSlot.has(`${i}:${slot}`)) continue;
+        const s = a.getStar(cat, i, slot);
+        a.select(s);
+        window.__star = s;
+        return { first: s.name };
+      }
+    }
+    return null;
+  });
+  await page.waitForFunction(() => window.__star && window.__star.designations.length > 0, null, { timeout: 60000 }).catch(() => undefined);
+  await page.waitForTimeout(600);
+  const st = await page.evaluate(() => ({ name: window.__star?.name, card: document.querySelector('.card h2')?.textContent }));
+  check('a star goes by its catalogue number on its card', !!st0 && st.card === st.name && !/^(unnamed star|star)$/i.test(st.card ?? ''), JSON.stringify({ ...st0, ...st }));
+}
+
 // 5. Search and go to a star
 await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');
