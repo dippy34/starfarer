@@ -244,6 +244,17 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .slider-ends { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: -6px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .slider-ends span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .theory { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: rgba(127, 178, 255, 0.1); font-size: 13px; line-height: 1.35; }
+/* moving a world: what to do, the choice of what it does where it is left, the orbit it is on now */
+.power-hint { margin: 0 0 8px; font-size: 13px; line-height: 1.35; color: var(--dim); }
+.seg { display: flex; padding: 3px; border-radius: 14px; background: var(--fill); }
+#hud .seg button { flex: 1; min-height: 40px; padding: 0 8px; border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--dim); white-space: nowrap; }
+#hud .seg button[aria-pressed='true'] { background: var(--live); color: #2a1404; }
+.power-now { margin: 8px 0 0; font-size: 14px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+/* the ring round the world being moved (the view's own corner is its origin: it is placed by a transform) */
+.move-handle {
+  position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; box-sizing: border-box; border-radius: 50%;
+  border: 2px dashed var(--live); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); pointer-events: none; will-change: transform;
+}
 .theory b { display: block; margin-bottom: 2px; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 .facts { flex: 1 1 auto; min-height: 0; padding-top: 4px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); }
 .facts dl { margin: 0; }

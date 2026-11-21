@@ -130,6 +130,52 @@ export function reachWords(o: Orbit): string {
   return o.bound ? `${far(o.peri)} to ${far(o.apo)} · ${fmtDuration(o.period)}` : `passes at ${far(o.peri)}, then leaves`;
 }
 
+// ---------------------------------------------------------------- a body moved by a finger
+
+type Vec = ArrayLike<number>;
+type Triple = [number, number, number];
+
+/** seen from within this angle of its orbit's plane (its sine), a body is dragged across the view instead */
+const EDGE_ON = 0.2;
+
+/**
+ * The plane a body is dragged in, by its normal (a unit vector). The plane of its orbit, so that a
+ * finger moves it along and across the path it is on: `r` is the body from what it goes round,
+ * `v` how it moves against that. Where the eye is too near that plane for a finger to mean a
+ * place in it (`sight`: the direction the eye looks along, a unit vector), or the body goes round
+ * nothing, the plane that faces the eye. `orbit`: which of the two it is.
+ */
+export function dragPlane(r: Vec | null, v: Vec | null, sight: Vec): { normal: Triple; orbit: boolean } {
+  if (r && v) {
+    const h: Triple = [r[1] * v[2] - r[2] * v[1], r[2] * v[0] - r[0] * v[2], r[0] * v[1] - r[1] * v[0]];
+    const len = Math.hypot(h[0], h[1], h[2]);
+    if (len > 0 && Math.abs(h[0] * sight[0] + h[1] * sight[1] + h[2] * sight[2]) > EDGE_ON * len) return { normal: [h[0] / len, h[1] / len, h[2] / len], orbit: true };
+  }
+  return { normal: [-sight[0], -sight[1], -sight[2]], orbit: false };
+}
+
+/**
+ * Where the sight line from the eye (at the origin) along `dir` meets the plane through `on` with
+ * the normal `n`; null where it does not (it runs along the plane, or the plane is behind the eye).
+ */
+export function onPlane(dir: Vec, on: Vec, n: Vec): Triple | null {
+  const along = dir[0] * n[0] + dir[1] * n[1] + dir[2] * n[2];
+  if (Math.abs(along) < 1e-6) return null;
+  const t = (on[0] * n[0] + on[1] * n[1] + on[2] * n[2]) / along;
+  return t > 0 ? [t * dir[0], t * dir[1], t * dir[2]] : null;
+}
+
+/**
+ * The velocity that keeps a body on a circle at `r` from what it goes round, the two together
+ * having `mu` (G times their masses, m³/s²): √(μ/r) across `r`, in the plane whose normal is `n`,
+ * turning the way a right hand's fingers curl about `n`.
+ */
+export function circularVelocity(r: Vec, mu: number, n: Vec): Triple {
+  const t: Triple = [n[1] * r[2] - n[2] * r[1], n[2] * r[0] - n[0] * r[2], n[0] * r[1] - n[1] * r[0]];
+  const k = Math.sqrt(mu / Math.hypot(r[0], r[1], r[2])) / Math.hypot(t[0], t[1], t[2]);
+  return [k * t[0], k * t[1], k * t[2]];
+}
+
 // ---------------------------------------------------------------- saying things
 
 /** A body's name as it stands in a sentence: "the Sun", "the Moon", "Jupiter". */

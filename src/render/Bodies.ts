@@ -46,10 +46,12 @@ const HI_KEEP_PX = 140;
 const HI_RELEASE_S = 20;
 const RELIEF_WANT_PX = 40;
 /**
- * the radiance the Earth's night side is exposed for in sunlight (its sunlit face over the app's
- * NIGHT): with no sun, the eye is held there by the cities' lights (BODY_FRAG draws them up to 0.02)
+ * the radiance the eye settles on where a world is seen by its own lights alone (no sun): about
+ * that of the Earth's lit lands as BODY_FRAG draws them from afar. With nothing else lit the eye
+ * adapts to them: the continents show by their lights, and the cores of the cities (up to 0.02)
+ * burn out, as in a long exposure from orbit
  */
-const CITY_LIGHT = 0.03;
+const CITY_LIGHT = 1e-4;
 /** pixel radius above which the Sun's own map is wanted (smaller, its disk shows none of it) */
 const FACE_WANT_PX = 24;
 

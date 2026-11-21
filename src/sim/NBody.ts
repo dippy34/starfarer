@@ -56,8 +56,11 @@ export type SimEvent =
   /**
    * two bodies met and are one: `survivor` (a black hole, else the heavier) now has their mass,
    * momentum and volume. `speed`: of the impact (m/s); `heat`: its energy, ½μv² (J); `distance`:
-   * between their centres when they were made one (m). The pull between them, −Gm₁m₂/distance,
-   * leaves the simulation's account with the heat: it is the merged body's own binding now.
+   * between their centres (m). All three as the two touched, whenever in its step the simulation
+   * made them one: the speed is the one their fall gives at that distance (for a black hole, whose
+   * pull so near is not Newton's, they are as the two were when made one). The pull between
+   * them, −Gm₁m₂/distance, leaves the simulation's account with the heat: it is the merged body's
+   * own binding now.
    */
   | { kind: 'collision'; time: number; survivor: number; absorbed: number; speed: number; heat: number; distance: number }
   /** two bodies (or families, named by their heaviest member) passed each other on an open orbit */
@@ -1595,6 +1598,7 @@ export class NBody {
       const hole = (s.rs[j] > 0 ? 1 : 0) - (s.rs[i] > 0 ? 1 : 0);
       if (hole > 0 || (hole === 0 && (s.gm[j] > s.gm[i] || (s.gm[j] === s.gm[i] && s.radius[j] > s.radius[i])))) { const t = i; i = j; j = t; }
       const gi = s.gm[i], gj = s.gm[j], g = gi + gj;
+      const black = s.rs[i] > 0 || s.rs[j] > 0, touch = s.radius[i] + s.radius[j];
       let w2 = 0, d2 = 0;
       for (let c = 0; c < 3; c++) {
         w2 += (s.v[3 * j + c] - s.v[3 * i + c]) ** 2;
@@ -1607,7 +1611,11 @@ export class NBody {
       if (s.rs[i] > 0) s.rs[i] *= g / gi;
       else if (gj > 0) s.radius[i] = Math.cbrt(s.radius[i] ** 3 + s.radius[j] ** 3);
       s.gm[i] = g;
-      this.events.push({ kind: 'collision', time: s.at, survivor: s.id[i], absorbed: s.id[j], speed: Math.sqrt(w2), heat: (0.5 * (gi * gj) / g * w2) / G, distance: Math.sqrt(d2) });
+      // (they are made one where the step that brought them together left them, deeper than touching
+      // or already past it: from there to the moment they touched, v² = w² + 2G(m₁ + m₂)(1/touch − 1/d))
+      const d = black ? Math.sqrt(d2) : touch;
+      if (!black) w2 = Math.max(0, w2 + 2 * g * (1 / touch - 1 / Math.sqrt(d2)));
+      this.events.push({ kind: 'collision', time: s.at, survivor: s.id[i], absorbed: s.id[j], speed: Math.sqrt(w2), heat: (0.5 * (gi * gj) / g * w2) / G, distance: d });
       this.drop(j);
     }
     this.met.length = 0;

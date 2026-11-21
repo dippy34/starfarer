@@ -28,8 +28,9 @@ export const ICON = {
   // a world with a new moon beside it (what if: src/app/WhatIf.ts)
   moon: svg('<circle cx="9.5" cy="14.5" r="6"/><circle cx="18.2" cy="6" r="2.3"/><path d="M18.2 1.2v1.3M18.2 9.5v1.3M13.4 6h1.3M21.7 6H23"/>'),
   unmake: svg('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.6 3"/><path d="m9.3 9.3 5.4 5.4M14.7 9.3l-5.4 5.4"/>'),
-  // the powers over a world, and live physics (src/app/LivePhysics.ts): a weight, a pulse, the way back
+  // the powers over a world, and live physics (src/app/LivePhysics.ts): a weight, arrows every way, a pulse, the way back
   mass: svg('<path d="M8.3 9h7.4l3 10.5H5.3z"/><circle cx="12" cy="6.2" r="2.6"/>'),
+  move: svg('<path d="M12 3v18M3 12h18"/><path d="m9.3 5.7 2.7-2.7 2.7 2.7M9.3 18.3l2.7 2.7 2.7-2.7M5.7 9.3 3 12l2.7 2.7M18.3 9.3 21 12l-2.7 2.7"/>'),
   live: svg('<path d="M2.5 12h4l2.5-6.5 4.5 13 2.5-6.5h5.5"/>'),
   back: svg('<path d="M9 5.5 4 10.5l5 5"/><path d="M4 10.5h10.5a5 5 0 0 1 0 10H11"/>'),
 };

@@ -1,5 +1,4 @@
 import { Vector3 } from 'three';
-import { GM_SUN } from '../core/units';
 import {
   circularSpeed, density, type Derived, equatorSpeed, escapeVelocity, G, habitableZone, hawkingTemp, hillRadius, isco, L_SUN, luminosity,
   M_SUN, orbitalPeriod, photonSphere, schwarzschildRadius, surfaceGravity,
@@ -7,6 +6,7 @@ import {
 import { Body, type SpaceObject } from '../universe/Body';
 import { BlackHole } from '../universe/BlackHoles';
 import { ExoPlanet } from '../universe/Planets';
+import { the } from './Powers';
 
 /** One thing that follows from what is known about an object: what it comes to, and how. */
 export interface Worked {
@@ -53,7 +53,7 @@ function ofBody(b: Body): Worked[] {
   }
   // its orbit, from where it is and how it moves now (the vis-viva equation gives the size of the orbit)
   const p = b.parent;
-  const mu = p ? (p.kind === 'star' ? GM_SUN : p.gm || p.systemGm) : 0;
+  const mu = p ? p.gm || p.systemGm : 0;
   if (p && mu > 0 && b.valid) {
     rel.copy(b.pos).sub(p.pos);
     vel.copy(b.vel).sub(p.vel);
@@ -61,7 +61,7 @@ function ofBody(b: Body): Worked[] {
     const a = 1 / (2 / r - vel.lengthSq() / k);
     if (r > 0 && a > 0 && Number.isFinite(a)) {
       const primary = mu / G;
-      out.push(row(`Once round ${p.kind === 'star' ? 'the Sun' : p.name}`, orbitalPeriod(a, primary, mass)));
+      out.push(row(`Once round ${the(p.name)}`, orbitalPeriod(a, primary, mass)));
       out.push(row('Speed of a circular orbit here', circularSpeed(r, primary)));
       if (mass > 0) {
         const e = Math.sqrt(Math.max(0, 1 - h.crossVectors(rel, vel).lengthSq() / (k * a)));

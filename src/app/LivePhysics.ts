@@ -140,6 +140,39 @@ export class LivePhysics {
     this.settle(live);
   }
 
+  /**
+   * Put a body somewhere else (`pos`: m from the system's centre), moving at `vel` there (m/s).
+   * What goes round it comes with it, keeping its place and its motion about it.
+   */
+  move(b: Body, pos: ArrayLike<number>, vel: ArrayLike<number>, jd: number): void {
+    const live = this.start(jd);
+    release(live, this.system, b);
+    const d = [pos[0] - b.pos.x, pos[1] - b.pos.y, pos[2] - b.pos.z], w = [vel[0] - b.vel.x, vel[1] - b.vel.y, vel[2] - b.vel.z];
+    // (the simulated bodies that go round it, and round those; what rides on any of them follows by itself)
+    const family = [...live.index.keys()].filter((m) => goesRound(m, b));
+    for (const m of [b, ...family]) {
+      live.sim.setState(m.id, [m.pos.x + d[0], m.pos.y + d[1], m.pos.z + d[2]], [m.vel.x + w[0], m.vel.y + w[1], m.vel.z + w[2]]);
+    }
+    this.settle(live);
+  }
+
+  /**
+   * The body that holds sway at a place (m from the system's centre): the one a small body put
+   * there would go round, by the measure of Laplace's sphere of influence (distance to the fifth
+   * power over mass squared: the simulation's own for pairing bodies). Never `but` itself, nor
+   * what goes round it. Null where nothing has a mass.
+   */
+  swayAt(pos: ArrayLike<number>, but: Body): Body | null {
+    let best: Body | null = null, least = Infinity;
+    for (const q of this.system.bodies) {
+      if (q === but || !q.valid || !(q.gm > 0) || goesRound(q, but)) continue;
+      const d = Math.hypot(pos[0] - q.pos.x, pos[1] - q.pos.y, pos[2] - q.pos.z);
+      const measure = d ** 5 / (q.gm + but.gm) ** 2;
+      if (measure < least) { least = measure; best = q; }
+    }
+    return best;
+  }
+
   /** A body that has just been made joins the simulation, if there is one. */
   join(b: Body): void {
     const live = this.live;
@@ -406,6 +439,11 @@ export class LivePhysics {
 }
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** Does `m` go round `b`, directly or as a moon of something that does? */
+function goesRound(m: Body, b: Body): boolean {
+  for (let p = m.parent; p; p = p.parent) if (p === b) return true;
+  return false;
+}
 /** a body worth telling of by name: a star, a planet or a dwarf planet, or a moon heavy enough to be weighed */
 const isWorld = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind === 'dwarf' || (b.kind === 'moon' && b.gm > 0);
 

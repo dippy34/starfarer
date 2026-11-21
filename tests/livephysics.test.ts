@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LivePhysics } from '../src/app/LivePhysics';
+import { circularVelocity } from '../src/app/Powers';
 import { SimClock } from '../src/core/time';
 import { liveDate } from '../src/sim/SystemSim';
 import type { Body } from '../src/universe/Body';
@@ -190,6 +191,57 @@ describe('live physics', () => {
     expect(told).toMatch(/^The Moon hit Earth at 1[345](\.\d)? km\/s and is part of it now\.$/);
     expect(physics.status()!.log[0].text).toBe(told);
     expect(physics.status()!.log[0].day).toBe('17 September 2026');
+  });
+
+  it('the Moon moved to twice its distance and left on a circle there: its month is the 2.83 months Kepler gives it', async () => {
+    const { physics, named, run } = await setup();
+    const earth = named('Earth'), moon = named('Moon');
+    const r = moon.pos.clone().sub(earth.pos), w = moon.vel.clone().sub(earth.vel);
+    const mu = earth.gm + moon.gm, normal = r.clone().cross(w).normalize();
+    const to = r.clone().multiplyScalar(2);
+    expect(physics.swayAt(earth.pos.clone().add(to).toArray(), moon)).toBe(earth);
+    const v = circularVelocity(to.toArray(), mu, normal.toArray());
+    physics.move(moon, earth.pos.clone().add(to).toArray(), [earth.vel.x + v[0], earth.vel.y + v[1], earth.vel.z + v[2]], JD);
+    expect(physics.on).toBe(true);
+    expect(moon.pos.distanceTo(earth.pos) / r.length()).toBeCloseTo(2, 9);
+    const o = physics.orbit(moon)!;
+    expect(o.e).toBeLessThan(1e-6);
+    const month = 2 * Math.PI * Math.sqrt(to.length() ** 3 / mu);
+    expect(o.period / month).toBeCloseTo(1, 9);
+    expect(month / DAY).toBeGreaterThan(70);
+    // and so it goes: a tenth of that month on, a tenth of the way round (the Sun pulls hard out there: to a twentieth)
+    const from = moon.pos.clone().sub(earth.pos).normalize();
+    run(JD + month / DAY / 10, 0.5);
+    const turned = Math.acos(from.dot(moon.pos.clone().sub(earth.pos).normalize()));
+    expect(turned / (2 * Math.PI / 10)).toBeGreaterThan(0.95);
+    expect(turned / (2 * Math.PI / 10)).toBeLessThan(1.05);
+    expect(moon.parent).toBe(earth);
+  });
+
+  it('a planet moved keeps its moons: the Earth put at twice its distance with the speed it had, the Moon still round it', async () => {
+    const { sys, physics, named } = await setup();
+    const earth = named('Earth'), moon = named('Moon'), sun = sys.sun;
+    physics.setMass(earth, earth.gm, JD);
+    const before = physics.orbit(moon)!;
+    const about = moon.pos.clone().sub(earth.pos);
+    const to = sun.pos.clone().add(earth.pos.clone().sub(sun.pos).multiplyScalar(2));
+    const speed = earth.vel.clone().sub(sun.vel).lengthSq();
+    physics.move(earth, to.toArray(), earth.vel.toArray(), JD);
+    expect(earth.pos.distanceTo(to)).toBeLessThan(1e-3);
+    // the Moon is where it was about the Earth, on the orbit it was on
+    expect(moon.pos.clone().sub(earth.pos).distanceTo(about)).toBeLessThan(1e-3);
+    const after = physics.orbit(moon)!;
+    expect(after.e).toBeCloseTo(before.e, 9);
+    expect(after.period / before.period).toBeCloseTo(1, 9);
+    // the Earth, twice as far out with the speed of its old orbit, is past the speed of escape there: v² = 2GM/r
+    const o = physics.orbit(earth)!, mu = sun.gm + earth.gm, r = earth.pos.distanceTo(sun.pos);
+    expect(speed / ((2 * mu) / r)).toBeGreaterThan(0.95);
+    expect(o.e).toBeGreaterThan(0.9);
+    // what holds sway where: the Sun out there, the Earth beside the Earth, the Moon beside the Moon
+    expect(physics.swayAt(to.toArray(), named('Mars'))).toBe(earth);
+    expect(physics.swayAt(sun.pos.clone().add(earth.pos).multiplyScalar(0.5).toArray(), named('Mars'))).toBe(sun);
+    expect(physics.swayAt(moon.pos.clone().addScalar(5e6).toArray(), named('Mars'))).toBe(moon);
+    expect(physics.swayAt(moon.pos.clone().addScalar(5e6).toArray(), earth)).toBe(sun);
   });
 
   it('two moons that fall into their planet in the same moment are each absorbed once, and neither comes back', async () => {

@@ -56,12 +56,13 @@ import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
 import { canHaveMoon, MADE_FIRST_ID, newMoon } from './WhatIf';
 import { LivePhysics } from './LivePhysics';
+import { Mover } from './Mover';
 import { massFactor, massOf, massSlider, massTheory, massWords, rateWords, timesWords } from './Powers';
 import { type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
 import { canvasRatio, leanDevice } from '../core/device';
-import { describe, distanceText, distanceTo, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
+import { describe, distanceText, distanceTo, moonWords, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
 import { Systems } from './Systems';
 import { VRSupport } from './VR';
 import { Walk } from './Walk';
@@ -206,6 +207,8 @@ export class App {
   readonly physics: LivePhysics;
   /** where the simulated bodies have been */
   readonly trails = new TrailsLayer();
+  /** the power to move a world with a finger (src/app/Mover.ts) */
+  readonly mover: Mover;
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -228,6 +231,7 @@ export class App {
     this.labels = new Labels(labelRoot);
     this.clock = SimClock.now();
     this.physics = new LivePhysics(system, { left: (b, into) => this.bodyLeft(b, into) });
+    this.mover = new Mover(this);
     orbits.simulated = (b) => this.physics.simulated(b);
     // (with the orbit lines: what hides them hides these)
     orbits.group.add(this.trails.group);
@@ -512,6 +516,7 @@ export class App {
   }
 
   private bindKeys(): void {
+    this.input.grab = (x, y, touch) => this.mover.grab(x, y, touch);
     this.input.onTap = (x, y, touch) => {
       if (!touch && this.walk.onClick()) return; // walking: the click grabs the mouse
       if (touch && this.photoMode) { this.act('photo'); return; } // a tap brings the controls back
@@ -577,6 +582,9 @@ export class App {
       case 'add-moon': if (this.selection instanceof Body) this.addMoon(this.selection); break;
       case 'unmake': if (this.selection instanceof Body) this.unmake(this.selection); break;
       case 'remove': if (this.selection instanceof Body) this.removeBody(this.selection); break;
+      case 'move': this.mover.toggle(this.selection instanceof Body && this.selection.valid ? this.selection : null); break;
+      case 'move-keep': this.mover.leave(false); break;
+      case 'move-circle': this.mover.leave(true); break;
       case 'reality': this.backToReality(); break;
       case 'stop': this.rig.cancelGoto(); break;
       case 'pause': this.togglePause(); break;
@@ -770,7 +778,8 @@ export class App {
 
   /** Escape: stop the flight, or close the open panel, or let go of the selection. */
   cancelOrDeselect(): void {
-    if (this.rig.autopilot) this.rig.cancelGoto();
+    if (this.mover.body) this.mover.stop();
+    else if (this.rig.autopilot) this.rig.cancelGoto();
     else if (this.hud.open) this.hud.closeSheet();
     else this.select(null);
   }
@@ -787,6 +796,7 @@ export class App {
    * The camera stays with what it is at (rig.target) until it does.
    */
   select(obj: SpaceObject | null): void {
+    if (obj !== this.mover.body) this.mover.stop();
     this.selection = obj;
     this.orbits.selected = obj instanceof Body ? obj : null;
     if (obj instanceof CatalogStar) obj.resolve(this.named, () => undefined);
@@ -856,7 +866,7 @@ export class App {
   }
 
   /** Tell what live physics has to tell (and, the first time, that it is on). */
-  private tellNews(wasOn = true): void {
+  tellNews(wasOn = true): void {
     const news = this.physics.takeNews().slice(-3);
     if (!wasOn && this.physics.on) news.unshift('Live physics is on: from now on everything here pulls on everything else.');
     if (news.length) this.hud.toast(news.join('\n'), 3 + 1.5 * news.length);
@@ -886,6 +896,7 @@ export class App {
   /** Undo everything: the real Solar System again, what was made taken away, what the simulation drew cleared. */
   backToReality(): void {
     if (!this.physics.on) return;
+    this.mover.stop();
     const said = this.physics.backToReality(this.clock);
     for (const b of this.made.splice(0)) {
       this.bodyLeft(b, null);
@@ -1057,7 +1068,7 @@ export class App {
     };
     for (const b of this.system.bodies) {
       const s = this.system.isGone(b) ? -1 : score(b.name);
-      if (s >= 0) out.push({ label: b.name, detail: b.kind === 'moon' ? `moon of ${b.parent?.name}` : b.kind, id: `body:${b.id}`, score: s - (b.kind === 'planet' ? 0.5 : 0) });
+      if (s >= 0) out.push({ label: b.name, detail: b.kind === 'moon' ? moonWords(b) : b.kind, id: `body:${b.id}`, score: s - (b.kind === 'planet' ? 0.5 : 0) });
     }
     this.small.cometObjects.forEach((c, i) => {
       const s = score(c.name);
@@ -2181,6 +2192,8 @@ export class App {
     this.rig.followAnchor();
     this.carryWithGround();
     this.chooseAnchor();
+    // (a world held by a finger goes where the finger goes: the camera must not go with it, or the finger would never catch up)
+    if (this.mover.holding) this.rig.setAnchor(null);
     this.awe?.beginFrame();
     this.camPc.set((this.rig.upos.xh + this.rig.upos.xl) / PC, (this.rig.upos.yh + this.rig.upos.yl) / PC, (this.rig.upos.zh + this.rig.upos.zl) / PC);
     HITCH.lap('anchor');
@@ -2375,6 +2388,7 @@ export class App {
       this.labels.update(this.labelCandidates(), this.view.width, this.view.height);
     }
     HITCH.lap('labels');
+    this.hud.setHandle(this.mover.handle());
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.1;
@@ -2421,12 +2435,13 @@ export class App {
       selection = {
         key: sel.key, name: sel.name, detail: describe(this, sel), rows, worked, picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
         canAddMoon: sel instanceof Body && canHaveMoon(sel, this.made.length), made: sel instanceof Body && this.made.includes(sel),
-        mass: null, removable: false,
+        mass: null, removable: false, move: null,
       };
       // the powers over a world of the Solar System (what the explorer made keeps its own button, in the details)
       if (sel instanceof Body && sel.valid && !this.made.includes(sel)) {
         selection.rows.splice(1, 0, ...this.physics.rows(sel));
         selection.removable = true;
+        selection.move = this.mover.describe(sel);
         const real = this.physics.realGm(sel);
         if (real > 0) {
           const factor = sel.gm / real;

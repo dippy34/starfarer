@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayWords, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, orbitOf, rateWords, reachWords, shapeWords, the, timesWords } from '../src/app/Powers';
+import { circularVelocity, dayWords, dragPlane, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, reachWords, shapeWords, the, timesWords } from '../src/app/Powers';
 import { M_EARTH, M_JUPITER, M_SUN } from '../src/sim/physics';
 
 const AU = 149_597_870_700, GM_SUN = 1.32712440018e20, DAY = 86_400;
@@ -121,6 +121,50 @@ describe('the orbit a body is on', () => {
     const gm = 3.986004418e14 * (1 + 1 / 81.3), r = 384_400e3;
     const o = orbitOf([r, 0, 0], [0, Math.sqrt(gm / r), 0], gm);
     expect(reachWords(o)).toBe('384,400 km to 384,400 km · 27.28 d');
+  });
+});
+
+describe('a body moved by a finger', () => {
+  it('is dragged in the plane of its orbit, or across the view where the eye is in that plane', () => {
+    // an orbit in the plane of x and y, turning anticlockwise seen from +z
+    const r = [AU, 0, 0], v = [0, 30e3, 0];
+    // looked down on: the orbit's own plane (its normal the way the orbit turns)
+    expect(dragPlane(r, v, [0, 0, -1])).toEqual({ normal: [0, 0, 1], orbit: true });
+    // from 30 degrees above it: still
+    expect(dragPlane(r, v, [Math.cos(Math.PI / 6), 0, -Math.sin(Math.PI / 6)]).orbit).toBe(true);
+    // from 5 degrees above it: a finger would throw the body across the system, so the plane facing the eye
+    const low = [Math.cos(0.087), 0, -Math.sin(0.087)];
+    expect(dragPlane(r, v, low)).toEqual({ normal: [-low[0], -0, -low[2]], orbit: false });
+    // a body that goes round nothing, or stands still: across the view
+    expect(dragPlane(null, null, [0, 0, -1])).toEqual({ normal: [-0, -0, 1], orbit: false });
+    expect(dragPlane(r, [0, 0, 0], [0, 0, -1]).orbit).toBe(false);
+  });
+
+  it('goes where the finger points in that plane', () => {
+    // the eye at the origin, a plane 10 units down the -z axis facing it: a sight line 45 degrees off the axis
+    // meets it 10 units to the side
+    const p = onPlane([Math.SQRT1_2, 0, -Math.SQRT1_2], [0, 0, -10], [0, 0, 1])!;
+    expect(p[0]).toBeCloseTo(10, 12);
+    expect(p[2]).toBeCloseTo(-10, 12);
+    // a tilted plane through the same point: the point found is in it
+    const n = [0.6, 0, 0.8], q = onPlane([0.1, 0.2, -0.97], [0, 0, -10], n)!;
+    expect((q[0] - 0) * n[0] + q[1] * n[1] + (q[2] + 10) * n[2]).toBeCloseTo(0, 10);
+    // along the plane, or with the plane behind the eye: nowhere
+    expect(onPlane([1, 0, 0], [0, 0, -10], [0, 0, 1])).toBeNull();
+    expect(onPlane([0, 0, 1], [0, 0, -10], [0, 0, 1])).toBeNull();
+  });
+
+  it('can be left on a circle: the speed and the direction that keep it at that distance', () => {
+    const r = [0.6 * AU, 0.8 * AU, 0], v = circularVelocity(r, GM_SUN, [0, 0, 1]);
+    expect(Math.hypot(...v)).toBeCloseTo(Math.sqrt(GM_SUN / AU), 6);
+    expect(r[0] * v[0] + r[1] * v[1]).toBeCloseTo(0, 3);
+    // anticlockwise about +z
+    expect(r[0] * v[1] - r[1] * v[0]).toBeGreaterThan(0);
+    const o = orbitOf(r, v, GM_SUN);
+    expect(o.e).toBeLessThan(1e-7);
+    expect(o.peri / AU).toBeCloseTo(1, 7);
+    // the other way round about the opposite normal
+    circularVelocity(r, GM_SUN, [0, 0, -1]).forEach((c, k) => expect(c).toBeCloseTo(-v[k], 9));
   });
 });
 

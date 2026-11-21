@@ -12,6 +12,7 @@ import { Comet } from '../render/SmallBodies';
 import { Spacecraft } from '../universe/Spacecraft';
 import { CatalogStar } from '../universe/Stars';
 import type { App } from './App';
+import { the } from './Powers';
 
 /**
  * Places worth offering by name: the lists behind the Explore sheet (src/ui/Hud.ts) and the
@@ -116,10 +117,16 @@ export function describe(app: App, o: SpaceObject): string {
     return `${mass} · ${distanceText(d)}`;
   }
   if (o instanceof Body) {
-    const kind = o.kind === 'moon' ? `moon of ${o.parent?.name}` : o.kind === 'dwarf' ? 'dwarf planet' : o.kind === 'tno' ? 'trans-Neptunian object' : o.kind;
+    const kind = o.kind === 'moon' ? moonWords(o) : o.kind === 'dwarf' ? 'dwarf planet' : o.kind === 'tno' ? 'trans-Neptunian object' : o.kind;
     return `${kind} · ${formatDistance(d)}`;
   }
   return `${o.kind} · ${formatDistance(d)}`;
+}
+
+/** Whose moon a moon is, in a line about it; or, where live physics has had it let go (src/app/LivePhysics.ts), what became of it. */
+export function moonWords(b: Body): string {
+  const p = b.parent;
+  return !p ? 'moon, flying free' : p.kind === 'star' ? `moon, round ${the(p.name)} now` : `moon of ${p.name}`;
 }
 
 /** A distance in words anyone reads: metres and kilometres nearby, light years beyond the Solar System. */

@@ -155,7 +155,10 @@ sim.fit(rate, msPerSecond); sim.steps = 16; sim.edge = metres;
 const copy = NBody.restore(sim.snapshot());
 ```
 
-Events: `collision` (survivor, absorbed, speed, heat, distance), `encounter` (two bodies or
+Events: `collision` (survivor, absorbed, and the speed, the heat and the distance between centres
+as the two touched: worked out from the pair's energy, wherever in its step the simulation made
+them one, which can be half as far apart again, or deeper; a black hole's are as the two were
+when made one, its pull so near not being Newton's), `encounter` (two bodies or
 families passing on an open orbit: distance and speed at the closest), `unbound` (a family no
 longer bound to the rest), `escape` (an unbound family past `edge`), `orbit` (a body goes round
 another now: a capture, a moon lost to its star).
@@ -176,7 +179,7 @@ stays real until you touch it; then it is simulated, and one button goes back to
 Nothing of it runs until a power is used: a user who never touches one has the ephemeris, the same
 pictures and the same frame as before.
 
-* **The first change** (a mass, a body taken away) starts a simulation from where every body is at
+* **The first change** (a mass, a body moved or taken away) starts a simulation from where every body is at
   that date and how it moves (`capture`). Simulated from the start: the Sun, the planets, Pluto,
   Ceres and the seven asteroids that have been weighed, and the twenty moons with GM of 1 km³/s²
   or more (Mimas and up): 38 bodies. Every other body rides on what it goes round in the
@@ -185,13 +188,28 @@ pictures and the same frame as before.
   not every moon with a known mass from the start: the catalogue's places for the smallest are not
   a state their orbits can keep. Stepped from there, Saturn's Helene, which shares Dione's orbit,
   ran into Dione within twenty years of a change to Jupiter.
+* **Move** (`src/app/Mover.ts`). The card's Move turns it on for the selected world. A pointer
+  that comes down on the world takes hold of it (`Input.grab`: that pointer neither turns the view
+  nor taps until it lifts), and the world is put where the sight line under the finger meets the
+  plane of its orbit through what it goes round (`Powers.dragPlane`; where the eye is within
+  about 11° of that plane, or the world goes round nothing, the plane that faces the eye). The
+  clock is stopped while it is held. `LivePhysics.move` puts it there, and what goes round it
+  with it. Where it is left it has the velocity it had when taken hold of, or, asked, that of a
+  circle round whatever holds sway at that place (`swayAt`: the body a small one put there would
+  go round, by the measure the simulation pairs bodies with), turning the way it was going. It
+  is never left nearer another world than 1.05 times their radii together. What the simulation
+  makes of the obvious try: the Moon on a circle at twice its distance has Kepler's month for
+  that distance (72.7 days) and keeps to it for a fortnight; half way to the edge of the Earth's
+  reach the Sun pulls hard, in ten weeks the Moon swings between half and one and a half times
+  that distance, and after four months it goes round the Sun.
 * **Each frame**: `follow` takes the simulation to the clock's date, or as near as a quarter of
   the frame allows (between 3 and 12 ms), and sets the clock to where it got: in live physics the
   simulation keeps the time, and a rate that cannot be kept shows as "getting…". Then
   `SolarSystem.update` (the bodies left out need their own motion, and everything its rotation),
   then `place`: the bodies where the simulation has them (`apply`), `Body.parent` set to what
   each goes round now (`NBody.primaries`; the catalogue's parent stays in `SolarSystem.homeOf`,
-  and the ephemeris is worked out from that), a moon's face turned to it.
+  and the ephemeris is worked out from that), a moon's face turned to it. A world's details, and
+  the lines worked out in them, are about what it goes round now, with that body's mass as it is.
 * **What is carried on rails** follows the rate of time, in stages, each tried only when the one
   before cannot keep up for 40 frames: families whose every orbit would go round in under 2
   seconds on the screen; then under 20 seconds; then also families whose moons have been thrown
@@ -208,8 +226,11 @@ pictures and the same frame as before.
   touched: the same to the last bit.
 * **Light.** A system may have no sun, or more than one: `SolarSystem.suns` and `sunAt` (the one
   brightest at a place), and each body's `BodyView.sun`. With none: no sunlight on anything, no
-  glare, no shadows, no air glow; the Earth's cities are what is left to see of it; a planet's
-  name stays on the sky so it can be found. Not followed yet: the ship's own lamp and the heat on
+  glare, no shadows, no air glow; the Earth's cities are what is left to see of it, and the eye
+  adapts to them (`Bodies.ownLight`: held at about the radiance of its lit lands from afar, a
+  three-hundredth of what its night side is exposed for in sunlight, so the continents show by
+  their lights and the cities' cores burn out); a planet's name stays on the sky so it can be
+  found. Not followed yet: the ship's own lamp and the heat on
   its hull still take a Sun to be there (`src/game/Game.ts updateLight`, `Flight.ts frameEnv`).
 
 Also left out, and said so in the app's list (`ALSO_LEFT_OUT`): a world keeps its size and look

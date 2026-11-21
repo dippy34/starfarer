@@ -28,6 +28,12 @@ export function emptyFrame(): InputFrame {
   };
 }
 
+/** A pointer that has taken hold of something in the view: told where it goes, and when it lets go. */
+export interface Hold {
+  move(x: number, y: number): void;
+  end(): void;
+}
+
 /** Keyboard, mouse and touch, collected between frames. */
 export class Input {
   readonly keys = new Set<string>();
@@ -35,6 +41,13 @@ export class Input {
   onTap: ((x: number, y: number, touch: boolean) => void) | null = null;
   onDoubleTap: ((x: number, y: number, touch: boolean) => void) | null = null;
   onKey: ((ev: KeyboardEvent) => void) | null = null;
+  /**
+   * Asked whenever a finger or the left mouse button comes down on the view: is there something
+   * under it to take hold of (a world the explorer is moving)? If so that pointer is the hold's
+   * until it lifts: it neither turns the view nor taps.
+   */
+  grab: ((x: number, y: number, touch: boolean) => Hold | null) | null = null;
+  private held: { id: number; hold: Hold } | null = null;
   /** mouse motion while the pointer is locked (walking, src/app/Walk.ts) */
   look = { dx: 0, dy: 0 };
   /** a finger has touched the view */
@@ -61,6 +74,14 @@ export class Input {
       this.lastPointer = e.pointerType;
       // (touching the view leaves any text field: the on-screen keyboard goes away)
       if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur();
+      if (!this.held && (e.pointerType !== 'mouse' || e.button === 0)) {
+        const hold = this.grab?.(p.x, p.y, e.pointerType !== 'mouse');
+        if (hold) {
+          if (e.pointerType !== 'mouse') this.touched = true;
+          this.held = { id: e.pointerId, hold };
+          return;
+        }
+      }
       if (e.pointerType === 'mouse') {
         this.down = { button: e.button, x: p.x, y: p.y, moved: false };
         return;
@@ -71,6 +92,7 @@ export class Input {
     el.addEventListener('pointermove', (e) => {
       if (document.pointerLockElement === el) { this.look.dx += e.movementX; this.look.dy += e.movementY; return; }
       const p = this.local(e);
+      if (this.held?.id === e.pointerId) { this.held.hold.move(p.x, p.y); return; }
       if (e.pointerType !== 'mouse') { this.gestures.move(e.pointerId, p.x, p.y, e.timeStamp); return; }
       this.mouse = p;
       const d = this.down;
@@ -81,12 +103,14 @@ export class Input {
       else { f.orbit.dx += e.movementX; f.orbit.dy += e.movementY; }
     });
     el.addEventListener('pointerup', (e) => {
+      if (this.letGo(e.pointerId)) return;
       const p = this.local(e);
       if (e.pointerType !== 'mouse') { this.gestures.up(e.pointerId, p.x, p.y, e.timeStamp); return; }
       if (this.down && !this.down.moved && this.down.button === 0) this.onTap?.(p.x, p.y, false);
       this.down = null;
     });
     el.addEventListener('pointercancel', (e) => {
+      if (this.letGo(e.pointerId)) return;
       if (e.pointerType !== 'mouse') this.gestures.cancel(e.pointerId);
       else this.down = null;
     });
@@ -108,6 +132,14 @@ export class Input {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
+  }
+
+  /** The pointer that held something has lifted: true if it was this one. */
+  private letGo(id: number): boolean {
+    if (this.held?.id !== id) return false;
+    this.held.hold.end();
+    this.held = null;
+    return true;
   }
 
   /** Everything since the last call; the next frame starts empty. */

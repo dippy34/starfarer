@@ -11,6 +11,9 @@
 //   - the Sun taken away: a month later every planet has gone straight on at its orbital speed,
 //     the Earth's day side is dark, and its name is still on the sky
 //   - a thousand years a second holds a steady frame
+//   - the Moon dragged with a finger to twice its distance: time waits while it is held, it goes
+//     where the finger goes in the plane of its orbit, and left on a circle there its month is
+//     the one Kepler's law gives
 // Usage: node scripts/live.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
@@ -32,11 +35,11 @@ const text = (page, sel) => page.evaluate((sel) => document.querySelector(sel)?.
 const shown = (page, sel) => page.evaluate((sel) => { const el = document.querySelector(sel); return !!el && !el.hidden && !el.closest('[hidden]') && el.getBoundingClientRect().height > 0; }, sel);
 const toast = (page) => text(page, '#hud .hud-toast');
 
-async function open(kind, query) {
+async function open(kind, query, paused = true) {
   const ctx = kind === 'phone' ? await phoneContext(browser) : await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await ctx.newPage();
   collectErrors(page, errors);
-  await page.goto(`${base}?menu=0&time=${START}&paused=1&${query}`, { waitUntil: 'load' });
+  await page.goto(`${base}?menu=0&time=${START}&paused=${paused ? 1 : 0}&${query}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 });
   return { ctx, page, touch: kind === 'phone' ? await fingers(page) : null };
 }
@@ -120,7 +123,7 @@ const timeOrbits = (page, moons, planet, seconds) => page.evaluate(([moons, plan
   }, 20);
 }), [moons, planet, seconds]);
 
-/** How bright a world's disc is drawn (the display's 0 to 255: its mean, and what a twentieth of it exceeds), over the middle of the disc. */
+/** How bright a world's disc is drawn (the display's 0 to 255: its mean, its median, and what a twentieth of it exceeds), over the middle of the disc. */
 const discLight = (page, name) => page.evaluate((name) => {
   const a = window.app, b = a.findByName(name);
   a.frame();
@@ -135,7 +138,7 @@ const discLight = (page, name) => page.evaluate((name) => {
     lum.push(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]);
   }
   lum.sort((p, q) => p - q);
-  return { mean: lum.reduce((s, x) => s + x, 0) / lum.length, top: lum[Math.floor(0.95 * lum.length)], px: lum.length };
+  return { mean: lum.reduce((s, x) => s + x, 0) / lum.length, median: lum[lum.length >> 1], top: lum[Math.floor(0.95 * lum.length)], px: lum.length };
 }, name);
 
 for (const kind of ['phone', 'desk']) {
@@ -306,8 +309,9 @@ for (const kind of ['phone', 'desk']) {
       `${flown.days.toFixed(1)} days: off the straight line by at most ${(Math.max(...flown.planets.map((p) => p.off)) * 100).toFixed(3)} % of the way gone (${flown.planets.find((p) => p.off === Math.max(...flown.planets.map((q) => q.off))).name})`);
     const night = await discLight(page, 'Earth');
     const names = await page.evaluate(() => [...document.querySelectorAll('#labels .label')].filter((l) => l.style.display !== 'none').map((l) => l.textContent));
-    check(on("the Earth's day side is dark, and its name is still on the sky"), day.mean > 40 && night.mean < 5 && night.mean < day.mean / 20 && names.includes('Earth'),
-      `the disc's mean ${day.mean.toFixed(1)} -> ${night.mean.toFixed(2)} of 255 (${night.px} px; the brightest twentieth above ${night.top.toFixed(1)})`);
+    // (dark but for its cities, to which the eye adapts: most of the disc is black, the lights are a few points in a hundred)
+    check(on("the Earth's day side is dark, and its name is still on the sky"), day.mean > 40 && day.median > 20 && night.median < 2 && night.mean < day.mean / 5 && names.includes('Earth'),
+      `the disc's mean ${day.mean.toFixed(1)} -> ${night.mean.toFixed(2)} of 255, its median ${day.median.toFixed(0)} -> ${night.median.toFixed(0)} (${night.px} px; the brightest twentieth above ${night.top.toFixed(1)})`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-no-sun.png`) });
 
     // a thousand years a second: the frame holds, and the stepping keeps to its share of it. (How long the app's
@@ -346,6 +350,102 @@ for (const kind of ['phone', 'desk']) {
     check(on('"Back to reality" from beyond the years the ephemeris knows returns to the day it began, and says why; the Sun and the belt are back'),
       !back.on && back.suns === 1 && back.sun && back.belt && back.earth === 'Sun' && back.date === '1 October 2026' && /^Back to reality, on 1 October 2026: where the real planets are is only known from 1849 to 2150$/.test(back.toast),
       `"${back.toast}"; ${back.date}`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ the Moon, moved
+  {
+    const { ctx, page, touch } = await open(kind, 'target=Earth&dist=6', false);
+    await find(page, 'Moon');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    const lay = await page.evaluate(() => {
+      const r = document.querySelector('#hud .card [data-act="move"]').getBoundingClientRect();
+      return { w: r.width, h: r.height, others: ['[data-power="mass"]', '[data-act="remove"]'].every((sel) => document.querySelector(`#hud .card ${sel}`).getBoundingClientRect().height >= 44) };
+    });
+    await press(page, '#hud .card [data-act="move"]');
+    await frames(page, 3);
+    // (setup, not a power: the eye is put high over the Earth, far enough back that the Moon and the place twice as
+    // far out are both in the open, clear of the card, of the chips and of where the mark of live physics will be)
+    const view = await page.evaluate(() => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon');
+      const V = moon.pos.constructor;
+      const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+      const open = (p) => !!p && p.x > 36 && p.x < innerWidth - 36 && p.y > 170 && p.y < innerHeight - 36 && walls.every((r) => p.x < r.left - 36 || p.x > r.right + 36 || p.y < r.top - 36 || p.y > r.bottom + 36);
+      for (const dist of [350, 500, 700]) for (let az = 0; az < 360; az += 30) {
+        a.placeNear(earth, dist * earth.radius, az, 75);
+        a.frame();
+        const r = moon.pos.clone().sub(earth.pos);
+        const from = a.project(moon.upos.sub(a.rig.upos, new V())), to = a.project(earth.upos.sub(a.rig.upos, new V()).add(r.clone().multiplyScalar(2)));
+        if (open(from) && open(to)) return { from, to, r: r.length(), normal: r.clone().cross(moon.vel.clone().sub(earth.vel)).normalize().toArray(), vel: moon.vel.toArray(), period: a.physics.orbit(moon)?.period ?? 0 };
+      }
+      return null;
+    });
+    await frames(page, 3);
+    const ring = await page.evaluate(() => { const r = document.querySelector('#hud .move-handle').getBoundingClientRect(); return { shown: !document.querySelector('#hud .move-handle').hidden, x: r.left + r.width / 2, y: r.top + r.height / 2, plane: document.querySelector('#hud .move-plane').textContent }; });
+    check(on("the Moon's card offers Move beside Mass and Remove, a thumb high; on, a ring marks the Moon and the card says how it moves"),
+      !!view && lay.h >= 44 && lay.w > 60 && lay.others && ring.shown && Math.hypot(ring.x - view.from.x, ring.y - view.from.y) < 3 && ring.plane === 'It moves in the plane of its orbit.' && !(await about(page, 'Moon', 'Earth')).on,
+      `the button ${lay.w.toFixed(0)} x ${lay.h.toFixed(0)} px; the ring ${view ? Math.hypot(ring.x - view.from.x, ring.y - view.from.y).toFixed(1) : '?'} px from the Moon; "${ring.plane}"`);
+
+    // a finger on the Moon, dragged to twice its distance from the Earth, and looked at before it lifts
+    const eye = () => page.evaluate(() => [...window.app.view.quat.toArray(), window.app.clock.paused]);
+    const before = await eye();
+    if (touch) {
+      await touch.press(view.from);
+      for (let i = 1; i <= 10; i++) await touch.slide({ x: view.from.x + ((view.to.x - view.from.x) * i) / 10, y: view.from.y + ((view.to.y - view.from.y) * i) / 10 });
+    } else {
+      await page.mouse.move(view.from.x, view.from.y);
+      await page.mouse.down();
+      await page.mouse.move(view.to.x, view.to.y, { steps: 10 });
+    }
+    await frames(page, 3);
+    const held = await page.evaluate((view) => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon');
+      const r = moon.pos.clone().sub(earth.pos), ring = document.querySelector('#hud .move-handle').getBoundingClientRect();
+      return {
+        on: a.physics.on, paused: a.clock.paused, quat: a.view.quat.toArray(), far: r.length() / view.r, out: Math.abs(r.normalize().dot({ x: view.normal[0], y: view.normal[1], z: view.normal[2] })),
+        speed: Math.hypot(moon.vel.x - view.vel[0], moon.vel.y - view.vel[1], moon.vel.z - view.vel[2]), ring: Math.hypot(ring.left + ring.width / 2 - view.to.x, ring.top + ring.height / 2 - view.to.y),
+        now: document.querySelector('#hud .power-now').textContent, line: !!a.orbits.objs.get(moon)?.line.visible,
+      };
+    }, view);
+    check(on('a finger on the Moon takes hold of it: time waits, the view does not turn, and physics is live once it has been moved'),
+      before[4] === false && held.paused && held.on && before.slice(0, 4).every((q, i) => Math.abs(q - held.quat[i]) < 1e-9));
+    // (its velocity: as it was a few seconds before, when the view was set up; in those seconds the Earth's pull turns it by centimetres a second)
+    check(on('it goes where the finger goes, in the plane of its orbit: to twice its distance from the Earth, keeping the speed it had'),
+      Math.abs(held.far - 2) < 0.06 && held.out < 1e-6 && held.speed < 0.1 && held.ring < 3,
+      `${held.far.toFixed(3)} times as far, ${held.out.toExponential(1)} out of the plane, its velocity changed by ${held.speed.toExponential(1)} m/s, the ring ${held.ring.toFixed(1)} px from the finger`);
+    // (twice as far out with the speed of its old orbit it is about at the speed of escape: on a long oval round the
+    // Earth still, or let go of and on an orbit of its own round the Sun, as the date has it)
+    check(on('while it is held the card says what orbit it would be on from there, and the line of that orbit is drawn'),
+      /^Now round (Earth|the Sun): .+ \(0(\.\d+)?\), .+ to .+ · .+\.$/.test(held.now) && held.line, `"${held.now}"`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-move.png`) });
+    if (touch) await touch.lift(); else await page.mouse.up();
+    await frames(page, 3);
+    const let_ = await eye();
+
+    // left on a circle there: the month Kepler's law gives it
+    await press(page, '#hud .card [data-act="move-circle"]');
+    await frames(page, 3);
+    const circle = await page.evaluate((view) => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon'), o = a.physics.orbit(moon);
+      const r = moon.pos.distanceTo(earth.pos);
+      return { e: o.e, period: o.period, law: 2 * Math.PI * Math.sqrt(r ** 3 / (earth.gm + moon.gm)), was: view.period, parent: moon.parent?.name, now: document.querySelector('#hud .power-now').textContent, jd: a.clock.jdTdb, dir: moon.pos.clone().sub(earth.pos).normalize().toArray() };
+    }, view);
+    check(on('lifted, time runs on; asked to go in a circle there, the Moon is on one round the Earth, and its month is the one Kepler\'s law gives: about 2.8 of the old'),
+      let_[4] === false && circle.e < 1e-3 && circle.parent === 'Earth' && Math.abs(circle.period / circle.law - 1) < 1e-6 && circle.period / circle.was > 2.4 && circle.period / circle.was < 3.2 && /^Now round Earth: nearly a circle \(0\), /.test(circle.now),
+      `${(circle.period / 86400).toFixed(1)} d (it was ${(circle.was / 86400).toFixed(1)} d: ${(circle.period / circle.was).toFixed(2)} times); "${circle.now}"`);
+    // ...and so it goes, at first: about a tenth of that month on, as far round as Kepler has it. (Not for long. Half
+    // way to the edge of the Earth's reach the Sun pulls hard: within three weeks the Moon is 4 % ahead, within ten
+    // it has swung between half and one and a half times that distance, and after four months it is the Sun's.)
+    const asked = await rate(page, '6 h/s');
+    await page.waitForFunction((to) => window.app.clock.jdTdb >= to, circle.jd + circle.period / 864000, { timeout: 240000 });
+    await pause(page);
+    const went = await page.evaluate((circle) => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon'), d = moon.pos.clone().sub(earth.pos).normalize();
+      const days = a.clock.jdTdb - circle.jd;
+      return { days, turned: Math.acos(d.x * circle.dir[0] + d.y * circle.dir[1] + d.z * circle.dir[2]) / (2 * Math.PI * (days * 86400 / circle.period)), parent: moon.parent?.name };
+    }, circle);
+    check(on('about a tenth of that month later it is as far round the Earth as Kepler has it go'), asked === '6 h/s' && went.days < 0.2 * circle.period / 86400 && Math.abs(went.turned - 1) < 0.03 && went.parent === 'Earth',
+      `${went.days.toFixed(1)} days on: ${(went.turned * 100).toFixed(1)} % of the way Kepler has it go`);
     await ctx.close();
   }
 }

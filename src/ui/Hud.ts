@@ -23,8 +23,9 @@ export type HudAction =
   | 'ship'
   // what if (src/app/WhatIf.ts): give the selected world a moon; take away one that was made
   | 'add-moon' | 'unmake'
-  // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed
-  | 'remove' | 'reality';
+  // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
+  // begin or end moving it with a finger, and what it is to do where it is left
+  | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle';
 
 export interface HudHost {
   act(action: HudAction): void;
@@ -62,6 +63,11 @@ export interface HudState {
     mass: { slider: number; words: string; times: string; theory: string } | null;
     /** it can be taken away (a world of the Solar System) */
     removable: boolean;
+    /**
+     * It can be moved with a finger, and that is under way (`on`): whether it is to be left on a
+     * circle, which plane the finger moves it in and the orbit it is on now, both in words.
+     */
+    move: { on: boolean; circle: boolean; plane: string; orbit: string } | null;
   } | null;
   /**
    * Live physics, or null while the Solar System is the real one: since when, how fast time gets on
@@ -142,6 +148,7 @@ const TEMPLATE = `
     <button class="live-back" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
   </div>
   <div class="hud-toast" role="status" aria-live="polite"></div>
+  <div class="move-handle" hidden></div>
   <div class="hud-dock">
     <div class="hud-fabs">
       <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What one finger does: orbit, or look around">${ICON.orbit}${ICON.look}<span></span></button>
@@ -161,6 +168,7 @@ const TEMPLATE = `
         </div>
         <div class="card-powers" hidden>
           <button class="power" type="button" data-power="mass" aria-expanded="false">${ICON.mass}<span>Mass</span></button>
+          <button class="power" type="button" data-act="move" aria-expanded="false">${ICON.move}<span>Move</span></button>
           <button class="power" type="button" data-act="remove">${ICON.unmake}<span>Remove</span></button>
         </div>
         <div class="power-panel" data-panel="mass" hidden>
@@ -168,6 +176,14 @@ const TEMPLATE = `
           <input class="slider" type="range" min="-3" max="3" step="0.01" value="0" aria-label="Its mass, from a thousandth of its real mass to a thousand times it"/>
           <div class="slider-ends"><span>÷ 1,000</span><span>Only its pull changes, not its size or look</span><span>× 1,000</span></div>
           <p class="theory" hidden><b>Theory predicts</b><span></span></p>
+        </div>
+        <div class="power-panel" data-panel="move" hidden>
+          <p class="power-hint"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it. <span class="move-plane"></span></p>
+          <div class="seg" role="group" aria-label="What it does where you leave it">
+            <button type="button" data-act="move-keep" aria-pressed="true">Keeps its speed</button>
+            <button type="button" data-act="move-circle" aria-pressed="false">Goes in a circle</button>
+          </div>
+          <p class="power-now"></p>
         </div>
         <div class="facts" hidden>
           <dl></dl>
@@ -406,6 +422,17 @@ export class Hud {
     return Math.max(0, window.innerHeight / 2 - (top + bottom) / 2);
   }
 
+  /**
+   * Where the world being moved is on the screen (px), or null when none is: a ring is drawn round
+   * it, for the finger to find it by.
+   */
+  setHandle(at: { x: number; y: number } | null): void {
+    const ring = this.$('.move-handle');
+    if (!at && ring.hidden) return;
+    ring.hidden = !at;
+    if (at) ring.style.transform = `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
+  }
+
   /** A control from elsewhere that belongs with the round buttons (the headset's "Enter VR"). */
   addFab(button: HTMLElement): void {
     this.fabs.appendChild(button);
@@ -515,9 +542,23 @@ export class Hud {
     const massButton = powers.querySelector<HTMLElement>('[data-power="mass"]')!;
     massButton.hidden = !sel.mass;
     powers.querySelector<HTMLElement>('[data-act="remove"]')!.hidden = !sel.removable;
-    if (!sel.mass) this.power = null;
+    const moving = sel.move?.on ?? false;
+    const moveButton = powers.querySelector<HTMLElement>('[data-act="move"]')!;
+    moveButton.hidden = !sel.move;
+    moveButton.setAttribute('aria-expanded', String(moving));
+    // (one panel at a time: moving it takes the place of its mass and of its details)
+    if (!sel.mass || moving) this.power = null;
+    if (moving) this.details = false;
     massButton.setAttribute('aria-expanded', String(this.power === 'mass'));
-    const panel = card.querySelector<HTMLElement>('.power-panel')!;
+    const movePanel = card.querySelector<HTMLElement>('[data-panel="move"]')!;
+    movePanel.hidden = !moving;
+    if (sel.move && moving) {
+      setText(movePanel.querySelector('.move-plane')!, sel.move.plane);
+      setText(movePanel.querySelector('.power-now')!, sel.move.orbit);
+      movePanel.querySelector('[data-act="move-keep"]')!.setAttribute('aria-pressed', String(!sel.move.circle));
+      movePanel.querySelector('[data-act="move-circle"]')!.setAttribute('aria-pressed', String(sel.move.circle));
+    }
+    const panel = card.querySelector<HTMLElement>('[data-panel="mass"]')!;
     panel.hidden = this.power !== 'mass';
     if (sel.mass && this.power === 'mass') {
       setText(panel.querySelector('.power-read b')!, sel.mass.words);
@@ -614,8 +655,8 @@ export class Hud {
     else if (d.cat) { this.category = d.cat as Category; this.renderList(); }
     else if (d.tab) this.tab(d.tab);
     else if ('close' in d) this.closeSheet();
-    else if ('details' in d) { this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
-    else if (d.power) { this.power = this.power === d.power ? null : 'mass'; this.details = false; if (this.state) this.renderCard(this.state); }
+    else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
+    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : 'mass'; this.details = false; if (this.state) this.renderCard(this.state); }
     else if ('massReal' in d) { this.slider.value = '0'; this.host.setMass(0); }
     else if ('live' in d) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
@@ -624,6 +665,11 @@ export class Hud {
       if (d.act === 'photo' || d.act === 'ship') this.closeSheet(); // (nothing is left open behind the picture, or the cockpit)
       this.host.act(d.act as HudAction);
     }
+  }
+
+  /** Another panel of the card is opened: if the world was being moved, that is over. */
+  private endMove(): void {
+    if (this.state?.selection?.move?.on) this.host.act('move');
   }
 
   private tab(name: string): void {

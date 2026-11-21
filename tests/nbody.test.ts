@@ -223,17 +223,37 @@ describe('changes at any moment', () => {
     const p = sim.momentum();
     expect(Math.abs(p[0] / p0[0] - 1)).toBeLessThan(1e-14);
     expect(Math.hypot(p[1], p[2])).toBe(0);
-    // they are made one at the middle of the step in which they met (near: the step follows the two in), at the
-    // speed their fall gives there: v² = v₀² + 2G(m₁ + m₂)(1/r − 1/r₀)
-    expect(hit.distance / (1.5 * R)).toBeGreaterThan(0.5);
-    expect(hit.distance / (1.5 * R)).toBeLessThan(1.5);
-    const w = Math.sqrt(4000 ** 2 + 2 * 1.1 * GM_EARTH * (1 / hit.distance - 1 / 2e8));
+    // told as the two touched, wherever in its step the simulation made them one: at the speed their fall gives
+    // there, v² = v₀² + 2G(m₁ + m₂)(1/r − 1/r₀)
+    expect(hit.distance / (1.5 * R)).toBeCloseTo(1, 12);
+    const w = Math.sqrt(4000 ** 2 + 2 * 1.1 * GM_EARTH * (1 / (1.5 * R) - 1 / 2e8));
     expect(hit.speed / w).toBeCloseTo(1, 6);
     // and the energy is all accounted for: the impact's heat, and their pull on each other, now the merged body's own
     const mu = (GM_EARTH * GM_EARTH) / 10 / 1.1 / GM_EARTH;
     expect(hit.heat).toBeCloseTo((0.5 * mu * hit.speed ** 2) / 6.6743e-11, -25);
     const lost = hit.heat - (GM_EARTH * GM_EARTH) / 10 / hit.distance / 6.6743e-11;
     expect(Math.abs((sim.energy() - (E0 - lost)) / E0)).toBeLessThan(1e-9);
+  });
+
+  it('a moon that falls into its planet is told at the speed it had as the two touched, not where a step happened to end', () => {
+    // a planet of twenty Jupiters with Jupiter's size, and a Ganymede going round it at the speed that kept it on a
+    // circle round one Jupiter: far too slow now, its new orbit dips deep into the planet. From several starts on
+    // that orbit, so that the steps end in different places on the way in.
+    const gm = 20 * 1.26687e17, R = 6.9911e7, moon = { gm: 9.8878e12, radius: 2.6341e6 }, r0 = 1.0704e9, v0 = 10_880;
+    const contact = Math.sqrt(v0 ** 2 + 2 * (gm + moon.gm) * (1 / (R + moon.radius) - 1 / r0));
+    expect(contact / 1000).toBeCloseTo(255.4, 1);
+    for (const lead of [0, 1700, 3300, 5100]) {
+      const sim = new NBody();
+      sim.add({ id: 1, gm, radius: R, pos: [0, 0, 0], vel: [0, 0, 0] });
+      sim.add({ id: 2, ...moon, pos: [r0, 0, 0], vel: [0, v0, 0] });
+      sim.advance(lead);
+      sim.advance(2 * DAY);
+      const hit = sim.takeEvents().find((e) => e.kind === 'collision');
+      if (hit?.kind !== 'collision') throw new Error('no collision');
+      expect([hit.survivor, hit.absorbed]).toEqual([1, 2]);
+      expect(hit.distance).toBe(R + moon.radius);
+      expect(Math.abs(hit.speed / contact - 1)).toBeLessThan(0.01);
+    }
   });
 
   it('a change of mass changes the periods as Kepler says', () => {
