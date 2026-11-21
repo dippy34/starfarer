@@ -7,8 +7,9 @@
 //     at the limb as in the middle
 //   - turned to one of its active regions: a white-hot patch on the orange
 //   - a red glow hugs the limb and fades outwards; over a turn of the star prominences rise over it
-//   - the surface seethes (it changes from second to second, the disk staying as bright), turns at
-//     its full rate from afar and is slowed from close by, where the eye would not follow it
+//   - the surface seethes (it changes from second to second, the disk staying as bright), its
+//     detail comes in gradually on the way in, and it turns at its full rate from afar and is
+//     slowed from close by, where the eye would not follow it
 //   - every kind of star has a face of its own: a red supergiant's deep red and coarse, a hot
 //     star's blue and nearly smooth
 // Usage: node scripts/stars.mjs [baseUrl] [outDir]
@@ -173,6 +174,35 @@ const rgb = (p) => `(${p.join(', ')})`;
   const next = await measure(page);
   await settle(page, 50);
   const after = await measure(page);
+
+  // --- coming closer, its detail comes in gradually: the middle of the frame at each step,
+  // how bright it is and how much it varies at the scale of a few pixels
+  const closer = await page.evaluate(async () => {
+    const a = window.app, sun = a.system.sun, gl = a.renderer.gl.domElement, S = 240, out = [];
+    const c = Object.assign(document.createElement('canvas'), { width: S, height: S });
+    const g = c.getContext('2d', { willReadFrequently: true });
+    for (let k = 0; k <= 16; k++) {
+      a.placeNear(sun, 4 * (1.5 / 4) ** (k / 16) * sun.radius, 0, 0);
+      for (let i = 0; i < 2; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
+      // (the view holds what it is aimed at a little above the middle of an upright screen)
+      g.drawImage(gl, (gl.width - S) / 2, 0.42 * gl.height - S / 2, S, S, 0, 0, S, S);
+      const d = g.getImageData(0, 0, S, S).data, L = new Float32Array(S * S);
+      let mean = 0, fine = 0, n = 0;
+      for (let i = 0; i < S * S; i++) { L[i] = 0.2126 * d[4 * i] + 0.7152 * d[4 * i + 1] + 0.0722 * d[4 * i + 2]; mean += L[i] / (S * S); }
+      for (let y = 3; y < S - 3; y++) for (let x = 3; x < S - 3; x++) {
+        let box = 0;
+        for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) box += L[(y + j) * S + x + i];
+        fine += (L[y * S + x] - box / 49) ** 2; n++;
+      }
+      out.push({ mean, fine: Math.sqrt(fine / n) / mean });
+    }
+    a.placeNear(sun, 4 * sun.radius, 0, 0);
+    return out;
+  });
+  await settle(page, 5);
+  const step = (of) => closer.slice(1).map((m, i) => Math.max(m[of] / closer[i][of], closer[i][of] / m[of]));
+  check('coming closer, its detail comes in gradually: nothing pops in, nothing drops out', Math.max(...step('fine')) < 1.3 && Math.max(...step('mean')) < 1.07 && Math.min(...closer.map((m) => m.fine)) > 0.02,
+    `from 4 radii to 1.5 in 16 steps: fine contrast ${Math.min(...closer.map((m) => m.fine)).toFixed(3)} to ${Math.max(...closer.map((m) => m.fine)).toFixed(3)}, at most x${Math.max(...step('fine')).toFixed(2)} in a step; brightness at most x${Math.max(...step('mean')).toFixed(3)}`);
   await page.evaluate((r) => { window.app.bodies.sunLook.rotRate = r; }, rate);
   check('the surface seethes: after a few seconds it has changed, far more than from one frame to the next, and the disk is as bright as it was',
     after.change > 0.008 && after.change > 2.5 * next.change && Math.abs(after.mean - before.mean) < 0.03 * before.mean,
@@ -212,6 +242,31 @@ const rgb = (p) => `(${p.join(', ')})`;
     `share of the full rate: ${far.toFixed(2)} from 4 radii, ${near.toFixed(3)} from 1.15`);
   check('from close by its face fills the view, still orange and textured', close.median[0] > 170 && close.median[1] < 0.52 * close.median[0] && Math.min(...close.fine) > 0.025 && close.burnt < 0.03,
     `median ${rgb(close.median)}, fine contrast ${close.fine.map((v) => v.toFixed(3)).join(', ')}`);
+  await page.close();
+}
+
+// ----------------------------------------------------------------- a sun too small to show a face
+{
+  // from among the planets (2.8 AU: its disk is a pixel or two wide) the Sun is a glare of white
+  // light, as bright as it is: not a dot at the top of its face's colours
+  const page = await open('Sun', 600);
+  const far = await page.evaluate(() => {
+    const a = window.app;
+    a.frame();
+    const gl = a.renderer.gl.domElement, c = Object.assign(document.createElement('canvas'), { width: gl.width, height: gl.height });
+    const g = c.getContext('2d');
+    g.drawImage(gl, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let white = 0, lit = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.min(d[i], d[i + 1], d[i + 2]) > 235) white++;
+      if (Math.min(d[i], d[i + 1], d[i + 2]) > 60) lit++;
+    }
+    return { white: white / (d.length / 4), lit: lit / (d.length / 4), px: a.bodies.views.get(a.system.sun).pixelRadius };
+  });
+  await page.screenshot({ path: path.join(outDir, 'stars-sun-far.png') });
+  check('from among the planets the Sun, a pixel or two wide, is a glare of white light and not a dot', far.white > 0.001 && far.lit > 0.01,
+    `its disk ${far.px.toFixed(1)} px in radius; burnt out white over ${(far.white * 100).toFixed(2)} % of the frame, lit over ${(far.lit * 100).toFixed(1)} %`);
   await page.close();
 }
 

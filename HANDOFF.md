@@ -293,7 +293,7 @@ running (a build, not the dev server: an edit reloads the page under a running s
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
 49), `interact` (mouse and keys; 11), `verify` (35 scenes), `exposure` (looking away from bright
-things and back; 51), `stars` (the faces of stars, measured from the frames; 16),
+things and back; 51), `stars` (the faces of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
 `vr` (IWER Quest 3 emulator; 32), `game` (20), `walk` (45), `places` (rings, comets, eclipses; 14),
 `terrain` (14), `flight` (19). At most three at a time on four cores (more
@@ -729,26 +729,47 @@ above is validated against JPL Horizons and stays as it is unless something is w
      quarter of the disc, with a white-hot region where the view is turned to one, its limb as
      bright as its middle, a red glow round it that fades outwards, shown at the designed
      level; it seethes (its turning stopped, the frames stepped by hand: far more has changed
-     after five seconds than from one frame to the next); prominences rise and set over a turn;
-     the turning is slowed from close by, where the face is still orange and textured;
-     Betelgeuse is deep red in cells far larger than its texture, Proxima red with a face of
-     its own, Sirius blue-white and nearly smooth but not a plate. Each threshold was set from
-     the values the run prints, with a margin, and against what it is to rule out (the pale
-     ball of part 3, the pink of the bloom).
-   - Verification so far: the type check, 407 unit tests and the production build; `stars` 16/16
-     against the dev server; `exposure` 51/51 against a production build of this code less its
-     last change (the light of a disc too small to hold the exposure, below); the star scenes of
-     `verify` beside the last deployed run's. **The round of browser suites has not been run on
-     this commit**: it went out at the owner's word ("Push the new stars"); the round and
-     what it turns up follow in the next one. The README's picture of the stars is from the
-     app as it is here.
-   - *The light of a disc too small to hold the exposure* (found by that comparison). A star's
-     colours top out at the display's white, so a disc a pixel or two wide, seen with the eye
-     open for the dark, was a faint dot: the Sun from among the planets had lost its glare, and
-     the companion of Gaia BH1 was gone from the lensed sky. Far above the level at which a face
-     is white-hot all over, its light is as bright as it is again (`WHITE_HOT` in `STAR_FRAG`),
-     and the bloom makes the glare of it: the inner system from 2.8 AU is the picture it was, to
-     the pixel.
+     after five seconds than from one frame to the next); on the way in from 4 radii to 1.5
+     its detail comes in gradually (the fine contrast of the frame's middle changes by an eighth
+     in a step at the most: an octave switched on would double it); prominences rise and set
+     over a turn; the turning is slowed from close by, where the face is still orange and
+     textured; from among the planets, a pixel wide, the Sun is a glare of white light and not
+     a dot; Betelgeuse is deep red in cells far larger than its texture, Proxima red with a
+     face of its own, Sirius blue-white and nearly smooth but not a plate. Each threshold was
+     set from the values the run prints, with a margin, and against what it is to rule out
+     (the pale ball of part 3, the pink of the bloom, the dot).
+   - *The light of a disc too small to hold the exposure* (found by comparing the scenes of
+     `verify` with the last deployed run's). A star's colours top out at the display's white, so
+     a disc a pixel or two wide, seen with the eye open for the dark, was a faint dot: the Sun
+     from among the planets had lost its glare, and the companion of Gaia BH1 was gone from the
+     lensed sky. Far above the level at which a face is white-hot all over, its light is as
+     bright as it is again (`WHITE_HOT` in `STAR_FRAG`), and the bloom makes the glare of it:
+     the inner system from 2.8 AU is the picture it was, to the pixel.
+   - *Errors when a page is left* (found by the round). `places` failed "no console errors"
+     twice running with "TypeError: Failed to fetch" out of the star catalogue. A page left
+     while star regions are still on their way has those downloads cut off, and
+     `StarCatalog.pump` reports each as an error; on a busy machine they are late (other
+     sessions were running suites on the same four cores). The suite lets them arrive before
+     it loads its next view (`go`). That the catalogue calls a download cut off by leaving the
+     page an error belongs to part 7.
+   - Verification (headless Chromium, software WebGL, against a production build): the stars went
+     live first, at the owner's word ("Push the new stars"), on the type check, the unit tests, the
+     build and the stars suite against the dev server; the round was then run on that very build.
+     407 unit tests; the 35 scenes of verify (21 of them the same picture, to the pixel, as in the
+     run for part 4; three more, of galaxies, differ in a few hundred pixels of a galaxy's glow, as
+     two runs of this one build do; four show a star's face and differ in it: Rigil Kentaurus a
+     small hot disc with a red skin, the companion of Cygnus X-1, twice, the deep blue of its kind
+     where it was pale, the companion of Gaia BH1 by a shade; the rest differ in what moves: a
+     disk's gas, clouds, the ship's instruments), stars 18/18, exposure 51/51, whatif 29/29, start
+     34/34, touch 49/49, interact 11/11, vr 32/32, game 20/20, walk 45/45, places 14/14, terrain
+     14/14, flight 19/19 (bench not run). With three suites at once, and other sessions' besides,
+     start and touch each failed one check once (the bar's last ticks not seen; a pinch that did not
+     lift off), as in part 4; each passes on its own. (With the machine at a load of nine, one unit
+     test of the exposure, three seconds of arithmetic, ran past its five second limit; alone it
+     passes.) Looked at besides, in the app at a phone's size: the Sun from 1.2 to 60 radii at one,
+     two and three pixels to the CSS pixel, Betelgeuse, Arcturus, Proxima, Barnard's Star, Sirius,
+     Vega, Rigel and Sirius B; and the live site after the deploy. Not tried on a real phone, nor in
+     a headset.
    - Seen and left: the limb's raggedness (spicules) hardly shows. From very close (1.2 radii)
      the Sun's map is magnified eight times: soft blotches under the fine generated threads. A
      small disc's glare rims the red skin with pinkish white. The map takes the generated
