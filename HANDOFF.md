@@ -330,7 +330,7 @@ measurements in `docs/notes/relativistic-ship.md`):
 running (a build, not the dev server: an edit reloads the page under a running suite), each of
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
-49), `interact` (mouse and keys; 11), `verify` (35 scenes), `exposure` (looking away from bright
+49), `interact` (mouse and keys; 12), `verify` (35 scenes), `exposure` (looking away from bright
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
@@ -940,6 +940,17 @@ above is validated against JPL Horizons and stays as it is unless something is w
      moves. The names "M87" and "M87*" stand on each other and on the hole. From hundreds of
      light years M87's jets are a hairline across the frame. (The sine hash of `Jets.ts` listed
      under part 4 went with the old jets.)
+   - *Visual faults, one at a time* (reported by other agents or seen in the trailer; each
+     reproduced at a phone's size first, fixed at its cause, checked and live before the next):
+     - *Earth for scale read as a glitch*: a small disc on the Sun or on Jupiter that said nothing
+       (a dark dot on the Sun, a grey ball on Jupiter). It now has its name beside it, "Earth, to
+       scale" (`App.labelCandidates`, before every other name), and it is drawn only while names
+       are (`Awe.update`: not with the names off, nor in photo mode). Chosen over hiding it until
+       Details is open: the comparison is the point of it, and a name is how everything else on
+       the sky explains itself. It is lit by the star of the world it stands against: beside a
+       planet of another star it was lit by the Sun, light years off, and was the "flat black
+       disc on 51 Peg b's cloud deck" once listed below. `scripts/interact.mjs` checks the name
+       and its going with the names (12 checks now).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
    touch already), missions and the benchmark as screens of the app.
@@ -955,7 +966,7 @@ above is validated against JPL Horizons and stays as it is unless something is w
    13. Terrain, landing, walking. 14. Game mode. 15. VR.
 
 To look at when their part comes (seen in the scenario screenshots): Pluto's lit side washes out to
-white from 12 radii; 51 Peg b shows a flat black disc on its cloud deck; the Sun's glare hides the
+white from 12 radii; the Sun's glare hides the
 labels of the inner planets from 2.8 AU. The details card prints masses as "5.9722e+24 kg"; the
 headset's travel still flies to distances tuned for its own field of view (`VR.arrivalDistance`)
 and its grip-stick orbit now turns round the place the camera is at, not round a far selection.

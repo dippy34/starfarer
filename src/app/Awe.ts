@@ -1,10 +1,11 @@
 import { Vector3 } from 'three';
-import { SUN_RADIUS } from '../core/units';
+import { SUN_ABS_MAG, SUN_RADIUS } from '../core/units';
 import { UPos } from '../core/upos';
 import { Rumble } from '../game/Rumble';
 import { ScaleCues } from '../render/ScaleCues';
 import { BlackHole } from '../universe/BlackHoles';
 import { Body, type SpaceObject } from '../universe/Body';
+import { ExoPlanet } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
 import { M_SUN_KG, R_EARTH_M, angularDiameter, rumbleLevel, rumblePitch, scaleRows, shadowDiameter } from '../universe/Scale';
 import type { App } from './App';
@@ -67,12 +68,18 @@ export class Awe {
     // Earth beside a black hole is sub-pixel; the info card carries that comparison)
     const sel = app.selection;
     const fwd = new Vector3(0, 0, -1).applyQuaternion(app.view.quat);
-    // (it is lit as the worlds are: in a system with no sun left there is nothing to see it by)
-    const sun = app.system.suns[0];
-    if (sel && sun && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth') {
-      const star = sel instanceof CatalogStar || (sel instanceof Body && sel.kind === 'star');
+    // (it is lit as the worlds are: in a system with no sun left there is nothing to see it by).
+    // It is shown only with its name beside it (App.labelCandidates: "Earth, to scale"): a small
+    // disc on the Sun or on Jupiter that says nothing reads as a spot or a glitch, so with the
+    // names turned off (or in photo mode) it is not drawn either.
+    // It is lit by the star of the world it stands against (in front of a star, by that star: a
+    // silhouette); by the Sun, a planet of another star had it as a black disc.
+    const star = sel instanceof CatalogStar || (sel instanceof Body && sel.kind === 'star');
+    const sun = star ? sel : sel instanceof ExoPlanet ? sel.system.host : app.system.suns[0];
+    if (sel && sun && app.labels.enabled && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth') {
       this.cues.updateEarth({
         rel: sel.upos.sub(cam, new Vector3()), radius: sel.radius, sunRel: sun.upos.sub(cam, new Vector3()),
+        sunLum: sun instanceof CatalogStar ? 10 ** (-0.4 * (sun.absMag - SUN_ABS_MAG)) : sun instanceof Body ? app.system.brightness(sun) : 1,
         exposure: star ? app.bodies.lightExposure : app.bodies.surfaceExposure,
       }, fwd, app.view.pixelAngle);
     } else this.cues.updateEarth(null, fwd, app.view.pixelAngle);

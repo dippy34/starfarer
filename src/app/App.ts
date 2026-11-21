@@ -17,6 +17,7 @@ import { ExoPlanetLayer, type ExoView } from '../render/ExoPlanetLayer';
 import { GalaxyGlow } from '../render/GalaxyLayer';
 import { JetsLayer } from '../render/Jets';
 import { Labels, type LabelCandidate } from '../render/Labels';
+import { EARTH_FOR_SCALE } from '../render/ScaleCues';
 import { NearStarsLayer } from '../render/NearStars';
 import { OrbitsLayer } from '../render/Orbits';
 import { TrailsLayer } from '../render/Trails';
@@ -2131,6 +2132,14 @@ export class App {
     if (sel instanceof CatalogStar && !this.near.stars.includes(sel)) {
       const p = this.project(sel.upos.sub(this.rig.upos, rel));
       if (p && !this.occluded(rel, null)) out.push({ rel: rel.clone(), key: sel.key, text: sel.name, x: p.x, y: p.y, radius: 3, priority: 1e4, cls: 'selected' });
+    }
+    // Earth for scale (Awe) is drawn only with its name, which goes first: without it the disc
+    // reads as a spot on the giant behind it
+    const earth = this.awe?.cues.earthAt;
+    if (earth) {
+      const p = this.project(earth);
+      const px = this.awe.cues.earthAngle / this.view.pixelAngle / dpr;
+      if (p) out.push({ rel: earth.clone(), key: 'earth-for-scale', text: EARTH_FOR_SCALE, x: p.x, y: p.y, radius: px, priority: 2e4, cls: 'planet' });
     }
     return out;
   }

@@ -111,6 +111,25 @@ if (scr) {
 const sel = await page.evaluate(() => window.app.selection?.name);
 check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.stringify(scr)}`);
 
+// 4b. Earth for scale, in front of Jupiter, is named beside it ("Earth, to scale"), and is not drawn without its name
+{
+  const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 60000 }); };
+  await page.evaluate(() => { const a = window.app; const j = a.findByName('Jupiter'); a.select(j); a.placeNear(j, j.radius * 4, 30, 10); });
+  await frames(4);
+  const seen = () => page.evaluate(() => {
+    const a = window.app, at = a.awe.cues.earthAt;
+    const el = [...document.querySelectorAll('.label')].find((e) => e.textContent === 'Earth, to scale' && e.style.display !== 'none');
+    const p = at ? a.project(at) : null, r = el?.getBoundingClientRect();
+    return { drawn: !!at, named: !!el, gap: p && r ? Math.hypot(r.left - p.x, r.bottom - p.y) : null };
+  });
+  const on = await seen();
+  await page.evaluate(() => window.app.act('labels'));
+  await frames(3);
+  const off = await seen();
+  await page.evaluate(() => window.app.act('labels'));
+  check('Earth for scale is named beside it, and hidden with the names', on.drawn && on.named && on.gap !== null && on.gap < 30 && !off.drawn && !off.named, JSON.stringify({ on, off }));
+}
+
 // 5. Search and go to a star
 await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');

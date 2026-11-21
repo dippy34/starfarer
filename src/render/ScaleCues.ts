@@ -10,6 +10,7 @@ import { FIX_LOGDEPTH, GLOBALS, OUTPUT_FRAGMENT, PROJECT_PARS } from './shaders/
  *   in as the approach gets fast for the distance (speed / altitude).
  * * Earth for scale: Earth's silhouette, lit by the Sun, set against the selected giant at the
  *   same distance as the part of the giant behind it, so the two compare at their true sizes.
+ *   Named on the screen ("Earth, to scale"), and drawn only while it can be.
  *
  * Positions are camera-relative world axes in metres, like every other layer.
  */
@@ -86,8 +87,9 @@ export interface EarthRefTarget {
   /** camera-relative centre of the body (m) */
   rel: Vector3;
   radius: number;
-  /** camera-relative position of the Sun (m) */
+  /** camera-relative position of the star that lights it (m), and that star's visual luminosity (Suns) */
   sunRel: Vector3;
+  sunLum: number;
   /**
    * The exposure Earth is seen at: the surfaces' beside a world; against a star's face the star's
    * own (with the eye open for the dark beside a small sun, the sunlit sliver round the silhouette
@@ -105,6 +107,8 @@ export class ScaleCues {
   /** where the Earth silhouette was placed last frame (camera-relative), for tests; null when hidden */
   earthAt: Vector3 | null = null;
   earthScale = 0;
+  /** its angular radius as drawn (rad) */
+  earthAngle = 0;
   private dust: LineSegments;
   private dustMat: ShaderMaterial;
   private earth: Mesh;
@@ -194,13 +198,17 @@ export class ScaleCues {
     const toSun = t.sunRel.clone().sub(pl.pos);
     const ds = toSun.length();
     (this.earthMat.uniforms.uSunDir.value as Vector3).copy(toSun).divideScalar(Math.max(ds, 1));
-    this.earthMat.uniforms.uSunIrr.value = Math.PI * (AU_M / Math.max(ds, 1e6)) ** 2;
+    this.earthMat.uniforms.uSunIrr.value = Math.PI * t.sunLum * (AU_M / Math.max(ds, 1e6)) ** 2;
     this.earthMat.uniforms.uExposure = t.exposure;
     this.earth.visible = true;
     this.earthAt = pl.pos.clone();
     this.earthScale = k;
+    this.earthAngle = (R_EARTH_M * k) / pl.pos.length();
   }
 }
+
+/** the name shown beside Earth for scale (App.labelCandidates): the disc is drawn only with it */
+export const EARTH_FOR_SCALE = 'Earth, to scale';
 
 const IDENT = new Quaternion();
 const AU_M = 1.495978707e11;
