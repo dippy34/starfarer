@@ -1,6 +1,12 @@
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
-import { describe, expect, it } from 'vitest';
-import { adapt, DAZZLE, diskLimit, diskMean, diskSeen, FILL, hidden, MARGIN, released, seen, TAU_OPEN, TAU_SHUT, TAU_STARS, type Frame } from '../src/app/Exposure';
+import { describe, expect, it, vi } from 'vitest';
+import { adapt, DAZZLE, diskLimit, diskMean, diskMiddle, diskSeen, FILL, GLINT_AREA, GLINT_LEVEL, hidden, MARGIN, middleLimit, released, seen, TAU_OPEN, TAU_SHUT, TAU_STARS, type Frame } from '../src/app/Exposure';
+
+// The turns below are cut fine, so that a step cannot hide between two views: tens of thousands
+// of views of 676 cells each, three seconds of arithmetic for the longest of them on a machine
+// with nothing else to do. One that is running the browser suites as well has taken more than
+// the five seconds a test is given.
+vi.setConfig({ testTimeout: 60_000 });
 
 const deg = Math.PI / 180;
 const wide: Frame = { quat: new Quaternion(), fovY: 50, aspect: 16 / 9 };
@@ -412,5 +418,104 @@ describe('the bright middle of a disk too far off to resolve', () => {
     expect(diskMean((_r, approach) => (approach > 0 ? 10 : 0), 3, 30, 0.6)).toBeCloseTo(2.5 * 0.99, 2);
     // nothing inside the inner edge
     expect(diskMean(() => 5, 3, 2, 0)).toBe(0);
+  });
+});
+
+describe('the middle of a disk, and the light it is drawn with', () => {
+  // a cool disk as before: all its glow within a few inner radii
+  const inner = 3, outer = 600, ring = 8;
+  const glow = (r: number) => (r > outer ? 0 : 1e9 * Math.exp(-(Math.max(r, inner) - inner) / 2));
+  const hottest = 1e9, level = 0.8, open = 12;
+  // a phone's pixel: 70 degrees over 844 of them
+  const pixel = ((2 * Math.tan(35 * deg)) / 844) ** 2;
+  /** the eye `dist` from the centre, `up` degrees above the disk's plane, the centre `right` degrees off the middle of the frame */
+  const from = (dist: number, up = 30, right = 0, frame = phone, px = pixel) => {
+    const quat = new Quaternion().setFromEuler(new Euler(-up * deg, right * deg, 0, 'YXZ'));
+    const rel = new Vector3(0, -dist * Math.sin(up * deg), -dist * Math.cos(up * deg));
+    return diskMiddle(rel, new Vector3(0, 1, 0), ring, { ...frame, quat }, px, new Vector3(), quat.clone().invert());
+  };
+  const limit = (dist: number, up = 30, right = 0, frame = phone, px = pixel) => middleLimit(from(dist, up, right, frame, px), glow, inner, hottest, level, px, open);
+  /** all the light of the disk in the frame at an exposure (the display's white over one CSS pixel is 1) */
+  const light = (x: number, dist: number, up = 30, px = pixel) => {
+    let sum = 0;
+    for (let r = inner; r < inner + 60; r += 0.01) sum += glow(r + 0.005) * 2 * Math.PI * (r + 0.005) * 0.01;
+    return (Math.exp(x) * sum * Math.sin(up * deg)) / (dist * dist) / px;
+  };
+
+  it('is the bright ring close by, and all of the disk from far off: what a glint covers', () => {
+    expect(from(100).radius).toBe(ring);
+    const far = from(1e5);
+    expect(far.radius).toBeGreaterThan(outer);
+    expect(far.solidAngle / (GLINT_AREA * pixel)).toBeCloseTo(1, 9);
+    // it grows with the distance, and never jumps
+    let prev = from(50).radius;
+    for (let dist = 50 * 1.01; dist < 1e6; dist *= 1.01) {
+      const r = from(dist).radius;
+      expect(r).toBeGreaterThanOrEqual(prev);
+      expect(r).toBeLessThan(prev * 1.0101);
+      prev = r;
+    }
+  });
+
+  it('seen edge on it still has a face: no less than a tenth of it', () => {
+    const edge = from(1e5, 0), low = from(1e5, 2), up = from(1e5, 6);
+    expect(Number.isFinite(edge.radius)).toBe(true);
+    expect(edge.radius).toBe(low.radius);
+    expect(up.radius).toBeLessThan(edge.radius);
+    expect(edge.approach).toBeCloseTo(1, 9);
+    expect(from(1e5, 90).approach).toBeCloseTo(0, 6);
+  });
+
+  it('close by it is shown as the glowing surface it is: its hottest ring at its level', () => {
+    for (const dist of [10, 40, 150]) expect(limit(dist)).toBeCloseTo(Math.log(level / hottest), 9);
+  });
+
+  it('from far off it has a glint\'s light, whatever the distance, the frame or the density of its pixels', () => {
+    const glint = GLINT_LEVEL * GLINT_AREA;
+    for (const dist of [3000, 2e4, 3e5]) {
+      // (ring by ring against a fine sum: within a hundredth)
+      expect(light(limit(dist), dist) / glint).toBeCloseTo(1, 1.5);
+      expect(light(limit(dist, 12), dist, 12) / glint).toBeCloseTo(1, 1.5);
+      const desk = ((2 * Math.tan(25 * deg)) / 720) ** 2;
+      expect(light(limit(dist, 30, 0, wide, desk), dist, 30, desk) / glint).toBeCloseTo(1, 1.5);
+    }
+    // a canvas three times as dense draws the same picture: the measure is the CSS pixel
+    expect(limit(2e4)).toBe(limit(2e4, 30, 0, phone, pixel));
+  });
+
+  it('its light only ever falls as the eye moves off, with no step: from the surface to the glint to nothing', () => {
+    let prev = light(limit(8), 8), prevX = limit(8);
+    for (let dist = 8 * 1.01; dist < 1e12; dist *= 1.01) {
+      const x = Math.min(open, limit(dist));
+      const l = light(x, dist);
+      expect(l).toBeLessThanOrEqual(prev * 1.002);
+      // (as the square of the distance at the fastest: 2 % a step)
+      expect(l).toBeGreaterThan(prev * 0.975);
+      expect(x - prevX).toBeGreaterThanOrEqual(-1e-9);
+      expect(x - prevX).toBeLessThan(0.021);
+      prev = l;
+      prevX = x;
+    }
+    // the eye wide open has no more to give in the end: it fades as a star does
+    expect(limit(1e12)).toBe(Infinity);
+    expect(prev).toBeLessThan(0.01);
+  });
+
+  it('is the same wherever in the frame the hole is, and lets go gradually as it leaves', () => {
+    const at = limit(2e4);
+    for (const right of [3, 8, 14, 17]) expect(limit(2e4, 30, right)).toBe(at);
+    let prev = at;
+    for (let right = 17; right <= 40; right += 0.02) {
+      const l = Math.min(open, limit(2e4, 30, right));
+      expect(l).toBeGreaterThanOrEqual(prev);
+      expect(l - prev).toBeLessThan(0.5);
+      prev = l;
+    }
+    expect(prev).toBe(open);
+  });
+
+  it('a disk with no light in it sets no limit', () => {
+    expect(middleLimit(from(100), () => 0, inner, hottest, level, pixel, open)).toBe(Infinity);
+    expect(middleLimit(from(100), glow, inner, 0, level, pixel, open)).toBe(Infinity);
   });
 });

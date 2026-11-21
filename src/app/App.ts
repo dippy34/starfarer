@@ -53,7 +53,7 @@ import { CameraRig } from './CameraRig';
 import { Game } from '../game/Game';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
-import { adapt, diskLimit, diskSeen, hidden, released, seen, TAU_STARS } from './Exposure';
+import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
 import { canHaveMoon, MADE_FIRST_ID, newMoon } from './WhatIf';
 import { LivePhysics } from './LivePhysics';
 import { massFactor, massOf, massSlider, massTheory, massWords, rateWords, timesWords } from './Powers';
@@ -85,6 +85,8 @@ const BH_LABEL_PC = 400;
 const EXO_RING_REACH = 3;
 /** where a hole's disk is brightest, in inner radii (BlackHoleLayer.radianceAt) */
 const DISK_PEAK_RADIUS = 49 / 36;
+/** how bright a disk's hottest ring is shown where the disk is a glowing surface filling part of the view */
+const DISK_KEY = 0.8;
 /**
  * With a hole itself in the frame, how many times brighter its disk may be drawn than as a
  * glowing surface: the side of the inner edge coming towards the eye, in its brightest streaks,
@@ -914,6 +916,7 @@ export class App {
     HITCH.markWarm(false);
     void this.renderer.withSceneTarget(() => this.renderer.gl.compileAsync(this.renderer.scene, this.renderer.camera)).catch(() => undefined).finally(() => { HITCH.markWarm(); this.shadersReady(); });
     this.galaxy.compile(this.renderer.gl);
+    this.holes.compile(this.renderer.gl);
     objs.forEach((o, i) => { o.visible = was[i]; });
   }
 
@@ -1624,14 +1627,23 @@ export class App {
       settle(0.12, ringL, 0.45);
       limitSurface(1.6, ringL, 1);
     }
-    for (const hv of this.holes.views) {
+    for (const hv of [...this.holes.views, ...this.holes.far]) {
       if (!hv.diskRadiance) continue;
+      const peak = hv.bh.diskInner * DISK_PEAK_RADIUS;
+      const shown = (r: number, approach: number) => this.holes.shownAt(hv.bh, r, approach);
+      // The middle of the disk (its bright ring; from far off, all of it) is drawn with an
+      // exposure of its own at the most, which is a matter of where the eye is and of nothing
+      // else: so its light is steady, and only ever falls as the eye moves off. (Held by the
+      // scene's exposure alone it was a ball of light as soon as it was small in the frame, and
+      // swelled and shrank behind every move as the eye caught up.)
+      const middle = diskMiddle(hv.rel, hv.bh.diskNormal, 2 * peak, this.view, pixSA, this.seenScratch, this.invQuat);
+      hv.middle.radius = middle.radius;
+      hv.middle.exposure = Math.exp(Math.min(open, middleLimit(middle, shown, hv.bh.diskInner, this.holes.radianceAt(hv.bh, peak), DISK_KEY, pixSA, open)));
       // A disk is brightest at its inner edge and fades outwards, and its centre is often out of
       // frame while the disk fills it: the eye is set by the brightest part that is in view.
       // Close to the hole its gravity wraps the disk's picture round it: there it is measured
       // as a ball, out to four times the radius of the brightest part in view.
       const whole = look(hv.rel, hv.bh.diskOuter);
-      const peak = hv.bh.diskInner * DISK_PEAK_RADIUS;
       const nearest = Math.max(peak, hv.dist * Math.sin(Math.min(Math.PI / 2, Math.max(0, whole.angle - whole.halfFrame))));
       // The inner edge is shown glaring (it blooms): with the hole itself in the frame, the eye is set for that.
       const glare = smoothstep(3, 1, nearest / peak);
@@ -1639,11 +1651,11 @@ export class App {
       // the eye: whichever part of it is in the frame holds the exposure, from any side, and
       // is shown as a glowing surface, under the display's white.
       const flat = diskSeen(hv.rel, hv.bh.diskNormal, hv.bh.diskInner, hv.bh.diskOuter, this.view, this.invQuat);
-      surfaceLimit = Math.min(surfaceLimit, diskLimit(flat, (r, approach) => this.holes.shownAt(hv.bh, r, approach), 0.9 * (1 + DISK_GLARE * glare), open));
+      surfaceLimit = Math.min(surfaceLimit, diskLimit(flat, shown, 0.9 * (1 + DISK_GLARE * glare), open));
       const L = this.holes.radianceAt(hv.bh, nearest);
       const bright = look(hv.rel, Math.min(4 * nearest, hv.bh.diskOuter));
       if (bright.size / this.view.pixelAngle / this.view.pixelRatio <= 1.5) continue;
-      settle(bright.coverage, L, 0.8);
+      settle(bright.coverage, L, DISK_KEY);
       // (a hot inner disk only takes over the eye once it covers part of the view)
       limitSurface((0.9 + 1.1 * glare) / Math.max(smoothstep(0.0015, 0.08, bright.coverage), 1e-6), L, whole.presence);
     }
@@ -2263,7 +2275,8 @@ export class App {
     HITCH.lap('craft');
     PERF.lap('craft');
     this.holes.vr = this.vr.active;
-    this.holes.update(this.rig.upos, pixelAngle, now / 1000);
+    // (a far hole's disk is a point in the frame from where its light is that of the faintest star shown)
+    this.holes.update(this.rig.upos, pixelAngle, now / 1000, magToIrradiance(this.starMagLimit));
     // a black hole's environment capture sees every direction: no view culling while one is active
     if (this.holes.views.length) VIEW_CONE.enabled = false;
     // the volume pass: its pixels are larger than the frame's (their noise's level of detail), and
@@ -2345,7 +2358,8 @@ export class App {
     UPLOADS.pump();
     HITCH.lap('uploads');
     PERF.gpuBegin();
-    this.holes.capture(this.renderer.gl, this.renderer.scene, [this.renderer.rig, this.renderer.volQuad, this.orbits.group, ...this.vr.sceneOverlays], psf);
+    this.holes.capture(this.renderer.gl, this.renderer.scene, [this.renderer.rig, this.renderer.volQuad, this.jets.group, this.orbits.group, ...this.vr.sceneOverlays], psf);
+    this.holes.miniatures(this.renderer.gl);
     HITCH.lap('holeCapture');
     PERF.lap('capture');
     this.renderer.render();

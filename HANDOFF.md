@@ -307,7 +307,7 @@ measurements in `docs/notes/relativistic-ship.md`):
   nines, the Lorentz factor, what speed does to the view ahead, the time to go aboard and in the
   universe, both clocks; distances in light years.
 - *On a phone*: More → Spaceship boards; in the ship the tabs stay (Search, Go there, Time); the
-  drive's − and +. Flying by hand by touch is part 6 below.
+  drive's − and +. Flying by hand by touch is part 7 below.
 - *Not done*: the view at speed (aberration, Doppler, the headlight effect): drawn as at rest; a
   precise specification is in the notes (the star shaders were other agents' work in progress).
   With the live N-body physics coming, the notes list what the ship reads live and what assumes
@@ -331,7 +331,8 @@ running (a build, not the dev server: an edit reloads the page under a running s
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
 49), `interact` (mouse and keys; 11), `verify` (35 scenes), `exposure` (looking away from bright
-things and back; 51), `stars` (the faces of stars, measured from the frames; 18),
+things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
+of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 14),
 `terrain` (14), `flight` (28). At most three at a time on four cores (more
@@ -789,7 +790,7 @@ above is validated against JPL Horizons and stays as it is unless something is w
      `StarCatalog.pump` reports each as an error; on a busy machine they are late (other
      sessions were running suites on the same four cores). The suite lets them arrive before
      it loads its next view (`go`). That the catalogue calls a download cut off by leaving the
-     page an error belongs to part 7.
+     page an error belongs to part 8.
    - Verification (headless Chromium, software WebGL, against a production build): the stars went
      live first, at the owner's word ("Push the new stars"), on the type check, the unit tests, the
      build and the stars suite against the dev server; the round was then run on that very build.
@@ -820,19 +821,138 @@ above is validated against JPL Horizons and stays as it is unless something is w
      headset draws the same faces without the allowance for bloom (it has none), with fewer
      octaves (`uLite`): not looked at in a headset, nor in the emulated one beyond the `vr`
      suite.
-6. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
+6. **A black hole from afar: done** (the owner, with a screen recording from the iPhone, at M87*,
+   pinching in and out between 28 and 1.4 light years: "Look at this video, break it up in frame
+   by frame if you need to, and see what's wrong with it. Because, I mean, clearly you didn't fix
+   it."). In the recording the glow round the hole is a white ball 70 px across in one frame and
+   an orange dot in the next, whatever the fingers do; it goes from orange to a greenish white and
+   back; and it is never anything but a ball of light with a grey pole through it. Played again
+   here on that build, at the phone's size, it does the same. The long form, with every
+   measurement and what to know before touching this again: `docs/notes/black-hole-lighting.md`.
+   - *What was wrong.* (1) The shader traces one sight line through the middle of each pixel, and
+     the bright ring of M87*'s disk is a third of a pixel wide from 28 light years: the pixel on
+     the hole held whatever its one line met (979, 1,858, 4,022, 2,695, 5,928 in the frame's
+     measure as the eye came steadily nearer): 13,000 to 60,000 times white in a few pixels, of
+     which the bloom makes a ball. (2) The passes cut each colour off at 60,000 by itself, so the
+     disk's orange went white as the number grew. (3) Part 4 had given the unresolved middle of a
+     far-off disk the light of a patch `FILL` wide (a white patch 64 px across, in one point) by
+     the scene's exposure, which adapts: after every move the ball swelled or shrank behind it
+     (going away at a pinch's pace the hole's light was up to 96 times off what it had been at
+     the same place coming). (4) Farther off than its bending of the sky reaches a pixel and a
+     half (some 1,300 light years for M87*) a hole was not drawn at all.
+   - *The middle of a disk has an exposure of its own, which is a matter of where the eye is and
+     of nothing else* (`Exposure.ts`: `diskMiddle`, `middleLimit`; `BlackHoleView.middle`, set by
+     `App.updateExposure`; `uMiddle` in `shaders/blackhole.ts`). The middle is what a glint covers
+     round the centre, and the bright ring at the least. Close by, the hottest ring is shown as
+     the glowing surface it is (`DISK_KEY`); once that would leave the middle with less light than
+     a glint holds (`GLINT_LEVEL` times white over `GLINT_AREA`: a brilliant point with a tight
+     glare), it has a glint's light, from any distance, until the eye wide open has no more to
+     give; then it fades as a star does. Its light only ever falls as the eye moves off, with no
+     step, and is the same coming and going. The limit lets go outwards as r^3/4, as the light of
+     the hottest disk falls off: nothing is drawn brighter farther out than nearer in. The scene's
+     exposure holds the rest of the disk as before (part 4's rules stand).
+   - *What the frame's pixels do not resolve is traced on its own, finer* (`BlackHoleLayer`:
+     `miniatures`; `MINI_*` in `shaders/blackhole.ts`). A window round the hole is traced into a
+     picture of 256 x 256 with the same tracing as the frame's (`BH_TRACE`), and brought down to
+     the frame's pixels: by its mip levels where the window is some pixels wide, as a point
+     summed over each pixel's area where it is one or two (`PSF_ON_PIXEL`, the stars' own). The
+     frame's samples of the window are dropped by as much as the miniature shows, so the two
+     share the disk's light out once; it takes over gradually as the window shrinks from 64 of
+     the frame's pixels in half-width to 32. What is seen past the hole is in the miniature too,
+     wherever it shows a picture (`uBehind`): beside the shadow the sky is squeezed into less
+     than a pixel, and one sample found all of a pixel lit by a star's second picture or none
+     (at A0620-00 one pixel on the hole was up to 98 times white for a twelfth of the way in,
+     by its companion a quarter of the sky off: a fifth more light in the glint, and with the
+     eye moving fast 2.7 times the light for a frame). A hole too far off to bend the sky is drawn
+     by its miniature alone (`BlackHoleLayer.far`), down to the light of the faintest star shown;
+     and a miniature is traced from no farther off than a thousand half-widths of its window
+     (`EYE_REACHES`: from farther the picture is the same and 32-bit numbers no longer tell the
+     sight lines apart: M87*'s far glint was twice too bright at 8,800 light years and gone by
+     40,000, where it is now level from 1,200 to 71,000 and fades as a star does beyond). Light
+     too strong for the frame's numbers is brought down as a whole (`withinRange`): the hue
+     holds.
+   - *The jets are a glow along the sight line* (`shaders/jet.ts`, `Jets.ts`). They were the
+     surface of a tube, shaded by the angle its wall makes with the eye, brighter on the side
+     towards the Sun (fifty million light years off) than on the other, and part of the
+     surroundings the hole bends. Now every pixel of the tube that holds a pair sums the glow
+     along its own line: a bright spine, threads and knots, soft edges, from any side and from
+     inside. The gas coming towards the eye is the brighter (from the side both jets show alike);
+     where a hole is drawn with its bending of light, that pass draws the jets itself, in front of
+     the hole and behind it. Physical: the shape (the parabola measured for M87, then a narrow
+     cone), the spine, the beaming. Stylised: how bright, the speed of the gas (0.7 of light's:
+     M87's own would leave nothing of the far jet from most places), how slowly it fades
+     outwards, the knots.
+   - *How bright the glint is, is stylised* and should be said: a real point is four times
+     brighter from half as far, which no display follows over six decades; from where the disk
+     stops being a surface to where the eye is wide open, it is held at one light (as the
+     brightest stars are held at three times white).
+   - `scripts/exposure.mjs` comes up to five holes and goes away again (`APPROACHES`: M87* from a
+     hundred light years to six radii, Sagittarius A*, the quasar 3C 273, Cygnus X-1, A0620-00),
+     16 % nearer a frame and 45 % farther on the way out. The hole's light is read from the frame
+     as it is before the bloom and the tone curve (`Renderer.lightAt`: the screen shows a glint
+     and a ball a thousand times too bright alike, as white). While the hole is small: a point
+     with a tight glare from afar, no leap from one frame to the next, no falling back on the way
+     in, the same going away as coming, one colour; and M87* from round its galaxy (40,000,
+     8,000 and 1,600 light years), a point alone, has the light it has from a hundred light
+     years. A hole with a companion star is come up to from where the star stands to one side:
+     from the side the catalogue's link arrives on, Cygnus X-1's supergiant is right behind the
+     hole, and the light round the hole is the star's. The turning scenes of part 3 had no
+     approach in them, which is how this got through twice. Unit tests: `tests/exposure.test.ts`
+     (the middle), `tests/blackholes.test.ts` (which holes are drawn bending the sky, which as a
+     far point, the disk's brightness, the jets' shape).
+   - Verification (headless Chromium, software WebGL, against production builds, the suites one
+     at a time: other sessions were running theirs on the same four cores). The whole round, on
+     the tree as merged with the branch as it stood before the ship's and the live physics'
+     commits: 466 unit tests (the exposure's have a minute each where a test is given five
+     seconds: the longest, three seconds of arithmetic, ran out of time on the loaded machine in
+     the round before); exposure 77/77 (the 51 of part 5 and 26 for the approaches; on the build
+     of before the approaches fail 21 of their 26: a far-off hole was dark there, which passes
+     "a point, not a ball"); stars 18/18, start 34/34, interact 11/11, whatif 29/29, places
+     14/14, vr 32/32, touch 49/49 (48 at first, with other sessions' suites running: the pinch
+     that did not lift off, as in parts 4 and 5), game 20/20, walk 45/45, terrain 14/14, flight
+     19/19 (game and flight as those two suites then were). The 35 scenes of verify: 21 the
+     same picture, to the pixel, as in the run for part 5; the other 14 were taken on the
+     branch's tip without this work as well and differ from that run there too, by as much (a
+     star's face, a planet's clouds, a galaxy's glow, a disk's gas and the ship's instruments
+     move from one run to the next, and Cygnus X-1's companion is round since the stars' last
+     commit); against that tip this work changes the three scenes with a disk and no other:
+     Cygnus X-1's jets, near and far, a soft glow where a pale pole was, and at Sagittarius A*
+     the gas has moved. The branch then moved a third time (the relativistic ship, its dust at
+     speed, live physics); on the tree as merged with that: the type check, 526 unit tests,
+     stars 18/18 and exposure 77/77 again, and no other suite. (It moved once more as this went
+     out, by the trailer: nothing the app runs, and the build is the same bundle.)
+     Looked at besides, at the phone's size and three pixels to the CSS pixel: the recording
+     played again on the fixed build beside its own frames (a steady point with a tight glare
+     from 28 light years to 10, growing into the disk by 1.4; the glow 9 to 19 px wide where the
+     recording goes between 11 and 43), M87* on down to its horizon, Sagittarius A*, Cygnus X-1
+     and A0620-00 from far off down to theirs. Not tried on a real phone, nor in a headset.
+   - Seen and left: the glint does not brighten as the eye comes nearer until the disk is a
+     surface (stylised, as above). Where the scene's exposure is the lower it holds the middle
+     too: with Cygnus X-1's supergiant filling the frame behind the hole the disk's glint is
+     lost against the star (rightly), and after going away far faster than a pinch does the
+     glint is dim for a second while the eye opens. The rest of a hot disk, beyond its middle,
+     still follows the eye: going away fast, Cygnus X-1's is dimmer than at the same place
+     coming, for about a second. A bright star behind a hole comes from the environment maps
+     inside the hole's region, a face a frame while the eye moves: in a fast pinch its limb is
+     notched at the region's edge until the eye rests (older than this part; the notes say two
+     ways out). Where no miniature is shown (a hole large in the frame, or one without a disk)
+     a star's second picture beside the shadow still comes and goes a pixel at a time as the eye
+     moves. The names "M87" and "M87*" stand on each other and on the hole. From hundreds of
+     light years M87's jets are a hairline across the frame. (The sine hash of `Jets.ts` listed
+     under part 4 went with the old jets.)
+7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
    touch already), missions and the benchmark as screens of the app.
-7. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
+8. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.
-8. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
-9. App core: `app/App.ts` is 2,400 lines doing exposure, picking, labels, navigation, loading and
+9. Solar System model and body rendering (`universe/SolarSystem.ts`, `render/Bodies.ts`).
+10. App core: `app/App.ts` is 2,400 lines doing exposure, picking, labels, navigation, loading and
    the frame loop; to be split into modules behind the same behaviour (the eye's arithmetic, the
    loading's state, the worked-out facts and the what-if powers are out already: `Exposure.ts`,
    `Loading.ts`, `Worked.ts`, `WhatIf.ts`).
-10. Stars and sky (the rest). 11. Deep space (galaxies, nebulae, black holes, exoplanets).
-   12. Terrain, landing, walking. 13. Game mode. 14. VR.
+11. Stars and sky (the rest). 12. Deep space (galaxies, nebulae, black holes, exoplanets).
+   13. Terrain, landing, walking. 14. Game mode. 15. VR.
 
 To look at when their part comes (seen in the scenario screenshots): Pluto's lit side washes out to
 white from 12 radii; 51 Peg b shows a flat black disc on its cloud deck; the Sun's glare hides the

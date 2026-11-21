@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, CustomToneMapping, DepthTexture, FloatType, Group, HalfFloatType, LinearFilter, Mesh, NoBlending, NoToneMapping,
+  AdditiveBlending, CustomToneMapping, DataUtils, DepthTexture, FloatType, Group, HalfFloatType, LinearFilter, Mesh, NoBlending, NoToneMapping,
   type Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, Quaternion, RGBAFormat, Scene, ShaderMaterial, Vector2,
   Vector3, WebGLCoordinateSystem, WebGLRenderer, WebGLRenderTarget,
 } from 'three';
@@ -543,5 +543,23 @@ ${OUTPUT_FRAGMENT}
 
   screenshot(): string {
     return this.canvas.toDataURL('image/png');
+  }
+
+  /**
+   * The light the last frame holds round a point of the view, before the glow is added and the
+   * tone curve applied: red, green and blue of every pixel within `reach` CSS pixels of (x, y)
+   * each way, row by row. For measuring what is drawn (scripts/exposure.mjs): the screen shows
+   * anything above white as white, and cannot tell a glint from a ball of light a thousand times
+   * too bright. Empty in a headset, which has no such frame.
+   */
+  lightAt(x: number, y: number, reach: number): Float32Array {
+    if (this.presenting) return new Float32Array(0);
+    const ratio = this.pixelRatio * this.renderScale;
+    const half = Math.max(1, Math.round(reach * ratio)), n = 2 * half + 1;
+    const raw = new Uint16Array(n * n * 4);
+    this.gl.readRenderTargetPixels(this.hdr, Math.round(x * ratio) - half, this.height - 1 - Math.round(y * ratio) - half, n, n, raw);
+    const out = new Float32Array(n * n * 3);
+    for (let i = 0; i < n * n; i++) for (let k = 0; k < 3; k++) out[i * 3 + k] = DataUtils.fromHalfFloat(raw[i * 4 + k]);
+    return out;
   }
 }

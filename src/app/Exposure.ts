@@ -10,7 +10,8 @@ import { discCovered } from '../core/discs';
  * the edge of what shines to the edge of the frame, and nothing switches: a limit holds while any
  * of the source is in view, and lets go gradually as the source moves a margin beyond the edge.
  * Worlds and stars are balls (seen); an accretion disk is flat, and wide enough to be flown
- * into (diskSeen, diskLimit).
+ * into (diskSeen, diskLimit). Its middle, the brightest thing there is, has a limit of its own
+ * that is no matter of adapting: a place in space has one answer (diskMiddle, middleLimit).
  *
  * Pure geometry and arithmetic (tests/exposure.test.ts); src/app/App.ts gathers the sources.
  */
@@ -312,6 +313,68 @@ export function diskLimit(disk: DiskSeen, radiance: (radius: number, approach: n
     if (coverage >= FILL && presence >= 1) break;
   }
   return limit;
+}
+
+/**
+ * A glint: the light a source too small to make out is shown with, that of a patch GLINT_AREA
+ * wide (CSS pixels squared: five across) at GLINT_LEVEL times white. That is a brilliant point
+ * with a tight glare round it. With more, the glare is a ball that hides whatever is near (the
+ * far-off middle of M87*'s disk, given the light of a patch FILL wide, was one a third of a
+ * phone's frame across).
+ */
+export const GLINT_AREA = 24;
+export const GLINT_LEVEL = 6.3;
+/** a disk seen edge on still shows this share of its face: its far side, which gravity lifts into view over the hole */
+const EDGE_ON = 0.1;
+
+/** The middle of a disk as the eye takes it (diskMiddle). */
+export interface DiskMiddle {
+  /** its radius on the disk (m) */
+  radius: number;
+  /** the most its gas comes towards the eye, on the side that does (as DiskSeen.approach) */
+  approach: number;
+  /** the solid angle it takes as seen (sr) */
+  solidAngle: number;
+  /** 1 while any of it is in the frame, falling to 0 as it moves a margin beyond the edge */
+  presence: number;
+}
+
+/**
+ * The middle of a disk: what a patch the size of a glint takes in round its centre, and its
+ * bright ring (`ring`: its radius, m) at the least. From far off that is the whole disk; close
+ * by, the part round the hole that outshines the rest. `rel`: from the eye to the centre;
+ * `normal`: of the disk's plane; `pixel`: the solid angle of a CSS pixel (sr). `scratch` is
+ * overwritten.
+ */
+export function diskMiddle(rel: Vector3, normal: Vector3, ring: number, frame: Frame, pixel: number, scratch: Vector3, inverse: Quaternion): DiskMiddle {
+  const dist = Math.max(rel.length(), 1e-30);
+  const sine = Math.abs(rel.dot(normal)) / dist;
+  const face = Math.max(sine, EDGE_ON);
+  // (the part of the disk's plane that fills a glint's solid angle from here, at this slant)
+  const radius = Math.max(ring, dist * Math.sqrt((GLINT_AREA * pixel) / (Math.PI * face)));
+  return {
+    radius,
+    approach: Math.sqrt(Math.max(0, 1 - sine * sine)),
+    solidAngle: (Math.PI * radius * radius * face) / (dist * dist),
+    presence: seen(rel, radius, frame, scratch, inverse).presence,
+  };
+}
+
+/**
+ * The most the middle of a disk is drawn with (log exposure; Infinity for no limit), whatever
+ * else the eye is set for. As the glowing surface it is, its hottest ring (of radiance `ring`)
+ * is shown at `level`. Once that would leave the middle with less light in all than a glint
+ * holds, it is given a glint's light instead: as the disk shrinks into the distance it turns into
+ * a brilliant point and stays one, until the eye wide open (`open`) has no more to give and it
+ * fades as a star does. So the light of the middle only ever falls as the eye moves off, and is
+ * what it is at any one place: this is no matter of adapting. `radiance` as for diskLimit;
+ * `inner`: the disk's inner radius (m); `pixel`: the solid angle of a CSS pixel (sr).
+ */
+export function middleLimit(middle: DiskMiddle, radiance: (radius: number, approach: number) => number, inner: number, ring: number, level: number, pixel: number, open: number): number {
+  const mean = diskMean(radiance, inner, middle.radius, middle.approach);
+  if (!(mean > 0) || !(ring > 0)) return Infinity;
+  const glint = Math.log((GLINT_LEVEL * GLINT_AREA * pixel) / (mean * middle.solidAngle));
+  return released(Math.max(Math.log(level / ring), glint), open, middle.presence);
 }
 
 /** the exposure opens up in the dark over about this long (s), and shuts down for something bright over this */

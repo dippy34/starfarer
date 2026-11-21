@@ -87,8 +87,8 @@ float psfSetup(float irradiance, out float energy) {
 }
 `;
 
-export const PSF_FRAGMENT = /* glsl */ `
-${PSF_CORE}
+/** A point's light summed over a pixel's area (shared with whatever else is drawn as a point). */
+export const PSF_ON_PIXEL = /* glsl */ `
 // erf (Winitzki's approximation, within 2e-4), and with it the share of a Gaussian of width s,
 // centred x from a pixel's middle, that falls on that pixel (all in the screen's pixels)
 float psfErf(float x) {
@@ -99,6 +99,11 @@ float psfOnPixel(float x, float s) {
   float k = 0.70710678 / s;
   return 0.5 * (psfErf((x + 0.5) * k) - psfErf((x - 0.5) * k));
 }
+`;
+
+export const PSF_FRAGMENT = /* glsl */ `
+${PSF_CORE}
+${PSF_ON_PIXEL}
 vec3 psfShade(vec2 pointCoord, float radius, float energy, vec3 color) {
   vec2 p = (pointCoord - 0.5) * 2.0 * radius;   // CSS pixels from centre
   float r2 = dot(p, p);

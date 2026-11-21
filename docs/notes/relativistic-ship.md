@@ -295,7 +295,7 @@ work is in progress, so it was left for the round that owns them. What it needs,
 * **Checks to add**: the star suite and every suite that draws stars, unchanged with x = 0; at
   γ = 10 the stars' density ahead rises by D² where it should.
 
-Also left: flying the ship by hand on a phone (part 6 of the clean-up: a thumb-stick, the
+Also left: flying the ship by hand on a phone (part 7 of the clean-up: a thumb-stick, the
 throttle, SAS; boarding, the drive's setting and the autopilot are on touch now); the instruments
 were checked in an emulated phone only (Chromium at 390×844, three pixels to the CSS pixel), not on
 an iPhone; the panel covers the upper half of a phone's screen in the ship (a smaller layout, or a

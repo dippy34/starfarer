@@ -265,8 +265,9 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   away from the Sun, a planet's rings or a black hole's disk, and back, never flashes
   (`src/app/Exposure.ts`, `scripts/exposure.mjs`). A sun in the frame puts out the stars but not
   the worlds beside it; a sun behind a world holds nothing (in a planet's shadow the stars are
-  out and its night side is there to be seen); a far-off accretion disk is a glint, not a
-  white-out; and inside a galaxy its light is a glow with a brighter middle, not a fog.
+  out and its night side is there to be seen); a far-off accretion disk is a steady glint, the
+  same coming and going, that grows into the disk as you come near, not a ball of light that
+  swells and shrinks; and inside a galaxy its light is a glow with a brighter middle, not a fog.
 * Stars are sharp points on any screen: each one's light is summed over the pixels it falls on, at
   the screen's own density; the bright ones are white-hot points in a soft glow, not disks.
 
@@ -305,7 +306,11 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   Gaia BH1–3, Sagittarius A\*, M87\*) with their companion stars on their real orbits. Light is traced
   past each hole in the Schwarzschild metric per pixel, so the sky behind it bends into Einstein rings,
   the far side of the accretion disk arcs over the shadow, and Doppler beaming brightens the side
-  coming towards you. Search for them, or open the **Deep space** tab in the VR menu.
+  coming towards you. From too far off to make the disk out, a hole is a brilliant point holding
+  the light of the disk it grows into; the jets of M87\* and of the microquasars are a glow seen
+  through, brighter on the side whose gas comes towards you (their brightness, like the glint's, is
+  set for the display: see `docs/notes/black-hole-lighting.md`). Search for them, or open the
+  **Deep space** tab in the VR menu.
 * The whole Milky Way: a parametric model of the galaxy (thin and thick disks, the boxy bar, four
   spiral arms and the local spur, dust, the nuclear star cluster around Sgr A\*) drives both the
   galaxy's unresolved glow — ray-marched through the dust into a cube map, cross-fading from the

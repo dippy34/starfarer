@@ -10,6 +10,16 @@
 //   - the stars come out over a moment, not in one frame; and after a sun has left, within a second
 //     (a sun's own face has an exposure of its own: the worlds beside it keep theirs)
 //   - turning back, the frame does not flash white
+//
+// Coming up to a black hole and going away again, as a pinch does (APPROACHES): turning the view
+// was all the scenes above did, and a far-off hole whose glow swelled, shrank and changed colour
+// as the eye moved got past them. From a hundred light years (for M87*) to the horizon's doorstep
+// and back, a frame at a time, the light round the hole is measured:
+//   - it is a point with a tight glare from afar, not a ball of light
+//   - it is steady: no leap from one frame to the next, and no falling back as the eye comes nearer
+//   - it is a matter of where the eye is: the same going away, fast, as it was coming
+//   - its colour holds
+//   - from far outside (M87* from round its galaxy), where it is a point alone, it has the same light
 // Usage: node scripts/exposure.mjs [baseUrl] [outDir] [scene...]   (frames are saved to outDir/<scene>)
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
@@ -138,6 +148,165 @@ for (const scene of SCENES) {
   check(`${scene.label}: turning back does not flash`, flash.burnt <= at.burnt + 0.03 && Math.max(...back.map((f) => f.mean)) <= Math.max(at.mean, sky) * 1.35 + 8,
     `most burnt-out frame ${(flash.burnt * 100).toFixed(1)} %, brightest frame ${Math.max(...back.map((f) => f.mean)).toFixed(0)} (looking at it ${at.mean.toFixed(0)}, the sky alone ${sky.toFixed(0)})`);
   check(`${scene.label}: looking at it again it looks as it did`, Math.abs(again.x - at.x) < 0.05 && Math.abs(again.mean - at.mean) < 0.06 * at.mean + 2, `exposure x${Math.exp(again.x - at.x).toFixed(3)}, brightness ${at.mean.toFixed(1)} -> ${again.mean.toFixed(1)}`);
+  await page.close();
+}
+
+/**
+ * The holes come up to: from how far, and how near (in Schwarzschild radii), and how far out the
+ * disk is bright (`bright`, radii: a cool disk's glow is its inner ring; Cygnus X-1's, at millions
+ * of degrees inside, is still hotter than a star's face a thousand radii out). A hole with a star
+ * for a companion is come up to from where the star stands to one side of it, 25 degrees above
+ * the disk: with the star behind the hole, or in front of it, the light round the hole is the
+ * star's. (Cygnus X-1's is a supergiant two fifths as wide as the two are apart: from farther off
+ * than this its glare is over the hole from every side.) `outside`: places far beyond where the
+ * hole bends the sky by a pixel, where its disk is a point of light and nothing else is drawn of
+ * it (for M87*: 40,000, 8,000 and 1,600 light years, in and round its galaxy).
+ */
+const APPROACHES = [
+  { id: 'approach-m87', label: 'M87*', target: 'M87*', outside: [2e7, 4e6, 8e5], far: 5e4, near: 6, bright: 16 },
+  { id: 'approach-sgr-a', label: 'Sagittarius A*', target: 'Sagittarius A*', far: 5e4, near: 6, bright: 16 },
+  { id: 'approach-quasar', label: 'the quasar 3C 273', target: '3C 273', far: 5e4, near: 6, bright: 16 },
+  { id: 'approach-cygnus-x1', label: 'Cygnus X-1', target: 'Cygnus X-1', far: 2e6, near: 6, bright: 800 },
+  { id: 'approach-a0620', label: 'A0620-00, a quiet disk', target: '3A 0620-003', far: 1e6, near: 6, bright: 16 },
+];
+/** (the height above the disk a hole with a companion is come up to from, degrees) */
+const ABOVE = 25;
+/** each frame comes this much nearer on the way in, and goes this much farther on the way out (a quick pinch) */
+const IN = 0.84, OUT = 1.45;
+/**
+ * The hole's light is measured in the frame as it is before the glow and the tone curve
+ * (Renderer.lightAt: the screen shows a glint and a ball a thousand times too bright alike, as
+ * white), within NEAR CSS px of the hole each way; its glare on the screen, within WIDE.
+ */
+const NEAR = 8, WIDE = 60;
+
+for (const hole of APPROACHES) {
+  if (only.length && !only.includes(hole.id)) continue;
+  const dir = path.join(outDir, `exposure-${hole.id}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  collectErrors(page, errors);
+  await page.goto(`${base}?menu=0&time=2026-10-01T20:00:00Z&target=${encodeURIComponent(hole.target)}&dist=${hole.outside?.[0] ?? hole.far}`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.app && window.app.frameCount > 30, null, { timeout: 600000 });
+  // (a hole of the catalogue's is looked up before the view goes to it)
+  await page.waitForFunction((name) => window.app.rig.target?.name === name, hole.target, { timeout: 180000 });
+  await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 180000 }).catch(() => undefined);
+  await page.evaluate((above) => {
+    const a = window.app, r = a.rig, t = r.target;
+    a.renderer.gl.setAnimationLoop(null);
+    a.hud.setHidden(true);
+    a.labels.enabled = false;
+    a.orbits.enabled = false;
+    if (!t.companion) return;
+    // the line the eye comes in on: across from where the star is, above the disk; the star to the left
+    const up = t.diskNormal.clone().normalize();
+    const line = up.clone().cross(t.companion.upos.sub(t.upos)).normalize().multiplyScalar(Math.cos(above)).addScaledVector(up, Math.sin(above));
+    const dist = r.upos.sub(t.upos).length();
+    r.upos.copy(t.upos).addVec(line, dist);
+    r.lookAt(line.clone().negate(), up);
+  }, (ABOVE * Math.PI) / 180);
+  // one frame with the eye `dist` radii from the hole (on the line it is on), and the hole's light in it
+  const frame = (dist) => page.evaluate(async ([dist, near, wide]) => {
+    const a = window.app, r = a.rig, t = r.target;
+    const from = r.upos.sub(t.upos);
+    r.upos.copy(t.upos).addVec(from.normalize(), dist * t.radius);
+    await new Promise((res) => setTimeout(res, 105));
+    a.frame();
+    const at = a.project(t.upos.sub(r.upos));
+    // what is behind the hole: the middle value round the edge of a square, colour by colour
+    const behind = (px, n, step) => {
+      const edge = [[], [], []];
+      for (let i = 0; i < n; i++) for (const j of [i, (n - 1) * n + i, i * n, i * n + n - 1]) for (let k = 0; k < 3; k++) edge[k].push(px[j * step + k]);
+      return edge.map((e) => e.sort((p, q) => p - q)[e.length >> 1]);
+    };
+    const luminance = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    // its own light: what the frame holds round it, over what is behind it
+    const held = a.renderer.lightAt(at.x, at.y, near);
+    const under = behind(held, Math.sqrt(held.length / 3), 3);
+    const light = [0, 0, 0];
+    for (let i = 0; i < held.length; i += 3) for (let k = 0; k < 3; k++) light[k] += Math.max(0, held[i + k] - under[k]);
+    // its glare on the screen: the pixels round it shown white, and those lifted clear of what is behind
+    const w = r.viewport.width, h = r.viewport.height;
+    const c = window.__meter ?? (window.__meter = Object.assign(document.createElement('canvas'), { width: w, height: h }));
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(a.renderer.gl.domElement, 0, 0, w, h);
+    const n = 2 * wide;
+    const shown = Array.from(g.getImageData(Math.round(at.x) - wide, Math.round(at.y) - wide, n, n).data, (v) => (v <= 10 ? v / 3294.6 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+    const dark = luminance(behind(shown, n, 4));
+    let white = 0, lifted = 0;
+    for (let i = 0; i < shown.length; i += 4) {
+      const y = luminance([shown[i], shown[i + 1], shown[i + 2]]);
+      if (y >= 0.83) white++;
+      if (y >= dark + 0.25) lifted++;
+    }
+    return { dist, light: luminance(light), blue: light[2] / Math.max(light[0], 1e-9), white, lifted, x: Math.log(a.debugState().exposure) };
+  }, [dist, NEAR, WIDE]);
+  const log = [];
+  const rec = async (dist, phase) => {
+    log.push({ i: log.length, phase, ...(await frame(dist)) });
+    if (log.length % 4 === 1) await page.screenshot({ path: path.join(dir, `f${String(log.length - 1).padStart(3, '0')}.png`) });
+  };
+  // from far outside first, the eye given time at each place (it has the most to do at the first)
+  const outside = [];
+  for (const [k, d] of (hole.outside ?? []).entries()) {
+    for (let i = 0; i < (k ? 10 : 24); i++) await frame(d);
+    outside.push(await frame(d));
+  }
+  for (let i = 0; i < 25; i++) await frame(hole.far);       // settle on it
+  let dist = hole.far;
+  await rec(dist, 'in');
+  while (dist > hole.near) { dist = Math.max(hole.near, dist * IN); await rec(dist, 'in'); }
+  while (dist < hole.far) { dist = Math.min(hole.far, dist * OUT); await rec(dist, 'out'); }
+  fs.writeFileSync(path.join(dir, 'log.json'), JSON.stringify(log));
+
+  // --- what the frames must show while the hole is small in the frame: the bright part of its
+  // disk well inside the square its light is measured in
+  const pixel = (2 * Math.tan((35 * Math.PI) / 180)) / 844;
+  const small = (f) => hole.bright / (f.dist * pixel) < 0.6 * NEAR;
+  const coming = log.filter((f) => f.phase === 'in' && small(f)), going = log.filter((f) => f.phase === 'out' && small(f));
+  const where = (f) => `${f.dist.toPrecision(3)} radii`;
+  // from afar: a point with a tight glare
+  const afar = coming.slice(0, 4);
+  const widest = afar.reduce((m, f) => (f.lifted > m.lifted ? f : m), afar[0]);
+  check(`${hole.label}: from afar it is a point with a tight glare, not a ball of light`, afar.every((f) => f.lifted <= 500 && f.white <= 60),
+    `at most ${widest.lifted} px lifted clear of what is behind, ${Math.max(...afar.map((f) => f.white))} px white (at ${where(widest)})`);
+  // no leap between frames, and no falling back on the way in (a disk's light sways with the eye's
+  // distance, as its middle takes in fewer of its arms and streaks: by a quarter at the most, in
+  // the runs so far; before, it leapt sevenfold and more and fell to a half and less)
+  let leap = { by: 0, at: coming[0] }, fall = { by: 0, at: coming[0] }, most = coming[0].light;
+  for (let i = 1; i < coming.length; i++) {
+    const by = Math.abs(Math.log(coming[i].light / coming[i - 1].light));
+    if (by > leap.by) leap = { by, at: coming[i] };
+    most = Math.max(most, coming[i - 1].light);
+    const back = Math.log(most / coming[i].light);
+    if (back > fall.by) fall = { by: back, at: coming[i] };
+  }
+  check(`${hole.label}: coming nearer, its light never leaps from one frame to the next`, leap.by < 0.5, `largest step x${Math.exp(leap.by).toFixed(2)} at ${where(leap.at)}`);
+  check(`${hole.label}: coming nearer, its light never falls back`, fall.by < 0.36, `at the least x${Math.exp(-fall.by).toFixed(2)} of what it had been, at ${where(fall.at)}`);
+  // going away fast, it is what it was at each place on the way in
+  let off = { by: 0, at: going[0] };
+  for (const f of going) {
+    const k = coming.findIndex((c) => c.dist <= f.dist);
+    if (k < 1) continue;
+    const a = coming[k - 1], b = coming[k];
+    const was = Math.exp(Math.log(a.light) + ((Math.log(b.light) - Math.log(a.light)) * Math.log(f.dist / a.dist)) / Math.log(b.dist / a.dist));
+    const by = Math.abs(Math.log(f.light / was));
+    if (by > off.by) off = { by, at: f };
+  }
+  check(`${hole.label}: going away fast, its light is what it was at each place coming`, off.by < 0.45, `off by x${Math.exp(off.by).toFixed(2)} at most, at ${where(off.at)}`);
+  // (by a quarter at the most: a blue disk's blue is four times its red, an orange one's half)
+  const blues = [...coming, ...going].map((f) => f.blue);
+  check(`${hole.label}: its colour holds`, Math.max(...blues) < 1.25 * Math.min(...blues), `blue to red of its light ${Math.min(...blues).toFixed(2)} to ${Math.max(...blues).toFixed(2)}`);
+  // from far outside, a point alone, it has the light it has from where the approach begins (it
+  // was twice that at 8,800 light years and gone by 40,000 while its sight lines were traced from
+  // where the eye is: too far off for 32-bit numbers)
+  if (outside.length) {
+    const from = [...outside, log[0]];
+    check(`${hole.label}: from far outside, a point alone, its glint has the light it has from nearer`, Math.max(...from.map((f) => f.light)) < 1.3 * Math.min(...from.map((f) => f.light)),
+      from.map((f) => `${f.light.toFixed(0)} at ${where(f)}`).join(', '));
+  }
+  const lights = coming.map((f) => f.light);
+  console.log(`  (${hole.label}: ${log.length} frames, ${coming.length} coming and ${going.length} going with the hole small; its light ${Math.min(...lights).toFixed(0)} to ${Math.max(...lights).toFixed(0)})`);
   await page.close();
 }
 
