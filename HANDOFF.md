@@ -334,7 +334,7 @@ running (a build, not the dev server: an edit reloads the page under a running s
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
-`vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 14),
+`vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 15),
 `terrain` (14), `flight` (28). At most three at a time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
@@ -951,6 +951,16 @@ above is validated against JPL Horizons and stays as it is unless something is w
        planet of another star it was lit by the Sun, light years off, and was the "flat black
        disc on 51 Peg b's cloud deck" once listed below. `scripts/interact.mjs` checks the name
        and its going with the names (12 checks now).
+     - *Saturn's limb through its rings*: a thin dark arc across the rings where they pass in
+       front of the planet's edge (the trailer's shot of 15 June 2017). The air shell is drawn
+       after the rings (it dims what is behind it) and the rings write no depth, so it dimmed
+       them too. The shell of a ringed world now knows its rings (`AtmospheresLayer.rings`, from
+       `BodiesLayer.ringsOf`; `RINGS` in `shaders/atmosphere.ts`): where a sight line meets the
+       ring plane before the air, the air's light and its dimming are cut by what the ring lets
+       through. `scripts/places.mjs` measures the rings in front of the limb with the air and
+       without (15 checks now): on the build of before 1.5 % of those pixels lost a tenth of their
+       light or more, the worst 71 % (at a phone's density 9 %, the worst 95 %); now 0.1 %, the
+       worst 12 % (0.6 % and 19 %).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
    touch already), missions and the benchmark as screens of the app.

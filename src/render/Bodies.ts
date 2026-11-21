@@ -365,6 +365,18 @@ export class BodiesLayer {
     return m && ((m.material as ShaderMaterial).uniforms.uHasNight.value as number) > 0.5 ? CITY_LIGHT : 0;
   }
 
+  /**
+   * A body's rings, for what is drawn after them (its atmosphere shell): their opacity profile (null
+   * until the rings are first drawn) and their inner and outer radius in equatorial radii. null if
+   * it has none.
+   */
+  ringsOf(b: Body): { tex: Texture | null; inner: number; outer: number } | null {
+    const ring = this.rings_[b.name.toLowerCase()];
+    if (!ring) return null;
+    const req = b.radii[0];
+    return { tex: this.rings.has(b) ? this.ringTex : null, inner: (ring.innerKm * 1e3) / req, outer: (ring.outerKm * 1e3) / req };
+  }
+
   /** The outer radius of a body's rings (m); 0 if it has none. */
   ringOuter(b: Body): number {
     return (this.rings_[b.name.toLowerCase()]?.outerKm ?? 0) * 1e3;

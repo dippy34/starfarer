@@ -83,6 +83,60 @@ await frames(4);
 st = await page.evaluate(() => window.app.bodies.ringParticles?.mesh.visible ?? false);
 check('particles are only drawn inside the ring layer', st === false);
 
+// 4b. Saturn from 6 radii, 20 degrees above its sunlit rings: where the rings pass in front of the
+// limb, the planet's air (drawn after them) leaves them as they are. It used to dim them there: a
+// thin dark arc across the rings (on the build of before, 1.5 % of these pixels lost a tenth or
+// more of their light, the worst 71 %; now 0.1 %, the worst 12 %).
+{
+  await page.evaluate(() => {
+    const a = window.app, S = a.findByName('Saturn');
+    const V = S.upos.sub(S.upos).constructor;
+    const p = new V().setFromMatrixColumn(S.orientation, 2).normalize();
+    const s = a.system.sun.upos.sub(S.upos).normalize();
+    if (s.dot(p) < 0) p.negate();
+    const flat = s.clone().addScaledVector(p, -s.dot(p)).normalize();
+    const D = Math.PI / 180;
+    const d = flat.applyAxisAngle(p, 60 * D).multiplyScalar(Math.cos(20 * D)).addScaledVector(p, Math.sin(20 * D)).normalize();
+    a.select(S);
+    a.rig.upos.copy(S.upos).addVec(d, S.radius * 6);
+    a.rig.lookAt(d.clone().negate(), p);
+    a.rig.target = S; a.rig.setAnchor(S);
+  });
+  await frames(8);
+  // the pixels whose sight line meets the dense B ring and then passes through the air beside the limb
+  const pts = await page.evaluate(() => {
+    const a = window.app, S = a.findByName('Saturn');
+    const A = S.radii[0], C = S.radii[2];
+    const R = S.orientation.clone().transpose();
+    const o = a.rig.upos.sub(S.upos).applyMatrix4(R);
+    const c = a.project(S.upos.sub(a.rig.upos));
+    const out = [];
+    for (let k = 0; k < 720; k++) {
+      const th = (k / 720) * 2 * Math.PI;
+      for (let r = 20; r < 400; r += 0.25) {
+        const x = c.x + r * Math.cos(th), y = c.y + r * Math.sin(th);
+        const dir = a.rig.ray(x, y).applyMatrix4(R).normalize();
+        const os = o.clone(); os.z *= A / C; const ds = dir.clone(); ds.z *= A / C; ds.normalize();
+        const tc = -os.dot(ds), miss = Math.sqrt(Math.max(0, os.lengthSq() - tc * tc));
+        if (miss < A || miss > A + 540e3) continue;
+        const tr = -o.z / dir.z, hit = o.clone().addScaledVector(dir, tr), rr = Math.hypot(hit.x, hit.y);
+        if (tr > 0 && tr < tc && rr > 94000e3 && rr < 115000e3) out.push([x, y]);
+      }
+    }
+    return out;
+  });
+  const light = () => page.evaluate((pts) => pts.map(([x, y]) => { const v = window.app.renderer.lightAt(x, y, 0); return v[0] + v[1] + v[2]; }), pts);
+  const withAir = await light();
+  await page.evaluate(() => { window.app.atmospheres.group.visible = false; });
+  await frames(3);
+  const without = await light();
+  await page.evaluate(() => { window.app.atmospheres.group.visible = true; });
+  const ratio = withAir.map((v, i) => v / Math.max(without[i], 1e-9)).sort((x, y) => x - y);
+  const dimmed = ratio.filter((v) => v < 0.9).length / Math.max(ratio.length, 1);
+  check('Saturn\'s air does not darken its rings in front of the limb', ratio.length > 100 && dimmed < 0.005 && ratio[0] > 0.6, JSON.stringify({ n: ratio.length, dimmed: +dimmed.toFixed(4), least: +ratio[0]?.toFixed(3) }));
+  await page.screenshot({ path: path.join(outDir, 'p2b-saturn-limb.png') });
+}
+
 // 5. a comet near the Sun: coma and tails (the brightest active one in the catalogue right now)
 st = await page.evaluate(() => {
   const a = window.app;

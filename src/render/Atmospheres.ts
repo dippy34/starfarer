@@ -1,6 +1,6 @@
 import {
   BackSide, CustomBlending, FrontSide, Group, Matrix3, Matrix4, Mesh, OneFactor, OneMinusSrcAlphaFactor, ShaderMaterial,
-  SphereGeometry, Vector3,
+  SphereGeometry, type Texture, Vector3,
 } from 'three';
 import { sunIrradianceAt } from '../astro/photometry';
 import type { Body } from '../universe/Body';
@@ -90,6 +90,9 @@ export function atmosphereFor(b: Body, data: AtmosphereData): AtmosphereSpec | n
 
 interface Shell { body: object; spec: AtmosphereSpec; mesh: Mesh; mat: ShaderMaterial }
 
+/** A planet's rings as the shell needs them (BodiesLayer.ringsOf): opacity profile, radii in equatorial radii */
+export type ShellRings = { tex: Texture | null; inner: number; outer: number } | null;
+
 /** A world of another star with an atmosphere, as placed this frame (render/ExoPlanetLayer.ts). */
 export interface ExoAtmosphere {
   key: object;
@@ -124,6 +127,12 @@ export class AtmospheresLayer {
   private geo = new SphereGeometry(1, 96, 48);
   /** ray-march steps (fewer in VR) */
   steps = 16;
+  /**
+   * The rings of a world (set by the app from BodiesLayer.ringsOf). The shell is drawn after the
+   * rings and they write no depth, so without them it dimmed the rings where they pass in front of
+   * the limb: a thin dark arc across Saturn's rings (shaders/atmosphere.ts, RINGS).
+   */
+  rings: (b: Body) => ShellRings = () => null;
 
   constructor(private system: SolarSystem, private data: AtmosphereData, private exposure: { value: number }, private sunColor: [number, number, number]) {
     this.group.name = 'atmospheres';
@@ -137,14 +146,16 @@ export class AtmospheresLayer {
     const s = this.shells.get(b);
     if (s) return s;
     const spec = atmosphereFor(b, this.data);
-    return spec ? this.makeShell(b, b.name, b.radii[0], spec) : null;
+    return spec ? this.makeShell(b, b.name, b.radii[0], spec, this.rings(b) !== null) : null;
   }
 
-  private makeShell(key: object, name: string, radius: number, spec: AtmosphereSpec): Shell {
+  private makeShell(key: object, name: string, radius: number, spec: AtmosphereSpec, ringed = false): Shell {
     let s: Shell;
     const mat = new ShaderMaterial({
       vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG,
+      defines: ringed ? { RINGS: 1 } : {},
       uniforms: {
+        uRingTex: { value: null }, uRingRadii: { value: new Vector3() },
         uO: { value: new Vector3() }, uToBody: { value: new Matrix3() }, uSun: { value: new Vector3() },
         uRp: { value: radius }, uRt: { value: radius + spec.top },
         uBetaR: { value: new Vector3(...spec.betaR) }, uHR: { value: spec.HR },
@@ -241,6 +252,11 @@ export class AtmospheresLayer {
       u.uHM.value = s.spec.HM;
       u.uRp.value = a;
       u.uRt.value = a + s.spec.top;
+      const rings = s.mat.defines.RINGS ? this.rings(b) : null;
+      if (rings) {
+        u.uRingTex.value = rings.tex;
+        (u.uRingRadii.value as Vector3).set(rings.tex ? rings.inner : 0, rings.tex ? rings.outer : 0, c / a);
+      }
       rot.setFromMatrix4(b.orientation);
       const toBody = rot.clone().transpose();
       // scaled frame: body frame with z multiplied by a/c

@@ -314,6 +314,7 @@ export class App {
     const sl = luminance(sc);
     const atmospheres = new AtmospheresLayer(system, atmoData, bodies.surfaceExposure, [sc[0] / sl, sc[1] / sl, sc[2] / sl]);
     bodies.atmosphere = (b) => atmospheres.spec(b);
+    atmospheres.rings = (b) => bodies.ringsOf(b);
     app.sky = sky;
     app.skyMap = skyMap;
     app.atmospheres = atmospheres;

@@ -56,6 +56,10 @@ uniform vec3 uSunColor;
 uniform float uExposure;
 uniform float uGroundMix; // 1 = full aerial perspective over the disk; <1 when the map already shows the atmosphere
 uniform int uSteps;
+#ifdef RINGS
+uniform sampler2D uRingTex; // the rings' opacity profile (render/Bodies.ts)
+uniform vec3 uRingRadii;    // inner and outer radius (equatorial radii; 0, 0 until the profile is there), polar / equatorial radius
+#endif
 varying vec3 vWorld;
 ${CHAPMAN}
 vec2 hitSphere(vec3 o, vec3 d, float R) {
@@ -110,6 +114,23 @@ void main() {
   float k = ground ? uGroundMix : 1.0;
   vec3 L = sum * uSunIrr * uSunColor * k;
   float alpha = (1.0 - dot(Tview, vec3(0.3333))) * k;
+#ifdef RINGS
+  // A ring between the eye and the air hides the air behind it as it hides anything else. The
+  // shell is drawn after the rings, which write no depth: without this it dimmed them along the
+  // limb wherever they pass in front of it (a dark arc across the rings). The ring plane is the
+  // equator (z = 0 here too); its share of the light let through as the ring shader has it.
+  if (abs(d.z) > 1.0e-6) {
+    float tr = -uO.z / d.z;
+    float rr = length((uO + d * tr).xy) / uRp;
+    if (tr > 0.0 && tr < t0 && rr > uRingRadii.x && rr < uRingRadii.y) {
+      float ra = texture2D(uRingTex, vec2((rr - uRingRadii.x) / (uRingRadii.y - uRingRadii.x), 0.5)).r;
+      float mu = abs(normalize(vec3(d.xy, d.z * uRingRadii.z)).z); // in the unscaled frame
+      float through = pow(max(1.0 - ra, 1.0e-3), 1.0 / max(mu, 1.0e-3));
+      L *= through;
+      alpha *= through;
+    }
+  }
+#endif
   gl_FragColor = vec4(min(L * uExposure, vec3(6.0e4)), clamp(alpha, 0.0, 1.0));
 ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>
