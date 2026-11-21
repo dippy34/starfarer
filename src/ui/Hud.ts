@@ -86,6 +86,12 @@ export interface HudState {
   mode: 'explore' | 'ship' | 'walk';
   /** a finger has been used: speak of taps, show the touch controls */
   touch: boolean;
+  /**
+   * In the ship (src/game/Flight.ts, timeReport): its time warp is its own clock's, measured as it
+   * runs: the chip's words, the rates and clocks for the Time sheet, and why the warp is not what
+   * was asked ('' when it is). Null outside the ship.
+   */
+  ship?: { chip: string; rows: [string, string][]; why: string } | null;
   /** small print: frame rate, stars, the data in use */
   status: string;
 }
@@ -93,7 +99,8 @@ export interface HudState {
 /** the thumbnail sheet of world photographs (public/data/textures/thumbs.json) */
 export interface ThumbSheet { url: string; cols: number; rows: number; bodies: Record<string, [number, number]> }
 
-type Sheet = 'explore' | 'time' | 'more';
+/** (`flight`: the ship's full read-out, opened from its instruments on a touch screen) */
+type Sheet = 'explore' | 'time' | 'more' | 'flight';
 
 /** the height the selection's card takes above the tab bar, with its gap (px): its three buttons, and the powers under them */
 const CARD_ROOM = 188;
@@ -215,6 +222,7 @@ const TEMPLATE = `
           <button type="button" data-act="faster">${ICON.faster}<span>Faster</span></button>
           <button type="button" data-act="now">${ICON.now}<span>Now</span></button>
         </div>
+        <div class="ship-time" hidden><dl></dl><p></p></div>
         <div class="live-sheet" hidden>
           <h3>Live physics</h3>
           <p class="live-about"></p>
@@ -222,6 +230,11 @@ const TEMPLATE = `
           <details class="live-left"><summary><span>What the simulation leaves out</span>${ICON.chevron}</summary><ul></ul></details>
           <button class="btn" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
         </div>
+      </section>
+      <section class="sheet flight" data-sheet="flight" aria-label="The ship's instruments">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head"><h2>Instruments</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
+        <div class="flight-body"></div>
       </section>
       <section class="sheet more" data-sheet="more" aria-label="Settings and help">
         <div class="sheet-grab"></div>
@@ -352,6 +365,11 @@ export class Hud {
     return this.sheet;
   }
 
+  /** where the ship's full read-out goes on a touch screen (src/game/FlightHud.ts fills it) */
+  get flightBody(): HTMLElement {
+    return this.$('.flight-body');
+  }
+
   // ------------------------------------------------------------------ sheets
   /** Open the search field, ready to type. */
   openSearch(): void {
@@ -471,11 +489,13 @@ export class Hud {
     setText(this.$('.place small'), s.placeDetail);
     const [day, clock] = splitDate(s.date);
     setText(this.$('.clock b'), `${shortDay(day)}, ${clock.slice(0, 5)}`);
-    setText(this.$('.clock small'), s.paused ? 'paused' : s.rate);
+    const ship = s.ship ?? null;
+    setText(this.$('.clock small'), s.paused ? 'paused' : ship ? ship.chip : s.rate);
     this.$('.clock').classList.toggle('paused', s.paused);
     setText(this.$('.time-date'), longDay(day));
     setText(this.$('.time-clock'), `${clock} UTC`);
-    setText(this.$('.time-rate'), s.paused ? 'Paused' : s.rate === 'real time' ? 'Real time' : s.live?.slow ? `${s.rate} asked, ${s.live.slow}` : `${s.rate}`);
+    setText(this.$('.time-rate'), s.paused ? 'Paused' : ship ? ship.chip : s.rate === 'real time' ? 'Real time' : s.live?.slow ? `${s.rate} asked, ${s.live.slow}` : `${s.rate}`);
+    this.renderShipTime(ship);
     this.$('.time').classList.toggle('paused', s.paused);
     this.$('.transport [data-act="reverse"]').setAttribute('aria-pressed', String(s.reversed));
     const flight = this.$('.hud-flight');
@@ -490,6 +510,19 @@ export class Hud {
     this.renderLive(s);
     this.renderCard(s);
     this.showSlot();
+  }
+
+  /** In the ship, the Time sheet says how fast each clock runs, and why the warp is not what was asked. */
+  private renderShipTime(ship: HudState['ship']): void {
+    const box = this.$('.ship-time');
+    box.hidden = !ship;
+    if (!ship) return;
+    const list = box.querySelector('dl')!;
+    if (list.children.length !== ship.rows.length) list.innerHTML = ship.rows.map(() => '<div><dt></dt><dd></dd></div>').join('');
+    ship.rows.forEach(([k, v], i) => { setText(list.children[i].firstElementChild!, k); setText(list.children[i].lastElementChild!, v); });
+    const why = box.querySelector('p')!;
+    why.hidden = !ship.why;
+    setText(why, ship.why);
   }
 
   /** Live physics: the mark at the top, with the way back; in the Time sheet, what has happened and what is left out. */

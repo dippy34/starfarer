@@ -246,6 +246,74 @@ await shot('f14-alpha-cen.png');
   st = await phone.evaluate(() => { const ap = window.app.game.flight.autopilot; return { target: ap?.target.name ?? null, rig: window.app.rig.autopilot }; });
   check('on a phone: Go there starts the ship\'s autopilot', st.target === 'Moon' && !st.rig, JSON.stringify(st));
   await phone.screenshot({ path: path.join(outDir, 'f15-phone-autopilot.png'), timeout: 180000 });
+
+  // the instruments at a glance: under the clock, in the top quarter of the screen, opaque (no sky
+  // label reads through them), the speed and its target as the full read-out has them
+  st = await phone.evaluate(() => {
+    const top = document.querySelector('.fl-top').getBoundingClientRect(), chip = document.querySelector('.chip.clock').getBoundingClientRect();
+    const g = document.querySelector('.fl-glance'), bg = getComputedStyle(g).backgroundColor;
+    const alpha = Number((bg.match(/rgba?\(([^)]+)\)/)?.[1].split(',')[3] ?? '1'));
+    return { top: top.top, bottom: top.bottom, left: top.left, right: top.right, chip: chip.bottom, alpha, desk: getComputedStyle(document.querySelector('.fl-desk')).display, speed: g.querySelector('.fl-l1 b').textContent, text: [...g.children].map((e) => e.textContent.trim()).filter(Boolean).join(' | ') };
+  });
+  check('on a phone the instruments are a card under the clock, in the top quarter, opaque', st.top >= st.chip && st.bottom <= 0.25 * 844 && st.left >= 0 && st.right <= 390 && st.alpha >= 0.85 && st.desk === 'none', JSON.stringify(st));
+  check('at a glance: the speed, what the autopilot does, the target', /^\d[\d., ]* (m\/s|km\/s|c)$/.test(st.speed) && !/^1\.0+ c/.test(st.speed) && /Autopilot: /.test(st.text) && /Moon · /.test(st.text), st.text);
+  // the full read-out is a tap away, as a sheet; a tap on the card again folds it
+  await f.tap(await at('.fl-glance'));
+  await f.frames(4);
+  st = await phone.evaluate(() => ({ open: document.querySelector('#hud').dataset.sheet, text: document.querySelector('.flight-body').textContent.replace(/\s+/g, ' '), h: document.querySelector('.sheet.flight').getBoundingClientRect().top }));
+  const readoutOk = st.open === 'flight' && /Lorentz factor/.test(st.text) && /ship clock/.test(st.text) && /universe clock/.test(st.text) && /time warp/.test(st.text);
+  await phone.screenshot({ path: path.join(outDir, 'f16-phone-readout.png'), timeout: 180000 });
+  await f.tap(await at('.fl-glance'));
+  await f.frames(2);
+  const folded = await phone.evaluate(() => document.querySelector('#hud').dataset.sheet !== 'flight');
+  check('one tap opens the full read-out (both clocks, the Lorentz factor), another folds it', readoutOk && folded, `${st.open} ${st.text.slice(0, 90)}`);
+
+  // the Time chip tells the ship's warp: Faster steps it by tens to x100,000 and no further; the chip
+  // says the rate the ship's clock runs at, measured here from its own clock
+  await phone.evaluate(() => { const a = window.app, fl = a.game.flight; fl.cancelAutopilot('test'); a.select(null); a.rig.upos.copy(a.system.sun.upos).addXYZ(9.0e14, 2.5e14, 1.5e14); });
+  await phone.waitForFunction(() => window.app.game.flight.readout.frame === 'Sun', null, { timeout: 240000 });
+  await f.tap(await at('.hud-tabs [data-tab="time"]'));
+  await f.frames(2);
+  const steps = [];
+  for (let i = 0; i < 6; i++) {
+    await f.tap(await at('.transport [data-act="faster"]'));
+    steps.push(await phone.evaluate(() => window.app.clock.rate));
+  }
+  const m0 = await phone.evaluate(() => ({ ship: window.app.game.flight.ship.shipTime, t: performance.now() }));
+  await phone.waitForTimeout(4000);
+  await f.frames(3);
+  st = await phone.evaluate((m) => {
+    const fl = window.app.game.flight;
+    return { measured: (fl.ship.shipTime - m.ship) / ((performance.now() - m.t) / 1000), pace: fl.readout.pace, chip: document.querySelector('.chip.clock small').textContent, sheet: document.querySelector('.time-rate').textContent, rows: document.querySelector('.ship-time').textContent.replace(/\s+/g, ' ') };
+  }, m0);
+  const shown = Number((st.chip.match(/×([\d,.]+) aboard/)?.[1] ?? 'NaN').replace(/,/g, ''));
+  check('Faster steps the ship\'s warp x10, x100 ... x100,000, and stops there', JSON.stringify(steps) === JSON.stringify([10, 100, 1000, 10000, 100000, 100000]), JSON.stringify(steps));
+  check('the Time chip says the warp the ship\'s clock runs at', st.chip === st.sheet && shown > 0 && Math.abs(shown / st.measured - 1) < 0.25 && /Aboard\s*×/.test(st.rows) && /In the universe/.test(st.rows), JSON.stringify({ chip: st.chip, measured: Math.round(st.measured), rows: st.rows.slice(0, 120) }));
+  await phone.screenshot({ path: path.join(outDir, 'f17-phone-time.png'), timeout: 180000 });
+  await ctx.close();
+}
+
+// 14. a phone on its side: the instruments at the right under the clock, the full read-out opens
+// at the left beside the tabs, neither covering the other
+{
+  const ctx = await phoneContext(browser, { landscape: true });
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=1.0628&az=40&el=5&ship=cockpit&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10 && window.app.game.flight.on, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  await f.frames(4);
+  await f.tap(await at('.fl-glance'));
+  await f.frames(4);
+  st = await phone.evaluate(() => {
+    const r = (q) => { const b = document.querySelector(q).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
+    return { top: r('.fl-top'), chip: r('.chip.clock'), sheet: r('.sheet.flight'), tabs: r('.hud-tabs'), open: document.querySelector('#hud').dataset.sheet };
+  });
+  const apart = (a, b) => a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t;
+  check('on its side: the instruments under the clock, the read-out beside the tabs, apart', st.open === 'flight' && st.top.t >= st.chip.b && st.top.r <= 844 && st.top.b <= 0.6 * 390 && apart(st.top, st.sheet) && apart(st.top, st.tabs), JSON.stringify(st));
+  await phone.screenshot({ path: path.join(outDir, 'f18-phone-side.png'), timeout: 180000 });
   await ctx.close();
 }
 

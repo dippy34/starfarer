@@ -335,6 +335,17 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .transport .big .icon { width: 30px; height: 30px; color: var(--accent-ink); }
 .transport .big .icon:last-child, .time.paused .big .icon:first-child { display: none !important; }
 .time.paused .big .icon:last-child { display: block !important; }
+/* in the ship, how fast each clock runs and why the warp is not what was asked (src/game/Flight.ts, timeReport) */
+.ship-time { flex: 0 1 auto; min-height: 0; padding: 0 16px 12px; overflow-y: auto; overscroll-behavior: contain; }
+.ship-time dl { margin: 0; }
+.ship-time dl div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 14px; }
+.ship-time dl div:last-child { border-bottom: 0; }
+.ship-time dt { flex: none; color: var(--dim); }
+.ship-time dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.ship-time p { margin: 6px 2px 0; font-size: 13px; line-height: 1.35; color: var(--warn); }
+/* the ship's full read-out (src/game/FlightHud.ts fills it): lower than the other sheets, so the throttle above it stays in reach */
+.flight-body { flex: 1 1 auto; min-height: 0; padding: 0 16px 12px; overflow-y: auto; overscroll-behavior: contain; }
+.sheet.flight { max-height: min(44vh, 420px); }
 /* live physics in the Time sheet: what it is, what has happened, what it leaves out, the way back */
 .live-sheet { flex: 1 1 auto; min-height: 0; padding: 0 14px 12px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); }
 .live-sheet h3 { margin: 12px 2px 4px; font-size: 12px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--live); }
@@ -425,7 +436,7 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
   .hud-tabs { order: -1; align-self: center; flex-direction: column; width: 68px; height: auto; }
   #hud .hud-tabs button { flex: none; min-height: 58px; }
   .hud-slot { align-self: stretch; justify-content: flex-end; width: min(380px, 46vw); }
-  .sheet { max-height: 100%; }
+  .sheet, .sheet.flight { max-height: 100%; }
   .hud-fabs { position: fixed; right: calc(var(--safe-r) + var(--edge)); bottom: calc(var(--safe-b) + var(--edge)); }
   .live-mark { top: calc(var(--safe-t) + var(--edge) - 2px); left: 50%; right: auto; width: max-content; max-width: 44vw; transform: translateX(-50%); }
   #hud[data-live] .hud-toast { top: calc(var(--safe-t) + 68px); }

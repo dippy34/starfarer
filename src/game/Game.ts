@@ -74,7 +74,11 @@ export class Game {
     this.flight = new Flight(app);
     app.renderer.scene.add(this.viz.group);
     app.renderer.camera.add(this.viz.screen);
-    this.flightHud = new FlightHud(document.getElementById('hud') ?? document.body, (up) => this.flight.stepDrive(up));
+    this.flightHud = new FlightHud(app.hud.root, app.hud, {
+      // (on a touch screen − and + choose the reactionless drive as they set it: the setting is its own)
+      stepDrive: (up) => { this.flight.ship.drive = 'reactionless'; this.flight.stepDrive(up); },
+      toggleDrive: () => this.flight.toggleDrive(),
+    });
     this.missions = new Missions(app);
     this.missions.onComplete = (m) => {
       app.hud.toast(`Mission complete: ${m.title}!`);
@@ -164,6 +168,9 @@ export class Game {
       this.hudTimer = 0.2;
       this.fillReadout();
     }
+    // (on a touch screen the instruments over the view say what the dashboard's screens would, readably:
+    // the screens stay dark there; the headset and the desk keep them)
+    this.cockpit.setScreens(app.vr.active || !app.input.touch);
     this.cockpit.update(dt);
     if (this.mode === 'cockpit') this.updateHud();
   }

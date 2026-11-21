@@ -52,6 +52,7 @@ import { Catalog } from '../universe/Catalog';
 import { normKey } from '../universe/CatalogSearch';
 import { CameraRig } from './CameraRig';
 import { Game } from '../game/Game';
+import { fmtLight, MAX_RATE, WARP_STEPS } from '../game/Flight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
@@ -651,15 +652,19 @@ export class App {
     return this.rateSign * (RATE_STEPS[i] ?? LIVE_RATE);
   }
   timeFaster(): void {
+    if (this.game.flight.on) { this.shipWarp(1); return; }
     this.rateIndex = Math.min(RATE_STEPS.length - (this.physics.on ? 0 : 1), this.rateIndex + 1);
     this.clock.rate = this.rateAt(this.rateIndex);
     this.clock.paused = false;
   }
   timeSlower(): void {
+    if (this.game.flight.on) { this.shipWarp(-1); return; }
     this.rateIndex = Math.max(0, this.rateIndex - 1);
     this.clock.rate = this.rateAt(this.rateIndex);
   }
   timeReverse(): void {
+    // (the ship's clock only runs forwards: its physics would not undo itself)
+    if (this.game.flight.on) { this.hud.toast('Time cannot run backwards aboard the ship'); return; }
     this.rateSign *= -1;
     this.clock.rate = this.rateAt(this.rateIndex);
     // (a simulation run backwards undoes what its gravity did; two bodies that became one stay one)
@@ -674,7 +679,31 @@ export class App {
       this.clock.paused = false;
     }
   }
+  /**
+   * In the ship the warp is its own clock's, in steps of ten from ×1 to ×100,000 (src/game/Flight.ts,
+   * WARP_STEPS): the step above or below the rate it runs at.
+   */
+  private shipWarp(dir: 1 | -1): void {
+    const r = Math.min(Math.abs(this.clock.rate), MAX_RATE);
+    let next = dir > 0 ? WARP_STEPS[WARP_STEPS.length - 1] : WARP_STEPS[0];
+    for (const w of dir > 0 ? WARP_STEPS : [...WARP_STEPS].reverse()) if (dir > 0 ? w > r * 1.0001 : w < r / 1.0001) { next = w; break; }
+    this.rateSign = 1;
+    this.clock.rate = next;
+    if (dir > 0) this.clock.paused = false;
+    // (the explorer's steps carry on from about here after the ship)
+    this.rateIndex = 0;
+    while (this.rateIndex + 1 < RATE_STEPS.length && RATE_STEPS[this.rateIndex + 1] <= next) this.rateIndex++;
+  }
   realTime(): void {
+    // (in the ship the date cannot jump: the worlds would move from under it. Only the pace goes back)
+    if (this.game.flight.on) {
+      this.rateIndex = 0;
+      this.rateSign = 1;
+      this.clock.rate = 1;
+      this.clock.paused = false;
+      this.hud.toast('Real time aboard (the date stays: the ship cannot jump in time)');
+      return;
+    }
     // (in live physics the date is the simulation's: only the pace goes back to real time)
     if (!this.physics.on) this.clock.setUtcNow();
     this.rateIndex = 0;
@@ -2472,7 +2501,10 @@ export class App {
       const h = Math.max(d - rig.surface, 0);
       placeDetail = rig.surface > 0 && h < 10 * rig.surface ? `${formatDistance(h)} up` : `${distanceText(rig.surface > 0 ? h : d)} away`;
     }
-    if (rig.speed > 0) placeDetail = t ? `${placeDetail} · ${formatSpeed(rig.speed)}` : formatSpeed(rig.speed);
+    // (in the ship the speed is told from its proper speed, with its nines: never "1.000 c")
+    const flight = this.game.flight;
+    const speed = flight.on ? fmtLight(flight.readout.properSpeed) : formatSpeed(rig.speed);
+    if (rig.speed > 0) placeDetail = t ? `${placeDetail} · ${speed}` : speed;
     const drawn = this.starFields.reduce((a, f) => a + f.drawnStars, 0) + this.procStars.drawnStars;
     const loaded = this.catalogs.reduce((a, cat) => a + cat.loadedStars, 0);
     const total = this.catalogs.reduce((a, cat) => a + cat.totalStars, 0);
@@ -2493,6 +2525,7 @@ export class App {
       look: rig.touchDrag === 'look',
       mode: this.walk.active ? 'walk' : this.game.active ? 'ship' : 'explore',
       touch: this.input.touch,
+      ship: flight.on ? flight.timeReport() : null,
       status: [
         `${this.fps.toFixed(0)} fps`,
         `${(drawn / 1e3).toFixed(0)}k stars drawn, ${(loaded / 1e6).toFixed(2)}M of ${(total / 1e6).toFixed(2)}M loaded`,

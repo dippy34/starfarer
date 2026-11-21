@@ -98,8 +98,14 @@ export class Cockpit {
     this.group.visible = false;
   }
 
+  /** Show or hide the three screens (the dashboard and the canopy stay). */
+  setScreens(on: boolean): void {
+    for (const s of this.screens) s.mesh.visible = on;
+  }
+
   update(dt: number): void {
     this.timer -= dt;
+    if (!this.screens[0].mesh.visible) return;
     if (this.timer > 0) return;
     this.timer = 0.2;
     for (const s of this.screens) { s.dirty = true; s.update(); }

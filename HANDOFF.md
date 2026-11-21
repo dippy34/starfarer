@@ -306,8 +306,17 @@ measurements in `docs/notes/relativistic-ship.md`):
 - *Instruments* (`FlightHud.ts`, the cockpit's screens): speed as a fraction of light's with its
   nines, the Lorentz factor, what speed does to the view ahead, the time to go aboard and in the
   universe, both clocks; distances in light years.
-- *On a phone*: More → Spaceship boards; in the ship the tabs stay (Search, Go there, Time); the
-  drive's − and +. Flying by hand by touch is part 7 below.
+- *On a phone*: More → Spaceship boards; in the ship the tabs stay (Search, Go there, Time). The
+  instruments are a card under the clock (`FlightHud.ts`, `glance`): the speed with its nines and
+  the Lorentz factor (or the height while slow), what the ship is doing, the target and the time to
+  it in both clocks; under it the drive (its name switches torch / reactionless, − and + its
+  setting). A tap on the card opens the full read-out as a sheet of the interface (`Hud.ts`,
+  'flight'; with a mouse it stays the panel at the right). The dashboard's three screens are dark on
+  a touch screen (the headset and the desk keep them). The Time chip and sheet tell the ship's own
+  warp as measured from its clock (`Flight.timeReport`, `readout.pace`), the universe's rate with
+  it, and why it is not what was asked (the autopilot, the computing per frame, the ×100,000 top);
+  Faster and Slower step it ×1 … ×100,000; Now goes back to ×1 without moving the date; Reverse is
+  refused aboard. Flying by hand by touch is part 7 below.
 - *Not done*: the view at speed (aberration, Doppler, the headlight effect): drawn as at rest; a
   precise specification is in the notes (the star shaders were other agents' work in progress).
   With the live N-body physics coming, the notes list what the ship reads live and what assumes

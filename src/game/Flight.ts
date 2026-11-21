@@ -22,6 +22,8 @@ const SAS_ORDER: SasMode[] = ['off', 'stability', 'prograde', 'retrograde', 'nor
  * slow); above RAILS_RATE a slow, coasting ship goes "on rails" (analytic Kepler).
  */
 export const MAX_RATE = 100_000;
+/** the ship's time warp, step by step (Faster and Slower, [ and ]): ×1 to ×100,000 of its own clock */
+export const WARP_STEPS = [1, 10, 100, 1000, 10_000, MAX_RATE];
 export const RAILS_RATE = 1000;
 /** the autopilot flies only where gravity is at most this share of the drive's acceleration (the rest steers) */
 export const HOLD = 0.5;
@@ -90,8 +92,9 @@ export interface FlightReadout {
   arrival: number;
   /** how the times to the target are reckoned: by flip-and-burn at the drive's setting, or coasting at this speed */
   etaBy: 'flip-and-burn' | 'coasting' | '';
-  /** the autopilot, if flying: what it is doing */
+  /** the autopilot, if flying: where to and what it is doing; what it is doing alone ('' when not flying) */
   autopilot: string;
+  apState: string;
   /** looking ahead: half the sky crowds into this angle (rad); light ahead is this many times bluer */
   halfSky: number;
   doppler: number;
@@ -100,6 +103,15 @@ export interface FlightReadout {
   refusal: string;
   warning: string;
   warnLevel: 0 | 1 | 2;
+  /**
+   * The time warp as it is, measured from the clocks over the last moments: the ship's seconds and
+   * the universe's per real second; the rate asked for (the app's clock), and why the ship's differs
+   * from it ('' when it does not).
+   */
+  pace: number;
+  paceUniverse: number;
+  asked: number;
+  why: string;
 }
 
 /**
@@ -121,8 +133,8 @@ export class Flight {
     frame: '', altitude: 0, vertSpeed: 0, orbitSpeed: 0, surfSpeed: 0, conic: null, tImpact: NaN, tAp: NaN, tPe: NaN, ap: NaN, pe: NaN,
     escape: false, encounter: '', gForce: 0, tidal: 0, throttle: 0, fuel: 1, dv: 0, sas: 'stability', rails: false, rate: 1, limited: false,
     dilation: 1, shipTime: 0, universeTime: 0, heat: 0, hullTemp: 290, drive: 'torch', driveG: 1, atLimit: false, properSpeed: 0, gamma: 1,
-    target: '', targetDist: NaN, etaShip: NaN, etaUniverse: NaN, arrival: NaN, etaBy: '', autopilot: '', halfSky: Math.PI / 2, doppler: 1,
-    landed: '', refusal: '', warning: '', warnLevel: 0,
+    target: '', targetDist: NaN, etaShip: NaN, etaUniverse: NaN, arrival: NaN, etaBy: '', autopilot: '', apState: '', halfSky: Math.PI / 2, doppler: 1,
+    landed: '', refusal: '', warning: '', warnLevel: 0, pace: 1, paceUniverse: 1, asked: 1, why: '',
   };
   /** the autopilot's flight in progress (null: the pilot flies) */
   autopilot: Autopilot | null = null;
@@ -144,6 +156,13 @@ export class Flight {
   private warnedReverse = false;
   private lastJd = 0;
   private tmp = new Vector3();
+  /** the warp as measured: real seconds, ship's seconds and universe's seconds summed since the last reading */
+  private paceSum = { real: 0, ship: 0, universe: 0, asked: 1 };
+  private paceShipTime = 0;
+  /** this frame: real seconds, the rate asked for, and why the ship's differs */
+  private frameReal = 0;
+  private asked = 1;
+  private why = '';
 
   constructor(private app: App) {
     gravity.provider = () => this.collectSources();
@@ -285,6 +304,9 @@ export class Flight {
     this.autopilot = null;
     this.universeTime = 0;
     ship.shipTime = 0;
+    this.paceShipTime = 0;
+    this.paceSum = { real: 0, ship: 0, universe: 0, asked: 1 };
+    this.readout.pace = this.readout.paceUniverse = 1;
     this.lastJd = app.clock.jdTdb;
     this.core.landed = null;
     this.core.chooseFrame();
@@ -540,6 +562,9 @@ export class Flight {
     const app = this.app, clock = app.clock, ship = this.ship, core = this.core;
     const rig = () => app.rig;
     this.limited = false;
+    this.frameReal = rawDt;
+    this.asked = clock.paused ? 0 : clock.rate;
+    this.why = '';
     gravity.refresh();
     this.gripThrottle = app.rig.ext.throttle;
     if (this.external) {
@@ -568,14 +593,20 @@ export class Flight {
     let rate = clock.paused ? 0 : clock.rate;
     if (rate < 0) {
       rate = 0;
+      this.why = 'time cannot run backwards aboard: the ship holds still';
       if (!this.warnedReverse) { app.hud.toast('Time cannot run backwards while you fly: the ship holds still'); this.warnedReverse = true; }
     } else this.warnedReverse = false;
+    if (rate > MAX_RATE) this.why = `the ship's time warp stops at ${fmtWarp(MAX_RATE)}`;
     rate = Math.min(rate, MAX_RATE);
     // (while the autopilot turns the ship, time keeps step with the wheels, which turn by the
     // clamped control step: on a slow machine a turn would otherwise take longer than it does)
     const ap = this.autopilot;
     const real = ap?.steering.turning ? dt : Math.min(rawDt, 1);
-    if (ap) rate = autopilotRate(rate, ap.steering, real, ship.driveAccel);
+    if (ap) {
+      const r0 = rate;
+      rate = autopilotRate(rate, ap.steering, real, ship.driveAccel);
+      if (rate < r0) this.why = ap.steering.turning ? 'the autopilot holds it at ×1 while the ship turns' : 'the autopilot holds it there, to steer in time';
+    }
     // the warp is the ship's clock's; the universe's runs faster as the ship's runs slow (speed, gravity)
     let want = core.universeTimeFor(real * rate);
     // on rails: slow (Newton's two bodies), coasting, no air, no black hole, periapsis well clear of the ground
@@ -592,7 +623,11 @@ export class Flight {
       // physics warp: at most `budget` substeps a frame (the warp slows down near anything fast)
       const h = core.estimateStep();
       const budget = app.vr.active ? 200 : 900;
-      if (want / h > budget) { want = budget * h; this.limited = rate > 1; }
+      if (want / h > budget) {
+        want = budget * h;
+        this.limited = rate > 1;
+        if (this.limited) this.why = 'as fast as this device can work the flight out';
+      }
       core.maxSubsteps = Math.ceil(budget * 1.5);
     }
     this.simDt = want;
@@ -629,6 +664,7 @@ export class Flight {
   after(dt: number): void {
     const app = this.app, rig = app.rig, ship = this.ship, core = this.core;
     this.universeTime += this.simDt;
+    this.measurePace();
     this.exoVelocities((app.clock.jdTdb - this.lastJd) * DAY);
     this.trackAnchor();
     this.trackTarget();
@@ -671,6 +707,46 @@ export class Flight {
     this.fillReadout();
   }
   private wasCarried = false;
+
+  /**
+   * The warp as it is: the ship's clock's and the universe's seconds per real second, summed over
+   * at least 0.4 s of real time (a fresh start when the rate asked for changes). Measured from the
+   * clocks themselves, so whatever held the warp back (the autopilot, the computing per frame, live
+   * physics) is in it.
+   */
+  private measurePace(): void {
+    const s = this.paceSum, r = this.readout, ship = this.ship;
+    // (while something else carries the ship its clock is not integrated: it runs with the universe's)
+    const dShip = this.external ? this.simDt : ship.shipTime - this.paceShipTime;
+    this.paceShipTime = ship.shipTime;
+    if (this.asked !== s.asked) {
+      s.asked = this.asked;
+      s.real = s.ship = s.universe = 0;
+      return;
+    }
+    s.real += this.frameReal;
+    s.ship += Math.max(0, dShip);
+    s.universe += Math.max(0, this.simDt);
+    if (s.real < 0.4) return;
+    r.pace = s.ship / s.real;
+    r.paceUniverse = s.universe / s.real;
+    s.real = s.ship = s.universe = 0;
+  }
+
+  /** The Time chip and sheet in the ship: the warp as it is, both clocks, and why it is not what was asked. */
+  timeReport(): { chip: string; rows: [string, string][]; why: string } {
+    const r = this.readout;
+    const rows: [string, string][] = [
+      ['Aboard', `${fmtWarp(r.pace)} · ${fmtPace(r.pace)}`],
+      ['In the universe', fmtPace(r.paceUniverse)],
+      ["Ship's clock", `${fmtClock(r.shipTime)} since boarding`],
+      ["Universe's clock", `${fmtClock(r.universeTime)} since boarding`],
+    ];
+    // (what was asked in the explorer's words when it is not one of the ship's steps: "7 days a second")
+    const a = Math.abs(r.asked), asked = r.asked < 0 ? 'Time backwards' : WARP_STEPS.includes(a) ? fmtWarp(a) : fmtPace(a);
+    const why = r.why && r.asked !== 0 ? `${asked} asked: ${r.why}.` : '';
+    return { chip: `${fmtWarp(r.pace)} aboard`, rows, why };
+  }
 
   // ------------------------------------------------------------------ controls
   /** Throttle, RCS, reaction wheels and SAS from the keyboard, mouse and VR controllers (real time). */
@@ -953,6 +1029,8 @@ export class Flight {
     r.rails = this.rails;
     r.limited = this.limited;
     r.rate = this.app.clock.paused ? 0 : Math.min(Math.max(this.app.clock.rate, 0), MAX_RATE);
+    r.asked = this.asked;
+    r.why = this.why;
     r.dilation = ship.dilation;
     r.shipTime = ship.shipTime;
     r.universeTime = this.universeTime;
@@ -1016,7 +1094,8 @@ export class Flight {
   private fillTarget(): void {
     const r = this.readout, ship = this.ship, ap = this.autopilot;
     const sel = ap?.target ?? this.app.selection;
-    r.autopilot = ap ? `${ap.target.name} · ${ap.detour ? `round ${ap.detour}` : ap.steering.phase}` : '';
+    r.apState = ap ? (ap.detour ? `round ${ap.detour}` : ap.steering.phase) : '';
+    r.autopilot = ap ? `${ap.target.name} · ${r.apState}` : '';
     r.target = sel?.name ?? '';
     r.targetDist = r.etaShip = r.etaUniverse = r.arrival = NaN;
     r.etaBy = '';
@@ -1155,6 +1234,30 @@ function fmtYears(s: number): string {
   if (y < 1e6) return `${Math.round(y).toLocaleString('en-US')} yr`;
   if (y < 1e9) return `${(y / 1e6).toFixed(2)} million yr`;
   return `${(y / 1e9).toFixed(2)} billion yr`;
+}
+
+/**
+ * The ship's time warp: "×1", "×100,000"; a rate between the steps (held back by the autopilot or
+ * the computing) to two figures, "×3,700".
+ */
+export function fmtWarp(x: number): string {
+  const step = WARP_STEPS.find((w) => Math.abs(x - w) <= 0.005 * w);
+  const v = step ?? Number(x.toPrecision(2));
+  return `×${v.toLocaleString('en-US')}`;
+}
+
+/** Seconds of a clock per real second, in words: "real time", "17 minutes a second", "2,470 years a second". */
+export function fmtPace(x: number): string {
+  const n = (v: number) => v.toLocaleString('en-US', { maximumSignificantDigits: 3 });
+  const Y = 3.15576e7;
+  if (x <= 0) return 'stopped';
+  if (Math.abs(x - 1) < 0.005) return 'real time';
+  if (x >= 1e6 * Y) return `${n(x / Y / 1e6)} million years a second`;
+  if (x >= Y) return `${n(x / Y)} years a second`;
+  if (x >= 86400) return `${n(x / 86400)} days a second`;
+  if (x >= 3600) return `${n(x / 3600)} hours a second`;
+  if (x >= 60) return `${n(x / 60)} minutes a second`;
+  return `${n(x)} seconds a second`;
 }
 
 export function fmtClock(s: number): string {

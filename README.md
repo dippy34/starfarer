@@ -132,8 +132,12 @@ camera until you go. A flight in progress shows a **Stop** button.
 | U | Photo mode: hide the interface and names (P saves a PNG) |
 
 Flying freely, walking and flying the ship by hand still need the keyboard (or a headset); their
-touch controls come next. On a phone the ship can be boarded (More → Spaceship), its drive set (the
-− and + over its instruments) and flown by its autopilot (Search, then Go there; Time → Faster).
+touch controls come next. On a phone the ship can be boarded (More → Spaceship), its drive chosen
+and set (tap its name; − and +) and flown by its autopilot (Search, then Go there). Its instruments
+stand under the clock: the speed with its nines, the Lorentz factor, what the ship is doing and the
+time to the target in both clocks; a tap on them opens the full read-out. In the ship the Time
+chip shows the ship's own time warp (×1 to ×100,000, Time → Faster), as it actually runs, and the
+Time sheet how fast the universe's clock runs with it.
 
 **Landing:** go to a solid world (the Moon, Mars, Mercury, Ganymede, Callisto … or a rocky planet of
 another star) and keep descending (F; in VR, point the left controller down and push the left stick): below about 40 km the sphere turns

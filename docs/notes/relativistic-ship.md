@@ -298,7 +298,7 @@ work is in progress, so it was left for the round that owns them. What it needs,
 Also left: flying the ship by hand on a phone (part 7 of the clean-up: a thumb-stick, the
 throttle, SAS; boarding, the drive's setting and the autopilot are on touch now); the instruments
 were checked in an emulated phone only (Chromium at 390×844, three pixels to the CSS pixel), not on
-an iPhone; the panel covers the upper half of a phone's screen in the ship (a smaller layout, or a
-way to fold it, would help); the prediction line ignores the engines (as before); a world that is
+an iPhone (since: the instruments on a phone are a card under the clock, the full read-out a tap
+away, and the Time chip tells the ship's own warp); the prediction line ignores the engines (as before); a world that is
 not the frame body is not tested for a crash at speed (see 10); at a galaxy the autopilot stops 3.5
 of its radii out (the instruments say how far short of it).
