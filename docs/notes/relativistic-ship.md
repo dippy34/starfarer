@@ -154,6 +154,18 @@ warp in the deployed build in headless Chromium).
    instruments while open. Not on touch yet: flying by hand (throttle, attitude, RCS, SAS), the
    chase view, the drive switch (the autopilot switches to the reactionless drive itself).
 
+13. **The sky turned white on the way to Andromeda** (found after the first publication, on the
+   owner's own trip: 1,000 g, 100,000x). Not the ship's physics, nor the exposure (it stayed
+   1,054,216 throughout): the explorer's dust cue (`ScaleCues`), whose specks are drawn in a box
+   the size of the distance the eye covers in 3 s of real time. In the ship near light speed at
+   that warp the eye covers hundreds of light years a second; past a box of a few 10¹⁸ m the dust's
+   vertex arithmetic, in the GPU's 32-bit floats, broke down and the sky came out white with dark
+   blots (32 % of the phone's pixels near white at 350, 860 and 2,100 light years; with `dust=0`,
+   0.5 %, as with the box drawn smaller). The box is now drawn at most 10¹⁵ m across, its streaks
+   scaled with it: a box scaled about the eye makes the same picture, and the specks still cross
+   it in 3 s. Measured on the same trip: 0.5 % near white (the instruments' text), the ordinary
+   dark sky with its stars.
+
 ## What the pilot reads
 
 The flight panel (desk; on a phone the same panel spans the width, smaller): the drive (TORCH, or

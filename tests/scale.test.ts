@@ -5,7 +5,7 @@ import { CameraRig } from '../src/app/CameraRig';
 import { emptyFrame, type Input } from '../src/app/Input';
 import { UPos } from '../src/core/upos';
 import type { SpaceObject } from '../src/universe/Body';
-import { dustAlpha, earthPlacement } from '../src/render/ScaleCues';
+import { DUST_BOX, dustAlpha, dustBox, earthPlacement } from '../src/render/ScaleCues';
 import { M_EARTH_KG, M_SUN_KG, R_EARTH_M, angularDiameter, approachWeight, earthsInside, formatAngle, rumbleLevel, rumblePitch, scaleRows, shadowDiameter, viewFraction } from '../src/universe/Scale';
 
 const sys = JSON.parse(readFileSync('public/data/solar/system.json', 'utf8')) as { bodies: { id: number; name: string; radii: number[] }[] };
@@ -106,6 +106,16 @@ describe('approach and rumble', () => {
 });
 
 describe('scale cues', () => {
+  it('the dust box is drawn at its true size when slow, and never larger than the GPU can work in', () => {
+    expect(dustBox(10)).toEqual({ L: 30, drawn: 30 });
+    expect(dustBox(1e6)).toEqual({ L: 3e6, drawn: 3e6 });
+    // a hundred light years a second (the ship near light speed at 100,000x): 2.8e18 m across
+    const fast = dustBox(9.46e17);
+    expect(fast.L).toBeCloseTo(2.838e18, -16);
+    expect(fast.drawn).toBe(DUST_BOX);
+    // half the box squared (as a length is worked out) stays far inside a 32-bit float's range
+    expect((0.5 * Math.sqrt(3) * dustBox(1e30).drawn) ** 2).toBeLessThan(3.4e38 * 1e-6);
+  });
   it('Earth for scale sits over the body, in front of its surface, at its true relative size', () => {
     const R = radius(599), d = 421_700e3;
     const rel = new Vector3(0, 0, -d);

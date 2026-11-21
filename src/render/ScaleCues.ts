@@ -163,13 +163,13 @@ export class ScaleCues {
     this.dust.visible = this.alpha > 0.003;
     if (!this.dust.visible || dt <= 0) return;
     // the specks cross their box in ~3 s whatever the speed: parallax you can read
-    const L = Math.max(speed * 3, 30);
+    const { L, drawn } = dustBox(speed);
     const u = this.dustMat.uniforms;
     this.off.addScaledVector(vel, -dt / L);
     this.off.set(this.off.x - Math.floor(this.off.x), this.off.y - Math.floor(this.off.y), this.off.z - Math.floor(this.off.z));
     (u.uOff.value as Vector3).copy(this.off);
-    u.uL.value = L;
-    (u.uStreak.value as Vector3).copy(vel).multiplyScalar(Math.min(0.08, 0.04 + 0.02 * Math.log10(1 + rate)));
+    u.uL.value = drawn;
+    (u.uStreak.value as Vector3).copy(vel).multiplyScalar(Math.min(0.08, 0.04 + 0.02 * Math.log10(1 + rate)) * (drawn / L));
     u.uAlpha.value = this.alpha;
   }
 
@@ -204,6 +204,21 @@ export class ScaleCues {
 
 const IDENT = new Quaternion();
 const AU_M = 1.495978707e11;
+
+/** the largest box the dust is drawn in (m) */
+export const DUST_BOX = 1e15;
+
+/**
+ * The dust's box for a speed (m/s): `L`, the distance covered in 3 s (at least 30 m), and `drawn`,
+ * the size it is drawn at, at most DUST_BOX. Scaled down about the eye, with its streaks, the box
+ * makes the same picture, in numbers the GPU's 32-bit arithmetic holds: drawn at its true size,
+ * past a few 10^18 m (some hundreds of light years a second, as in the ship near light speed at
+ * a high time warp) the vertex arithmetic broke down and the sky turned white.
+ */
+export function dustBox(speed: number): { L: number; drawn: number } {
+  const L = Math.max(speed * 3, 30);
+  return { L, drawn: Math.min(L, DUST_BOX) };
+}
 
 /**
  * Dust opacity from the approach rate (speed / altitude, 1/s): faint when drifting, clear when the
