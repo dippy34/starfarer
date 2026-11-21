@@ -1,7 +1,9 @@
 // Real-physics ship flight in headless Chromium: orbit HUD and predicted path, a burn that changes
-// the orbit, on-rails time warp, mass lock, a crash and respawn, a landing, a stellar black hole's
-// tides and a supermassive one's horizon. Usage: node scripts/flight.mjs [baseUrl] [outDir]
+// the orbit, on-rails time warp, the autopilot's refusal deep in a well, a crash and respawn, a landing, a stellar black hole's
+// tides and a supermassive one's horizon; the reactionless drive near light speed (never at it) and
+// the autopilot to another star; on a phone, boarding, the drive's setting and Go there by touch. Usage: node scripts/flight.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
+import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -48,13 +50,14 @@ await frames(2);
 await page.keyboard.press('KeyV'); // off -> cockpit (boards again where we are)
 await frames(4);
 
-// 3. mass lock: the warp drive will not engage in low orbit
+// 3. the autopilot will not fly from low orbit with the drive at its first setting (1 g: gravity
+// there is more than half of it, too little to spare to steer)
 await page.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); });
 await frames(2);
 await page.keyboard.press('KeyJ');
 await frames(3);
-st = await page.evaluate(() => ({ ap: window.app.rig.autopilot, lock: window.app.game.flight.massLock() }));
-check('warp is mass-locked in low orbit', !st.ap && st.lock.startsWith('Mass-locked'), st.lock);
+st = await page.evaluate(() => ({ ap: !!window.app.game.flight.autopilot || window.app.rig.autopilot, lock: window.app.game.flight.autopilotRefusal() }));
+check('the autopilot refuses in low orbit: the drive at 1 g is too weak there', !st.ap && st.lock.startsWith('The drive at 1 g'), st.lock);
 
 // 4. a prograde burn raises the apoapsis (SAS holds prograde)
 const before = await state();
@@ -150,6 +153,101 @@ await waitFor(() => window.app.game.flight.predictor.count > 50 && window.app.ga
 st = await state();
 check('demo: close pass by Cygnus X-1 with the tidal warning', /TIDAL/.test(st.warning) && !st.ending, `${st.warning}`);
 await shot('f11-bh-pass.png');
+
+// 11. the reactionless drive: as fast as you like, never light's speed. A tenth of a light year out,
+// 1,000 g (I, then = nine times) prograde at 10,000x: the Lorentz factor passes 100, the speed reads
+// with its nines, and the universe's clock runs ahead of the ship's
+await page.evaluate(() => { const a = window.app; a.flightClock(); a.select(null); a.rig.upos.copy(a.system.sun.upos).addXYZ(9.0e14, 2.5e14, 1.5e14); });
+await waitFor(() => window.app.game.flight.readout.frame === 'Sun' && !window.app.game.flight.ending);
+await page.keyboard.press('KeyI');
+for (let i = 0; i < 9; i++) await page.keyboard.press('Equal');
+await page.evaluate(() => { const f = window.app.game.flight; f.sas = 'prograde'; });
+await frames(3);
+const clocks0 = await page.evaluate(() => { const r = window.app.game.flight.readout; return { ship: r.shipTime, univ: r.universeTime, g: r.driveG, drive: r.drive }; });
+await page.keyboard.down('KeyZ');
+await frames(2);
+await page.keyboard.up('KeyZ');
+await page.evaluate(() => { window.app.clock.rate = 1e4; });
+const fast = await waitFor(() => window.app.game.flight.readout.gamma > 100, null, 300000);
+await page.keyboard.down('KeyX');
+await waitFor(() => window.app.game.flight.ship.throttle === 0, null, 60000);
+await page.keyboard.up('KeyX');
+await page.evaluate(() => { window.app.clock.rate = 1; });
+await frames(3);
+st = await page.evaluate(() => {
+  const f = window.app.game.flight, r = f.readout;
+  return { gamma: r.gamma, v: f.ship.vel.length(), w: r.properSpeed, ship: r.shipTime, univ: r.universeTime, hud: document.querySelector('.fl-panel')?.textContent.replace(/\s+/g, ' ') ?? '' };
+});
+check('the reactionless drive at 1,000 g: γ past 100, the speed below c', fast && clocks0.drive === 'reactionless' && clocks0.g === 1000 && st.gamma > 100 && st.v < 299792458 && st.w > 100 * 299792458, JSON.stringify({ gamma: st.gamma, v: st.v, drive: clocks0.drive, g: clocks0.g }));
+const dShip = st.ship - clocks0.ship, dUniv = st.univ - clocks0.univ;
+check('time dilation: the universe\'s clock ran ahead of the ship\'s', dUniv > 20 * dShip, `ship +${(dShip / 3600).toFixed(1)} h, universe +${(dUniv / 3.15576e7).toFixed(2)} yr`);
+check('the instruments read the speed with its nines and the Lorentz factor', /speed\s*0\.999 9/.test(st.hud) && /Lorentz factor\s*\d/.test(st.hud) && /ahead\s*half the sky in/.test(st.hud), (st.hud.match(/speed\s*[^a-z]*c/) ?? [''])[0] + ' · ' + (st.hud.match(/Lorentz factor\s*[^ a-z]+/) ?? [''])[0]);
+await shot('f12-relativistic.png');
+// the same panel on an upright phone: within the screen
+await page.setViewportSize({ width: 390, height: 844 });
+await frames(6);
+st = await page.evaluate(() => { const r = document.querySelector('.fl-panel').getBoundingClientRect(); return { left: r.left, right: r.right, bottom: r.bottom }; });
+check('on a phone the instruments fit the screen', st.left >= 0 && st.right <= 390 && st.bottom < 844, JSON.stringify(st));
+await shot('f13-phone.png');
+await page.setViewportSize({ width: 1280, height: 720 });
+
+// 12. the autopilot to another star, never faster than light: Rigil Kentaurus, 4.4 light years,
+// flip-and-burn at 50 g (and 100,000x: about three months aboard, four and a half years in the
+// universe); between any two looks the ship covers less than light would in the universe's time
+// between them, and it arrives at the star
+await page.evaluate(() => { const a = window.app; const e = a.findByName('Earth'); a.select(e); a.placeNear(e, e.radius * 40, 30, 10); a.clock.rate = 1; });
+await waitFor(() => window.app.game.flight.readout.frame === 'Earth');
+await page.evaluate(() => { const a = window.app; a.select(a.findByName('Rigil Kentaurus')); a.game.flight.ship.driveAccel = 50 * 9.80665; a.clock.rate = 1e5; });
+await page.keyboard.press('KeyJ');
+await frames(3);
+const look = () => page.evaluate(() => { const a = window.app, f = a.game.flight, t = a.findByName('Rigil Kentaurus'); return { d: t.upos.sub(f.ship.upos).length(), jd: a.clock.jdTdb, ap: !!f.autopilot, rig: a.rig.autopilot, r: t.radius, hud: document.querySelector('.fl-panel')?.textContent.replace(/\s+/g, ' ') ?? '' }; });
+let prev = await look(), fastest = 0;
+const toGo = /to go \(flip-and-burn\)/.test(prev.hud) && /aboard/.test(prev.hud) && /universe/.test(prev.hud);
+const engaged = prev.ap && !prev.rig;
+const t0 = Date.now();
+while (Date.now() - t0 < 900000) {
+  await page.waitForTimeout(3000);
+  const cur = await look();
+  const dt = (cur.jd - prev.jd) * 86400;
+  if (dt > 0) fastest = Math.max(fastest, (prev.d - cur.d) / dt / 299792458);
+  prev = cur;
+  if (!cur.ap) break;
+}
+check('J: the autopilot flies to Rigil Kentaurus, the time to go in both clocks', engaged && toGo, prev.hud.match(/to go[^]*?universe/)?.[0] ?? '');
+check('never faster than light on the way', fastest > 0.5 && fastest < 1, `fastest closing speed ${fastest.toFixed(6)} c`);
+check('arrives at the star', !prev.ap && prev.d < prev.r * 12, JSON.stringify({ d: prev.d, radius: prev.r, ap: prev.ap }));
+await shot('f14-alpha-cen.png');
+
+// 13. on a phone, by touch alone: More, Spaceship boards the ship; the tabs stay (where to go, time,
+// the way out); + raises the drive's setting; Go there on a selected world starts the autopilot
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?target=Earth`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(2);
+  await f.tap(await at('.switch[data-act="ship"]'));
+  await f.frames(4);
+  st = await phone.evaluate(() => ({ mode: window.app.game.mode, on: window.app.game.flight.on, tabs: getComputedStyle(document.querySelector('.hud-tabs')).display !== 'none', g: window.app.game.flight.ship.driveAccel / 9.80665 }));
+  const boarded = st.mode === 'cockpit' && st.on && st.tabs;
+  await f.tap(await at('.fl-touch [data-step="up"]'));
+  await f.frames(2);
+  const g2 = await phone.evaluate(() => ({ g: window.app.game.flight.ship.driveAccel / 9.80665, shown: document.querySelector('.fl-touch span').textContent }));
+  check('on a phone: Spaceship (More) boards, the tabs stay, + raises the drive', boarded && Math.abs(g2.g - 2) < 1e-9 && g2.shown === '2 g', JSON.stringify({ ...st, after: g2 }));
+  await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); });
+  await f.frames(4);
+  await f.tap(await at('[data-act="go"]'));
+  await f.frames(3);
+  st = await phone.evaluate(() => { const ap = window.app.game.flight.autopilot; return { target: ap?.target.name ?? null, rig: window.app.rig.autopilot }; });
+  check('on a phone: Go there starts the ship\'s autopilot', st.target === 'Moon' && !st.rig, JSON.stringify(st));
+  await phone.screenshot({ path: path.join(outDir, 'f15-phone-autopilot.png'), timeout: 180000 });
+  await ctx.close();
+}
 
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

@@ -277,6 +277,44 @@ binaries 419, brown dwarfs 250. Sources and licences: CREDITS.md.
   info row; picking many galaxies adds one volume mesh each (never removed).
 * Regenerate: `cd pipeline && python3 build_catalog.py` (downloads ~260 MB once).
 
+## The relativistic ship (ship worker)
+
+The owner: "some sort of ship that follows like the laws of physics ... can travel as fast as you
+want to, but still not faster than the speed of light". Before, the ship's "warp drive" was the
+explorer's camera autopilot carrying it (Earth to Rigil Kentaurus in 28 s: 4.9 million times the
+speed of light) and the "boosted" drive hit a wall at 0.995 c. Now (details, decisions and the
+measurements in `docs/notes/relativistic-ship.md`):
+- *Mechanics, real.* `src/sim/Relativity.ts`: the state is the proper velocity w = γv, exact at
+  any Lorentz factor (tested to 10²⁹); the drive's push is solved in closed form (hyperbolic
+  motion, sideways velocity included); speeds compose by Lorentz boosts. Gravity is Newton's
+  potential (Paczyński–Wiita at black holes) in special relativity: γc² + Φ and r × w conserved,
+  the old symplectic steps with w for v, the old integrator again at everyday speeds (its outputs
+  reproduced to centimetres). Not general relativity: a fast path bends less than Einstein's. A
+  substep's chord is tested against the ground and the horizon (a fast ship crossed small worlds
+  between substeps).
+- *The drive, invented and said so.* The "reactionless drive" (`ShipState.drive`): its proper
+  acceleration from 0.001 g to 1,000,000 g (=/-; on a phone − and + over the instruments), no
+  propellant, not felt aboard; no real engine does without reaction mass. The fusion torch stays.
+- *Clocks.* Time warp is the ship's clock's rate; the universe's runs by the coordinate time that
+  takes (at γ = 10⁶ a day aboard is 2,700 years: the date runs on, the planets move).
+- *The autopilot* (`src/game/Autopilot.ts`; J, Go there, the headset's Fly to): flip-and-burn on
+  the reactionless drive at the pilot's setting, arriving at rest (in orbit if the target pulls);
+  round any world in its way along the tangent to 1.3 of its radii; refuses in air and where
+  gravity is more than half the drive's push (the Elite-style mass lock is gone); lets go of a
+  target that is taken away. Nothing in the ship travels faster than light; the explorer's free
+  camera, a map, still jumps.
+- *Instruments* (`FlightHud.ts`, the cockpit's screens): speed as a fraction of light's with its
+  nines, the Lorentz factor, what speed does to the view ahead, the time to go aboard and in the
+  universe, both clocks; distances in light years.
+- *On a phone*: More → Spaceship boards; in the ship the tabs stay (Search, Go there, Time); the
+  drive's − and +. Flying by hand by touch is part 6 below.
+- *Not done*: the view at speed (aberration, Doppler, the headlight effect): drawn as at rest; a
+  precise specification is in the notes (the star shaders were other agents' work in progress).
+  With the live N-body physics coming, the notes list what the ship reads live and what assumes
+  two-body orbits (the prediction line, the rails).
+- Tests: `tests/relativity.test.ts`, `tests/autopilot.test.ts`, `tests/flight.test.ts`;
+  `scripts/flight.mjs` (28 checks), `scripts/game.mjs` (21).
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
@@ -295,8 +333,8 @@ running (a build, not the dev server: an edit reloads the page under a running s
 49), `interact` (mouse and keys; 11), `verify` (35 scenes), `exposure` (looking away from bright
 things and back; 51), `stars` (the faces of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 29),
-`vr` (IWER Quest 3 emulator; 32), `game` (20), `walk` (45), `places` (rings, comets, eclipses; 14),
-`terrain` (14), `flight` (19). At most three at a time on four cores (more
+`vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 14),
+`terrain` (14), `flight` (28). At most three at a time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
 Every script starts its browser through `scripts/lib/browser.mjs`; set `CHROMIUM_PATH` to use an
@@ -783,7 +821,8 @@ above is validated against JPL Horizons and stays as it is unless something is w
      octaves (`uLite`): not looked at in a headset, nor in the emulated one beyond the `vr`
      suite.
 6. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
-   walking, then the ship, missions and the benchmark as screens of the app.
+   walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
+   touch already), missions and the benchmark as screens of the app.
 7. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.

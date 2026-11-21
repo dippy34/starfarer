@@ -311,8 +311,10 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
 #hud.touch .mouse-only, #hud:not(.touch) .touch-only { display: none !important; }
 /* the title screen and photo mode: nothing but messages */
 #hud.ui-off > :not(.hud-toast) { visibility: hidden; }
-/* the ship and walking bring their own instruments */
-#hud:is([data-mode='ship'], [data-mode='walk']) :is(.hud-tabs, .hud-slot, .look-fab) { display: none; }
+/* the ship and walking bring their own instruments (on a phone the ship keeps the tabs: where to
+   go, Go there, its time warp, and the way out) */
+#hud:is([data-mode='ship'], [data-mode='walk']) .look-fab,
+#hud[data-mode='walk'] :is(.hud-tabs, .hud-slot), #hud[data-mode='ship']:not(.touch) :is(.hud-tabs, .hud-slot) { display: none; }
 
 @media (hover: hover) {
   #hud .sheet .row:hover, #hud .switch:hover, #hud .icon-btn:hover, #hud .transport button:not(.big):hover { background: var(--fill); }

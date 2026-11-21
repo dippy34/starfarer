@@ -26,10 +26,20 @@ rings** among their ice (search "rings") · comets near the Sun with comas, tail
 dark nucleus with jets · **eclipses at their
 real times** (moon shadows crossing Jupiter, the Moon turning copper in Earth's shadow).
 
-**Game mode (V):** fly your own ship — a cockpit with live navigation screens (sit inside it in VR),
-a chase view, inertial flight, a warp drive with streaks and engine sound, fictional traffic and a
-rotating space station orbiting the world you are near (fly up to its docking port and the docking
-computer takes over), landing on solid worlds, missions and a discovery log.
+**The ship (V, or More → Spaceship on a phone):** a ship that obeys physics all the way up — as
+fast as you like, never faster than light. Its motion is Einstein's special relativity, exactly (to
+Lorentz factors of a billion and more), under the real gravity of every world near it; its clock
+runs slow against the universe's, so on a long trip the date runs on and the planets move. Its
+autopilot (J, or **Go there** while aboard) flies flip-and-burn: accelerate, turn, brake, and arrive
+at rest beside the target, going round any world in the way; to Alpha Centauri at 1 g it takes
+about 4 years aboard and 6 in the universe, to the outskirts of the Andromeda Galaxy at 1,000 g under three weeks
+aboard and 2.3 million years in the universe. What is invented is the engine: a "reactionless
+drive" whose push the pilot sets from a thousandth of a g to a million g and which needs no
+propellant (no real engine can do without reaction mass), and that the crew does not feel it. A
+realistic fusion torch (1.3 g, 25 km/s in all) is the other drive. Also: a cockpit with live
+navigation screens (sit inside it in VR), a chase view, fictional traffic and a rotating space
+station orbiting the world you are near (fly up to its docking port and the docking computer takes
+over), landing on solid worlds, missions and a discovery log.
 
 ### ▶ Live: **https://dippy34.github.io/starfarer/**
 
@@ -115,13 +125,15 @@ camera until you go. A flight in progress shows a **Stop** button.
 | Space · `[` `]` · `\` · Backspace | Pause · slower/faster time · reverse · real time now |
 | L · O · M | Names · orbits · minor-body orbits |
 | P · H · Esc | Screenshot · help · stop autopilot / close a panel / deselect |
-| V · J · X | Spaceship (cockpit / chase / off) · warp drive to the selection · brake |
+| V · J | Spaceship (cockpit / chase / off) · in it, the autopilot to the selection |
+| = · - · I | In the ship: the reactionless drive's setting up / down · torch or reactionless drive |
 | K · N | Missions and discoveries · ship sound on/off |
 | T | Tour: Saturn's rings, Olympus Mons, the Apollo 11 site, an eclipse, a comet, a black hole … |
 | U | Photo mode: hide the interface and names (P saves a PNG) |
 
-Flying freely, walking and the ship still need the keyboard (or a headset); their touch controls
-come next.
+Flying freely, walking and flying the ship by hand still need the keyboard (or a headset); their
+touch controls come next. On a phone the ship can be boarded (More → Spaceship), its drive set (the
+− and + over its instruments) and flown by its autopilot (Search, then Go there; Time → Faster).
 
 **Landing:** go to a solid world (the Moon, Mars, Mercury, Ganymede, Callisto … or a rocky planet of
 another star) and keep descending (F; in VR, point the left controller down and push the left stick): below about 40 km the sphere turns
@@ -310,8 +322,9 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   matching terrain and Earth-like skies.
 * Saturn's rings from the inside, comets with comas, tails and nuclei, eclipses and moon shadows at
   their real times.
-* Game mode: cockpit and chase views, inertial flight, warp, traffic, docking at stations, landing,
-  missions and a discovery log.
+* The ship: special-relativistic motion under live gravity, its own clock, a flip-and-burn
+  autopilot that never outruns light; cockpit and chase views, traffic, docking at stations,
+  landing, missions and a discovery log.
 
 Known limitations (planned for later phases unless noted):
 
@@ -340,7 +353,11 @@ Known limitations (planned for later phases unless noted):
 * Generated planets are labelled as such; their counts and sizes follow occurrence statistics, not
   observations. Orbit orientations and phases of most real exoplanets are unmeasured and chosen
   deterministically.
-* Game-mode ships are fictional. The ISS and Hubble are propagated from one set of orbital elements
+* The ship's reactionless drive is fictional (its motion is real). The view from the ship at near light speed is not yet relativistic: the stars are drawn where they
+  are, not crowded ahead, bluer and brighter (the instruments say what the view would be). Gravity
+  on the ship is Newton's in special relativity, not general relativity: a fast path bends less
+  than it would near a star or a black hole.
+* The traffic ships and stations are fictional. The ISS and Hubble are propagated from one set of orbital elements
   (2026-10-01), so they drift from their real positions over weeks. Procedural stars beyond the catalogues
   are plausible, not real: their densities, colours and luminosities follow the model.
 * Star radii are estimated from V magnitude and temperature (no bolometric correction): red dwarfs,

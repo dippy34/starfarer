@@ -1,25 +1,47 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { App } from '../app/App';
-import { AU, DAY } from '../core/units';
+import { AU, DAY, LY } from '../core/units';
 import { UPos } from '../core/upos';
 import type { AtmosphereData } from '../render/Atmospheres';
-import { G, gravity, type GravitySource, MSUN, makeSource } from '../sim/Gravity';
+import { C, G, gravity, type GravitySource, MSUN, makeSource } from '../sim/Gravity';
 import { conicOf, timeToRadius, type Conic } from '../sim/Kepler';
 import { Predictor } from '../sim/Predict';
-import { type Atmosphere, FlightCore, type FlightEvent, G0, SHIP_SPEC } from '../sim/ShipPhysics';
-import { Body } from '../universe/Body';
+import { boostProper, flipAndBurn, lorentz } from '../sim/Relativity';
+import { type Atmosphere, type Drive, FlightCore, type FlightEvent, G0, SHIP_SPEC } from '../sim/ShipPhysics';
+import { Body, type SpaceObject } from '../universe/Body';
 import { ExoPlanet, starProps } from '../universe/Planets';
-import type { CatalogStar } from '../universe/Stars';
+import { CatalogStar } from '../universe/Stars';
+import { autopilotRate, inTheWay, placeSlot, type Situation, steer, type Steering } from './Autopilot';
+import { Station } from './Station';
 
 export type SasMode = 'off' | 'stability' | 'prograde' | 'retrograde' | 'normal' | 'antinormal' | 'radial-out' | 'radial-in' | 'target' | 'anti-target';
 const SAS_ORDER: SasMode[] = ['off', 'stability', 'prograde', 'retrograde', 'normal', 'antinormal', 'radial-out', 'radial-in', 'target', 'anti-target'];
 
-/** Fastest physics time warp; above RAILS_RATE a coasting ship goes "on rails" (analytic Kepler). */
+/**
+ * Fastest time warp (of the ship's clock: the universe's runs faster still when the ship's runs
+ * slow); above RAILS_RATE a slow, coasting ship goes "on rails" (analytic Kepler).
+ */
 export const MAX_RATE = 100_000;
 export const RAILS_RATE = 1000;
-/** gravity (m/s^2) above which the warp drive is mass-locked */
-export const MASS_LOCK_G = 0.5;
+/** the autopilot flies only where gravity is at most this share of the drive's acceleration (the rest steers) */
+export const HOLD = 0.5;
+/** the reactionless drive's settings (g at full throttle): 1, 2, 5 from a thousandth of a g to a million */
+export const DRIVE_STEPS = [-3, -2, -1, 0, 1, 2, 3, 4, 5].flatMap((e) => [1, 2, 5].map((m) => m * 10 ** e)).concat(1e6);
 const L_SUN = 3.828e26;
+
+/** The autopilot's flight: flip-and-burn to a target, arriving at rest beside it, or in orbit if it pulls. */
+interface Autopilot {
+  target: SpaceObject;
+  /** distance from the target's centre to arrive at (m) */
+  radius: number;
+  /** the target's velocity (m/s, world), from its motion between frames when it has none of its own */
+  vel: Vector3;
+  prev: UPos;
+  prevJd: number;
+  steering: Steering;
+  /** the world it is flying round ('' for none) */
+  detour: string;
+}
 
 /** What the HUD and cockpit show (refreshed every frame). */
 export interface FlightReadout {
@@ -51,9 +73,31 @@ export interface FlightReadout {
   universeTime: number;
   heat: number;
   hullTemp: number;
-  boosted: boolean;
+  drive: Drive;
+  /** the reactionless drive's setting (g at full throttle) */
+  driveG: number;
+  /** the reactionless drive holds back at its limit */
+  atLimit: boolean;
+  /** proper speed γv (m/s) and Lorentz factor against the frame body */
+  properSpeed: number;
+  gamma: number;
+  /** the selected target: name, distance to its surface (m), time to it aboard and in the universe (s; NaN: none) */
+  target: string;
+  targetDist: number;
+  etaShip: number;
+  etaUniverse: number;
+  /** where a flip-and-burn ends: this far out from the target's surface (m; NaN: none) */
+  arrival: number;
+  /** how the times to the target are reckoned: by flip-and-burn at the drive's setting, or coasting at this speed */
+  etaBy: 'flip-and-burn' | 'coasting' | '';
+  /** the autopilot, if flying: what it is doing */
+  autopilot: string;
+  /** looking ahead: half the sky crowds into this angle (rad); light ahead is this many times bluer */
+  halfSky: number;
+  doppler: number;
   landed: string;
-  massLock: string;
+  /** why the autopilot will not fly from here ('' when it will) */
+  refusal: string;
   warning: string;
   warnLevel: 0 | 1 | 2;
 }
@@ -76,8 +120,12 @@ export class Flight {
   readonly readout: FlightReadout = {
     frame: '', altitude: 0, vertSpeed: 0, orbitSpeed: 0, surfSpeed: 0, conic: null, tImpact: NaN, tAp: NaN, tPe: NaN, ap: NaN, pe: NaN,
     escape: false, encounter: '', gForce: 0, tidal: 0, throttle: 0, fuel: 1, dv: 0, sas: 'stability', rails: false, rate: 1, limited: false,
-    dilation: 1, shipTime: 0, universeTime: 0, heat: 0, hullTemp: 290, boosted: false, landed: '', massLock: '', warning: '', warnLevel: 0,
+    dilation: 1, shipTime: 0, universeTime: 0, heat: 0, hullTemp: 290, drive: 'torch', driveG: 1, atLimit: false, properSpeed: 0, gamma: 1,
+    target: '', targetDist: NaN, etaShip: NaN, etaUniverse: NaN, arrival: NaN, etaBy: '', autopilot: '', halfSky: Math.PI / 2, doppler: 1,
+    landed: '', refusal: '', warning: '', warnLevel: 0,
   };
+  /** the autopilot's flight in progress (null: the pilot flies) */
+  autopilot: Autopilot | null = null;
   /** end of the flight in progress (crash, horizon...): seconds left, then respawn */
   ending: { ev: FlightEvent; t: number; total: number; title: string; text: string } | null = null;
   /** seconds since the end sequence started (for the effects) */
@@ -224,6 +272,8 @@ export class Flight {
     if (this.on) return;
     this.on = true;
     const app = this.app, rig = app.rig, ship = this.ship;
+    // (boarding stops the explorer's travel: in the ship nothing outruns light)
+    rig.cancelGoto();
     gravity.refresh();
     ship.upos.copy(rig.upos);
     ship.quat.copy(rig.quat);
@@ -232,6 +282,7 @@ export class Flight {
     ship.rcs.set(0, 0, 0);
     ship.hullTemp = 290;
     this.ending = null;
+    this.autopilot = null;
     this.universeTime = 0;
     ship.shipTime = 0;
     this.lastJd = app.clock.jdTdb;
@@ -246,12 +297,14 @@ export class Flight {
   disable(): void {
     this.on = false;
     this.ending = null;
+    this.autopilot = null;
     this.app.rig.stop();
   }
 
   /**
-   * Leaving the warp drive (or boarding): matched to the local frame. Low over a solid world you are
-   * set down (or hover in free fall if `orbit` is false); otherwise on a circular orbit of the dominant body.
+   * Boarding, or set down somewhere by the explorer (a search pick, a tour stop, a script): matched
+   * to the local frame. Low over a solid world you are set down; otherwise on a circular orbit of
+   * the dominant body.
    */
   dropIntoOrbit(announce: boolean): void {
     const core = this.core, ship = this.ship;
@@ -338,24 +391,144 @@ export class Flight {
   }
   private anchorTrack: { obj: object; pos: UPos; jd: number; vel: Vector3; ok: boolean } | null = null;
 
-  /** Warp drive check: mass-locked by strong gravity. Returns the reason, or '' when free. */
-  massLock(): string {
+  /**
+   * Why the autopilot will not fly from here ('' when it will): in the air (it would cross it at
+   * many km/s), or where the drive at its setting cannot hold the ship against gravity with enough
+   * to spare to steer. (Worlds in its way it flies round: Autopilot.ts, inTheWay.)
+   */
+  autopilotRefusal(): string {
     if (!this.on) return '';
-    const g = gravity.gravityAt(this.ship.upos, new Vector3()).length();
-    if (g < MASS_LOCK_G) return '';
-    const D = this.core.frame;
-    let need = '';
-    if (D) {
-      const r = Math.sqrt(D.gm / MASS_LOCK_G) - (D.rs > 0 ? 0 : 0);
-      need = ` Climb beyond ${fmtDist(r - D.radius)} from ${D.name}.`;
+    const core = this.core, D = core.frame, atm = core.atmosphere;
+    if (D && atm && this.ship.upos.sub(D.upos, this.tmp).length() < atm.R0 + atm.top) return `In the air of ${D.name}: climb above ${fmtDist(atm.top)} first.`;
+    const g = gravity.gravityAt(this.ship.upos, this.tmp).length();
+    if (g <= HOLD * this.ship.driveAccel) return '';
+    const need = DRIVE_STEPS.find((x) => x * G0 * HOLD >= g) ?? DRIVE_STEPS[DRIVE_STEPS.length - 1];
+    return `The drive at ${fmtG(this.ship.driveAccel / G0)} is too weak against gravity here (${g.toFixed(g < 10 ? 2 : 0)} m/s²): set it to ${fmtG(need)} or more.`;
+  }
+
+  /**
+   * J (or Go there, in the ship): the autopilot flies to `target` the way physics allows: the
+   * reactionless drive at the pilot's setting, accelerating towards it, turning, braking, and
+   * arriving at rest beside it (in orbit about it if it pulls). Not in the air, nor where gravity
+   * is too strong for the drive's setting.
+   */
+  autopilotTo(target: SpaceObject): boolean {
+    const app = this.app, ship = this.ship;
+    if (!this.on || this.ending) return false;
+    const no = this.autopilotRefusal();
+    if (no) {
+      app.hud.toast(no, 4);
+      if (app.vr.active) app.vr.flash(no.split(':')[0]);
+      return false;
     }
-    return `Mass-locked: gravity ${g.toFixed(g < 10 ? 2 : 0)} m/s² (limit ${MASS_LOCK_G}).${need}`;
+    if (target.upos.sub(ship.upos, this.tmp).length() < this.arrivalRadius(target) * 1.05) {
+      app.hud.toast(`Already at ${target.name}`);
+      return false;
+    }
+    ship.drive = 'reactionless';
+    this.autopilot = {
+      target, radius: this.arrivalRadius(target), vel: new Vector3(), prev: target.upos.clone(), prevJd: app.clock.jdTdb,
+      steering: { aim: new Vector3(0, 0, -1).applyQuaternion(ship.quat), throttle: 0, rcs: new Vector3(), turning: false, tauGo: Infinity, tGo: Infinity, phase: 'turning', arrived: false }, detour: '',
+    };
+    this.trackTarget();
+    const say = `Autopilot: flip-and-burn to ${target.name} at ${fmtG(ship.driveAccel / G0)} (reactionless drive)`;
+    app.hud.toast(say, 3);
+    if (app.vr.active) app.vr.flash(`Autopilot: ${target.name}`);
+    return true;
+  }
+
+  cancelAutopilot(say: string): void {
+    if (!this.autopilot) return;
+    this.autopilot = null;
+    this.ship.throttle = 0;
+    this.ship.rcs.set(0, 0, 0);
+    this.app.hud.toast(say, 2.5);
+    if (this.app.vr.active) this.app.vr.flash(say);
+  }
+
+  /** Where the autopilot stops: clear of the target's air, heat and tides. */
+  private arrivalRadius(obj: SpaceObject): number {
+    if (obj instanceof Station) return 700;
+    const src = this.cache.get(obj);
+    if (src && src.rs > 0) return Math.max(30 * src.rs, 1.6 * Math.cbrt((2 * src.gm * SHIP_SPEC.length) / SHIP_SPEC.tidalLimit));
+    if ((obj instanceof Body && obj.kind === 'star') || obj instanceof CatalogStar) return Math.max(8 * obj.radius, 2e7);
+    if (obj.radius < 1e4) return Math.max(5 * obj.radius, 1e3);
+    return Math.max(3.5 * obj.radius, obj.radius + 300e3);
+  }
+
+  /**
+   * The autopilot, every frame (Autopilot.ts: the slot it flies to, the steering), and what it
+   * does when it is there.
+   */
+  private guide(): void {
+    const ap = this.autopilot!, ship = this.ship, tgt = ap.target, sit = this.situation;
+    // the target can go (a world taken away, a station with it, a craft past its ephemeris)
+    const holder = (tgt instanceof Station ? tgt.body : tgt) as { valid?: boolean };
+    if (holder.valid === false) { this.cancelAutopilot(`${tgt.name} is gone: autopilot off`); return; }
+    const src = tgt instanceof Station ? undefined : this.cache.get(tgt);
+    // a world in the way: towards a point round it instead, moving with it, until the target is in sight
+    const w = inTheWay(ship.upos, ship.vel, tgt, gravity.sources, _g3);
+    ap.detour = w ? w.name : '';
+    if (w) {
+      sit.radius = 0;
+      placeSlot(sit, ship.upos.sub(w.upos, _g1).sub(_g3), ship.properVelocity(), w.vel, 0, 0, null);
+      gravity.gravityAt(ship.upos, sit.gravity).sub(gravity.gravityAt(w.upos, _g2));
+    } else {
+      sit.radius = ap.radius;
+      placeSlot(sit, ship.upos.sub(tgt.upos, _g1), ship.properVelocity(), ap.vel, src?.gm ?? 0, src?.rs ?? 0, tgt instanceof Body ? spinOf(tgt, _g2) : null);
+      gravity.gravityAt(ship.upos, sit.gravity).sub(gravity.gravityAt(tgt.upos, _g2));
+    }
+    sit.nose.set(0, 0, -1).applyQuaternion(ship.quat);
+    sit.drive = ship.driveAccel;
+    sit.rcs = SHIP_SPEC.rcsThrust / ship.mass;
+    sit.dt = this.simDt;
+    const st = steer(sit, ap.steering);
+    ship.throttle = st.throttle;
+    ship.rcs.copy(st.rcs).applyQuaternion(_q.copy(ship.quat).invert()).divideScalar(sit.rcs).clampScalar(-1, 1);
+    if (st.arrived && !ap.detour) {
+      this.autopilot = null;
+      ship.throttle = 0;
+      ship.rcs.set(0, 0, 0);
+      this.sas = 'stability';
+      const say = sit.orbit > 0 ? `Arrived: in orbit about ${tgt.name}` : `Arrived at ${tgt.name}`;
+      this.app.hud.toast(say, 3);
+      if (this.app.vr.active) this.app.vr.flash(say);
+      this.app.game.audio.chime();
+    }
+  }
+  private situation: Situation = {
+    rel: new Vector3(), w: new Vector3(), slotAccel: new Vector3(), gravity: new Vector3(), nose: new Vector3(), drive: 0, rcs: 0, dt: 0, radius: 0, orbit: 0,
+  };
+
+  /** The target's velocity from its motion since the last frame (after the bodies moved). */
+  private trackTarget(): void {
+    const ap = this.autopilot;
+    if (!ap) return;
+    const jd = this.app.clock.jdTdb, dt = (jd - ap.prevJd) * DAY;
+    // (stations and traffic ships know their velocity about their world)
+    const orb = ap.target as unknown as { vel?: Vector3; body?: Body };
+    if (ap.target instanceof Body) ap.vel.copy(ap.target.vel);
+    else if (orb.vel && orb.body instanceof Body) ap.vel.copy(orb.body.vel).add(orb.vel);
+    else if (dt > 0) ap.target.upos.sub(ap.prev, ap.vel).divideScalar(dt);
+    ap.prev.copy(ap.target.upos);
+    ap.prevJd = jd;
+  }
+
+  /** The reactionless drive's setting, a step up or down (= and -). */
+  stepDrive(up: boolean): void {
+    const ship = this.ship;
+    const i = DRIVE_STEPS.findIndex((g) => g >= ship.driveAccel / G0 * (1 - 1e-9));
+    const j = Math.max(0, Math.min(DRIVE_STEPS.length - 1, (i < 0 ? DRIVE_STEPS.length - 1 : i) + (up ? 1 : -1)));
+    ship.driveAccel = DRIVE_STEPS[j] * G0;
+    const say = `Reactionless drive: ${fmtG(DRIVE_STEPS[j])} at full throttle${ship.drive === 'torch' ? ' (the autopilot flies on it)' : ''}`;
+    this.app.hud.toast(say, 2);
+    if (this.app.vr.active) this.app.vr.flash(say);
   }
 
   /** VR grip throttle this frame (-1 = none) */
   gripThrottle = -1;
 
-  /** true while something else flies the ship: the warp drive, the VR travel, the docking computer */
+  /** true while something else flies the ship: the explorer's travel, the docking computer */
   get external(): boolean {
     const app = this.app;
     return app.rig.autopilot || app.vr.traveling || !!app.game?.docked || !!app.game?.isDocking;
@@ -370,7 +543,8 @@ export class Flight {
     gravity.refresh();
     this.gripThrottle = app.rig.ext.throttle;
     if (this.external) {
-      // the warp drive (or docking computer) carries the ship: physics resumes at drop-out
+      // the docking computer carries the ship (and takes over from the autopilot): physics resumes after it
+      this.autopilot = null;
       this.simDt = clock.paused ? 0 : Math.max(0, Math.min(rawDt, 1) * clock.rate);
       app.rig.updateExternal();
       return this.simDt;
@@ -397,12 +571,17 @@ export class Flight {
       if (!this.warnedReverse) { app.hud.toast('Time cannot run backwards while you fly: the ship holds still'); this.warnedReverse = true; }
     } else this.warnedReverse = false;
     rate = Math.min(rate, MAX_RATE);
-    // the universe clock runs fast when the ship's clock is slow (gravity, speed); shown, capped at 50x
-    let want = Math.min(rawDt, 1) * rate / Math.max(ship.dilation, 0.02);
-    // on rails: coasting, no air, no black hole, periapsis well clear of the ground
+    // (while the autopilot turns the ship, time keeps step with the wheels, which turn by the
+    // clamped control step: on a slow machine a turn would otherwise take longer than it does)
+    const ap = this.autopilot;
+    const real = ap?.steering.turning ? dt : Math.min(rawDt, 1);
+    if (ap) rate = autopilotRate(rate, ap.steering, real, ship.driveAccel);
+    // the warp is the ship's clock's; the universe's runs faster as the ship's runs slow (speed, gravity)
+    let want = core.universeTimeFor(real * rate);
+    // on rails: slow (Newton's two bodies), coasting, no air, no black hole, periapsis well clear of the ground
     const D = core.frame;
     this.rails = false;
-    if (want > 0 && rate >= RAILS_RATE && D && D.rs === 0 && !core.landed && ship.throttle === 0 && ship.rcs.lengthSq() === 0) {
+    if (want > 0 && rate >= RAILS_RATE && D && D.rs === 0 && !core.landed && ship.throttle === 0 && ship.rcs.lengthSq() === 0 && core.relVel.length() < 1e-3 * C) {
       const rel = ship.upos.sub(D.upos, new Vector3()), vel = ship.vel.clone().sub(D.vel);
       const c = conicOf(rel, vel, D.gm);
       const top = core.atmosphere ? core.atmosphere.R0 + core.atmosphere.top : core.groundR;
@@ -452,16 +631,17 @@ export class Flight {
     this.universeTime += this.simDt;
     this.exoVelocities((app.clock.jdTdb - this.lastJd) * DAY);
     this.trackAnchor();
+    this.trackTarget();
     if (this.external) {
-      // in warp the ship is where the drive puts it
+      // the docking computer puts the ship where it wants it
       ship.upos.copy(rig.upos);
       ship.quat.copy(rig.quat);
-      this.wasWarping = true;
+      this.wasCarried = true;
       this.lastJd = app.clock.jdTdb;
       return;
     }
-    if (this.wasWarping) {
-      this.wasWarping = false;
+    if (this.wasCarried) {
+      this.wasCarried = false;
       ship.upos.copy(rig.upos);
       ship.quat.copy(rig.quat);
       this.dropIntoOrbit(true);
@@ -490,13 +670,24 @@ export class Flight {
     this.updatePrediction();
     this.fillReadout();
   }
-  private wasWarping = false;
+  private wasCarried = false;
 
   // ------------------------------------------------------------------ controls
   /** Throttle, RCS, reaction wheels and SAS from the keyboard, mouse and VR controllers (real time). */
   private controls(dt: number): void {
     const app = this.app, k = app.input.keys, ship = this.ship, rig = app.rig;
     const shift = k.has('ShiftLeft') || k.has('ShiftRight');
+    if (this.autopilot) {
+      // the autopilot flies until the pilot touches a control
+      const look = app.input.consume().look;
+      if (MANUAL.some((c) => k.has(c)) || look.dx || look.dy || rig.ext.throttle > 0.05 || rig.ext.rot.lengthSq() > 1e-4) {
+        this.cancelAutopilot('Autopilot off: you have the controls');
+      } else {
+        this.guide();
+        if (this.autopilot) this.attitude(dt, new Vector3());
+        return;
+      }
+    }
     if (!app.walk.walking) {
       // throttle (W/S, Z full, X cut); with Shift, W/S are RCS fore/aft
       if (!shift) {
@@ -544,11 +735,16 @@ export class Flight {
     if (this.app.vr.active) this.app.vr.flash(`SAS: ${label}`);
   }
 
-  toggleBoost(): void {
-    this.ship.boosted = !this.ship.boosted;
-    const say = this.ship.boosted ? 'Boosted drive: 25x thrust, infinite propellant, inertial dampers' : 'Realistic drive: real thrust and propellant';
-    this.app.hud.toast(say, 3);
-    if (this.app.vr.active) this.app.vr.flash(say);
+  /** I: the fusion torch (real thrust, real propellant) or the reactionless drive (the invention). */
+  toggleDrive(): void {
+    const ship = this.ship;
+    ship.drive = ship.drive === 'torch' ? 'reactionless' : 'torch';
+    if (ship.drive === 'torch') this.cancelAutopilot('Autopilot off: it flies on the reactionless drive');
+    const say = ship.drive === 'reactionless'
+      ? `Reactionless drive: ${fmtG(ship.driveAccel / G0)} at full throttle (= and - to set), no propellant, nothing felt (invented); motion: real relativity`
+      : 'Fusion torch: real thrust and propellant';
+    this.app.hud.toast(say, 3.5);
+    if (this.app.vr.active) this.app.vr.flash(ship.drive === 'reactionless' ? 'Reactionless drive' : 'Fusion torch');
   }
 
   /** Reaction wheels: the command sets an angular acceleration; SAS steers when the pilot does not. */
@@ -561,7 +757,7 @@ export class Flight {
     let want: Vector3 | null = null; // wanted body rates
     if (manual) {
       want = cmd.clone().multiplyScalar(spec.maxRate * 0.6);
-    } else if (this.sas !== 'off') {
+    } else if (this.sas !== 'off' || this.autopilot) {
       want = new Vector3();
       const dir = this.sasDirection();
       if (dir) {
@@ -593,9 +789,10 @@ export class Flight {
     }
   }
 
-  /** World direction the SAS holds, or null (stability: just kill rotation). */
+  /** World direction the SAS holds (the autopilot's aim while it flies), or null (stability: just kill rotation). */
   private sasDirection(): Vector3 | null {
     const D = this.core.frame, ship = this.ship;
+    if (this.autopilot) return this.autopilot.steering.aim;
     const mode = this.sas;
     if (mode === 'stability' || mode === 'off') return null;
     if (mode === 'target' || mode === 'anti-target') {
@@ -627,6 +824,7 @@ export class Flight {
   // ------------------------------------------------------------------ events
   private handleEvent(ev: FlightEvent): void {
     const app = this.app;
+    if (ev.kind !== 'land') this.autopilot = null;
     const name = ev.src?.name ?? 'the ground';
     const spd = fmtSpeed(ev.speed);
     if (ev.kind === 'land') {
@@ -648,7 +846,7 @@ export class Flight {
     this.endingT = 0;
     this.ship.throttle = 0;
     if (app.vr.active) app.vr.flash(title);
-    app.game.audio.update(0, 0, false);
+    app.game.audio.update(0, false);
     this.onEvent?.(ev);
   }
 
@@ -735,12 +933,22 @@ export class Flight {
   private fillReadout(): void {
     const r = this.readout, core = this.core, ship = this.ship, D = core.frame;
     r.frame = D?.name ?? 'deep space';
-    r.gForce = ship.gForce / (ship.boosted ? SHIP_SPEC.boost : 1);
+    r.gForce = ship.gForce;
     r.tidal = ship.tidal;
     r.throttle = ship.throttle;
     r.fuel = ship.fuel / SHIP_SPEC.fuelMax;
-    r.boosted = ship.boosted;
-    r.dv = ship.boosted ? Infinity : SHIP_SPEC.isp * G0 * Math.log(ship.mass / SHIP_SPEC.dryMass);
+    r.drive = ship.drive;
+    r.driveG = ship.driveAccel / G0;
+    r.atLimit = core.atLimit;
+    r.dv = ship.drive === 'reactionless' ? Infinity : SHIP_SPEC.isp * G0 * Math.log(ship.mass / SHIP_SPEC.dryMass);
+    // speed against the frame body, and what it does to the view ahead: aberration crowds half the
+    // sky into θ with tan θ = 1/(γβ); light ahead is bluer by the Doppler factor γ(1 + β) = e^η
+    const w = core.relW.length();
+    r.properSpeed = w;
+    r.gamma = lorentz(core.relW);
+    r.halfSky = Math.atan2(C, w);
+    r.doppler = r.gamma + w / C;
+    this.fillTarget();
     r.sas = this.sas;
     r.rails = this.rails;
     r.limited = this.limited;
@@ -751,7 +959,7 @@ export class Flight {
     r.heat = ship.heatFlux;
     r.hullTemp = ship.hullTemp;
     r.landed = core.landed ? core.landed.src.name : '';
-    r.massLock = this.massLock();
+    r.refusal = this.autopilotRefusal();
     r.conic = null;
     r.tImpact = r.tAp = r.tPe = r.ap = r.pe = NaN;
     r.escape = false;
@@ -800,7 +1008,45 @@ export class Flight {
     else if (ship.tidal > lim * 0.05) { r.warning = `TIDES ${(ship.tidal / G0).toFixed(1)} g`; r.warnLevel = 1; }
     else if (ship.hullTemp > 1200) { r.warning = 'RE-ENTRY HEATING'; r.warnLevel = 1; }
     else if (r.gForce > 6) { r.warning = `HIGH G ${r.gForce.toFixed(1)}`; r.warnLevel = 1; }
-    else if (!ship.boosted && ship.fuel <= 0) { r.warning = 'PROPELLANT EXHAUSTED (I: boosted drive)'; r.warnLevel = 1; }
+    else if (ship.drive === 'torch' && ship.fuel <= 0) { r.warning = 'PROPELLANT EXHAUSTED (I: reactionless drive)'; r.warnLevel = 1; }
+    else if (core.atLimit) { r.warning = `DRIVE AT ITS LIMIT: γ ${fmtGamma(SHIP_SPEC.gammaMax)}`; r.warnLevel = 1; }
+  }
+
+  /** Distance and time to the selected target, in the ship's time and the universe's. */
+  private fillTarget(): void {
+    const r = this.readout, ship = this.ship, ap = this.autopilot;
+    const sel = ap?.target ?? this.app.selection;
+    r.autopilot = ap ? `${ap.target.name} · ${ap.detour ? `round ${ap.detour}` : ap.steering.phase}` : '';
+    r.target = sel?.name ?? '';
+    r.targetDist = r.etaShip = r.etaUniverse = r.arrival = NaN;
+    r.etaBy = '';
+    if (!sel) return;
+    const rel = sel.upos.sub(ship.upos, _g1);
+    const d = rel.length();
+    r.targetDist = Math.max(0, d - sel.radius);
+    if (ap) {
+      // the autopilot's own reckoning
+      r.etaShip = ap.steering.tauGo;
+      r.etaUniverse = ap.steering.tGo;
+      r.arrival = Math.max(0, ap.radius - sel.radius);
+      r.etaBy = 'flip-and-burn';
+      return;
+    }
+    // the proper velocity towards it, in its own frame (a world's velocity; others counted at rest)
+    const w = boostProper(ship.properVelocity(), _g2.copy(sel instanceof Body ? sel.vel : _zero).negate(), _g3);
+    const toward = d > 0 ? w.dot(rel) / d : 0;
+    if (ship.drive === 'reactionless' && ship.driveAccel > 0) {
+      const fb = flipAndBurn(Math.max(0, d - this.arrivalRadius(sel)), ship.driveAccel, toward);
+      r.etaShip = fb.tau;
+      r.etaUniverse = fb.t;
+      r.arrival = Math.max(0, this.arrivalRadius(sel) - sel.radius);
+      r.etaBy = 'flip-and-burn';
+    } else if (toward > 1) {
+      // coasting straight at it: the universe sees d/v, the ship's clock γ times less
+      r.etaUniverse = (r.targetDist * lorentz(w)) / toward;
+      r.etaShip = r.targetDist / toward;
+      r.etaBy = 'coasting';
+    }
   }
 }
 
@@ -834,8 +1080,47 @@ export function sasLabel(m: SasMode): string {
 export function fmtSpeed(v: number): string {
   const a = Math.abs(v);
   if (a < 1000) return `${v.toFixed(a < 100 ? 1 : 0)} m/s`;
-  if (a < 0.01 * 299792458) return `${(v / 1000).toFixed(a < 1e5 ? 2 : 0)} km/s`;
-  return `${(v / 299792458).toFixed(3)} c`;
+  if (a < 0.01 * C) return `${(v / 1000).toFixed(a < 1e5 ? 2 : 0)} km/s`;
+  // (never "1.000 c": the nines past the third are fmtLight's, from the proper speed)
+  return `${v < 0 ? '-' : ''}${a < 0.9995 * C ? (a / C).toFixed(3) : '0.999…'} c`;
+}
+
+/**
+ * A speed given by its proper speed w = γv (which keeps every digit), as a fraction of light's
+ * with as many nines as it takes: "0.999 999 999 999 999 999 5 c". Below 1 % of c, in m/s or km/s.
+ */
+export function fmtLight(w: number): string {
+  const x = Math.abs(w) / C, g = Math.hypot(1, x);
+  if (x < 0.01) return fmtSpeed(w / g);
+  // 1 - β = 1/(γ(γ + γβ)), by logarithms (no overflow at any γ)
+  const L = Math.log10(g) + Math.log10(g + x);
+  if (L < 1) return `${(x / g).toFixed(4)} c`;
+  const n = Math.floor(L);
+  const rest = String(Math.round((1 - 10 ** (n - L)) * 100)).padStart(2, '0').replace(/0+$/, '');
+  const digits = '9'.repeat(n) + rest;
+  return `0.${digits.replace(/(\d{3})(?=\d)/g, '$1 ')} c`;
+}
+
+/** A Lorentz factor: "1 + 3.3×10⁻¹⁰" while it is near 1, then plain, then in powers of ten. */
+export function fmtGamma(g: number): string {
+  if (g < 1.001) return `1 + ${sci(g - 1)}`;
+  if (g < 1e5) return g.toPrecision(5);
+  return sci(g);
+}
+
+/** an acceleration in g: "1 g", "0.002 g", "50,000 g" */
+export function fmtG(g: number): string {
+  return `${g < 1 ? Number(g.toPrecision(3)) : Math.round(g).toLocaleString('en-US')} g`;
+}
+
+const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+/** 3.3×10⁻¹⁰ */
+function sci(x: number): string {
+  if (x === 0) return '0';
+  const e = Math.floor(Math.log10(Math.abs(x)));
+  const m = x / 10 ** e;
+  const exp = String(e).replace('-', '⁻').replace(/\d/g, (d) => SUP[Number(d)]);
+  return `${m.toFixed(m < 9.95 ? 1 : 0)}×10${exp}`;
 }
 
 export function fmtDist(m: number): string {
@@ -844,7 +1129,11 @@ export function fmtDist(m: number): string {
   if (a < 1e4) return `${m.toFixed(0)} m`;
   if (a < 1e9) return `${(m / 1e3).toLocaleString(undefined, { maximumFractionDigits: a < 1e6 ? 1 : 0 })} km`;
   if (a < 0.05 * AU) return `${(m / 1e9).toFixed(2)} Gm`;
-  return `${(m / AU).toFixed(3)} AU`;
+  if (a < 0.05 * LY) return `${(m / AU).toFixed(3)} AU`;
+  // (the ship goes to other stars and galaxies: light years, four figures)
+  const ly = m / LY;
+  if (a < 1e6 * LY) return `${ly.toLocaleString('en-US', { maximumSignificantDigits: 4 })} ly`;
+  return `${(ly / 1e6).toLocaleString('en-US', { maximumSignificantDigits: 4 })} million ly`;
 }
 
 export function fmtTime(s: number): string {
@@ -855,11 +1144,21 @@ export function fmtTime(s: number): string {
   else if (s < 3600) out = `${Math.floor(s / 60)} min ${Math.floor(s % 60)} s`;
   else if (s < 86400) out = `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
   else if (s < 86400 * 400) out = `${Math.floor(s / 86400)} d ${Math.floor((s % 86400) / 3600)} h`;
-  else out = `${(s / 3.15576e7).toFixed(2)} yr`;
+  else out = fmtYears(s);
   return neg ? `-${out}` : out;
 }
 
+/** a long time in years: "3.58 yr", "2.54 million yr" */
+function fmtYears(s: number): string {
+  const y = s / 3.15576e7;
+  if (y < 1e4) return `${y.toFixed(2)} yr`;
+  if (y < 1e6) return `${Math.round(y).toLocaleString('en-US')} yr`;
+  if (y < 1e9) return `${(y / 1e6).toFixed(2)} million yr`;
+  return `${(y / 1e9).toFixed(2)} billion yr`;
+}
+
 export function fmtClock(s: number): string {
+  if (s >= 3.15576e7) return fmtYears(s);
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -869,3 +1168,6 @@ export function fmtClock(s: number): string {
 const _q = new Quaternion();
 const _v = new Vector3();
 const _zero = new Vector3();
+const _g1 = new Vector3(), _g2 = new Vector3(), _g3 = new Vector3();
+/** keys that take the controls back from the autopilot */
+const MANUAL = ['KeyW', 'KeyS', 'KeyZ', 'KeyX', 'KeyA', 'KeyD', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];

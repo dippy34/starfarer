@@ -1,6 +1,7 @@
 import { Vector3 } from 'three';
 import { addPointAccel, type GravitySource } from './Gravity';
 import { propagateKepler } from './Kepler';
+import { lorentz, properVelocityOf, velocityOf } from './Relativity';
 import type { Atmosphere } from './ShipPhysics';
 
 export type PredictEventKind = 'pe' | 'ap' | 'impact' | 'horizon' | 'escape' | 'encounter';
@@ -61,6 +62,8 @@ export interface PredictInput {
  * per frame. The ship is integrated in the inertial frame of the hierarchy's root; the bodies that
  * matter move on two-body orbits about their primaries (so a Moon encounter days ahead is placed
  * right), black holes and stars are fixed, and the path is recorded relative to the frame body.
+ * The ship's motion is the flight's own (ShipPhysics: proper velocity, gravity as in special
+ * relativity), so a fast orbit about a black hole is predicted as it will be flown.
  */
 export class Predictor {
   done = true;
@@ -74,6 +77,8 @@ export class Predictor {
   private src: PSrc[] = [];
   private fi = 0; // index of the frame body
   private x = new Vector3();
+  /** the ship's proper velocity (and its velocity) */
+  private w = new Vector3();
   private v = new Vector3();
   private a = new Vector3();
   private inp!: PredictInput;
@@ -125,7 +130,7 @@ export class Predictor {
     this.compose();
     const F = this.src[this.fi];
     this.x.copy(F.P).add(inp.rel);
-    this.v.copy(F.V).add(inp.relVel);
+    properVelocityOf(this.v.copy(F.V).add(inp.relVel), this.w);
     this.record();
     this.lastRv = inp.rel.dot(inp.relVel);
     // how far ahead: a few orbits if bound, otherwise until it leaves (capped)
@@ -192,7 +197,7 @@ export class Predictor {
   private event(kind: PredictEventKind, body?: GravitySource): void {
     const F = this.src[this.fi];
     const pos = this.x.clone().sub(F.P);
-    this.events.push({ kind, t: this.t, pos, r: pos.length(), speed: this.v.clone().sub(F.V).length(), body });
+    this.events.push({ kind, t: this.t, pos, r: pos.length(), speed: velocityOf(this.w, this.tmp).sub(F.V).length(), body });
   }
 
   /** Run up to `steps` integration steps. */
@@ -212,6 +217,7 @@ export class Predictor {
       h *= this.eta;
       const rel = this.tmp.copy(this.x).sub(F.P);
       const rl = rel.length();
+      velocityOf(this.w, this.v);
       if (inp.groundR > 0) {
         const alt = rl - inp.groundR;
         const vs = this.v.clone().sub(F.V).length();
@@ -222,13 +228,14 @@ export class Predictor {
       if (h <= 0) { this.done = true; break; }
       let tau = 0;
       for (let s = 0; s < 4; s++) {
-        this.x.addScaledVector(this.v, YC[s] * h);
+        this.x.addScaledVector(this.w, (YC[s] * h) / lorentz(this.w));
         tau += YC[s] * h;
         if (s < 3) {
-          this.accel(this.x, this.v, tau, this.a);
-          this.v.addScaledVector(this.a, YD[s] * h);
+          this.accel(this.x, velocityOf(this.w, this.v), tau, this.a);
+          this.w.addScaledVector(this.a, YD[s] * h);
         }
       }
+      velocityOf(this.w, this.v);
       // the bodies move on along their orbits
       for (const p of this.src) {
         if (p.parent >= 0) propagateKepler(p.r, p.v, p.mu, h);

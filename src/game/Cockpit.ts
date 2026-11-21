@@ -6,14 +6,15 @@ import { litMaterial } from './ShipModel';
 export interface CockpitReadout {
   speed: string;
   throttle: number;        // -1..1
-  boost: boolean;
+  /** the engine in use, shown over the throttle ('' for none) */
+  drive: string;
   altitude: string;
   reference: string;
   target: string;
   targetKind: string;
   distance: string;
   eta: string;
-  warp: 'ready' | 'warping' | 'no target';
+  autopilot: 'ready' | 'flying' | 'no target';
   time: string;
   missions: string;
   hint: string;
@@ -29,8 +30,8 @@ export interface CockpitReadout {
 export class Cockpit {
   readonly group = new Group();
   readout: CockpitReadout = {
-    speed: '0 m/s', throttle: 0, boost: false, altitude: '', reference: '', target: 'none', targetKind: '', distance: '', eta: '',
-    warp: 'no target', time: '', missions: '', hint: '', flight: null,
+    speed: '0 m/s', throttle: 0, drive: '', altitude: '', reference: '', target: 'none', targetKind: '', distance: '', eta: '',
+    autopilot: 'no target', time: '', missions: '', hint: '', flight: null,
   };
   private screens: Panel[] = [];
   private timer = 0;
@@ -114,7 +115,7 @@ export class Cockpit {
     const r = this.readout;
     this.frame(p, 'FLIGHT');
     p.text(r.speed, 18, 92, 44, '#ffffff', 700, 'left', p.width - 36);
-    p.text(r.boost ? 'BOOST' : 'throttle', 18, 128, 20, r.boost ? COLORS.warn : COLORS.dim, 600);
+    p.text(r.drive || 'throttle', 18, 128, 20, r.drive.startsWith('REACTIONLESS') || r.drive === 'BOOST' ? COLORS.warn : COLORS.dim, 600, 'left', p.width - 36);
     // throttle bar
     const w = p.width - 36, x0 = 18, y0 = 146;
     p.rect(x0, y0, w, 22, 8, 'rgba(255,255,255,0.06)');
@@ -133,14 +134,14 @@ export class Cockpit {
   private paintCentre(p: Panel): void {
     const r = this.readout;
     if (r.flight) {
-      // orbit screen: apsides, impact, then the target line and warp state
+      // orbit screen (speed and clocks when fast): then the target line and the autopilot's state
       const f = r.flight;
       this.frame(p, 'ORBIT');
       f.lines.forEach((l, i) => p.text(l, 18, 72 + i * 34, 26, l.startsWith('IMPACT') ? COLORS.warn : COLORS.text, 600, 'left', p.width - 36));
       p.text(`${r.target}${r.distance ? ` · ${r.distance}` : ''}`, 18, 182, 20, r.target === 'none' ? COLORS.dim : COLORS.sel, 600, 'left', p.width - 36);
-      const warp = r.warp === 'warping' ? 'WARP ENGAGED' : f.lock ? 'WARP MASS-LOCKED' : r.warp === 'ready' ? 'WARP READY' : 'SELECT A TARGET';
-      p.rect(18, 220, p.width - 36, 48, 12, r.warp === 'warping' ? 'rgba(127,178,255,0.35)' : 'rgba(255,255,255,0.05)', COLORS.border, 2);
-      p.text(warp, p.width / 2, 245, 24, f.lock ? COLORS.warn : r.warp === 'warping' ? '#ffffff' : r.warp === 'ready' ? COLORS.accent : COLORS.dim, 700, 'center');
+      const ap = r.autopilot === 'flying' ? 'AUTOPILOT FLYING' : f.lock || (r.autopilot === 'ready' ? 'AUTOPILOT READY' : 'SELECT A TARGET');
+      p.rect(18, 220, p.width - 36, 48, 12, r.autopilot === 'flying' ? 'rgba(127,178,255,0.35)' : 'rgba(255,255,255,0.05)', COLORS.border, 2);
+      p.text(ap, p.width / 2, 245, 24, f.lock ? COLORS.warn : r.autopilot === 'flying' ? '#ffffff' : r.autopilot === 'ready' ? COLORS.accent : COLORS.dim, 700, 'center');
       return;
     }
     this.frame(p, 'NAVIGATION');
@@ -150,9 +151,9 @@ export class Cockpit {
       p.text(r.distance, 18, 160, 32, COLORS.text, 600, 'left', p.width - 36);
       p.text(r.eta, 18, 196, 22, COLORS.dim, 500, 'left', p.width - 36);
     }
-    const warp = r.warp === 'warping' ? 'WARP ENGAGED' : r.warp === 'ready' ? 'WARP READY' : 'SELECT A TARGET';
-    p.rect(18, 220, p.width - 36, 48, 12, r.warp === 'warping' ? 'rgba(127,178,255,0.35)' : 'rgba(255,255,255,0.05)', COLORS.border, 2);
-    p.text(warp, p.width / 2, 245, 24, r.warp === 'warping' ? '#ffffff' : r.warp === 'ready' ? COLORS.accent : COLORS.dim, 700, 'center');
+    const ap = r.autopilot === 'flying' ? 'AUTOPILOT FLYING' : r.autopilot === 'ready' ? 'AUTOPILOT READY' : 'SELECT A TARGET';
+    p.rect(18, 220, p.width - 36, 48, 12, r.autopilot === 'flying' ? 'rgba(127,178,255,0.35)' : 'rgba(255,255,255,0.05)', COLORS.border, 2);
+    p.text(ap, p.width / 2, 245, 24, r.autopilot === 'flying' ? '#ffffff' : r.autopilot === 'ready' ? COLORS.accent : COLORS.dim, 700, 'center');
   }
 
   private paintRight(p: Panel): void {

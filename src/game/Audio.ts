@@ -1,13 +1,11 @@
 /**
  * Ship sounds, synthesised with Web Audio (no sound files): an engine hum that rises with the
- * throttle, a rushing sweep while the warp drive is engaged, chimes for completed missions and a
- * slow ambient pad. Starts on the first key press or click (browsers block audio before that).
+ * throttle, chimes for completed missions and a slow ambient pad. Starts on the first key press or click (browsers block audio before that).
  */
 export class ShipAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private engine: { gain: GainNode; osc: OscillatorNode; osc2: OscillatorNode; filt: BiquadFilterNode } | null = null;
-  private warp: { gain: GainNode; filt: BiquadFilterNode } | null = null;
   private pad: GainNode | null = null;
   enabled = true;
   private wanted = false;
@@ -24,7 +22,7 @@ export class ShipAudio {
     master.gain.value = 0.5;
     master.connect(ctx.destination);
     this.master = master;
-    // noise source shared by the engine and the warp
+    // noise for the engine's rumble
     const len = ctx.sampleRate * 2;
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -44,11 +42,6 @@ export class ShipAudio {
     filt.connect(eg); eg.connect(master);
     osc.start(); osc2.start();
     this.engine = { gain: eg, osc, osc2, filt };
-    // warp: band-passed noise sweep
-    const wg = ctx.createGain(); wg.gain.value = 0;
-    const wf = ctx.createBiquadFilter(); wf.type = 'bandpass'; wf.Q.value = 0.8; wf.frequency.value = 300;
-    noise.connect(wf); wf.connect(wg); wg.connect(master);
-    this.warp = { gain: wg, filt: wf };
     noise.start();
     // ambient pad: two slow detuned chords
     const pg = ctx.createGain(); pg.gain.value = 0;
@@ -71,17 +64,15 @@ export class ShipAudio {
     if (on) void this.ctx.resume(); else void this.ctx.suspend();
   }
 
-  /** throttle 0..1, warp 0..1 */
-  update(throttle: number, warp: number, active: boolean): void {
-    if (!this.ctx || !this.engine || !this.warp || !this.pad) return;
+  /** throttle 0..1 */
+  update(throttle: number, active: boolean): void {
+    if (!this.ctx || !this.engine || !this.pad) return;
     const t = this.ctx.currentTime;
     const on = active && this.enabled ? 1 : 0;
     this.engine.gain.gain.setTargetAtTime(on * (0.05 + 0.3 * throttle), t, 0.15);
     this.engine.filt.frequency.setTargetAtTime(160 + 900 * throttle, t, 0.2);
     this.engine.osc.frequency.setTargetAtTime(40 + 30 * throttle, t, 0.3);
     this.engine.osc2.frequency.setTargetAtTime(60 + 45 * throttle, t, 0.3);
-    this.warp.gain.gain.setTargetAtTime(on * 0.5 * warp, t, 0.3);
-    this.warp.filt.frequency.setTargetAtTime(250 + 2500 * warp, t, 0.6);
     this.pad.gain.setTargetAtTime(on * 0.035, t, 1.5);
   }
 

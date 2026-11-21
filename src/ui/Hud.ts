@@ -19,6 +19,8 @@ export type HudAction =
   | 'go' | 'centre' | 'deselect' | 'stop' | 'home'
   | 'pause' | 'faster' | 'slower' | 'reverse' | 'now'
   | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot'
+  // board the ship (src/game/Game.ts) or leave it
+  | 'ship'
   // what if (src/app/WhatIf.ts): give the selected world a moon; take away one that was made
   | 'add-moon' | 'unmake';
 
@@ -102,9 +104,9 @@ const KEY_HELP: [string, string][] = [
   ['B', 'Walk on the ground (land first if high up); B again to fly'],
   ['Walking', 'W A S D move · mouse look · Shift run · Space jump · C crouch'],
   ['V', 'Spaceship: cockpit view / chase view / off'],
-  ['J', 'Warp drive to the selection'],
+  ['J', 'In the ship: autopilot to the selection (flip-and-burn, never faster than light)'],
   ['In the ship', 'W/S throttle · Z/X full/cut · arrows or drag to turn · Q/E roll'],
-  ['', 'A/D R/F Shift+W/S RCS · Y SAS mode · I boosted drive · [ ] time warp'],
+  ['', 'A/D R/F Shift+W/S RCS · Y SAS mode · I reactionless drive · = / - its setting · [ ] time warp'],
   ['K / N', 'Missions and discoveries / ship sound'],
   ['H', 'This help'],
 ];
@@ -175,6 +177,8 @@ const TEMPLATE = `
           <button class="switch" type="button" role="switch" data-act="labels" aria-checked="true"><span><b>Names</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="orbits" aria-checked="true"><span><b>Orbits</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="minor" aria-checked="false"><span><b>Orbits of asteroids and comets</b></span><i></i></button>
+          <h3>Travel</h3>
+          <button class="switch" type="button" role="switch" data-act="ship" aria-checked="false"><span><b>Spaceship</b><small>Physics all the way up: as fast as you like, never faster than light. Go there flies it</small></span><i></i></button>
           <h3>Camera</h3>
           <button class="switch touch-only" type="button" role="switch" data-act="look" aria-checked="false"><span><b>One finger looks around</b><small>instead of turning round the world you are at</small></span><i></i></button>
           <button class="row" type="button" data-act="photo">${ICON.photo}<span class="row-text"><b>Photo mode</b><small class="touch-only">Hides everything; tap to bring it back</small><small class="mouse-only">Hides everything; U brings it back</small></span></button>
@@ -388,7 +392,7 @@ export class Hud {
     const flight = this.$('.hud-flight');
     flight.hidden = !s.flying;
     if (s.flying) setText(flight.firstElementChild as HTMLElement, `Flying to ${s.flying}`);
-    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['look', s.look]] as const) {
+    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['look', s.look], ['ship', s.mode === 'ship']] as const) {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
     this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
@@ -507,7 +511,7 @@ export class Hud {
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
     else if (d.act) {
-      if (d.act === 'photo') this.closeSheet(); // (nothing is left open behind the picture)
+      if (d.act === 'photo' || d.act === 'ship') this.closeSheet(); // (nothing is left open behind the picture, or the cockpit)
       this.host.act(d.act as HudAction);
     }
   }

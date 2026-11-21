@@ -189,6 +189,29 @@ describe('ship flight', () => {
     }
   });
 
+  it('a fast ship cannot pass through a world within one substep, nor past a horizon', () => {
+    // close to the speed of light, from 10 radii of a small moon: one substep carries it right through
+    const field = new GravityField();
+    const moon = makeSource({ name: 'moonlet', gm: 1e9, radius: 1e5, upos: UPos.from(1.2e11, -8e10, 3e10) });
+    field.sources = [moon];
+    const core = new FlightCore(field);
+    core.groundR = moon.radius;
+    core.ship.upos.copy(moon.upos).addXYZ(1e6, 0, 3e4);
+    core.ship.setProperVelocity(new Vector3(-100 * C, 0, 0));
+    core.chooseFrame();
+    core.step(0.01);
+    core.place();
+    expect(core.event?.kind).toBe('crash');
+    expect(relPos(core, moon).length()).toBeCloseTo(moon.radius, 3);
+    const { field: f2, hole } = holeField(10);
+    const c2 = new FlightCore(f2);
+    c2.ship.upos.copy(hole.upos).addXYZ(1e6, 0, 0);
+    c2.ship.setProperVelocity(new Vector3(-10 * C, 0, 0));
+    c2.chooseFrame();
+    c2.step(0.01);
+    expect(c2.event?.kind).toBe('horizon');
+  });
+
   it('air drag slows the ship and heats it', () => {
     const { field, earth } = earthField();
     const core = new FlightCore(field);
@@ -204,7 +227,7 @@ describe('ship flight', () => {
 });
 
 describe('black holes', () => {
-  /** Angles (rad, in the orbit plane) of successive periapses. */
+  /** Angles (rad, in the orbit plane, counted on through every turn) of successive periapses. */
   function periapses(rStart: number, vk: number, orbits: number) {
     const { field, hole } = holeField(10);
     const core = new FlightCore(field);
@@ -215,11 +238,14 @@ describe('black holes', () => {
     core.ship.vel.copy(hole.vel).addScaledVector(v, vk);
     const T = 2 * Math.PI * Math.sqrt((rStart * hole.rs) ** 3 / hole.gm);
     const angles: number[] = [];
-    let lastRv = 0;
+    let lastRv = 0, last = 0, turned = 0;
     fly(core, T * orbits, T / 50, () => {
       const r = relPos(core, hole), vv = relVel(core, hole);
+      const a = Math.atan2(r.y, r.x);
+      turned += a - last - 2 * Math.PI * Math.round((a - last) / (2 * Math.PI));
+      last = a;
       const rv = r.dot(vv);
-      if (lastRv < 0 && rv >= 0) angles.push(Math.atan2(r.y, r.x));
+      if (lastRv < 0 && rv >= 0) angles.push(turned);
       lastRv = rv;
     });
     return { core, angles, hole };
@@ -229,8 +255,8 @@ describe('black holes', () => {
     const { core, angles, hole } = periapses(4, 1.01, 6);
     expect(core.event?.kind ?? null).not.toBe('horizon');
     expect(angles.length).toBeGreaterThanOrEqual(2);
-    let d = angles[1] - angles[0];
-    d = ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    // (the advance beyond a full turn)
+    const d = angles[1] - angles[0] - 2 * Math.PI;
     // Newtonian orbits do not precess; Paczyński–Wiita (like Schwarzschild) does, by a lot this deep
     expect(d).toBeGreaterThan(0.5);
     const r = relPos(core, hole).length();

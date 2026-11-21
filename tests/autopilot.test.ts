@@ -1,0 +1,205 @@
+import { Quaternion, Vector3 } from 'three';
+import { describe, expect, it } from 'vitest';
+import { UPos } from '../src/core/upos';
+import { autopilotRate, inTheWay, placeSlot, type Situation, steer, type Steering } from '../src/game/Autopilot';
+import { C, GravityField, makeSource, type GravitySource } from '../src/sim/Gravity';
+import { flipAndBurn } from '../src/sim/Relativity';
+import { FlightCore, G0, SHIP_SPEC } from '../src/sim/ShipPhysics';
+
+const YEAR = 365.25 * 86400;
+
+/** a target that moves in a straight line, or as `move` moves it */
+interface Target { upos: UPos; vel: Vector3; move?: (dt: number) => void }
+const NOSE = new Vector3(0, 0, -1);
+
+/**
+ * Flies the autopilot as Flight does, frame by frame: `realDt` seconds of real time a frame, the
+ * pilot's time warp `rate` (held back by autopilotRate), the nose turned by the reaction wheels at
+ * the SAS's 0.5 rad/s, the target moved along its path after each step. Returns what happened.
+ */
+function flyTo(core: FlightCore, target: GravitySource | Target, radius: number, gm: number, rate: number, realDt: number, maxFrames: number, worlds: GravitySource[] = []) {
+  const ship = core.ship;
+  const sit: Situation = { rel: new Vector3(), w: new Vector3(), slotAccel: new Vector3(), gravity: new Vector3(), nose: new Vector3(), drive: ship.driveAccel, rcs: SHIP_SPEC.rcsThrust / ship.mass, dt: 0, radius, orbit: 0 };
+  const st: Steering = { aim: NOSE.clone().applyQuaternion(ship.quat), throttle: 0, rcs: new Vector3(), turning: false, tauGo: Infinity, tGo: Infinity, phase: 'turning', arrived: false };
+  let frames = 0, closest = Infinity, universe = 0, skim = Infinity;
+  for (; frames < maxFrames; frames++) {
+    core.chooseFrame();
+    const round = new Vector3(), w = inTheWay(ship.upos, ship.vel, target, worlds, round);
+    sit.radius = w ? 0 : radius;
+    if (w) placeSlot(sit, ship.upos.sub(w.upos, new Vector3()).sub(round), ship.properVelocity(), w.vel, 0, 0, null);
+    else placeSlot(sit, ship.upos.sub(target.upos, new Vector3()), ship.properVelocity(), target.vel, gm, 0, null);
+    core.field.gravityAt(ship.upos, sit.gravity).sub(core.field.gravityAt((w ?? target).upos, new Vector3()));
+    sit.nose.copy(NOSE).applyQuaternion(ship.quat);
+    steer(sit, st);
+    if (st.arrived && !w) break;
+    ship.throttle = st.throttle;
+    ship.rcs.copy(st.rcs).applyQuaternion(ship.quat.clone().invert()).divideScalar(sit.rcs).clampScalar(-1, 1);
+    // the wheels turn the nose towards the aim (in real time)
+    const nose = sit.nose, ang = nose.angleTo(st.aim);
+    if (ang > 1e-9) {
+      const axis = nose.clone().cross(st.aim);
+      if (axis.lengthSq() < 1e-18) axis.set(0, 1, 0);
+      ship.quat.premultiply(new Quaternion().setFromAxisAngle(axis.normalize(), Math.min(ang, 0.5 * realDt)));
+    }
+    const dt = core.universeTimeFor(realDt * autopilotRate(rate, st, realDt, ship.driveAccel));
+    sit.dt = dt;
+    core.step(dt);
+    if ('move' in target && target.move) target.move(dt);
+    else target.upos.addVec(target.vel, dt);
+    core.place();
+    universe += dt;
+    closest = Math.min(closest, ship.upos.sub(target.upos, new Vector3()).length());
+    for (const w of worlds) skim = Math.min(skim, ship.upos.sub(w.upos, new Vector3()).length() / w.radius);
+    if (core.event) break;
+  }
+  return { st, frames, closest, universe, skim, event: core.event };
+}
+
+describe('the autopilot', () => {
+  it('flies from high over the Earth to the Moon and arrives in orbit about it, without passing it', () => {
+    const field = new GravityField();
+    const earth = makeSource({ name: 'Earth', gm: 3.986004418e14, radius: 6.371e6, upos: UPos.from(1.5e11, 0, 0) });
+    const moon = makeSource({ name: 'Moon', gm: 4.9048695e12, radius: 1.7374e6, upos: UPos.from(1.5e11 + 3.844e8, 0, 0), vel: new Vector3(0, 1022, 0) });
+    earth.soi = Infinity;
+    moon.parent = earth;
+    moon.soi = 6.6e7;
+    field.sources = [earth, moon];
+    const core = new FlightCore(field);
+    core.setCircularOrbit(earth, 12 * earth.radius, new Vector3(-1, 0.3, 0), new Vector3(0, 0, 1));
+    core.ship.drive = 'reactionless';
+    core.ship.driveAccel = 10 * G0;
+    const radius = 3.5 * moon.radius;
+    const r = flyTo(core, moon, radius, moon.gm, 1000, 0.2, 4000);
+    expect(r.event).toBeNull();
+    expect(r.st.arrived).toBe(true);
+    // never inside the arrival sphere by more than a little (no fly-by), never near the ground
+    expect(r.closest).toBeGreaterThan(0.9 * radius);
+    // and in orbit: the speed relative to the Moon is the circular one, within a few per cent
+    const v = core.ship.vel.clone().sub(moon.vel).length();
+    expect(Math.abs(v / Math.sqrt(moon.gm / radius) - 1)).toBeLessThan(0.05);
+    expect(r.universe).toBeLessThan(3 * 3600);
+  });
+
+  it('goes round a world in the way of the straight path (straight through it, it crashes)', () => {
+    const field = new GravityField();
+    const moon = makeSource({ name: 'Moon', gm: 4.9048695e12, radius: 1.7374e6, upos: UPos.from(1.5e11, 0, 0) });
+    field.sources = [moon];
+    const flight = (worlds: GravitySource[]) => {
+      const core = new FlightCore(field);
+      core.setCircularOrbit(moon, 6 * moon.radius, new Vector3(-1, 0, 0), new Vector3(0, 0, 1));
+      core.groundR = moon.radius;
+      core.ship.drive = 'reactionless';
+      core.ship.driveAccel = 100 * G0;
+      // a point on the far side, as far out (held there: the test does not ask the ship to come to
+      // rest beside it, which a point that does not fall makes impossible, only to get there)
+      const far = { upos: moon.upos.clone().addXYZ(6 * moon.radius, 0, 0), vel: new Vector3() };
+      return { core, r: flyTo(core, far, 700, 0, 1000, 0.2, 6000, worlds) };
+    };
+    expect(flight([]).r.event?.kind).toBe('crash');
+    const { r } = flight([moon]);
+    expect(r.event).toBeNull();
+    expect(r.closest).toBeLessThan(1000);
+    // round the world, outside the sphere it keeps out of (1.3 radii)
+    expect(r.skim).toBeGreaterThan(1.29);
+  });
+
+  it('flies from a high orbit to a station in a low one on the far side, at 100 g, without hitting the world', () => {
+    // (the game's station flight: from 3.5 radii of the Moon to a station 400 km up behind it)
+    const field = new GravityField();
+    const moon = makeSource({ name: 'Moon', gm: 4.9048695e12, radius: 1.7374e6, upos: UPos.from(1.5e11, 0, 0) });
+    field.sources = [moon];
+    const core = new FlightCore(field);
+    core.setCircularOrbit(moon, 3.5 * moon.radius, new Vector3(-1, 0.2, 0), new Vector3(0, 0, 1));
+    core.groundR = moon.radius;
+    core.ship.drive = 'reactionless';
+    core.ship.driveAccel = 100 * G0;
+    const rs = moon.radius + 400e3, n = Math.sqrt(moon.gm / rs ** 3);
+    let th = 0.3;
+    const station: Target = { upos: new UPos(), vel: new Vector3() };
+    const place = () => {
+      station.upos.copy(moon.upos).addXYZ(rs * Math.cos(th), rs * Math.sin(th), 0);
+      station.vel.set(-Math.sin(th), Math.cos(th), 0).multiplyScalar(n * rs);
+    };
+    place();
+    station.move = (dt) => { th += n * dt; place(); };
+    const r = flyTo(core, station, 700, 0, 1000, 0.2, 20000, [moon]);
+    expect(r.event).toBeNull();
+    expect(r.st.arrived).toBe(true);
+    expect(r.skim).toBeGreaterThan(1.2);
+  });
+
+  it('sees a world in the way only when the path passes it, and aims clear of it', () => {
+    const moon = makeSource({ name: 'Moon', gm: 1, radius: 1, upos: new UPos() });
+    const out = new Vector3(), still = new Vector3();
+    const at = (x: number, y: number) => ({ upos: UPos.from(x, y, 0) });
+    // the closest the chord from the ship to the detour point comes to the world's centre
+    const clearance = (x: number, y: number) => {
+      const s = new Vector3(x, y, 0), d = out.clone().sub(s);
+      const k = Math.max(0, Math.min(1, -s.dot(d) / d.lengthSq()));
+      return s.addScaledVector(d, k).length();
+    };
+    // behind it (far off, close by, from below the sphere it keeps out of), beside it, short of it
+    expect(inTheWay(at(-5, 0).upos, still, at(5, 0.5), [moon], out)).toBe(moon);
+    expect(out.length()).toBeCloseTo(5, 9);
+    expect(out.y).toBeGreaterThan(0);
+    expect(clearance(-5, 0)).toBeGreaterThan(1.3 - 1e-9);
+    expect(inTheWay(at(-1.6, 0).upos, still, at(1.3, 0.01), [moon], out)).toBe(moon);
+    expect(out.length()).toBeCloseTo(2.2, 9);
+    expect(clearance(-1.6, 0)).toBeGreaterThan(1.3);
+    expect(inTheWay(at(-1.05, 0).upos, still, at(3, -0.2), [moon], out)).toBe(moon);
+    expect(out.x).toBeCloseTo(-2.2, 9);
+    expect(inTheWay(at(-5, 0).upos, still, at(5, 3), [moon], out)).toBeNull();
+    // the way is clear but the ship is heading into the world: in the way all the same
+    expect(inTheWay(at(-5, 0).upos, new Vector3(1, 0, 0), at(5, 3), [moon], out)).toBe(moon);
+    expect(inTheWay(at(-5, 0).upos, new Vector3(10, 3, 0), at(5, 3), [moon], out)).toBeNull();
+    // a dive whose lowest point lies beyond the target's distance counts too
+    expect(inTheWay(at(-1.3, 0).upos, new Vector3(1, -0.3, 0), at(-1.1, 0.6), [moon], out)).toBe(moon);
+    expect(inTheWay(at(-5, 0).upos, still, at(-2, 0), [moon], out)).toBeNull();
+    // the target itself is never in its own way (a source stands for its object)
+    expect(inTheWay(at(-5, 0).upos, still, moon, [{ ...moon, obj: moon }], out)).toBeNull();
+  });
+
+  it('crosses 4.37 light years at 1 g in about the textbook time, arriving at rest', () => {
+    const core = new FlightCore(new GravityField());
+    core.ship.drive = 'reactionless';
+    core.ship.driveAccel = G0;
+    const d = 4.37 * C * YEAR;
+    const star = { upos: core.ship.upos.clone().addXYZ(d * 0.6, d * 0.8, 0), vel: new Vector3() };
+    const r = flyTo(core, star, 2e10, 0, 1e5, 0.1, 30000);
+    expect(r.st.arrived).toBe(true);
+    const fast = flipAndBurn(d, G0), planned = flipAndBurn(d, 0.8 * G0);
+    expect(core.ship.shipTime).toBeGreaterThan(fast.tau);
+    expect(core.ship.shipTime).toBeLessThan(planned.tau * 1.02);
+    expect(r.universe).toBeGreaterThan(fast.t);
+    expect(r.universe).toBeLessThan(planned.t * 1.02);
+    expect(core.ship.properVelocity().length()).toBeLessThan(1);
+  });
+
+  it('flies to a galaxy at a million g, near light speed for millions of years of the universe', () => {
+    const core = new FlightCore(new GravityField());
+    core.ship.drive = 'reactionless';
+    core.ship.driveAccel = 1e6 * G0;
+    const d = 2.5e6 * C * YEAR;
+    const galaxy = { upos: core.ship.upos.clone().addXYZ(0, 0, -d), vel: new Vector3() };
+    const r = flyTo(core, galaxy, 1e20, 0, 1e5, 0.1, 8000);
+    expect(r.st.arrived).toBe(true);
+    expect(r.universe / YEAR).toBeGreaterThan(2.4e6);
+    expect(core.ship.shipTime / 3600).toBeLessThan(2);
+  });
+
+  it('holds the warp to 1x while turning, to a twentieth of the time to go, to a tenth of the rapidity', () => {
+    const st = { turning: true, tauGo: 1e6 } as Steering;
+    expect(autopilotRate(1000, st, 0.1, G0)).toBe(1);
+    st.turning = false;
+    expect(autopilotRate(1e5, st, 0.1, G0)).toBe(1e5);
+    st.tauGo = 100;
+    expect(autopilotRate(1e5, st, 0.1, G0)).toBeCloseTo(50, 9);
+    // (the last stretch: frames of up to 2 s of its time, and never below 1x)
+    st.tauGo = 0.1;
+    expect(autopilotRate(1e5, st, 0.1, G0)).toBeCloseTo(20, 9);
+    expect(autopilotRate(1e5, st, 5, G0)).toBe(1);
+    // at a million g, a tenth of the rapidity a frame: 3 s aboard
+    st.tauGo = 1e6;
+    expect(autopilotRate(1e5, st, 0.1, 1e6 * G0)).toBeCloseTo((0.1 * C) / (1e6 * G0) / 0.1, 9);
+  });
+});

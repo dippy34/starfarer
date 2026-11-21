@@ -574,7 +574,7 @@ export class Walk {
   start(target?: SpaceObject): boolean {
     const app = this.app;
     // footsteps (src/game/Audio.ts): audio may only start from a gesture, like this key press
-    if (!app.game.active) { app.game.audio.start(); app.game.audio.update(0, 0, false); }
+    if (!app.game.active) { app.game.audio.start(); app.game.audio.update(0, false); }
     if (app.game.active) {
       app.game.setMode('off');
       this.say('You climb out of the ship');

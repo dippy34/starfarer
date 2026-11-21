@@ -159,7 +159,7 @@ export class App {
   procStars!: ProceduralStarLayer;
   readonly milkyWay = new MilkyWay();
   exo!: ExoPlanetLayer;
-  /** game mode: ship, cockpit, warp, traffic, missions */
+  /** game mode: ship, cockpit, autopilot, traffic, missions */
   game!: Game;
   /** walking on the ground (src/app/Walk.ts) */
   walk!: Walk;
@@ -529,16 +529,16 @@ export class App {
         case 'KeyP': this.act('screenshot'); break;
         case 'Enter': case 'Slash': this.hud.openSearch(); e.preventDefault(); break;
         case 'KeyT': this.hud.openExplore('tour'); e.preventDefault(); break;
-        case 'Equal': case 'NumpadAdd': this.rig.speedFactor *= 2; break;
-        case 'Minus': case 'NumpadSubtract': this.rig.speedFactor /= 2; break;
+        case 'Equal': case 'NumpadAdd': if (this.game.flight.on) this.game.flight.stepDrive(true); else this.rig.speedFactor *= 2; break;
+        case 'Minus': case 'NumpadSubtract': if (this.game.flight.on) this.game.flight.stepDrive(false); else this.rig.speedFactor /= 2; break;
         case 'Escape': this.cancelOrDeselect(); break;
         case 'KeyV': this.game.cycle(); break;
-        case 'KeyJ': this.game.warp(); break;
+        case 'KeyJ': this.game.autopilot(); break;
         case 'KeyN': this.game.audio.setEnabled(!this.game.audio.enabled); this.hud.toast(`Sound ${this.game.audio.enabled ? 'on' : 'off'}`); break;
         case 'KeyK': this.showMissions(); break;
         case 'Comma': this.hud.toast(this.awe.toggleEarth()); break;
         case 'KeyY': if (this.game.flight.on) this.game.flight.cycleSas(e.shiftKey); break;
-        case 'KeyI': if (this.game.flight.on) this.game.flight.toggleBoost(); break;
+        case 'KeyI': if (this.game.flight.on) this.game.flight.toggleDrive(); break;
         default:
           if (/^Digit\d$/.test(e.code)) {
             const ids = [10, 199, 299, 399, 499, 599, 699, 799, 899, 999];
@@ -555,6 +555,7 @@ export class App {
     switch (action) {
       case 'go': if (this.selection) this.goTo(this.selection); break;
       case 'centre': if (this.selection) this.center(this.selection); break;
+      case 'ship': this.game.setMode(this.game.active ? 'off' : 'cockpit'); break;
       // the place chip: look at where the camera is; in open space, choose somewhere to go
       case 'home': if (this.rig.target) this.center(this.rig.target); else this.hud.openExplore(); break;
       case 'deselect': this.select(null); break;
@@ -833,6 +834,8 @@ export class App {
 
   goTo(obj: SpaceObject): void {
     if (obj instanceof Body) this.bodies.prefetch(obj);
+    // in the ship nothing outruns light: the ship's autopilot flies there
+    if (this.game.flight.on) { this.game.flight.autopilotTo(obj); return; }
     // arrival distances are those of a wide view; an upright one stands back to frame the same
     const fit = this.rig.framing;
     if (obj instanceof BlackHole) {
@@ -2070,7 +2073,7 @@ export class App {
     // walking (src/app/Walk.ts) owns the camera while on foot; otherwise free flight
     if (this.walk.update(dt)) { /* on foot */ }
     else if (flight.on) {
-      // the warp drive / docking computer flies the rig; physics resumes at drop-out
+      // the docking computer flies the rig; physics resumes after it
       if (flight.external) this.rig.update(dt, this.input);
       flight.after(dt);
     }

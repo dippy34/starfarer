@@ -396,6 +396,8 @@ export class VRSupport {
     if (obj instanceof Body) this.app.bodies.prefetch(obj);
     this.menu.panel.setVisible(false);
     this.card.setVisible(false);
+    // in the ship nothing outruns light: the ship's autopilot flies there
+    if (this.app.game.flight.on) { this.app.game.flight.autopilotTo(obj); return; }
     this.travel = { phase: 'out', t: 0, target: obj, above: obj instanceof Landmark ? opts?.above : undefined };
     this.flash(`Flying to ${obj.name}`);
   }
