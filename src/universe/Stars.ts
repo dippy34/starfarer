@@ -4,6 +4,7 @@ import { UPos } from '../core/upos';
 import { LY, PC, SUN_ABS_MAG, SUN_RADIUS, SUN_TEFF } from '../core/units';
 import type { SpaceObject } from './Body';
 import type { StarRef } from './StarCatalog';
+import { shapeFlattening, starShape, type StarShape } from './StarShapes';
 
 /** Notable stars (proper names, Bayer/Flamsteed, HR, Gliese) used for labels, search and the info panel. */
 export interface NamedStar {
@@ -49,7 +50,10 @@ export class CatalogStar implements SpaceObject {
   readonly upos: UPos;
   /** true once the position comes from the decoded catalogue tile (exact) */
   exact = false;
-  readonly radius: number;
+  /** its radius (m): estimated from its brightness and temperature, or across its equator as measured (`shape`) */
+  radius: number;
+  /** its shape, for the few stars whose shape has been measured (StarShapes.ts) */
+  shape: StarShape | null = null;
   readonly parentObject = null;
   name: string;
   designations: string[];
@@ -69,6 +73,13 @@ export class CatalogStar implements SpaceObject {
     this.radius = estimateStarRadius(absMag, teff);
     this.name = names[0] ?? 'Unnamed star';
     this.designations = names;
+    this.measure();
+  }
+
+  /** A star whose shape has been measured is as wide as it was found to be. */
+  private measure(): void {
+    this.shape = starShape(this.designations);
+    if (this.shape) this.radius = this.shape.rEq;
   }
 
   /** Adopt the exact catalogue position (pc). */
@@ -89,6 +100,7 @@ export class CatalogStar implements SpaceObject {
         this.designations = [d.text];
       }
       this.name = this.designations[0] ?? this.name;
+      this.measure();
       onDone();
     }).catch(() => undefined);
   }
@@ -99,7 +111,13 @@ export class CatalogStar implements SpaceObject {
     rows.push(['Temperature', `${Math.round(this.teff).toLocaleString()} K`]);
     rows.push(['Absolute mag (V)', this.absMag.toFixed(2)]);
     rows.push(['Luminosity (V)', `${Math.pow(10, -0.4 * (this.absMag - SUN_ABS_MAG)).toPrecision(3)} L☉`]);
-    rows.push(['Radius', `${(this.radius / SUN_RADIUS).toPrecision(3)} R☉ (estimated)`]);
+    const shape = this.shape;
+    if (shape) {
+      const tilt = (shape.incl * 180) / Math.PI;
+      rows.push(['Radius', `${(shape.rEq / SUN_RADIUS).toPrecision(3)} R☉ across the equator, ${(shape.rPol / SUN_RADIUS).toPrecision(3)} R☉ at the poles (measured)`]);
+      rows.push(['Shape', `Flattened ${Math.round(100 * shapeFlattening(shape))} % by its spin; from the Sun it is seen ${
+        tilt < 25 ? 'nearly pole-on' : tilt > 75 ? 'nearly equator-on' : `${Math.round(tilt)}° from pole-on`} (${shape.source})`]);
+    } else rows.push(['Radius', `${(this.radius / SUN_RADIUS).toPrecision(3)} R☉ (estimated)`]);
     const d = this.posPc.length();
     rows.push(['Distance from Sun', `${d.toPrecision(4)} pc (${((d * PC) / LY).toPrecision(4)} ly)`]);
     rows.push(['RA / Dec (from Sun)', formatRaDec(this.posPc)]);

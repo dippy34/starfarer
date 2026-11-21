@@ -268,8 +268,9 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
 * 302 large asteroids/TNOs as full bodies, 75,565 numbered asteroids propagated on the GPU, 4,077
   comets propagated in a Web Worker.
 * Every body and star looks like itself: stars get their own colours, texture, active regions,
-  prominences, flares, flattening and corona from their temperature and size (giant convection
-  cells on red supergiants); the 459
+  prominences, flares and corona from their temperature and size (giant convection cells on red
+  supergiants); Vega, Altair, Regulus and four more fast-spinning stars are flattened and tilted
+  as interferometers have measured them, and every other star is round; the 459
   moons and the asteroids get 4K maps from the full-resolution USGS mosaics or, where no spacecraft has
   mapped them, a seeded procedural surface and an irregular shape for small bodies; each black hole has
   its own disk temperature, gas pattern and (for M87\* and the microquasars) jets.

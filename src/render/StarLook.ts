@@ -14,8 +14,9 @@ import { Vector2, Vector3, Vector4 } from 'three';
  *    red, the Sun orange, an F star gold, an A star white, an O star blue (faceColor).
  *  - A cool star's convection shows in the texture: fine on a dwarf, a handful of giant cells
  *    across a red supergiant (as interferometric images of Betelgeuse and Antares show). A hot
- *    star's envelope carries its heat by radiation: its face is nearly smooth; many spin fast,
- *    which flattens them and darkens their equators (as interferometry shows for Vega and Altair).
+ *    star's envelope carries its heat by radiation: its face is nearly smooth. Many spin fast,
+ *    which flattens them and darkens their equators: the few whose shape has been measured (Vega,
+ *    Altair, Regulus and others: universe/StarShapes.ts) are drawn as measured, the rest round.
  *  - Magnetic activity (active regions, flares, prominences) is strongest in cool dwarfs, and
  *    varies from star to star.
  */
@@ -74,7 +75,7 @@ export interface StarLook {
   shear: number;
   /** how fast the surface seethes (turns of its cycle per second: sped up like the rotation) */
   boilRate: number;
-  /** polar flattening (0 = sphere) and equatorial gravity darkening */
+  /** polar flattening (0 = sphere: every star whose shape has not been measured) and equatorial gravity darkening */
   flattening: number;
   gravDark: number;
   /** rotation axis (unit, world) */
@@ -286,8 +287,14 @@ function stream(seed: number): () => number {
  * `key` identifies the star (stable seed); `teff` K; `radiusSun` in solar radii; `absMag` V.
  * `sun` gives the Sun its measured look (moderate activity, slow rotation): `true`, or the active
  * regions of its map (the textures' manifest: maps.sun.regions), which then are the star's.
+ * `spin`: how much the star is flattened by its rotation and where its axis points, for a star
+ * of which that has been measured (universe/StarShapes.ts); any other is round, on an axis of
+ * its own.
  */
-export function starLook(key: string, teff: number, radiusSun: number, absMag: number, sun: boolean | MapRegion[] = false): StarLook {
+export function starLook(
+  key: string, teff: number, radiusSun: number, absMag: number, sun: boolean | MapRegion[] = false,
+  spin?: { flattening: number; axis: Vector3 },
+): StarLook {
   // (drawn from one stream: hashes of the key with a different ending come out nearly alike)
   const rand = stream(Math.floor(hashString(key) * 4294967296));
   const r1 = rand(), r2 = rand(), r3 = rand(), r4 = rand();
@@ -312,11 +319,10 @@ export function starLook(key: string, teff: number, radiusSun: number, absMag: n
   const mapped = typeof sun === 'object';
   const { spots, pairs } = mapped ? mapSpots(sun) : supergiant ? { spots: [], pairs: [] } : makeSpots(rand, activity, giant ? 'giant' : T < 3900 ? 'red dwarf' : 'dwarf', fast);
   const prominences = convective && !supergiant ? Math.min(1, activity * 1.4) : 0;
-  const hotRotator = T > 7400 && !whiteDwarf;
-  const flattening = hotRotator ? 0.22 * r2 * r2 : 0;
-  // a random spin axis
+  const flattening = spin?.flattening ?? 0;
+  // its spin axis: as measured, or any way at all
   const u = 2 * r3 - 1, phi = 2 * Math.PI * r4;
-  const axis = new Vector3(Math.sqrt(1 - u * u) * Math.cos(phi), Math.sqrt(1 - u * u) * Math.sin(phi), u);
+  const axis = spin ? spin.axis.clone().normalize() : new Vector3(Math.sqrt(1 - u * u) * Math.cos(phi), Math.sqrt(1 - u * u) * Math.sin(phi), u);
   return {
     seed: r1 * 1000,
     face: faceColor(T),

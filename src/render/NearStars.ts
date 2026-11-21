@@ -3,6 +3,7 @@ import { blackbodyRGB, luminance, magToIrradiance } from '../astro/photometry';
 import { PC, SUN_RADIUS } from '../core/units';
 import type { UPos } from '../core/upos';
 import type { CatalogStar } from '../universe/Stars';
+import { shapeAxis, shapeFlattening } from '../universe/StarShapes';
 import { BLOOM } from './shaders/bloom';
 import { BODY_VERT } from './shaders/body';
 import { STAR_FRAG } from './shaders/star';
@@ -67,11 +68,14 @@ export class NearStarsLayer {
 
   /** The surface look of a star (stable per star). */
   look(s: CatalogStar): StarLook {
-    let l = this.looks.get(s.key);
+    // (a star's measured shape can arrive after it was first drawn, with its name: its look is then made anew)
+    const key = s.shape ? `${s.key} as measured` : s.key;
+    let l = this.looks.get(key);
     if (!l) {
-      l = starLook(s.key, s.teff, s.radius / SUN_RADIUS, s.absMag);
+      const spin = s.shape ? { flattening: shapeFlattening(s.shape), axis: shapeAxis(s.shape, s.posPc) } : undefined;
+      l = starLook(s.key, s.teff, s.radius / SUN_RADIUS, s.absMag, false, spin);
       if (this.looks.size > 2000) this.looks.clear();
-      this.looks.set(s.key, l);
+      this.looks.set(key, l);
     }
     return l;
   }
@@ -143,7 +147,7 @@ export class NearStarsLayer {
         const m = this.mesh(n);
         const look = this.look(s);
         m.visible = true;
-        // spin axis and polar flattening (fast-rotating hot stars)
+        // spin axis, and polar flattening where it has been measured (universe/StarShapes.ts)
         const q = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), look.axis);
         m.matrix.compose(rel, q, new Vector3(s.radius, s.radius, s.radius * (1 - look.flattening)));
         m.matrixWorldNeedsUpdate = true;

@@ -774,8 +774,11 @@ above is validated against JPL Horizons and stays as it is unless something is w
      the Sun's map is magnified eight times: soft blotches under the fine generated threads. A
      small disc's glare rims the red skin with pinkish white. The map takes the generated
      face's place the moment it arrives (no fade). Hot stars are nearly smooth by design (a
-     faint mottling). Whether a generated hot star is flattened is drawn by lot: Sirius, a slow
-     rotator, comes out 17 % flattened (the engine has no measured rotation rates). The
+     faint mottling). (Whether a hot star was flattened used to be drawn by lot, and Sirius, a
+     slow rotator, came out 17 % flattened. Since then a star is flattened only as it has been
+     measured to be: the seven of `src/universe/StarShapes.ts`, with their radii, tilt and the
+     angle of their pole on the sky from the interferometry papers; every other star is round,
+     its spin being in no catalogue the app has. `tests/starshapes.test.ts`.) The
      headset draws the same faces without the allowance for bloom (it has none), with fewer
      octaves (`uLite`): not looked at in a headset, nor in the emulated one beyond the `vr`
      suite.

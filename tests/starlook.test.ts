@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Vector2, Vector3, Vector4 } from 'three';
+import { Vector3, type Vector2, type Vector4 } from 'three';
 import {
   applyStarLook, FACE_KEY, FACE_TOP, faceColor, faceLight, faceResponse, fire, SPOT_SLOTS, spinAt, spotAt, starLook, starLookUniforms, turnShare, untone,
 } from '../src/render/StarLook';
@@ -258,7 +258,27 @@ describe('how a star is drawn up close', () => {
     expect(sirusB.face[2]).toBeGreaterThan(sirusB.face[0]);
   });
 
-  it('hot stars are nearly smooth and may spin flat; a supergiant seethes in a few giant cells', () => {
+  it('a star is drawn flattened only as it has been measured to be: any other is round', () => {
+    // (how fast a star spins is in no catalogue the app has: Sirius, a slow rotator, is not to come out an egg)
+    for (let i = 0; i < 200; i++) {
+      expect(starLook(`hot star ${i}`, 9000 + 60 * i, 2, 1).flattening).toBe(0);
+      expect(starLook(`hot star ${i}`, 9000 + 60 * i, 2, 1).gravDark).toBe(0);
+    }
+    // Altair as the interferometers found it: a fifth shorter from pole to pole, darker round its equator
+    const axis = new Vector3(0.3, -0.5, 0.81).normalize();
+    const altair = starLook('altair', 8004, 2.03, 2.21, false, { flattening: 0.195, axis });
+    expect(altair.flattening).toBe(0.195);
+    expect(altair.gravDark).toBeGreaterThan(0.2);
+    expect(altair.axis.angleTo(axis)).toBeLessThan(1e-12);
+    // and it is otherwise the star it would have been
+    const round = starLook('altair', 8004, 2.03, 2.21);
+    expect(round.flattening).toBe(0);
+    expect(altair.texFreq).toBe(round.texFreq);
+    expect(altair.face).toEqual(round.face);
+    expect(altair.rotRate).toBe(round.rotRate);
+  });
+
+  it('hot stars are nearly smooth; a supergiant seethes in a few giant cells', () => {
     const sun = starLook('sun', 5772, 1, 4.83, true);
     const vega = starLook('vega', 9600, 2.4, 0.58);
     // (a faint texture, a few times weaker than the Sun's: not a plate, not a boiling surface)

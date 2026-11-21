@@ -161,9 +161,22 @@ Every other star's face is generated from its temperature, size and luminosity p
 seed: its colours from its temperature; the scale of its texture from its kind (fine on a dwarf, a
 handful of giant cells across a red supergiant, as interferometric images and simulations of
 Betelgeuse show, e.g. Freytag et al. 2002); active regions, prominences and flares by activity
-(strongest in cool dwarfs); a nearly smooth, limb-darkened face, flattening and gravity darkening
-for fast-rotating hot stars (as measured by interferometry for Vega and Altair). The corona's glow
+(strongest in cool dwarfs); a nearly smooth, limb-darkened face for hot stars. The corona's glow
 and the prominences are artistic in strength.
+
+Seven fast-spinning stars are drawn flattened and darker round the equator, each with the polar
+and equatorial radius, the tilt of its axis to our line of sight and the angle of its pole on the
+sky that optical interferometry has measured (`src/universe/StarShapes.ts`):
+
+* Altair: Monnier et al. 2007, *Science* 317, 342
+* Vega: Monnier et al. 2012, *ApJ* 761, L3 (their concordance model)
+* Regulus and Caph: Che et al. 2011, *ApJ* 732, 68
+* Alderamin and Rasalhague: Zhao et al. 2009, *ApJ* 701, 209
+* Achernar: Domiciano de Souza et al. 2014, *A&A* 569, A10 (as quoted by Kervella et al. 2022,
+  arXiv:2209.07537)
+
+No other star is drawn flattened: how fast it spins and where its axis points is in none of the
+catalogues used here. How strongly the equator is darkened is the app's own choice.
 
 ## Black holes (`public/data/blackholes.json`, `pipeline/build_blackholes.py`)
 
