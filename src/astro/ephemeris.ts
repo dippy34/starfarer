@@ -84,7 +84,9 @@ export class Ephemeris {
         return r.arrayBuffer();
       })
       .then((buf) => {
-        this.loaded.set(k, { f64: new Float64Array(buf), f32: new Float32Array(buf) });
+        // (the doubles come first and the 32-bit floats after: with an odd number of those the
+        // file's length is not a multiple of 8, and a view of doubles over all of it cannot be made)
+        this.loaded.set(k, { f64: new Float64Array(buf, 0, buf.byteLength >> 3), f32: new Float32Array(buf) });
         this.pending.delete(k);
         this.failed.delete(k);
         // Keep memory bounded: drop chunks far from the one just loaded.

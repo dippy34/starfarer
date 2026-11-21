@@ -70,6 +70,33 @@ describe('ephemeris streaming', () => {
     expect(fetches).toBe(1);
   });
 
+  it('loads every decade, and each takes up where the one before left off', async () => {
+    // (seven of the files hold an odd number of 32-bit floats, so their length is not a multiple of 8: a view of
+    // doubles over the whole file threw, and those decades never loaded)
+    globalThis.fetch = (async (url: string | URL) => new Response(readFileSync(join(DATA, String(url).split('/').pop()!)))) as typeof fetch;
+    const eph = new Ephemeris(index, '/data/ephem', {});
+    const sun = new Vector3(), emb = new Vector3(), before = new Vector3(), after = new Vector3();
+    const AU_KM = 1.495978707e8;
+    let odd = 0;
+    for (const [k, c] of index.chunks.entries()) {
+      if (readFileSync(join(DATA, c.file)).byteLength % 8) odd++;
+      const mid = (c.jd0 + c.jd1) / 2;
+      await eph.request(mid);
+      expect(eph.isLoaded(mid), c.file).toBe(true);
+      // the Earth and Moon's centre is an astronomical unit from the Sun
+      expect(eph.evaluate(0, 10, mid, sun) && eph.evaluate(0, 3, mid, emb), c.file).toBe(true);
+      expect(emb.distanceTo(sun) / AU_KM, c.file).toBeGreaterThan(0.98);
+      expect(emb.distanceTo(sun) / AU_KM, c.file).toBeLessThan(1.02);
+      if (k === 0) continue;
+      // a tenth of a second either side of where two files meet: the 3 km it moves in that time, and no more
+      await eph.request(c.jd0 - 1e-6);
+      eph.evaluate(0, 3, c.jd0 - 1e-6, before);
+      eph.evaluate(0, 3, c.jd0 + 1e-6, after);
+      expect(after.distanceTo(before), c.file).toBeLessThan(10);
+    }
+    expect(odd).toBeGreaterThan(0);
+  });
+
   it('knows its own range and declines dates outside it', () => {
     const eph = new Ephemeris(index, '/data/ephem', {});
     expect(eph.inRange(J2000_JD)).toBe(true);
