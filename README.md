@@ -212,6 +212,7 @@ src/
 pipeline/    Python: download → validate → convert raw catalogues into public/data/
 tests/       unit tests incl. comparison against JPL Horizons reference vectors
 scripts/     headless browser verification (scenario screenshots, interaction checks)
+trailer/     the trailer: frame-by-frame capture of real footage, the edit, the score (trailer/README.md)
 ```
 
 **Scale and precision.** Every object has a double-double position (≈32 significant digits, i.e.
