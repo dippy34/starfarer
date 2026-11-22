@@ -1,4 +1,4 @@
-# The browser suites (scripts/<suite>.mjs) on GitHub's runners, one runner per suite, all at once.
+# The browser suites (scripts/<suite>.mjs) on GitHub's runners: a runner per suite (the longest in parts), all at once.
 #
 # Runs on a push to a throwaway branch `claude/test-**` (never on main or the deploy branch, and it
 # deploys nothing). scripts/remote-test.mjs pushes such a branch, waits for this run, fetches the
@@ -8,9 +8,10 @@
 # unless the head commit's message has a trailer line `Suites: all` or `Suites: flight walk`.
 #
 # Ubuntu 24.04: Playwright 1.56 (pinned) cannot install its Chromium on ubuntu-latest (26.04).
-# The runner's Chromium is the one the pinned @playwright/test installs (CHROMIUM_PATH unset), not
-# the container's: the suites measure within a run, never against stored pictures, so nothing here
-# compares with pixels taken elsewhere.
+# The runner's Chromium is the one the pinned @playwright/test installs (141), its full browser in
+# new headless mode as in the agents' container (whose Chrome for Testing is 153), not the headless
+# shell. The suites measure within a run, never against stored pictures, so nothing here compares
+# with pixels taken elsewhere.
 name: Browser tests
 
 on:
@@ -34,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      suites: ${{ steps.pick.outputs.suites }}
+      jobs: ${{ steps.pick.outputs.jobs }}
     steps:
       # (history and trees only, and only scripts/ checked out: the data is not needed to choose)
       - uses: actions/checkout@v4
@@ -54,12 +55,14 @@ jobs:
             list="$(node scripts/affected.mjs --base FETCH_HEAD --why)"
           fi
           echo "suites: $list (trailer: '${trailer}')"
-          json="$(node -e 'const s = process.argv[1].split(/[\s,]+/).filter(Boolean); console.log(JSON.stringify([...new Set(s)]))' "$list")"
-          echo "suites=$json" >> "$GITHUB_OUTPUT"
+          # one job per suite, the longest in parts (PARTS in scripts/affected.mjs)
+          jobs="$(node scripts/affected.mjs --matrix $list)"
+          echo "jobs: $jobs"
+          echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan
-    if: needs.plan.outputs.suites != '[]'
+    if: needs.plan.outputs.jobs != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -80,14 +83,14 @@ jobs:
 
   suite:
     needs: [plan, build]
-    if: needs.plan.outputs.suites != '[]'
+    if: needs.plan.outputs.jobs != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
-    name: ${{ matrix.suite }}
+        job: ${{ fromJSON(needs.plan.outputs.jobs) }}
+    name: ${{ matrix.job.name }}
     steps:
       # the scripts, package.json and vite.config.ts (root files come with a sparse checkout); not the data
       - uses: actions/checkout@v4
@@ -107,7 +110,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       # the full Chromium (new headless), as in the agents' container, not the headless shell
       - run: echo "CHROMIUM_PATH=$(node -e "import('@playwright/test').then((m) => console.log(m.chromium.executablePath()))")" >> "$GITHUB_ENV"
-      - run: $CHROMIUM_PATH --version
+      - run: $CHROMIUM_PATH --version; nproc; grep -m1 'model name' /proc/cpuinfo
       - uses: actions/download-artifact@v4
         with:
           name: dist-${{ github.sha }}
@@ -117,19 +120,19 @@ jobs:
           nohup npx vite preview --port 4173 --strictPort --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 60); do curl -sf -o /dev/null http://127.0.0.1:4173/ && exit 0; sleep 1; done
           cat preview.log; exit 1
-      - name: Run ${{ matrix.suite }}
+      - name: Run ${{ matrix.job.name }}
         run: |
           mkdir -p out
           start=$(date +%s)
           set +e
-          node scripts/${{ matrix.suite }}.mjs http://127.0.0.1:4173/ out 2>&1 | tee out/${{ matrix.suite }}.log
+          env ${{ matrix.job.env }} node scripts/${{ matrix.job.suite }}.mjs http://127.0.0.1:4173/ out ${{ matrix.job.args }} 2>&1 | tee out/${{ matrix.job.name }}.log
           rc=${PIPESTATUS[0]}
-          echo "exit $rc after $(( $(date +%s) - start )) s" | tee -a out/${{ matrix.suite }}.log
+          echo "exit $rc after $(( $(date +%s) - start )) s" | tee -a out/${{ matrix.job.name }}.log
           exit $rc
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.suite }}-${{ github.sha }}
+          name: ${{ matrix.job.name }}-${{ github.sha }}
           path: out/
           retention-days: 3
           if-no-files-found: warn

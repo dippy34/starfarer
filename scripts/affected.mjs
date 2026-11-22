@@ -5,6 +5,7 @@
 //   node scripts/affected.mjs --base <ref>              the files changed since <ref> (merge base), then as above
 //   node scripts/affected.mjs --all                     the full set
 //   add --why to see which rule picked each suite
+//   node scripts/affected.mjs --matrix <suites...>      the jobs for those suites, as JSON (the workflow's matrix)
 //
 // The map is deliberately coarse and errs towards running more: everything the explorer does goes
 // through src/app/App.ts, so a file not named below (and anything that boots the app, draws every
@@ -15,6 +16,27 @@ import { execFileSync } from 'node:child_process';
 
 /** Every browser suite of the deploy checklist (HANDOFF.md "Checks before every deploy"). */
 export const FULL = ['start', 'touch', 'interact', 'verify', 'exposure', 'stars', 'whatif', 'live', 'vr', 'game', 'walk', 'places', 'terrain', 'flight', 'ship'];
+
+/**
+ * The suites that run in parts at once on GitHub's runners (one job each): the parts together are
+ * the whole suite. walk's modes (argument 4) and flight's FLIGHT_ONLY are the suites' own; `all`
+ * of walk is touch + desktop + vr. Only the longest suites are split: the account runs about 20
+ * jobs at once for all helpers, and a full set is then 18.
+ */
+export const PARTS = {
+  walk: [{ part: 'touch', args: 'touch' }, { part: 'desktop', args: 'desktop' }, { part: 'vr', args: 'vr' }],
+  flight: [{ part: 'desk', env: { FLIGHT_ONLY: 'desk' } }, { part: 'phone', env: { FLIGHT_ONLY: 'phone' } }],
+};
+
+/** One job per suite, or per part of a split suite: { name, suite, args, env } (env: KEY=value words). */
+export function matrix(suites) {
+  return suites.flatMap((suite) => (PARTS[suite] ?? [{}]).map((p) => ({
+    name: p.part ? `${suite}-${p.part}` : suite,
+    suite,
+    args: p.args ?? '',
+    env: Object.entries(p.env ?? {}).map(([k, v]) => `${k}=${v}`).join(' '),
+  })));
+}
 
 const HUD = ['start', 'touch', 'interact', 'live', 'whatif', 'flight', 'ship', 'walk', 'game', 'vr'];
 const GROUND = ['walk', 'terrain', 'touch', 'flight', 'verify'];
@@ -83,6 +105,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const showWhy = args.includes('--why');
   let files = args.filter((a) => !a.startsWith('--'));
   if (args.includes('--all')) { console.log(FULL.join(' ')); process.exit(0); }
+  if (args.includes('--matrix')) {
+    const asked = files.flatMap((f) => f.split(/[\s,]+/)).filter(Boolean);
+    const unknown = asked.filter((s) => !FULL.includes(s));
+    if (unknown.length) { console.error(`not a suite: ${unknown.join(' ')} (the suites: ${FULL.join(' ')})`); process.exit(2); }
+    console.log(JSON.stringify(matrix([...new Set(asked)])));
+    process.exit(0);
+  }
   const b = args.indexOf('--base');
   if (b >= 0) {
     const ref = args[b + 1];
