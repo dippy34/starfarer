@@ -1,7 +1,9 @@
 // Walking mode in headless Chromium: on the Moon (Apollo 17) and Mars (Gale Crater) on the desktop,
 // gas giants refused, then the same in an emulated Meta Quest 3 (IWER) with the thumbsticks.
-// Usage: node scripts/walk.mjs [baseUrl] [outDir] [desktop|vr|sea|all]
+// On a phone, by touch: the Walk button over ground, the stick, looking by drag, Jump and Fly.
+// Usage: node scripts/walk.mjs [baseUrl] [outDir] [desktop|vr|sea|touch|all]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
+import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -266,6 +268,87 @@ async function seaCheck(page) {
     st = await page.evaluate(() => ({ state: window.app.walk.state, said: window.app.walk.said, sea: window.app.terrain.isSea(window.app.terrain.below(window.app.rig.upos).dir) }));
     check('w7: no walking on the open sea, with the reason', st.sea && st.state === 'off' && /open water/.test(st.said), JSON.stringify(st));
   }
+}
+
+// walking on a phone, by touch alone: over the Apollo 17 site the Walk button lands and walks; the
+// stick under the left thumb walks (all the way: faster), a finger dragged on the view turns the
+// view with it, Jump leaves the ground, Fly takes off again
+if (which === 'all' || which === 'touch') {
+  const ctx = await phoneContext(browser);
+  const page = await ctx.newPage();
+  collectErrors(page, errors);
+  await page.goto(`${base}?time=2026-10-01T20:00:00Z&paused=1&target=Moon&dist=3&menu=0`, { waitUntil: 'load', timeout: 180000 });
+  await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 600000 });
+  await page.evaluate(() => { window.app.terrain.budgetMs = 60; });
+  const f = await fingers(page);
+  const at = (sel) => page.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width }; }, sel);
+  if (await page.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  await goToSite(page, 'Apollo 17 landing site', 25);
+  const offered = await page.waitForFunction(() => { const b = document.querySelector('.walk-fab'); return b && !b.hidden && b.getBoundingClientRect().width > 0; }, null, { timeout: 180000 }).then(() => true).catch(() => false);
+  await f.tap(await at('.walk-fab'));
+  const walking = await page.waitForFunction(() => window.app.walk.state === 'walk', null, { timeout: 180000 }).then(() => true).catch(() => false);
+  await f.frames(4);
+  let st = await page.evaluate(() => ({ pad: !document.querySelector('.walk-pad').hidden, tabs: getComputedStyle(document.querySelector('.hud-tabs')).display, hud: document.querySelector('.walk-hud').textContent }));
+  check('t1: over the ground a Walk button lands and walks; the stick, Jump and Fly come up', offered && walking && st.pad && st.tabs === 'none' && /stick walks/.test(st.hud), JSON.stringify({ offered, walking, ...st }));
+  await page.screenshot({ timeout: 400000, path: path.join(outDir, 't1-touch-standing.png') });
+  // the stick pushed forward (up), held: the walker walks
+  const stick = await at('.walk-stick');
+  const p0 = (await page.evaluate(() => window.app.walk.debug())).pos;
+  await f.press({ x: stick.x, y: stick.y });
+  await f.slide({ x: stick.x, y: stick.y - stick.w * 0.3 });
+  const walk = await sample(page, 30);
+  await page.screenshot({ timeout: 400000, path: path.join(outDir, 't2-touch-walking.png') });
+  await f.lift();
+  const p1 = walk[walk.length - 1].pos;
+  const moved = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]), top = Math.max(...walk.map((s) => s.speed));
+  check('t2: the stick pushed part way walks the walker forward', moved > 1 && top > 0.5 && top < 1.6, `moved ${moved.toFixed(2)} m, top speed ${top.toFixed(2)} m/s`);
+  // looking: a finger dragged to the right across the view turns it to the left
+  const look = () => page.evaluate(() => { const q = window.app.rig.quat; return [-(2 * (q.x * q.z + q.w * q.y)), -(2 * (q.y * q.z - q.w * q.x)), -(1 - 2 * (q.x * q.x + q.y * q.y))]; });
+  const right0 = await page.evaluate(() => { const q = window.app.rig.quat; return [-(1 - 2 * (q.y * q.y + q.z * q.z)), -(2 * (q.x * q.y + q.w * q.z)), -(2 * (q.x * q.z - q.w * q.y))]; });
+  const l0 = await look();
+  await f.drag({ x: 140, y: 420 }, { x: 260, y: 420 }, { steps: 10, rest: 0.3 });
+  await f.frames(3);
+  const l1 = await look();
+  const turned = Math.acos(Math.min(1, l0[0] * l1[0] + l0[1] * l1[1] + l0[2] * l1[2])) * 57.2958;
+  const leftward = (l1[0] - l0[0]) * right0[0] + (l1[1] - l0[1]) * right0[1] + (l1[2] - l0[2]) * right0[2];
+  check('t3: a finger dragged right turns the view left (the sky goes with it)', turned > 5 && leftward > 0, `turned ${turned.toFixed(1)}°`);
+  // Jump: off the ground, and down again
+  await f.tap(await at('.walk-jump'));
+  const jump = await sample(page, 25);
+  check('t4: Jump leaves the ground', jump.some((s) => !s.onGround && s.vUp > 0.3), `highest vUp ${Math.max(...jump.map((s) => s.vUp)).toFixed(2)} m/s`);
+  // Fly: back to free flight, the interface back
+  await f.tap(await at('.walk-fly'));
+  await f.frames(3);
+  st = await page.evaluate(() => ({ state: window.app.walk.state, pad: !document.querySelector('.walk-pad').hidden, tabs: getComputedStyle(document.querySelector('.hud-tabs')).display }));
+  // the pad on ten phone sizes, upright and on its side: the stick, Jump and Fly on the screen, apart,
+  // and clear of the chips and the walker's line (walking again first)
+  await page.evaluate(() => window.app.walk.start());
+  await page.waitForFunction(() => window.app.walk.state === 'walk', null, { timeout: 180000 });
+  const sizes = [[390, 844], [390, 664], [375, 667], [360, 640], [430, 932], [844, 390], [844, 280], [667, 375], [932, 430], [740, 360]];
+  const padBad = [];
+  for (const [w, h] of sizes) {
+    await page.setViewportSize({ width: w, height: h });
+    await f.frames(3);
+    await page.waitForTimeout(400);
+    const got = await page.evaluate(() => {
+      const box = (e, what) => { const r = e.getBoundingClientRect(); return { what, l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width }; };
+      const parts = [box(document.querySelector('.walk-stick'), 'stick'), box(document.querySelector('.walk-jump'), 'Jump'), box(document.querySelector('.walk-fly'), 'Fly'),
+        ...[...document.querySelectorAll('#hud .hud-top .chip')].map((e) => box(e, 'chip')), box(document.querySelector('.walk-hud'), 'walker line')];
+      return { parts, W: innerWidth, H: innerHeight };
+    });
+    const meet = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
+    const hits = [];
+    got.parts.forEach((a, i) => got.parts.slice(i + 1).forEach((b) => { if (a.w > 0 && b.w > 0 && meet(a, b)) hits.push(`${a.what}/${b.what}`); }));
+    const off = got.parts.filter((p) => p.w > 0 && (p.l < -0.5 || p.t < -0.5 || p.r > got.W + 0.5 || p.b > got.H + 0.5)).map((p) => `${p.what} off screen`);
+    const missing = got.parts.filter((p) => ['stick', 'Jump', 'Fly'].includes(p.what) && !(p.w >= 44)).map((p) => `${p.what} too small`);
+    if (hits.length || off.length || missing.length) padBad.push({ size: `${w}x${h}`, hits, off, missing });
+  }
+  check('t6: on ten phone sizes the stick, Jump and Fly are on the screen, a thumb\'s size, apart, clear of the chips and the walker\'s line', padBad.length === 0, JSON.stringify(padBad).slice(0, 500));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.app.walk.exit(true));
+  await f.frames(2);
+  check('t5: Fly takes off again: free flight, the tabs back', st.state === 'off' && !st.pad && st.tabs !== 'none', JSON.stringify(st));
+  await ctx.close();
 }
 
 if (which === 'sea') {

@@ -45,9 +45,13 @@ async function open(target, dist) {
   await settle(page, 25);
   return page;
 }
-/** `n` frames of the app. */
+/**
+ * `n` frames of the app. (Each at least 105 ms after the one before it began, App.lastTime: App.frame
+ * clamps its step to 0.1 s, so every frame is a tenth of a second of its time, as before, without a
+ * further 105 ms after whatever came between.)
+ */
 const settle = (page, n) => page.evaluate(async (n) => {
-  for (let i = 0; i < n; i++) { await new Promise((res) => setTimeout(res, 105)); window.app.frame(); }
+  for (let i = 0; i < n; i++) { await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now()))))); window.app.frame(); }
 }, n);
 
 /**
@@ -138,10 +142,11 @@ const rgb = (p) => `(${p.join(', ')})`;
 {
   const page = await open('Sun', 4);
   // turn the view to one of the Sun's active regions (its first spot, where it is now)
+  // (BodiesLayer.sunLooks: each sun's look, and how far its surface has turned)
   await page.evaluate(() => {
-    const a = window.app, b = a.bodies, sun = a.system.sun, look = b.sunLook, sp = look.spots[0];
+    const a = window.app, sun = a.system.sun, star = a.bodies.sunLooks.get(sun), look = star.look, sp = look.spots[0];
     const s = Math.sin(sp.lat), c = Math.cos(sp.lat);
-    const lon = sp.lon + look.rotRate * (1 - look.shear * s * s) * b.sunTurned;
+    const lon = sp.lon + look.rotRate * (1 - look.shear * s * s) * star.turned;
     const v = [c * Math.cos(lon), c * Math.sin(lon), s], e = sun.orientation.elements;
     const dir = [0, 1, 2].map((i) => e[i] * v[0] + e[4 + i] * v[1] + e[8 + i] * v[2]);
     // (placeNear: the eye stands at (cos az cos el, sin az, cos az sin el) from the Sun)
@@ -168,7 +173,7 @@ const rgb = (p) => `(${p.join(', ')})`;
   check('its face is shown at the level its colours are designed for', level > 0.5 && level < 0.6, `mean level ${level.toFixed(2)}`);
 
   // --- it seethes (its turning stopped meanwhile: what changes is the seething alone)
-  const rate = await page.evaluate(() => { const look = window.app.bodies.sunLook, r = look.rotRate; look.rotRate = 0; return r; });
+  const rate = await page.evaluate(() => { const look = window.app.bodies.sunLooks.get(window.app.system.sun).look, r = look.rotRate; look.rotRate = 0; return r; });
   await settle(page, 2);
   const before = await measure(page);
   const next = await measure(page);
@@ -183,7 +188,7 @@ const rgb = (p) => `(${p.join(', ')})`;
     const g = c.getContext('2d', { willReadFrequently: true });
     for (let k = 0; k <= 16; k++) {
       a.placeNear(sun, 4 * (1.5 / 4) ** (k / 16) * sun.radius, 0, 0);
-      for (let i = 0; i < 2; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
+      for (let i = 0; i < 2; i++) { await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now()))))); a.frame(); }
       // (the view holds what it is aimed at a little above the middle of an upright screen)
       g.drawImage(gl, (gl.width - S) / 2, 0.42 * gl.height - S / 2, S, S, 0, 0, S, S);
       const d = g.getImageData(0, 0, S, S).data, L = new Float32Array(S * S);
@@ -203,22 +208,22 @@ const rgb = (p) => `(${p.join(', ')})`;
   const step = (of) => closer.slice(1).map((m, i) => Math.max(m[of] / closer[i][of], closer[i][of] / m[of]));
   check('coming closer, its detail comes in gradually: nothing pops in, nothing drops out', Math.max(...step('fine')) < 1.3 && Math.max(...step('mean')) < 1.07 && Math.min(...closer.map((m) => m.fine)) > 0.02,
     `from 4 radii to 1.5 in 16 steps: fine contrast ${Math.min(...closer.map((m) => m.fine)).toFixed(3)} to ${Math.max(...closer.map((m) => m.fine)).toFixed(3)}, at most x${Math.max(...step('fine')).toFixed(2)} in a step; brightness at most x${Math.max(...step('mean')).toFixed(3)}`);
-  await page.evaluate((r) => { window.app.bodies.sunLook.rotRate = r; }, rate);
+  await page.evaluate((r) => { window.app.bodies.sunLooks.get(window.app.system.sun).look.rotRate = r; }, rate);
   check('the surface seethes: after a few seconds it has changed, far more than from one frame to the next, and the disk is as bright as it was',
     after.change > 0.008 && after.change > 2.5 * next.change && Math.abs(after.mean - before.mean) < 0.03 * before.mean,
     `${(after.change * 100).toFixed(1)} % of the brightness changed place (${(next.change * 100).toFixed(2)} % in one frame); the mean went from ${before.mean.toFixed(1)} to ${after.mean.toFixed(1)}`);
 
   // --- prominences rise over the limb as it turns
   const proms = await page.evaluate(() => {
-    const a = window.app, b = a.bodies, look = b.sunLook;
+    const a = window.app, b = a.bodies, star = b.sunLooks.get(a.system.sun), look = star.look;
     const u = b.sunCorona.mesh.material.uniforms;
-    const was = b.sunTurned, seen = [];
+    const was = star.turned, seen = [];
     for (let i = 0; i < 48; i++) {
-      b.sunTurned = was + (i / 48) * ((2 * Math.PI) / look.rotRate);
+      star.turned = was + (i / 48) * ((2 * Math.PI) / look.rotRate);
       a.frame();
       seen.push(u.uPromCount.value);
     }
-    b.sunTurned = was;
+    star.turned = was;
     a.frame();
     return { seen, slots: u.uPromFeet.value.length, all: look.proms.length };
   });
@@ -227,10 +232,10 @@ const rgb = (p) => `(${p.join(', ')})`;
 
   // --- it turns at its full rate from here, and is slowed from close by
   const turning = (page) => page.evaluate(async () => {
-    const a = window.app, b = a.bodies;
-    const t0 = b.time, s0 = b.sunTurned;
-    for (let i = 0; i < 10; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
-    return (b.sunTurned - s0) / (b.time - t0);
+    const a = window.app, b = a.bodies, star = b.sunLooks.get(a.system.sun);
+    const t0 = b.time, s0 = star.turned;
+    for (let i = 0; i < 10; i++) { await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now()))))); a.frame(); }
+    return (star.turned - s0) / (b.time - t0);
   });
   const far = await turning(page);
   await page.evaluate(() => { const a = window.app, sun = a.system.sun; a.placeNear(sun, 1.15 * sun.radius, 35, 15); });
