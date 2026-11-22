@@ -1331,10 +1331,14 @@ above is validated against JPL Horizons and stays as it is unless something is w
        In the real Solar System it is now the catalogue's mean period (`SolarSystem.meanPeriod`:
        a planet's from JPL's mean elements for the major planets, the Earth's from the Earth-Moon
        barycentre's; a moon's from its JPL mean elements; a small body's by Kepler's third law on
-       its catalogued orbit), stated with its source; in live physics, or where nothing is
-       catalogued (Pluto: not in those elements), the vis-viva value, its working saying "as it
-       moves now". `tests/worked.test.ts`; `scripts/whatif.mjs` (its year check, now the
+       its catalogued orbit; Pluto, which those elements leave out, from NASA's fact sheet,
+       90,560 d), stated with its source; in live physics, or where nothing is catalogued, the
+       vis-viva value, its working saying "as it moves now". `tests/worked.test.ts`; `scripts/whatif.mjs` (its year check, now the
        catalogued 365.256 d).
+     - *"star · 0.00 light years" on a star's card close by* (B3), while the place chip said
+       "5.066 million km": the card wrote a star's (and a galaxy's, a nebula's) distance in light
+       years whatever it was. It now uses the chip's words (`distanceText`: km, AU, then light
+       years), measured to the star's surface like a world's (`destinations.ts`).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

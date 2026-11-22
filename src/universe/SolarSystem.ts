@@ -49,6 +49,8 @@ export interface SystemJson {
 }
 
 const IDENTITY3 = new Matrix3();
+/** Pluto's sidereal orbit period (days): NASA's Pluto fact sheet (NSSDCA), 247.94 years */
+const PLUTO_SIDEREAL_DAYS = 90560;
 const APPROX_NAME: Record<number, string> = { 199: 'Mercury', 299: 'Venus', 499: 'Mars', 599: 'Jupiter', 699: 'Saturn', 799: 'Uranus', 899: 'Neptune' };
 
 /** Cheap deterministic hash in [0, 1). */
@@ -385,6 +387,9 @@ export class SolarSystem {
       const el = this.data.approxElements[b.name === 'Earth' ? 'EMB' : b.name];
       const n = el?.rate[3]; // mean longitude, degrees a century
       if (n && n > 0) return { days: (360 / n) * 36525, source: "JPL's mean elements for the major planets", how: `360° / ${n.toFixed(5)}°/century` };
+      // Pluto is not in the table of those elements the pipeline reads (Table 2a, 3000 BC to
+      // 3000 AD, has the eight planets only): its sidereal period from NASA's fact sheet
+      if (b.name === 'Pluto') return { days: PLUTO_SIDEREAL_DAYS, source: "NASA's Pluto fact sheet (NSSDCA)", how: 'catalogued' };
     }
     if (e.kind === 'kepler') {
       const el = this.keplerEl.get(b);

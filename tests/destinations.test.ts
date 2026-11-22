@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CATEGORIES, distanceText, EXOPLANETS, GALAXIES, HOLES, NEBULAE, PLANETS, STARS, starTint } from '../src/app/destinations';
-import { LY } from '../src/core/units';
+import { Vector3 } from 'three';
+import type { App } from '../src/app/App';
+import { CATEGORIES, describe as describeObject, distanceText, EXOPLANETS, GALAXIES, HOLES, NEBULAE, PLANETS, STARS, starTint } from '../src/app/destinations';
+import { AU, LY, PC, SUN_RADIUS } from '../src/core/units';
+import { UPos } from '../src/core/upos';
+import { CatalogStar } from '../src/universe/Stars';
 
 describe('distances in a list', () => {
   it('are kilometres nearby and light years beyond the Solar System, in plain words', () => {
@@ -12,6 +16,16 @@ describe('distances in a list', () => {
     expect(distanceText(2.537e6 * LY)).toBe('2.5 million light years');
     expect(distanceText(53.5e6 * LY)).toBe('54 million light years');
     expect(distanceText(2.4e9 * LY)).toBe('2.4 billion light years');
+  });
+});
+
+describe("a star's card, close by", () => {
+  it("says how far it is in the place chip's units, not \"0.00 light years\"", () => {
+    const star = new CatalogStar('t', new Vector3(1, 0, 0), 4.83, 5772, 'G2V', ['Test'], null);
+    const at = (m: number) => ({ rig: { upos: UPos.from(PC + m, 0, 0), target: null, surface: 0 } }) as unknown as App;
+    expect(describeObject(at(SUN_RADIUS + 5.066e9), star)).toBe('star · 5.066 million km');
+    expect(describeObject(at(SUN_RADIUS + 11.4 * AU), star)).toBe('star · 11.40 AU');
+    expect(describeObject(at(4.25 * LY), star)).toBe('star · 4.25 light years');
   });
 });
 

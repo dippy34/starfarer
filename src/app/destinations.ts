@@ -94,18 +94,19 @@ export function distanceTo(app: App, o: SpaceObject): number {
   const d = o.upos.sub(app.rig.upos, new Vector3()).length();
   // (the world the camera is at: its ground as the camera knows it, hills and all)
   if (o === app.rig.target && app.rig.surface > 0) return Math.max(d - app.rig.surface, 0);
-  return o instanceof Body || o instanceof ExoPlanet ? Math.max(d - o.radius, 0) : d;
+  return o instanceof Body || o instanceof ExoPlanet || o instanceof CatalogStar ? Math.max(d - o.radius, 0) : d;
 }
 
 /** One line about an object as seen from where the explorer is: what it is, how far. */
 export function describe(app: App, o: SpaceObject): string {
   const d = distanceTo(app, o);
-  if (o instanceof CatalogStar) return `star · ${lightYears(d)}`;
+  // (in the units the place chip uses: near a star "5.066 million km" or "11.40 AU", not "0.00 light years")
+  if (o instanceof CatalogStar) return `star · ${distanceText(d)}`;
   if (o instanceof MilkyWay) return 'our galaxy, from outside';
   if (o instanceof Landmark) return `on ${o.def.body} · ${o.def.about}`;
   if (o instanceof RingSpot) return 'among the ice of the B ring';
-  if (o instanceof Galaxy) return `galaxy · ${lightYears(d)}`;
-  if (o instanceof DeepSkyObject) return `${o.data.kind === 'open' || o.data.kind === 'globular' ? `${o.data.kind} cluster` : o.kind} · ${lightYears(d)}`;
+  if (o instanceof Galaxy) return `galaxy · ${distanceText(d)}`;
+  if (o instanceof DeepSkyObject) return `${o.data.kind === 'open' || o.data.kind === 'globular' ? `${o.data.kind} cluster` : o.kind} · ${distanceText(d)}`;
   if (o instanceof Spacecraft) {
     const au = o.upos.sub(app.system.sun.upos, new Vector3()).length() / 1.495978707e11;
     return o.isOrbiter ? `Earth orbit · ${formatDistance(d)}` : o.parentObject ? `near Earth · ${formatDistance(d)}` : `${au.toFixed(au > 10 ? 0 : 2)} AU from the Sun`;

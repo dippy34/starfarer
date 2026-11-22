@@ -34,6 +34,9 @@ All from NASA/JPL or NASA PDS (U.S. Government works, freely available):
 * **JPL DE442S** planetary ephemeris (NAIF generic kernel `de442s.bsp`) — <https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/>
 * **NAIF PCK** `pck00011.tpc` (IAU WGCCRE rotation models, radii), `gm_de440.tpc` (GM), `naif0012.tls` (leap seconds) — <https://naif.jpl.nasa.gov/pub/naif/generic_kernels/>
 * **JPL Solar System Dynamics**: planetary satellite mean elements and physical parameters, planetary physical parameters, Keplerian elements for approximate planet positions (E. M. Standish) — <https://ssd.jpl.nasa.gov/>
+  The mean periods in a world's details ("Once round the Sun") come from these elements' mean
+  motions; Pluto's, which they leave out, is the sidereal period of **NASA's Pluto fact sheet**
+  (NSSDCA, 90,560 days) — <https://nssdc.gsfc.nasa.gov/planetary/factsheet/plutofact.html>
 * **JPL Horizons API** — state vectors and osculating elements used to calibrate and validate moon orbits, and as test reference data — <https://ssd.jpl.nasa.gov/horizons/>
 * **JPL Small-Body Database Query API** — osculating elements and physical data of asteroids, TNOs and comets — <https://ssd-api.jpl.nasa.gov/doc/sbdb_query.html>
   Comet comas and tails (`src/render/CometTails.ts`) are a model driven by each comet's total-magnitude
