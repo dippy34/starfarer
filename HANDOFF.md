@@ -752,8 +752,8 @@ temperature, and size as well as mass.
 running (a build, not the dev server: an edit reloads the page under a running suite), each of
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
-49), `interact` (mouse and keys; 15), `verify` (35 scenes), `exposure` (looking away from bright
-things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
+51), `interact` (mouse and keys; 17), `verify` (35 scenes), `exposure` (looking away from bright
+things and back, coming up to five black holes and going away again, and out of the galaxy; 78), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
 powers, each through the interface on a phone and at a desk, watching a change, Replay and
@@ -1495,6 +1495,22 @@ above is validated against JPL Horizons and stays as it is unless something is w
          with the file's name (before, the sheet stayed open over the view and a 2.2 s "Screenshot
          saved" was easily missed).
        `tests/numbers.test.ts`; `scripts/interact.mjs` (17 checks); `scripts/touch.mjs` (51).
+     - *The Milky Way's glow on the way out (1 to 15 kpc) changed in steps every six frames, and
+       now and then went to a white wash* (trailer v3's frame scan). Two causes. Each new map of
+       the glow was shown at once (a step of about ten levels on the frame where it came in,
+       against two or three between). And a sight line through the bulge's very middle could sum
+       past the largest number the map's half floats hold (65,504): that texel was infinity, the
+       sky's mapping of it NaN, and the bloom spread it over the whole frame until the next map
+       (the maps from 3.2 and 7.8 kpc on the way out, among others). The ray march's light is now
+       held below that (`shaders/galaxy.ts`), the sky takes a texel that is not a finite number for
+       no light at all, so none can reach the bloom (`Sky.ts`), and it shows the last two maps blended, going
+       over from one to the next in the six frames the next takes to draw (`GalaxyGlow.prev`,
+       `blend`; `Sky.updateWith`). A third cube map for it: 17 MB of the GPU's memory more (4 MB
+       in a headset); one more cube lookup a sky pixel. Not changed: the glow is soft from 2 to 6
+       kpc out, where the cube map (512 px faces, a fifth of a degree a texel, three CSS pixels on
+       a phone) is all there is of it; farther out the galaxy is drawn per pixel. Finer faces
+       would cost four times the drawing and the memory. `tests/galaxyglow.test.ts`;
+       `scripts/exposure.mjs` (scene `glow-out`; 78 checks).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

@@ -30,6 +30,8 @@ const FRAG = /* glsl */ `
 uniform sampler2D uMap;
 uniform float uGain;
 uniform samplerCube uGalaxy;
+uniform samplerCube uGalaxyPrev; // the map before it, and how far the glow has gone from that one to uGalaxy
+uniform float uGalaxyBlend;
 uniform float uMix;       // 0: the NASA map only, 1: the galaxy model only
 uniform float uModelK;    // display value of a model column of uModelRef
 uniform float uModelRef;
@@ -51,7 +53,9 @@ void main() {
   c *= uGain;
   if (uMix > 0.0) {
     // galaxy model: V-band column luminosity, mapped like the map (its pixels go as flux^1.65)
-    vec3 L = textureCube(uGalaxy, d).rgb;
+    vec3 L = mix(textureCube(uGalaxyPrev, d).rgb, textureCube(uGalaxy, d).rgb, uGalaxyBlend);
+    // (a texel past what the map holds must not reach the bloom: one NaN there whitens the frame)
+    if (any(isnan(L)) || any(isinf(L))) L = vec3(0.0);
     float Y = max(dot(L, vec3(0.2126, 0.7152, 0.0722)), 1e-9);
     // above the calibration point grow only logarithmically (C1 at x = 1), so the much brighter
     // sky of the inner galaxy is bright without washing everything out
@@ -100,7 +104,7 @@ export class SkyLayer {
     const mat = new ShaderMaterial({
       name: 'sky', vertexShader: VERT, fragmentShader: FRAG,
       uniforms: {
-        uMap: { value: tex }, uGain: this.gain, uGalaxy: { value: null }, uMix: { value: 0 }, uModelK: { value: 0 },
+        uMap: { value: tex }, uGain: this.gain, uGalaxy: { value: null }, uGalaxyPrev: { value: null }, uGalaxyBlend: { value: 1 }, uMix: { value: 0 }, uModelK: { value: 0 },
         uModelRef: { value: SkyLayer.MODEL_REF }, uModelExp: { value: 1.65 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       side: BackSide, depthTest: false, depthWrite: false,
@@ -121,15 +125,18 @@ export class SkyLayer {
 
   /**
    * As update(), blending to the galaxy model (`galaxy` cube rendered from galactocentric `camGal`)
-   * as the explorer leaves the Sun's neighbourhood, where the Earth-centred map stops being valid.
+   * as the explorer leaves the Sun's neighbourhood, where the Earth-centred map stops being valid;
+   * the model shown `blend` of the way from the map before it, `prev` (render/GalaxyLayer.ts).
    */
-  updateWith(adapt: number, sunDistPc: number, galaxy: CubeTexture | null, camGal: Vector3 | null): void {
+  updateWith(adapt: number, sunDistPc: number, galaxy: CubeTexture | null, camGal: Vector3 | null, prev: CubeTexture | null = null, blend = 1): void {
     const base = SkyLayer.GAIN * this.brightness * Math.pow(Math.max(adapt, 0), 0.55);
     const u = (this.mesh.material as ShaderMaterial).uniforms;
     const mix = galaxy && camGal ? smoothstep(120, 700, sunDistPc) : 0;
     this.gain.value = base * (galaxy ? 1 : 1 - smoothstep(300, 1500, sunDistPc));
     u.uMix.value = mix;
     u.uGalaxy.value = galaxy;
+    u.uGalaxyPrev.value = prev ?? galaxy;
+    u.uGalaxyBlend.value = prev ? blend : 1;
     if (camGal) {
       // from outside the galaxy a gentler curve (and more gain) keeps the spiral arms visible
       const outside = Math.max(0, Math.abs(camGal.z) - 4000, Math.hypot(camGal.x, camGal.y) - 22000);

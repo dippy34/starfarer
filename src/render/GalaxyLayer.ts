@@ -24,14 +24,19 @@ export function nextFaces(done: readonly boolean[], maxFaces: number): { faces: 
  * map shows the whole spiral.
  *
  * When the eye has moved far enough to change it, the map is drawn again a face a frame (six faces
- * at once would be six times a frame's work in one frame) into a second cube map, all six faces
- * from one place, and the two are swapped once it is whole: the map shown is always of one place.
- * (Drawn into the map in use, faces from places far apart met in hard seams across the sky while
- * the app's own flight carried the eye thousands of parsecs a frame.)
+ * at once would be six times a frame's work in one frame) into a third cube map, all six faces
+ * from one place: the maps shown are always whole, each of one place. (Drawn into the map in use,
+ * faces from places far apart met in hard seams across the sky while the app's own flight carried
+ * the eye thousands of parsecs a frame.) The sky shows the last two maps blended, `blend` of the
+ * way from `prev` to `target`, the blend going on over the frames the next one takes to draw:
+ * shown one after the other, each new map was a step in the glow's brightness every six frames.
  */
 export class GalaxyGlow {
-  /** the map shown: whole, and from one place (`cam`) */
+  /** the newest whole map, from one place (`cam`) */
   target: WebGLCubeRenderTarget;
+  /** the one before it, and how far the sky has gone from it to `target` (0 to 1) */
+  prev: WebGLCubeRenderTarget;
+  blend = 1;
   /** the map being drawn, the faces of it done, and the place (galactocentric pc) it is drawn from */
   private back: WebGLCubeRenderTarget;
   private backDone: boolean[] = [false, false, false, false, false, false];
@@ -43,11 +48,13 @@ export class GalaxyGlow {
   private seed = 0;
   /** headset quality: smaller map, fewer samples */
   vr = false;
-  /** the place the map shown was drawn from (galactocentric pc), for the sky's exposure curve */
+  /** the places the newest map and the one before were drawn from (galactocentric pc) */
   readonly cam = new Vector3();
+  readonly prevCam = new Vector3();
 
   constructor() {
     this.target = make(512);
+    this.prev = make(512);
     this.back = make(512);
     this.cubeCam = new CubeCamera(0.1, 10, this.back);
     this.mat = new ShaderMaterial({
@@ -95,14 +102,16 @@ export class GalaxyGlow {
   update(gl: WebGLRenderer, camGal: Vector3, maxFaces = 1): void {
     const size = this.vr ? 256 : 512;
     if (this.target.width !== size) {
-      this.target.dispose();
-      this.back.dispose();
+      for (const t of [this.target, this.prev, this.back]) t.dispose();
       this.target = make(size);
+      this.prev = make(size);
       this.back = make(size);
       this.cubeCam.renderTarget = this.back;
       this.shown = false;
       this.backPos = null;
     }
+    // (a step a frame: the blend is done as the next map, a face a frame, is whole)
+    this.blend = Math.min(1, this.blend + 1 / 6);
     if (!this.backPos) {
       if (this.shown && this.cam.distanceTo(camGal) <= this.threshold(camGal)) return;
       this.backPos = camGal.clone();
@@ -134,9 +143,13 @@ export class GalaxyGlow {
     gl.xr.enabled = xrWas;
     gl.setRenderTarget(prevTarget, prevFace, prevMip);
     if (whole) {
-      // show it, and draw the next one into the map it replaces
-      [this.target, this.back] = [this.back, this.target];
+      // show it, the sky going over to it from the one shown till now (from the start, the first),
+      // and draw the next one into the map before that
+      if (this.shown) [this.prev, this.target, this.back] = [this.target, this.back, this.prev];
+      else [this.target, this.back] = [this.back, this.target];
+      this.blend = this.shown ? 0 : 1;
       this.cubeCam.renderTarget = this.back;
+      this.prevCam.copy(this.shown ? this.cam : this.backPos);
       this.cam.copy(this.backPos);
       this.backPos = null;
       this.shown = true;

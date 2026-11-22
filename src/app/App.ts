@@ -2811,7 +2811,8 @@ export class App {
     // one face per frame while travelling; all at once if we find ourselves far out with no map yet
     if (sunDistPc > 60) this.galaxy.update(this.renderer.gl, this.camGal, !this.galaxy.ready && sunDistPc > 150 ? 6 : 1);
     HITCH.lap('galaxyCube');
-    this.sky.updateWith(xStar / xDark, sunDistPc, this.galaxy.ready ? this.galaxy.target.texture : null, this.camGal);
+    const glow = this.galaxy.ready ? this.galaxy : null;
+    this.sky.updateWith(xStar / xDark, sunDistPc, glow?.target.texture ?? null, this.camGal, glow?.prev.texture ?? null, glow?.blend ?? 1);
     this.mwVolume.update(this.rig.upos, this.camGal, this.sky.modelK, SkyLayer.MODEL_REF, this.sky.modelExp);
     HITCH.lap('sky');
     this.galaxies.update(this.rig.upos, pixelAngle, xStar / xDark, smoothstep(300, 1500, sunDistPc), this.view.quat);
