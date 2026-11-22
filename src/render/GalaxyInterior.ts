@@ -1,6 +1,7 @@
 import { Matrix3, Vector3 } from 'three';
 import { PC } from '../core/units';
-import type { Galaxy } from '../universe/Galaxies';
+import type { UPos } from '../core/upos';
+import { Galaxy, type GalaxyData } from '../universe/Galaxies';
 import { BANDS, cellSize, type StarCell } from '../universe/ProceduralStars';
 import { type GalaxyModel, sersicB, smooth } from './GalaxiesLayer';
 import { INTERIOR } from './interiorState';
@@ -37,6 +38,26 @@ export function galaxyLuminosity(g: Galaxy): number {
   const dm = 5 * Math.log10(g.data.distPc / 10);
   const M = g.data.vmag !== null ? g.data.vmag - dm : g.shape === 'dwarf' ? -11 : -16;
   return 10 ** (-0.4 * (M - 4.83));
+}
+
+/**
+ * A galaxy as the workers that generate its stars rebuild it: its catalogue entry and where the
+ * main thread has it. The two can differ (M87 is moved onto its black hole, 40 kpc beyond its
+ * catalogued distance); a worker that placed a cell from the catalogue alone put its stars there,
+ * far from the eye that asked for them.
+ */
+export interface GalaxyForWorker { data: GalaxyData; upos: Pick<UPos, 'xh' | 'xl' | 'yh' | 'yl' | 'zh' | 'zl'> }
+
+export function galaxyForWorker(g: Galaxy): GalaxyForWorker {
+  const p = g.upos;
+  return { data: g.data, upos: { xh: p.xh, xl: p.xl, yh: p.yh, yl: p.yl, zh: p.zh, zl: p.zl } };
+}
+
+/** The worker's copy of galaxy `i`: the same galaxy, at the same place, as on the main thread. */
+export function galaxyInWorker(w: GalaxyForWorker, i: number): Galaxy {
+  const g = new Galaxy(w.data, i);
+  g.upos.copy(w.upos as UPos);
+  return g;
 }
 
 /** galaxy-specific constants for generation */

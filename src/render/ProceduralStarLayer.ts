@@ -5,10 +5,10 @@ import { formatRaDec } from '../core/frames';
 import { extinction, GALAXY } from '../universe/Galaxy';
 import { BANDS, cellSize, generateCell, reach, spectralLabel, type StarCell } from '../universe/ProceduralStars';
 import { CatalogStar } from '../universe/Stars';
-import { BAND_LIGHT, dustBetween, F_LOG0, F_N, F_STEP, generateGalaxyCell, INTERIOR, interiorFrame } from './GalaxyInterior';
+import { BAND_LIGHT, dustBetween, F_LOG0, F_N, F_STEP, galaxyForWorker, generateGalaxyCell, INTERIOR, interiorFrame } from './GalaxyInterior';
 import { smooth } from './GalaxiesLayer';
 import { STAR_FRAG } from './StarField';
-import { POOL_VERT, type PoolHandle, StarPool } from './StarPool';
+import { CHUNK, POOL_VERT, type PoolHandle, StarPool } from './StarPool';
 
 const ABS_MIN = -12;
 const ABS_STEP = 0.125;
@@ -16,19 +16,67 @@ const ABS_STEP = 0.125;
 const MAX_CELLS = 4000;
 /** stars resident on the GPU (one draw call): a headset's budget, and a desktop's */
 export const STAR_BUDGET = { vr: 150_000, desktop: 450_000 };
+/**
+ * A cell's stars go to the pool out to this multiple of its band's reach from the eye: the shader
+ * fades out every star beyond the reach, so the rest would only take room. (Inside a giant
+ * elliptical every cell of the bright bands holds the most a cell may, spread over a kiloparsec or
+ * more: sent whole, a few of them filled the pool with stars out of reach and starved the cells
+ * round the eye.) The stars sent are chosen again once the eye or the reach has moved out of the
+ * margin.
+ */
+const MARGIN = 1.25;
+/** stars looked through per frame to send cells again (theirs no longer cover the reach), as a share of the pool */
+const REFRESH = 1 / 4;
 
 interface Entry {
   cell: StarCell;
   /** galaxy index for cells inside other galaxies (-1: the Milky Way) */
   gi: number;
-  /** where its stars sit in the pool (null: no stars, or waiting for room) */
+  /** where its stars sit in the pool (null: none sent, or none within the radius) */
   handle: PoolHandle | null;
   /** packed magnitude and colour per star (kept to re-add after an eviction from the pool) */
   mt: Uint16Array | null;
+  /** farthest star from the cell centre (pc) */
+  rmax: number;
+  /**
+   * The stars in the pool: those within `rad` pc of the eye position `at` (ICRF heliocentric pc);
+   * `whole`: all of the cell's (then `rad` reaches its farthest star). rad 0: nothing sent yet.
+   * `reachAt`: the band's reach (pc) when they were chosen.
+   */
+  at: Vector3;
+  rad: number;
+  whole: boolean;
+  reachAt: number;
   /** visual extinction (mag) from the eye to the cell, and where the eye was when it was computed */
   ext: number;
   extAt: Vector3 | null;
   lastUsed: number;
+}
+
+/** a wanted cell: band, indices, distance (pc) from the eye to its box, and that distance over the band's reach */
+interface Want { k: number; ix: number; iy: number; iz: number; d: number; q: number; gi: number }
+
+/**
+ * Cells in the order they are asked for and given room in the pool: by the distance from the eye
+ * over the band's reach, which is the brightest one of its stars can look (a cell the eye is in
+ * first, in every band; brighter bands first among equals). Sorted by band first, the brightest
+ * bands' cells, however far, came before any faint band's: inside a dense galaxy they took the
+ * whole pool.
+ */
+export const wantOrder = (a: Want, b: Want) => a.q - b.q || a.k - b.k;
+
+/**
+ * Indices of the stars of `c` within `rad` pc of the point (rx, ry, rz) from its centre (ICRF pc),
+ * written to `out`; returns how many.
+ */
+export function starsWithin(c: StarCell, rx: number, ry: number, rz: number, rad: number, out: Uint32Array): number {
+  const r2 = rad * rad, p = c.pos;
+  let n = 0;
+  for (let i = 0; i < c.count; i++) {
+    const x = p[i * 3] - rx, y = p[i * 3 + 1] - ry, z = p[i * 3 + 2] - rz;
+    if (x * x + y * y + z * z <= r2) out[n++] = i;
+  }
+  return n;
 }
 
 /** A star generated from the galaxy model (no catalogue entry). */
@@ -58,8 +106,9 @@ export class ProceduralStar extends CatalogStar {
 /**
  * Draws the procedural stars (universe/ProceduralStars.ts) around the explorer: for every
  * magnitude band, the cells close enough for their stars to reach the limiting magnitude are
- * generated (brightest bands first, within a time budget) and drawn with the catalogue star
- * shader, dimmed by the model's dust between the eye and the cell.
+ * generated (those whose stars can look brightest first, within a time budget) and drawn with the
+ * catalogue star shader, dimmed by the model's dust between the eye and the cell. Of each cell,
+ * the stars within its band's reach of the eye (and a margin) are in the pool.
  */
 export class ProceduralStarLayer {
   readonly group = new Group();
@@ -76,6 +125,8 @@ export class ProceduralStarLayer {
   mGen = 10;
   /** how far (mag) the point budget holds the generation magnitude above the limiting magnitude */
   private cut = 0;
+  /** the point budget was over last frame (the cut rising) */
+  private raising = false;
   private frame = 0;
   private stars = new Map<string, ProceduralStar>();
   pending = 0;
@@ -121,17 +172,69 @@ export class ProceduralStarLayer {
     return mt;
   }
 
-  /** Put an entry's stars in the pool, evicting cells unused this frame if needed. */
-  private place(e: Entry): boolean {
-    if (e.handle || !e.mt) return true;
-    if (this.pool.freeStars < e.cell.count) {
+  /** scratch for the stars of a cell sent in part */
+  private sel = new Uint32Array(0);
+  private selPos = new Float32Array(0);
+  private selMt = new Uint16Array(0);
+
+  /**
+   * Put the stars of an entry within MARGIN times its band's reach `R` of the eye in the pool (all
+   * of them when the cell lies within that), in place of those it had there, evicting cells unused
+   * this frame if needed. False when there is no room: what it had stays.
+   */
+  private place(e: Entry, cam: Vector3, R: number): boolean {
+    const c = e.cell, mtAll = e.mt;
+    if (!mtAll) { e.at.copy(cam); e.rad = Infinity; e.whole = true; return true; }
+    const ox = cam.x - c.centre.x, oy = cam.y - c.centre.y, oz = cam.z - c.centre.z;
+    const extent = Math.hypot(ox, oy, oz) + e.rmax;
+    let rad = MARGIN * R, whole = extent <= rad;
+    let pos = c.pos, mt = mtAll, n = c.count;
+    if (!whole) {
+      if (this.sel.length < c.count) {
+        this.sel = new Uint32Array(c.count);
+        this.selPos = new Float32Array(c.count * 3);
+        this.selMt = new Uint16Array(c.count);
+      }
+      n = starsWithin(c, ox, oy, oz, rad, this.sel);
+      // (in as many chunks of the pool as the whole cell: the whole cell, never sent again)
+      if (Math.ceil(n / CHUNK) >= Math.ceil(c.count / CHUNK)) { whole = true; n = c.count; } else {
+        for (let j = 0; j < n; j++) {
+          const i = this.sel[j];
+          this.selPos[j * 3] = c.pos[i * 3]; this.selPos[j * 3 + 1] = c.pos[i * 3 + 1]; this.selPos[j * 3 + 2] = c.pos[i * 3 + 2];
+          this.selMt[j] = mtAll[i];
+        }
+        pos = this.selPos; mt = this.selMt;
+      }
+    }
+    if (whole) rad = extent;
+    const have = e.handle ? e.handle.chunks.length * CHUNK : 0;
+    if (this.pool.freeStars + have < n) {
       // (once nothing more can be freed this frame, the rest wait)
       if (this.noRoom === this.frame) return false;
-      this.free(e.cell.count);
-      if (this.pool.freeStars < e.cell.count) { this.noRoom = this.frame; return false; }
+      this.free(n - have);
+      if (this.pool.freeStars + have < n) { this.noRoom = this.frame; return false; }
     }
-    e.handle = this.pool.add(e.cell.pos, e.mt, e.cell.count);
-    return !!e.handle;
+    if (e.handle) this.pool.remove(e.handle);
+    e.handle = n ? this.pool.add(pos, mt, n) : null;
+    // (out of slots: nothing of it is in the pool now)
+    if (n && !e.handle) { e.rad = 0; return false; }
+    e.at.copy(cam);
+    e.rad = rad;
+    e.whole = whole;
+    e.reachAt = R;
+    return true;
+  }
+
+  /**
+   * Whether the stars of a placed entry need choosing again: they no longer hold every star within
+   * the reach `R` of the eye (it moved, or the reach grew); or, with the pool short of room
+   * (`tight`), the reach has shrunk by the margin since they were chosen.
+   */
+  private stale(e: Entry, cam: Vector3, R: number, tight: boolean): boolean {
+    if (e.rad === Infinity) return false;
+    if (!e.whole && e.at.distanceTo(cam) + R > e.rad) return true;
+    // (a cell in one chunk takes no less room for being sent in part)
+    return tight && MARGIN * R < e.reachAt && !!e.handle && e.handle.chunks.length > 1;
   }
 
   private noRoom = -1;
@@ -142,6 +245,8 @@ export class ProceduralStarLayer {
       if (this.pool.freeStars >= n) break;
       this.pool.remove(x.handle!);
       x.handle = null;
+      // (sent again when next wanted)
+      x.rad = 0;
     }
   }
 
@@ -149,7 +254,10 @@ export class ProceduralStarLayer {
     pos: Float32Array; absMag: Float32Array; teff: Float32Array; cls: Uint8Array }): void {
     this.inflight.delete(d.key);
     const cell: StarCell = { ...d, centre: new Vector3(d.centre[0], d.centre[1], d.centre[2]) };
-    const e: Entry = { cell, gi: d.gi ?? -1, handle: null, mt: cell.count ? this.pack(cell) : null, ext: 0, extAt: null, lastUsed: this.frame };
+    let r2 = 0;
+    for (let i = 0; i < cell.count; i++) r2 = Math.max(r2, cell.pos[i * 3] ** 2 + cell.pos[i * 3 + 1] ** 2 + cell.pos[i * 3 + 2] ** 2);
+    const e: Entry = { cell, gi: d.gi ?? -1, handle: null, mt: cell.count ? this.pack(cell) : null, rmax: Math.sqrt(r2),
+      at: new Vector3(), rad: 0, whole: false, reachAt: 0, ext: 0, extAt: null, lastUsed: this.frame };
     this.entries.set(d.key, e);
   }
 
@@ -163,11 +271,12 @@ export class ProceduralStarLayer {
     // the point budget: generate to a brighter magnitude while the pool is (nearly) full
     const mTop = mLim + 0.3;
     const mGen = (this.mGen = mTop - this.cut);
+    const reachK = BANDS.map((b) => reach(b.M, mGen));
     const camGal = GALAXY.toGal(camPc);
-    const want: { k: number; ix: number; iy: number; iz: number; d: number; gi: number }[] = [];
+    const want: Want[] = [];
     // (far outside the Milky Way its model holds no stars)
     if (camGal.length() < 60000) for (let k = 0; k < BANDS.length; k++) {
-      const R = reach(BANDS[k].M, mGen);
+      const R = reachK[k];
       const S = cellSize(k);
       const lo = [camGal.x - R, camGal.y - R, camGal.z - R].map((v) => Math.floor(v / S));
       const hi = [camGal.x + R, camGal.y + R, camGal.z + R].map((v) => Math.floor(v / S));
@@ -177,18 +286,21 @@ export class ProceduralStarLayer {
         const dy = Math.max(iy * S - camGal.y, 0, camGal.y - (iy + 1) * S);
         const dz = Math.max(iz * S - camGal.z, 0, camGal.z - (iz + 1) * S);
         const d = Math.hypot(dx, dy, dz);
-        if (d <= R) want.push({ k, ix, iy, iz, d, gi: -1 });
+        if (d <= R) want.push({ k, ix, iy, iz, d, q: d / R, gi: -1 });
       }
     }
-    const inside = this.galaxyCells(camPc, mGen, want);
-    want.sort((a, b) => a.k - b.k || a.d - b.d);
+    const inside = this.galaxyCells(camPc, reachK, want);
+    want.sort(wantOrder);
     const wanted = new Float32Array(BANDS.length), ready = new Float32Array(BANDS.length);
-    const reachK = BANDS.map((b) => reach(b.M, mGen));
     let extBudget = 40, starved = 0;
+    // stars that may be looked through this frame to send cells again; while the pool is over
+    // budget, cells holding far more than their reach give the room back
+    let refresh = REFRESH * this.pool.capacity;
+    const tight = this.raising;
     this.pending = 0;
     const g = new Vector3();
     const dA = new Vector3(), dB = new Vector3();
-    const keyOf = (w: { k: number; ix: number; iy: number; iz: number; gi: number }) => (w.gi >= 0 ? `g${w.gi}:${w.k}:${w.ix}:${w.iy}:${w.iz}` : `${w.k}:${w.ix}:${w.iy}:${w.iz}`);
+    const keyOf = (w: Want) => (w.gi >= 0 ? `g${w.gi}:${w.k}:${w.ix}:${w.iy}:${w.iz}` : `${w.k}:${w.ix}:${w.iy}:${w.iz}`);
     // (cells still wanted are never evicted to make room for others: the budget shrinks instead)
     for (const w of want) { const e = this.entries.get(keyOf(w)); if (e) e.lastUsed = this.frame; }
     for (const w of want) {
@@ -196,7 +308,7 @@ export class ProceduralStarLayer {
       if (w.gi >= 0) wanted[w.k]++;
       const e = this.entries.get(key);
       if (!e) {
-        // brightest bands come first in `want`; keep a few cells in flight per worker
+        // the cells whose stars can look brightest come first in `want`; keep a few in flight per worker
         this.pending++;
         const pool = w.gi >= 0 ? this.galaxyWorkers() : this.workers;
         if (!this.inflight.has(key) && this.inflight.size < pool.length * maxRequests) {
@@ -206,7 +318,14 @@ export class ProceduralStarLayer {
         continue;
       }
       e.lastUsed = this.frame;
-      if (e.mt && !e.handle && !this.place(e)) { starved++; continue; }
+      const R = reachK[w.k];
+      if (e.rad === 0) {
+        if (!this.place(e, camPc, R)) { starved++; continue; }
+      } else if (refresh > 0 && this.stale(e, camPc, R, tight)) {
+        // (without room to send them again, the stars it has stay)
+        refresh -= Math.max(e.cell.count, CHUNK);
+        if (!this.place(e, camPc, R)) starved++;
+      }
       if (w.gi >= 0) ready[w.k]++;
       if (!e.handle) continue;
       // dust towards the cell, refreshed when the eye has moved a few percent of the distance
@@ -228,9 +347,14 @@ export class ProceduralStarLayer {
     this.pool.commit();
     if (this.entries.size > MAX_CELLS) this.evict();
     // over budget (cells waiting for room, or the pool nearly full): bring the faint end in;
-    // with room to spare, let it back out towards the limiting magnitude
-    const fill = this.pool.used / this.pool.capacity;
-    if (starved > 0 || fill > 0.92 || want.length > MAX_CELLS * 0.8) this.cut = Math.min(6, this.cut + 0.05);
+    // with room to spare, let it back out towards the limiting magnitude. The room counted is what
+    // the cells wanted here take: cells kept from elsewhere give theirs up as soon as it is needed
+    // (counted, the stars of the last galaxy visited held the cut wherever the eye went next).
+    let held = 0;
+    for (const e of this.visible) held += e.handle!.chunks.length * CHUNK;
+    const fill = held / this.pool.capacity;
+    this.raising = starved > 0 || fill > 0.92 || want.length > MAX_CELLS * 0.8;
+    if (this.raising) this.cut = Math.min(6, this.cut + 0.05);
     else if (fill < 0.75 && this.pending < 8 && want.length < MAX_CELLS * 0.7) this.cut = Math.max(0, this.cut - 0.02);
     // the share of the galaxy's light carried by the stars drawn, by distance from the eye: bands
     // drawn out to their reach, counted as far as their cells are ready
@@ -250,18 +374,19 @@ export class ProceduralStarLayer {
   private galaxyWorkers(): Worker[] {
     // galaxies added since (catalogue picks) are sent before any request for them
     if (this.gworkers.length && INTERIOR.galaxies.length > this.gSent) {
-      const add = INTERIOR.galaxies.slice(this.gSent).map((g, j) => ({ gi: this.gSent + j, data: g.data }));
+      const add = INTERIOR.galaxies.slice(this.gSent).map((g, j) => ({ gi: this.gSent + j, g: galaxyForWorker(g) }));
       for (const w of this.gworkers) w.postMessage({ add });
       this.gSent = INTERIOR.galaxies.length;
     }
     if (!this.gworkers.length) {
       this.gSent = INTERIOR.galaxies.length;
       const n = Math.max(1, Math.min(2, (navigator.hardwareConcurrency || 2) - 1));
-      const data = INTERIOR.galaxies.map((g) => g.data);
+      // (as placed here, not as catalogued: M87 sits on its black hole)
+      const galaxies = INTERIOR.galaxies.map(galaxyForWorker);
       for (let i = 0; i < n; i++) {
         const w = new Worker(new URL('../workers/galaxyStars.worker.ts', import.meta.url), { type: 'module' });
         w.onmessage = (ev) => this.receive(ev.data);
-        w.postMessage({ galaxies: data });
+        w.postMessage({ galaxies });
         this.gworkers.push(w);
       }
     }
@@ -272,7 +397,7 @@ export class ProceduralStarLayer {
    * Inside (or close to) another galaxy: its cells within each band's reach, in its disc frame and
    * within its box. Returns the galaxy and how far its stars have faded in (from 1.6 to 1.1 radii).
    */
-  private galaxyCells(camPc: Vector3, mGen: number, want: { k: number; ix: number; iy: number; iz: number; d: number; gi: number }[]): { gi: number; w: number } | null {
+  private galaxyCells(camPc: Vector3, reachK: number[], want: Want[]): { gi: number; w: number } | null {
     let gi = -1, best = Infinity;
     const rel = new Vector3();
     INTERIOR.galaxies.forEach((g, i) => {
@@ -288,7 +413,7 @@ export class ProceduralStarLayer {
     const half = Math.max(e.x, e.y, e.z) * fr.rpc;
     const halfZ = (fr.model.look.disc ? Math.max(e.x, e.y, e.z) : e.z) * fr.rpc;
     for (let k = 0; k < BANDS.length; k++) {
-      const R = reach(BANDS[k].M, mGen);
+      const R = reachK[k];
       const S = cellSize(k);
       const lo = [Math.max(cam.x - R, -half), Math.max(cam.y - R, -half), Math.max(cam.z - R, -halfZ)].map((v) => Math.floor(v / S));
       const hi = [Math.min(cam.x + R, half), Math.min(cam.y + R, half), Math.min(cam.z + R, halfZ)].map((v) => Math.floor(v / S));
@@ -297,7 +422,7 @@ export class ProceduralStarLayer {
         const dy = Math.max(iy * S - cam.y, 0, cam.y - (iy + 1) * S);
         const dz = Math.max(iz * S - cam.z, 0, cam.z - (iz + 1) * S);
         const d = Math.hypot(dx, dy, dz);
-        if (d <= R) want.push({ k, ix, iy, iz, d, gi });
+        if (d <= R) want.push({ k, ix, iy, iz, d, q: d / R, gi });
       }
     }
     return { gi, w };
@@ -312,7 +437,27 @@ export class ProceduralStarLayer {
   }
 
   get drawnStars(): number {
-    return this.visible.reduce((s, e) => s + (e.handle ? e.cell.count : 0), 0);
+    return this.visible.reduce((s, e) => s + (e.handle ? e.handle.count : 0), 0);
+  }
+
+  /**
+   * Diagnostics (after `update`, from the same eye): the stars of the cells wanted this frame within
+   * their band's reach of `camPc`, all of which a whole cell would have had in the pool, and how
+   * many of them are in it. (Looks through every star of those cells: not for every frame.)
+   */
+  reachStats(camPc: Vector3): { inReach: number; inPool: number } {
+    let inReach = 0, inPool = 0;
+    for (const e of this.entries.values()) {
+      if (e.lastUsed !== this.frame) continue;
+      const c = e.cell, R = reach(BANDS[c.band].M, this.mGen), r2 = e.whole ? Infinity : e.rad * e.rad;
+      for (let i = 0; i < c.count; i++) {
+        const x = c.centre.x + c.pos[i * 3], y = c.centre.y + c.pos[i * 3 + 1], z = c.centre.z + c.pos[i * 3 + 2];
+        if ((x - camPc.x) ** 2 + (y - camPc.y) ** 2 + (z - camPc.z) ** 2 >= R * R) continue;
+        inReach++;
+        if (e.handle && (x - e.at.x) ** 2 + (y - e.at.y) ** 2 + (z - e.at.z) ** 2 <= r2) inPool++;
+      }
+    }
+    return { inReach, inPool };
   }
 
   /**
@@ -324,7 +469,10 @@ export class ProceduralStarLayer {
     for (const e of this.visible) {
       const c = e.cell;
       const R = reach(BANDS[c.band].M, this.mGen);
+      // (only the stars in the pool are drawn)
+      const ax = e.at.x - c.centre.x, ay = e.at.y - c.centre.y, az = e.at.z - c.centre.z, r2 = e.whole ? Infinity : e.rad * e.rad;
       for (let i = 0; i < c.count; i++) {
+        if (r2 < Infinity && (c.pos[i * 3] - ax) ** 2 + (c.pos[i * 3 + 1] - ay) ** 2 + (c.pos[i * 3 + 2] - az) ** 2 > r2) continue;
         rel.set(c.centre.x + c.pos[i * 3] - camPc.x, c.centre.y + c.pos[i * 3 + 1] - camPc.y, c.centre.z + c.pos[i * 3 + 2] - camPc.z);
         const d = rel.length();
         if (d >= R) continue;

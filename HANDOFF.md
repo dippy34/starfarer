@@ -966,7 +966,9 @@ above is validated against JPL Horizons and stays as it is unless something is w
      of M87: 145,000 are generated, the nearest cell 27 kpc away): the cells of the brightest
      bands are sized for the Milky Way and hold up to 12,000 stars each, so a dozen of them fill
      the pool before any cell near the eye is asked for (`ProceduralStarLayer.update`,
-     `GalaxyInterior`); M60's heart does show them. The view from the centre of a galaxy is
+     `GalaxyInterior`); M60's heart does show them (since corrected, and that was half of it: M87's
+     stars were made 40 kpc from the eye, and M60's field was on its way down; "No stars round the
+     eye at the heart of M87", under part 6). The view from the centre of a galaxy is
      kept dark (`VEIL`): the real one would be a blaze. Pluto's sunlit side is near white (every
      world's mean is shown at 0.45, and Pluto's map has more contrast than most). A made moon can
      be flown to and come down to (tried to 7 km: its ground is the generated one, and from there
@@ -1363,6 +1365,57 @@ above is validated against JPL Horizons and stays as it is unless something is w
        the map makes them. "It doesn't follow a dragged Jupiter" was not seen: with Jupiter moved
        by three of its radii (live physics), the camera, which follows it, kept it in the same
        place on screen and the Earth stayed on it. `scripts/interact.mjs` (16 checks).
+   - *No stars round the eye at the heart of M87* (seen and left in part 4; reported again with
+     the layer's own numbers: at `?menu=0&target=M87&dist=0.0177`, 886 light years from the
+     centre, and at `?menu=0&target=M87*&dist=5470`, 11 light years from the hole, the galaxy's
+     glow, the hole and its jet and not one star). Three causes, each seen in the page first:
+     - *M87's stars were made 40 kpc from the eye.* App moves M87 onto its black hole, which the
+       catalogues put 40 kpc farther off (16.80 Mpc; the galaxy, 16.76), and the workers that
+       make a galaxy's stars rebuilt it from its catalogue entry alone: the cells were asked for
+       round the eye and made round a centre 40 kpc nearer the Sun (the nearest cell's centre
+       27 kpc from the eye; the faintest band's cells, 1.6 pc wide, 40,000 pc off), all of them
+       beyond their reach. The workers now get each galaxy as the main thread has it, entry and
+       position (`GalaxyInterior.galaxyForWorker`, `galaxyInWorker`): a cell made in a worker
+       is the main thread's, star for star. M87 is the only galaxy moved.
+     - *Whole cells filled the pool with stars out of reach* (the cause part 4 gave; it was
+       there too once the first was gone, and at M60's heart). Where a galaxy is as bright as at
+       the heart of M87 or M60, the cells of the bands from M = -1 to 5 hold the most a cell may
+       (12,000 stars), spread through the cell, and a band's reach is 0.8 of its cells' width
+       at no cut: the stars within reach of the eye were a quarter of what the cells wanted
+       held, and a smaller share the more the budget cut in (the cells wanted come down to the
+       few the reach touches, each as full as ever, while the stars within reach go as the cube
+       of the reach). At M87's heart (limit 7.2) whole cells needed 1.1 million places at no cut
+       and still 430,000 at the cut's full 6 magnitudes, with 109 of their stars within reach:
+       the budget ended there, on either budget. A cell's stars now go to the pool out to 1.25
+       times its band's reach from the eye (`ProceduralStarLayer.place`, `MARGIN`; the whole
+       cell when it lies within that, or would take as many chunks of the pool), chosen again
+       when the eye or the reach has moved out of the margin (`stale`; at most a quarter of the
+       pool's worth of stars looked through a frame, `REFRESH`) and, while the pool is over
+       budget, when the reach has shrunk by the margin. The cells are still made whole and the
+       same every time: a star's designation is its place in the whole cell, and picking sees
+       the stars in the pool. Cells are asked for and given room by their distance over their
+       band's reach, the brightest one of their stars can look (`wantOrder`: the cell the eye
+       is in, in every band, first), no longer band by band, brightest first.
+     - *The cut held wherever the eye went next* (found on the way; older). The budget counted
+       every star in the pool, the cells kept from the last place among them, and those give up
+       their room only when it is needed: after M60's heart the Galactic centre was drawn to
+       magnitude 1.5 for good (2 stars within reach, where there are 9,609). It counts the room
+       the cells wanted here take now, in chunks, as the pool hands it out.
+     Settled in the page (headless, the production build), the stars within reach of the eye,
+     every one of them in the pool, with the cut, on a desktop's budget and on a phone's or a
+     headset's: the heart of M87, 135,000 (0.55 mag) and 58,000 (1.25); beside M87*, 180,000
+     (0.7) and 50,000 (1.9); M60's heart, 180,000 (2.1) and 55,000 (3.25; the limit is 8.5
+     there, 7.2 in M87). M60's field in part 4 was on its way down: the cut was still rising, and
+     settled at 6 with 200 to 380 stars within reach. The Milky Way keeps the same stars in a
+     third of the room (towards the Galactic centre 9,609 within reach, cut 0). `update` takes
+     0.2 ms a frame at rest in M87's heart, 0.5 to 0.8 ms (2 to 4 at worst) flying through it at
+     a parsec a frame, where choosing the stars to send does the work (Node, in this container).
+     `tests/galstars.test.ts` drives the layer frame by frame with stand-in workers (M87's heart,
+     beside M87* and M60's heart on both budgets; to M60 and back; flying through M87's heart;
+     the Galactic centre), and fails with each part of the change taken out in turn.
+     Verification: 624 unit tests; the three places above in the page on both budgets (headless
+     Chromium, software WebGL, the production build); verify's 35 scenes were still running when
+     this was written (the first 12 without an error). Not tried on a real phone, nor in a headset.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

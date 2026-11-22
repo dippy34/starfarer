@@ -1,26 +1,27 @@
 /// <reference lib="webworker" />
 import { GalaxyModel, lookFor } from '../render/GalaxiesLayer';
-import { generateGalaxyCell, InteriorFrame } from '../render/GalaxyInterior';
+import { type GalaxyForWorker, galaxyInWorker, generateGalaxyCell, InteriorFrame } from '../render/GalaxyInterior';
 import { noise3D } from '../render/Noise3D';
-import { Galaxy, type GalaxyData } from '../universe/Galaxies';
+import type { Galaxy } from '../universe/Galaxies';
 
 /**
  * Generates the stars of cells inside other galaxies off the main thread. First message:
- * { galaxies } (the catalogue, to rebuild the same galaxies and models); then requests
- * { gi, k, ix, iy, iz }, each answered with the cell, its arrays transferred.
+ * { galaxies } (the galaxies as the main thread has them: catalogue entry and position, to rebuild
+ * the same galaxies and models); then requests { gi, k, ix, iy, iz }, each answered with the cell,
+ * its arrays transferred.
  */
 let galaxies: Galaxy[] = [];
 const frames = new Map<number, InteriorFrame>();
 
 self.onmessage = (ev: MessageEvent) => {
-  const d = ev.data as { galaxies?: GalaxyData[]; add?: { gi: number; data: GalaxyData }[]; gi: number; k: number; ix: number; iy: number; iz: number };
+  const d = ev.data as { galaxies?: GalaxyForWorker[]; add?: { gi: number; g: GalaxyForWorker }[]; gi: number; k: number; ix: number; iy: number; iz: number };
   if (d.galaxies) {
-    galaxies = d.galaxies.map((g, i) => new Galaxy(g, i));
+    galaxies = d.galaxies.map((g, i) => galaxyInWorker(g, i));
     return;
   }
   if (d.add) {
     // galaxies added later (catalogue destinations), at their index in the main thread's list
-    for (const a of d.add) galaxies[a.gi] = new Galaxy(a.data, a.gi);
+    for (const a of d.add) galaxies[a.gi] = galaxyInWorker(a.g, a.gi);
     return;
   }
   let fr = frames.get(d.gi);
