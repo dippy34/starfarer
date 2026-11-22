@@ -81,8 +81,12 @@ describe('the stars whose shape has been measured', () => {
     expect(regulus.get('Shape')).toContain('nearly equator-on');
     const sirius = new CatalogStar('sirius', new Vector3(-0.4944, 2.4768, -0.7584), 1.45, 10014, 'A0m', ['Sirius', 'α CMa'], null);
     expect(sirius.shape).toBeNull();
-    expect(sirius.radius).toBe(estimateStarRadius(1.45, 10014));
-    expect(new Map(sirius.info()).get('Radius')).toContain('(estimated)');
+    // (round: its radius measured as a sphere's, StarRadii.ts)
+    expect(sirius.radius / SUN_RADIUS).toBeCloseTo(1.711, 9);
+    expect(new Map(sirius.info()).get('Radius')).toContain('(measured: Kervella et al. 2003)');
     expect(new Map(sirius.info()).has('Shape')).toBe(false);
+    const fomalhaut = new CatalogStar('fomalhaut', new Vector3(1, 0, 0), 1.72, 8590, 'A3V', ['Fomalhaut'], null);
+    expect(fomalhaut.radius).toBe(estimateStarRadius(1.72, 8590));
+    expect(new Map(fomalhaut.info()).get('Radius')).toContain('(estimated)');
   });
 });

@@ -1,11 +1,12 @@
 import { Vector3 } from 'three';
 import { raDecToVector } from '../core/frames';
-import { formatDistance, PC, SUN_ABS_MAG, SUN_RADIUS, SUN_TEFF } from '../core/units';
+import { formatDistance, PC, SUN_RADIUS } from '../core/units';
 import { BlackHole } from './BlackHoles';
 import type { SpaceObject } from './Body';
 import { CatalogSearch, type CatalogHit, type CatalogRecord, type CatCode } from './CatalogSearch';
 import { DeepSkyObject } from './DeepSky';
 import { Galaxy } from './Galaxies';
+import { absMagForRadius } from './StarRadii';
 import { CatalogStar } from './Stars';
 
 /**
@@ -55,8 +56,8 @@ function teffOfType(sp: string): number {
   const sub = m[2] ? Number(m[2]) : 5;
   return a + ((b - a) * sub) / 10;
 }
-/** V absolute magnitude giving radius R (R☉) at Teff in the engine's radius estimate (no bolometric correction) */
-const absMagFor = (rSun: number, teff: number) => SUN_ABS_MAG - 5 * Math.log10(rSun * (teff / SUN_TEFF) ** 2);
+/** V absolute magnitude giving radius R (R☉) at Teff in the engine's radius estimate (with its bolometric correction: StarRadii.ts) */
+const absMagFor = absMagForRadius;
 
 /** B-V colour index -> Teff (Ballesteros 2012), as the star pipeline does */
 const teffOfBV = (bv: number) => {

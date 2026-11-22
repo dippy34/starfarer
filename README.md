@@ -432,9 +432,10 @@ Known limitations (planned for later phases unless noted):
 * The traffic ships and stations are fictional. The ISS and Hubble are propagated from one set of orbital elements
   (2026-10-01), so they drift from their real positions over weeks. Procedural stars beyond the catalogues
   are plausible, not real: their densities, colours and luminosities follow the model.
-* Star radii are estimated from V magnitude and temperature (no bolometric correction): red dwarfs,
-  whose light is nearly all infrared, come out several times too small (Proxima Centauri 0.022
-  solar radii; it is 0.15). Gaia DR3 places Sirius B 0.033 pc from Sirius A (a known astrometry
+* Star radii are estimated from V magnitude and temperature with a published bolometric
+  correction (Torres 2010), and measured radii are used for a few stars that have them (Proxima
+  Centauri, Alpha Centauri A and B, Sirius, Arcturus, Aldebaran, Betelgeuse; CREDITS.md). The
+  coolest red dwarfs without one still come out too small, by up to about half. Gaia DR3 places Sirius B 0.033 pc from Sirius A (a known astrometry
   problem for that binary).
 * Star faces are stylised: they are drawn after the space observatories' pictures of the Sun
   (false-colour pictures in the extreme ultraviolet, of the hot gas over its surface), not as a

@@ -178,6 +178,19 @@ sky that optical interferometry has measured (`src/universe/StarShapes.ts`):
 No other star is drawn flattened: how fast it spins and where its axis points is in none of the
 catalogues used here. How strongly the equator is darkened is the app's own choice.
 
+**Star radii** (`src/universe/StarRadii.ts`). A star's radius is worked out from its visual
+absolute magnitude and temperature through its whole output, with the bolometric correction
+BC_V(Teff) of Flower (1996), *ApJ* 469, 355, in the coefficients corrected by G. Torres (2010),
+*AJ* 140, 1158 (table 1); below 3,300 K the correction is held at its 3,300 K value. Radii
+measured directly (interferometry) are used where they exist:
+
+* Proxima Centauri: Ségransan et al. 2003, *A&A* 397, L5 (0.145 R☉, and its temperature, 3,042 K)
+* Rigil Kentaurus and Toliman (α Cen A and B): Kervella et al. 2017, *A&A* 597, A137
+* Sirius: Kervella et al. 2003, *A&A* 408, 681
+* Arcturus: Ramírez & Allende Prieto 2011, *ApJ* 743, 135
+* Aldebaran: Richichi & Roccatagliata 2005, *A&A* 433, 305
+* Betelgeuse: Joyce et al. 2020, *ApJ* 902, 63 (764 R☉, at their distance of 168 pc)
+
 ## Black holes (`public/data/blackholes.json`, `pipeline/build_blackholes.py`)
 
 * **BlackCAT** — Corral-Santana et al. 2016, *A&A* 587, A61, via CDS VizieR (J/A+A/587/A61, tables A1

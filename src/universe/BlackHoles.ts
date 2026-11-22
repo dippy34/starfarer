@@ -1,7 +1,8 @@
 import { Vector3 } from 'three';
-import { PC, SUN_ABS_MAG, SUN_RADIUS, SUN_TEFF } from '../core/units';
+import { PC, SUN_RADIUS } from '../core/units';
 import { UPos } from '../core/upos';
 import type { SpaceObject } from './Body';
+import { absMagForRadius } from './StarRadii';
 import { CatalogStar } from './Stars';
 
 const G = 6.674e-11;
@@ -96,7 +97,7 @@ export class BlackHole implements SpaceObject {
     if (d.companion) {
       const c = d.companion;
       // V absolute magnitude consistent with the engine's radius estimate: R = Rsun (Tsun/T)^2 10^(-0.2 (M - Msun))
-      const absMag = SUN_ABS_MAG - 5 * Math.log10((c.radiusM / SUN_RADIUS) * (c.teff / SUN_TEFF) ** 2);
+      const absMag = absMagForRadius(c.radiusM / SUN_RADIUS, c.teff);
       const name = `${d.name} companion`;
       this.companion = new CatalogStar(`${this.key}:c`, posPc.clone(), absMag, c.teff, c.spType, [name, ...d.aliases], null);
       this.companion.exact = true;

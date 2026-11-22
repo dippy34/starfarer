@@ -300,8 +300,8 @@ export function starLook(
   const r1 = rand(), r2 = rand(), r3 = rand(), r4 = rand();
   const T = Math.max(teff || 5800, 1500);
   const R = Math.max(radiusSun, 1e-3);
-  // (the radius is estimated without a bolometric correction: a red dwarf, nearly all of whose
-  // light is infrared, comes out several times too small. Small and cool is a red dwarf.)
+  // (small and cool is a red dwarf: a white dwarf is hot. An estimated radius can still err
+  // small for the coolest dwarfs: universe/StarRadii.ts)
   const whiteDwarf = R < 0.05 && T >= 4500;
   const supergiant = R > 80 || absMag < -4.5;
   const giant = !supergiant && R > 3.5;

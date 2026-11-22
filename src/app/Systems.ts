@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { AU, DAY, PC, SUN_ABS_MAG } from '../core/units';
 import { raDecToVector } from '../core/frames';
 import { ALBEDO, classify, eqTemp, generatePlanets, hashKey, massFromRadius, PlanetarySystem, type PlanetSpec, REARTH, rng, starProps } from '../universe/Planets';
+import { absMagForRadius } from '../universe/StarRadii';
 import { CatalogStar, type NamedStars } from '../universe/Stars';
 
 /** One system from public/data/exoplanets.json (pipeline/build_exoplanets.py). */
@@ -89,7 +90,7 @@ export class Systems {
     const teff = s.teff ?? 5500;
     // absolute magnitude from V and distance, or from the radius and temperature
     const absMag = s.vmag !== null ? s.vmag - 5 * Math.log10(s.distPc) + 5
-      : SUN_ABS_MAG - 5 * Math.log10((s.radSun ?? 1) * (teff / 5772) ** 2);
+      : absMagForRadius(s.radSun ?? 1, teff);
     h = new CatalogStar(`exohost:${i}`, pos, absMag, teff, s.spType, [s.host, ...s.ids], null);
     h.exact = true;
     this.hosts.set(i, h);

@@ -737,8 +737,8 @@ above is validated against JPL Horizons and stays as it is unless something is w
      weaker phones whenever the governor steps down, the answer is to draw the points in their
      own pass at the canvas's resolution after the composite (occluded by one read of the scene's
      depth per star); it was left out here as too large a change to the renderer for one part.
-   - Seen and left: star radii are estimated without a bolometric correction, so red dwarfs come
-     out several times too small (the info card says "estimated"; the README lists it); the
+   - Seen and left: star radii were estimated without a bolometric correction, so red dwarfs came
+     out several times too small (since corrected: `universe/StarRadii.ts`, below); the
      bloom adds about 40 % of a large bright area's own level over it (a veil that lowers
      contrast on a planet filling the view); the Sun's glare from 10 to 30 radii greys the whole
      frame; the bodies' shader still has a sine hash (`shaders/body.ts` h33, for the generated
@@ -1200,6 +1200,17 @@ above is validated against JPL Horizons and stays as it is unless something is w
        a fast flight. One more cube of the same size (half floats, 512 px faces: some 17 MB of
        the GPU's memory; 4 MB in a headset). `tests/galaxyglow.test.ts` runs the updates against a
        stand-in renderer and fails on the code of before (a map of two places).
+   - *Playtest round (22 Nov 2026, three new players; the triage in the coordinator's notes)*:
+     - *Star radii* (B1): Proxima showed 0.022 solar radii (measured 0.145) and Betelgeuse 270
+       (measured 764). The radius came from the visual magnitude alone, and a cool star puts
+       most of its light outside the visual band. Now: the bolometric correction of Torres (2010)
+       (`universe/StarRadii.ts`: `estimateStarRadius`, its inverse `absMagForRadius` used where a
+       magnitude is made from a radius), held at its 3,300 K value below that, and measured radii
+       for seven stars, with Proxima's measured temperature (3,042 K; the catalogue's 3,383 K
+       comes from a colour that saturates). The card says which ("measured: <source>" or
+       "estimated"). `tests/starradii.test.ts`. Not changed: the generated planets' star
+       luminosity (`Planets.ts`, its own rough correction) and the V-band luminosity used for
+       a real planet's equilibrium temperature where the archive gives none (`Systems.build`).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
