@@ -19,14 +19,25 @@ export interface Worked {
 
 const row = (label: string, d: Derived): Worked => ({ label, text: d.text, math: d.math });
 
+/** Where the catalogue's own periods come from: the Solar System while it is the real one (null in live physics). */
+export interface Catalogued {
+  meanPeriod(b: Body): { days: number; source: string; how: string } | null;
+}
+
+/** A period as catalogued: stated with its source, not worked out from where the body is now. */
+function cataloguedPeriod(label: string, p: { days: number; source: string; how: string }): Worked {
+  const text = p.days < 2 * 365.25 ? `${Number(p.days.toPrecision(6))} d` : `${Number((p.days / 365.25).toPrecision(5))} yr`;
+  return { label, text, math: `P = ${p.how === 'catalogued' ? '' : `${p.how} = `}${text}, the mean period (${p.source})` };
+}
+
 /**
  * What follows from an object's catalogued values by the textbook, each line with its working
  * (src/sim/physics.ts): for a world its gravity, its escape velocity, how long its orbit takes; for
  * a black hole its horizon. Nothing here is looked up or made up: a line whose ingredients are
  * not known (the mass of a small moon, the size of a planet nobody has measured) is left out.
  */
-export function workedOut(obj: SpaceObject): Worked[] {
-  if (obj instanceof Body) return ofBody(obj);
+export function workedOut(obj: SpaceObject, catalogue: Catalogued | null = null): Worked[] {
+  if (obj instanceof Body) return ofBody(obj, catalogue);
   if (obj instanceof BlackHole) return ofBlackHole(obj);
   if (obj instanceof ExoPlanet) return ofExoPlanet(obj);
   return [];
@@ -34,7 +45,7 @@ export function workedOut(obj: SpaceObject): Worked[] {
 
 const rel = new Vector3(), vel = new Vector3(), h = new Vector3();
 
-function ofBody(b: Body): Worked[] {
+function ofBody(b: Body, catalogue: Catalogued | null): Worked[] {
   const out: Worked[] = [];
   const mass = b.gm > 0 ? b.gm / G : 0;
   const sized = b.radius > 0 && !b.radiusEstimated;
@@ -51,7 +62,11 @@ function ofBody(b: Body): Worked[] {
     out.push(row('Escape velocity', escapeVelocity(mass, b.radius)));
     out.push(row('Mean density', density(mass, b.radii[0], b.radii[1], b.radii[2])));
   }
-  // its orbit, from where it is and how it moves now (the vis-viva equation gives the size of the orbit)
+  // its orbit: in the real Solar System the catalogue's mean period; otherwise (in live physics, or
+  // where none is catalogued) from where it is and how it moves now, the vis-viva equation giving
+  // the size of the orbit. (That one swings with every tug: the Earth's by half a day a month, as
+  // the Moon pulls it to and fro at 12 m/s.)
+  const listed = catalogue?.meanPeriod(b) ?? null;
   const p = b.parent;
   const mu = p ? p.gm || p.systemGm : 0;
   if (p && mu > 0 && b.valid) {
@@ -61,7 +76,12 @@ function ofBody(b: Body): Worked[] {
     const a = 1 / (2 / r - vel.lengthSq() / k);
     if (r > 0 && a > 0 && Number.isFinite(a)) {
       const primary = mu / G;
-      out.push(row(`Once round ${the(p.name)}`, orbitalPeriod(a, primary, mass)));
+      const label = `Once round ${the(p.name)}`;
+      if (listed) out.push(cataloguedPeriod(label, listed));
+      else {
+        const now = row(label, orbitalPeriod(a, primary, mass));
+        out.push({ ...now, math: `As it moves now (the orbit it would keep if nothing else pulled on it): ${now.math}` });
+      }
       out.push(row('Speed of a circular orbit here', circularSpeed(r, primary)));
       if (mass > 0) {
         const e = Math.sqrt(Math.max(0, 1 - h.crossVectors(rel, vel).lengthSq() / (k * a)));

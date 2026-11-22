@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { workedOut, type Worked } from '../src/app/Worked';
 import { GM_SUN, SUN_RADIUS, SUN_TEFF } from '../src/core/units';
@@ -97,5 +98,28 @@ describe('what is worked out for a black hole', () => {
     expect(find(r, 'Light can circle at')!.text).toBe('44.3 km');
     expect(find(r, 'Innermost stable orbit')!.text).toBe('88.6 km');
     expect(find(r, 'Hawking temperature')!.math).toContain('ħc³');
+  });
+});
+
+describe('how long an orbit takes: the catalogue, or as it moves now', () => {
+  const s = sun(), e = earth(s);
+  // JPL's mean elements for the major planets, as shipped (the Earth's is the Earth-Moon barycentre's)
+  const system = JSON.parse(readFileSync(new URL('../public/data/solar/system.json', import.meta.url), 'utf8'));
+  const n = system.approxElements.EMB.rate[3] as number;
+  const catalogue = { meanPeriod: (b: Body) => (b === e ? { days: (360 / n) * 36525, source: "JPL's mean elements for the major planets", how: `360° / ${n}°/century` } : null) };
+
+  it('in the real Solar System, the mean sidereal period as catalogued, and it says so', () => {
+    const year = find(workedOut(e, catalogue), 'Once round the Sun')!;
+    expect(year.text).toBe('365.256 d');
+    expect(year.math).toContain('the mean period');
+  });
+
+  it('where nothing is catalogued (or in live physics), as it moves now, and it says so', () => {
+    // pulled 12 m/s off its circle by the Moon, as the Earth is: the year as it moves now is half a day off
+    const tugged = earth(s);
+    tugged.vel.y += 12;
+    const year = find(workedOut(tugged, null), 'Once round the Sun')!;
+    expect(Math.abs(Number(year.text.split(' ')[0]) - 365.25)).toBeGreaterThan(0.3);
+    expect(year.math.startsWith('As it moves now')).toBe(true);
   });
 });

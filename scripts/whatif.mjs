@@ -61,7 +61,7 @@ for (const kind of ['phone', 'desk']) {
   c = await card(page);
   check(on('a line opens to show its working: the formula, the numbers put in, the result'), c.worked[0].open && /^g = GM \/ R² = .+ kg \/ \(.+ m\)² = 9\.82 m\/s²$/.test(c.worked[0].math), c.worked[0].math);
   const year = c.worked.find((w) => w.label === 'Once round the Sun');
-  check(on('its year comes out of where it is and how it moves'), !!year && /^36[45]\.\d d$/.test(year.text), year?.text);
+  check(on('its year is the catalogued one in the real Solar System'), !!year && /^365\.256 d$/.test(year.text) && /mean period/.test(year.math), year?.text);
 
   // --- a moon for the Earth
   check(on("a planet's card offers to add something"), c.add && c.remove && c.offers.length === 0);

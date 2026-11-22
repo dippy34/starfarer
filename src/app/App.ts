@@ -2490,7 +2490,7 @@ export class App {
       const d = sel.upos.sub(rig.upos, new Vector3()).length();
       // what the textbook makes of its facts, worked afresh a few times a second (an orbit's speed moves on)
       const now = performance.now();
-      if (this.worked.key !== sel.key || now - this.worked.at > 400) this.worked = { key: sel.key, at: now, rows: workedOut(sel) };
+      if (this.worked.key !== sel.key || now - this.worked.at > 400) this.worked = { key: sel.key, at: now, rows: workedOut(sel, this.physics.on ? null : this.system) };
       const worked = this.worked.rows;
       // (a fact that is worked out is shown there, with its working: not twice)
       const rows: [string, string][] = [['Distance', distanceText(distanceTo(this, sel))], ...sel.info().filter(([k]) => !worked.some((w) => w.label === k)), ...this.awe.rows(sel, d)];

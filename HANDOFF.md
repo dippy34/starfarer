@@ -1211,6 +1211,16 @@ above is validated against JPL Horizons and stays as it is unless something is w
        "estimated"). `tests/starradii.test.ts`. Not changed: the generated planets' star
        luminosity (`Planets.ts`, its own rough correction) and the V-band luminosity used for
        a real planet's equilibrium temperature where the archive gives none (`Systems.build`).
+     - *"Once round the Sun"* (B2): the Earth's said 364.8 days and Pluto's 246.9 years. It was
+       worked out from where the body is and how it moves now (the vis-viva equation), which
+       swings with every tug: the Moon pulls the Earth to and fro at 12 m/s, half a day of year.
+       In the real Solar System it is now the catalogue's mean period (`SolarSystem.meanPeriod`:
+       a planet's from JPL's mean elements for the major planets, the Earth's from the Earth-Moon
+       barycentre's; a moon's from its JPL mean elements; a small body's by Kepler's third law on
+       its catalogued orbit), stated with its source; in live physics, or where nothing is
+       catalogued (Pluto: not in those elements), the vis-viva value, its working saying "as it
+       moves now". `tests/worked.test.ts`; `scripts/whatif.mjs` (its year check, now the
+       catalogued 365.256 d).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

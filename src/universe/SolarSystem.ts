@@ -326,6 +326,29 @@ export class SolarSystem {
     return this.keplerEl.get(b) ?? null;
   }
 
+  /**
+   * How long a body takes once round what it goes round, as catalogued (days), and where that
+   * comes from; null for one with no catalogued period (it is then worked out from how it moves:
+   * src/app/Worked.ts). A planet: the mean motion of JPL's mean elements for the major planets
+   * (the Earth's is the Earth-Moon barycentre's); a moon: the period of its JPL mean elements; a
+   * small body: Kepler's third law on its catalogued (JPL SBDB) orbit.
+   */
+  meanPeriod(b: Body): { days: number; source: string; how: string } | null {
+    const e = this.ephemOf.get(b);
+    if (!e || this.gone.has(b)) return null;
+    if (e.kind === 'satellite' && e.orbit.P > 0) return { days: e.orbit.P, source: 'JPL mean elements', how: 'catalogued' };
+    if (e.kind === 'spk' && this.home.get(b) === this.sun) {
+      const el = this.data.approxElements[b.name === 'Earth' ? 'EMB' : b.name];
+      const n = el?.rate[3]; // mean longitude, degrees a century
+      if (n && n > 0) return { days: (360 / n) * 36525, source: "JPL's mean elements for the major planets", how: `360° / ${n.toFixed(5)}°/century` };
+    }
+    if (e.kind === 'kepler') {
+      const el = this.keplerEl.get(b);
+      if (el) return { days: periodDays(el), source: 'its catalogued orbit (JPL SBDB)', how: '2π√(a³ / GM)' };
+    }
+    return null;
+  }
+
   ephemerisKind(b: Body): string {
     return this.ephemOf.get(b)?.kind ?? 'none';
   }
