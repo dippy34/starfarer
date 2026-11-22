@@ -45,8 +45,18 @@ export function num(x: number, sig = 4): string {
   return Number(x.toPrecision(sig)).toString();
 }
 
+/**
+ * A result as it is read: `num`, but from a thousand to a billion written out whole with its
+ * thousands marked ("57,200", "1,471,000"), as the card's other figures are; the working keeps `num`.
+ */
+export function shown(x: number, sig = 4): string {
+  const a = Math.abs(x);
+  if (Number.isFinite(x) && a >= 1e3 && a < 1e9) return Number(x.toPrecision(sig)).toLocaleString('en-US', { maximumFractionDigits: 3 });
+  return num(x, sig);
+}
+
 function derived(value: number, unit: string, formula: string, plugged: string, text?: string): Derived {
-  const t = text ?? `${num(value)} ${unit}`.trim();
+  const t = text ?? `${shown(value)} ${unit}`.trim();
   return { value, unit, formula, math: `${formula} = ${plugged} = ${t}`, text: t };
 }
 
@@ -55,23 +65,23 @@ function derived(value: number, unit: string, formula: string, plugged: string, 
 export function fmtDuration(s: number): string {
   const a = Math.abs(s);
   if (!Number.isFinite(a)) return '∞';
-  if (a < 120) return `${num(s)} s`;
-  if (a < 2 * 3600) return `${num(s / 60)} min`;
-  if (a < 2 * DAY) return `${num(s / 3600)} h`;
-  if (a < 2 * YEAR) return `${num(s / DAY)} d`;
-  return `${num(s / YEAR)} yr`;
+  if (a < 120) return `${shown(s)} s`;
+  if (a < 2 * 3600) return `${shown(s / 60)} min`;
+  if (a < 2 * DAY) return `${shown(s / 3600)} h`;
+  if (a < 2 * YEAR) return `${shown(s / DAY)} d`;
+  return `${shown(s / YEAR)} yr`;
 }
 export function fmtLength(m: number): string {
   const a = Math.abs(m);
-  if (a >= 0.01 * AU) return `${num(m / AU)} AU`;
-  if (a >= 1e3) return `${num(m / 1e3)} km`;
-  return `${num(m)} m`;
+  if (a >= 0.01 * AU) return `${shown(m / AU)} AU`;
+  if (a >= 1e3) return `${shown(m / 1e3)} km`;
+  return `${shown(m)} m`;
 }
 export function fmtMass(kg: number): string {
-  if (kg >= 0.01 * M_SUN) return `${num(kg / M_SUN)} M☉`;
-  if (kg >= 30 * M_EARTH) return `${num(kg / M_JUPITER)} M♃`;
-  if (kg >= 1e-4 * M_EARTH) return `${num(kg / M_EARTH)} M⊕`;
-  return `${num(kg)} kg`;
+  if (kg >= 0.01 * M_SUN) return `${shown(kg / M_SUN)} M☉`;
+  if (kg >= 30 * M_EARTH) return `${shown(kg / M_JUPITER)} M♃`;
+  if (kg >= 1e-4 * M_EARTH) return `${shown(kg / M_EARTH)} M⊕`;
+  return `${shown(kg)} kg`;
 }
 
 // ---------------------------------------------------------------- bulk properties

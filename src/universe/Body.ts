@@ -103,8 +103,10 @@ export class Body implements SpaceObject {
       rows.push(['Orbits', this.parent.name]);
     if (this.radius > 0) {
       const [a, b, c] = this.radii.map((r) => r / 1e3);
-      const tri = Math.abs(a - c) / a > 0.002 ? ` (${a.toFixed(1)} × ${b.toFixed(1)} × ${c.toFixed(1)})` : '';
-      rows.push(['Radius', `${(this.radius / 1e3).toLocaleString(undefined, { maximumFractionDigits: 1 })} km${tri}${this.radiusEstimated ? ' (estimated)' : ''}`]);
+      // (the mean radius and the three alike: thousands marked, to a tenth of a km below 10,000 km)
+      const km = (r: number, fixed: boolean) => r.toLocaleString(undefined, { minimumFractionDigits: fixed && a < 1e4 ? 1 : 0, maximumFractionDigits: a < 1e4 ? 1 : 0 });
+      const tri = Math.abs(a - c) / a > 0.002 ? ` (${km(a, true)} × ${km(b, true)} × ${km(c, true)})` : '';
+      rows.push(['Radius', `${km(this.radius / 1e3, false)} km${tri}${this.radiusEstimated ? ' (estimated)' : ''}`]);
     }
     if (this.gm > 0) {
       const mass = this.gm / 6.6743e-11;

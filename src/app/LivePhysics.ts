@@ -487,6 +487,8 @@ export class LivePhysics {
     const when = (e: SimEvent) => live.jd0 + e.time / DAY;
     const body = (id: number) => system.byId.get(id);
     const free: Body[] = [], left: Body[] = [], caught: Extract<SimEvent, { kind: 'orbit' }>[] = [];
+    let told = TOLD_FREE.get(live);
+    if (!told) TOLD_FREE.set(live, (told = new Map()));
     let jd = liveDate(live);
     // Collisions first, and of those every body that is gone before anything else is looked at:
     // one the simulation no longer has must not be taken for one that rides along on its planet.
@@ -497,9 +499,19 @@ export class LivePhysics {
       if (e.kind === 'collision') continue;
       if (e.kind === 'unbound' || e.kind === 'escape') {
         const b = body(e.primary);
-        if (b && !system.isGone(b)) (e.kind === 'unbound' ? free : left).push(b);
+        // (a family told leaving is told again whenever it gathers a body on its way: that is no news of it)
+        const level = e.kind === 'unbound' ? 1 : 2;
+        if (b && !system.isGone(b) && (told.get(b) ?? 0) < level) {
+          told.set(b, level);
+          (e.kind === 'unbound' ? free : left).push(b);
+        }
         jd = Math.min(jd, when(e));
-      } else if (e.kind === 'orbit') caught.push(e);
+      } else if (e.kind === 'orbit') {
+        caught.push(e);
+        // (one that goes round something again may leave again, and that is told)
+        const b = body(e.id);
+        if (b && e.around >= 0) told.delete(b);
+      }
       else {
         const a = body(e.a), b = body(e.b);
         // (a close pass is kept for the log: it is told only if it was nearly a hit)
@@ -510,13 +522,13 @@ export class LivePhysics {
         }
       }
     }
-    // the worlds are told by name; the small bodies with them only as how many (alone, they are not told at all:
-    // an asteroid drifting off is no news)
+    // the worlds are told by name (up to five, so the planets are named before "others"); the small bodies with them
+    // only as how many (alone, they are not told at all: an asteroid drifting off is no news)
     const flying = (list: Body[], one: string, many: string) => {
       const worlds = list.filter(isWorld).sort((a, b) => b.gm - a.gm), small = list.length - worlds.length;
       if (!worlds.length) return;
       const names = worlds.map((b, k) => (k === 0 ? capital(the(b.name)) : the(b.name)));
-      this.tell(jd, `${listed(names)} ${worlds.length > 1 ? many : one}${small ? ` So ${worlds.length > 1 ? 'are' : 'is'} ${small} smaller ${small > 1 ? 'bodies' : 'body'}.` : ''}`);
+      this.tell(jd, `${listed(names, 4)} ${worlds.length > 1 ? many : one}${small ? ` So ${small > 1 ? `are ${small} smaller bodies` : 'is one smaller body'}.` : ''}`);
     };
     flying(free, 'is flying free: nothing holds it now.', 'are flying free: nothing holds them now.');
     flying(left, 'has left for good.', 'have left for good.');
@@ -571,6 +583,9 @@ export function goesRound(m: Body, b: Body): boolean {
   return false;
 }
 /** a body worth telling of by name: a star, a planet or a dwarf planet, or a moon heavy enough to be weighed */
+/** The bodies of a simulation told leaving (1) or gone for good (2), each told so once. */
+const TOLD_FREE = new WeakMap<Live, Map<Body, number>>();
+
 const isWorld = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind === 'dwarf' || (b.kind === 'moon' && b.gm > 0);
 /**
  * A world heavy enough to matter to what is seen of a change (src/app/App.ts watches the worlds a

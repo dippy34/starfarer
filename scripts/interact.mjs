@@ -141,6 +141,26 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   check("Earth for scale wears the Earth's own map and clouds", worn.loaded && worn.map && worn.clouds, JSON.stringify(worn));
 }
 
+// 4b2. With the mass slider holding the keyboard's focus the shortcuts still work (playtest D1: "]" eight
+// times did nothing after the slider was clicked); only the slider's own keys (arrows, Home, End, Page) are its
+{
+  const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 60000 }); };
+  await page.evaluate(() => { const a = window.app; a.select(a.findByName('Jupiter')); });
+  await frames(2);
+  await page.click('.card [data-power="mass"]');
+  await frames(2);
+  const focused = await page.evaluate(() => { const s = document.querySelector('.card input.slider'); s.focus(); return document.activeElement === s; });
+  const before = await page.evaluate(() => window.app.labels.enabled);
+  await page.keyboard.press('KeyL');
+  await frames(2);
+  const after = await page.evaluate(() => window.app.labels.enabled);
+  await page.keyboard.press('KeyL');
+  await frames(1);
+  check('with the mass slider focused the shortcuts still work', focused && before !== after, JSON.stringify({ focused, before, after }));
+  await page.click('.card [data-power="mass"]');
+  await frames(1);
+}
+
 // 4c. M87* from 1,000 of its radii (two light years): one name for the one point (the galaxy M87's
 // name stood on the hole's), and that name clear of the glowing middle of its disk
 {

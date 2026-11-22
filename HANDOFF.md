@@ -1363,6 +1363,28 @@ above is validated against JPL Horizons and stays as it is unless something is w
        the map makes them. "It doesn't follow a dragged Jupiter" was not seen: with Jupiter moved
        by three of its radii (live physics), the camera, which follows it, kept it in the same
        place on screen and the Earth stayed on it. `scripts/interact.mjs` (16 checks).
+     - *The small ones* (D1 to D5):
+       - The keyboard's shortcuts did nothing once the Mass slider had been clicked: the slider
+         stopped every key on its way to the app, not only its own. Now only the keys that move
+         a slider (arrows, Home, End, Page Up and Down) are its own (`Hud`, `SLIDER_KEYS`).
+       - A body's Details opened where the last body's had been scrolled to (the Moon's with its
+         Distance out of sight): the list keeps its scroll while hidden. It opens at its top for
+         each new selection (`Hud.renderCard`).
+       - Numbers: a result from a thousand to a billion is written whole with its thousands
+         marked ("57,200 km", "1,471,000 km", where the card had "57200 km" and "1.471e6 km";
+         `physics.shown`, used by the results, the workings keep `num`), and a world's three radii
+         as its mean radius ("6,378.1 × 6,378.1 × 6,356.8"; whole km above 10,000 km).
+       - The news of bodies set free (the Sun made as light as Jupiter): "Jupiter is flying free"
+         was told five times and "The Sun is flying free" three, as the family gathered small bodies
+         on its way, and "So is 2 smaller bodies". Each body is told once (again only after it goes
+         round something again), the verb agrees with the count, and up to five worlds are named
+         before "others". The first news names six worlds, not eight planets: those already moving
+         away; the inner planets, moving inwards at that moment, are told 67 days later, as they
+         turn outward (`LivePhysics.hear`). `tests/freednews.test.ts`.
+       - "Save a picture" closes the sheet and says, for 4 s, "Picture saved to your downloads"
+         with the file's name (before, the sheet stayed open over the view and a 2.2 s "Screenshot
+         saved" was easily missed).
+       `tests/numbers.test.ts`; `scripts/interact.mjs` (17 checks); `scripts/touch.mjs` (51).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

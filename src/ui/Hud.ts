@@ -127,6 +127,8 @@ type Sheet = 'explore' | 'time' | 'more' | 'flight';
 const CARD_ROOM = 196;
 /** a watch is given at least this share of an upright view's height: an open panel of the card folds away for it (makeRoom) */
 const FOLD_BELOW = 0.4;
+/** the keys a range input moves by (they are the mass slider's while it has the focus; the rest stay shortcuts) */
+const SLIDER_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 
 const TOUCH_HELP: [string, string][] = [
   ['Drag', 'Turn round the world you are at'],
@@ -329,6 +331,8 @@ export class Hud {
   private category: Category = 'tour';
   private state: HudState | null = null;
   private selectionKey: string | null = null;
+  /** the selection whose facts were last shown */
+  private factsKey: string | null = null;
   private details = false;
   /** the selection has changed by itself: the open sheet is not to give way to its card (see `selectionMoved`) */
   private moved = false;
@@ -392,7 +396,8 @@ export class Hud {
     for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.slider.addEventListener(done, () => { this.sliding = false; });
     // (not on 'change': a key press changes it too, and a run of them is one change, which the app ends after a pause)
     for (const done of ['pointerup', 'pointercancel', 'blur']) this.slider.addEventListener(done, () => this.host.massHeld(false));
-    this.slider.addEventListener('keydown', (e) => e.stopPropagation()); // (its arrow keys are its own)
+    // (the keys that move a slider are its own; every other key is still a shortcut while it has the focus)
+    this.slider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
     for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
     // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
     const full = this.$('[data-fullscreen]');
@@ -768,6 +773,8 @@ export class Hud {
     facts.hidden = !this.details;
     card.querySelector('[data-details]')!.setAttribute('aria-expanded', String(this.details));
     if (!this.details) return;
+    // another body's facts open at their top (a hidden list keeps where it was scrolled to)
+    if (this.factsKey !== sel.key) { this.factsKey = sel.key; facts.scrollTop = 0; }
     // the facts: rebuilt when their headings change, otherwise only the values are refreshed
     const keys = sel.rows.map((r) => r[0]).join('\n');
     if (keys !== this.factKeys) {
@@ -854,7 +861,8 @@ export class Hud {
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
     else if (d.act) {
-      if (d.act === 'photo' || d.act === 'ship') this.closeSheet(); // (nothing is left open behind the picture, or the cockpit)
+      // (nothing is left open behind the picture, or the cockpit; a picture saved shows the view it saved)
+      if (d.act === 'photo' || d.act === 'ship' || d.act === 'screenshot') this.closeSheet();
       this.host.act(d.act as HudAction);
     }
   }

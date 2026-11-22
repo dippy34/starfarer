@@ -116,7 +116,7 @@ describe('live physics', () => {
     const news = physics.takeNews();
     expect(news[0]).toBe('The Sun is gone.');
     // (the worlds by name, the heaviest first; the asteroids that left with them only counted)
-    expect(news[1]).toMatch(/^Saturn, \w+ and \d+ others are flying free: nothing holds them now\. So are \d+ smaller bodies\.$/);
+    expect(news[1]).toMatch(/^Saturn, \w+, \w+, \w+ and (\w+|\d+ others) are flying free: nothing holds them now\. So are \d+ smaller bodies\.$/);
     run(JD + 30, 1);
     expect(clock.jdTdb).toBe(JD + 30);
     expect(sys.sun.valid).toBe(false);

@@ -1320,7 +1320,8 @@ export class App {
     a.href = this.renderer.screenshot();
     a.download = `${STORAGE_PREFIX}-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
     a.click();
-    this.hud.toast('Screenshot saved');
+    // (long enough to be read once the sheet it was asked from has gone, and saying where it went)
+    this.hud.toast(`Picture saved to your downloads\n${a.download}`, 4);
   }
 
   private ringSpot: RingSpot | null = null;
