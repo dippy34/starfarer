@@ -551,24 +551,33 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the 
   const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
   if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
   const shown = (q) => phone.evaluate((sel) => { const e = document.querySelector(sel); return !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden'; }, q);
+  const diag = (tag, sel) => phone.evaluate(([tag, sel]) => { const e = document.querySelector(sel); const r = e?.getBoundingClientRect(); const c = r && { x: r.left + r.width / 2, y: r.top + r.height / 2 }; const hit = c && document.elementFromPoint(c.x, c.y); const l = document.querySelector('.more .list'); const sh = document.querySelector('.sheet.more'); return JSON.stringify({ tag, sel, r: r && [r.left, r.top, r.width, r.height].map(Math.round), hit: hit && (hit.closest('button,summary,a')?.outerHTML.slice(0, 80) ?? hit.tagName + '.' + hit.className), listScroll: l?.scrollTop, listH: l?.clientHeight, sheetT: sh && getComputedStyle(sh).transform, anim: sh?.getAnimations().map((a) => a.playState), sheet: document.querySelector('#hud').dataset.sheet, fc: window.app.frameCount, t: performance.now() | 0 }); }, [tag, sel]).then((x) => console.log('DIAG', x));
   // the drag button says what one finger does now
   st = await phone.evaluate(() => document.querySelector('.look-fab span').textContent);
   check('the drag button says what dragging does now', st === 'Drag: orbit', st);
   // More: How to move at the top, the missions with their count, the start menu
   await f.tap(await at('.hud-tabs [data-tab="more"]'));
   await f.frames(2);
+  await diag('more opened', '.more .missions summary');
   const more = await phone.evaluate(() => ({ first: document.querySelector('.more .list').firstElementChild.textContent.trim(), missions: document.querySelector('.more .missions summary').textContent, items: document.querySelectorAll('.more .missions li').length }));
   await f.tap(await at('.more .missions summary'));
   await f.frames(2);
   const open = await phone.evaluate(() => document.querySelector('.more .missions').open);
+  await diag('before help tap', '.more [data-help]');
   await f.tap(await at('.more [data-help]'));
+  await diag('just after help tap', '.more .help-title');
   await phone.waitForTimeout(800);
+  await diag('800 ms after help tap', '.more .help-title');
+  await phone.waitForTimeout(2000);
+  await diag('2.8 s after help tap', '.more .help-title');
   const help = await phone.evaluate(() => { const t = document.querySelector('.more .help-title').getBoundingClientRect(), l = document.querySelector('.more .list').getBoundingClientRect(); return t.top >= l.top - 1 && t.bottom <= l.bottom; });
   check('More: How to move first (and it scrolls to the help), the missions with their count', /^How to move/.test(more.first) && /\d+ of \d+ done/.test(more.missions) && more.items >= 20 && open && help, JSON.stringify({ ...more, open, help }));
   await phone.evaluate(() => document.querySelector('.more [data-act="menu"]').scrollIntoView({ block: 'center' }));
   await phone.waitForTimeout(300);
+  await diag('before menu tap', '.more [data-act="menu"]');
   await f.tap(await at('.more [data-act="menu"]'));
   await f.frames(3);
+  await diag('after menu tap', '#start-menu');
   const menu = await phone.evaluate(() => !!document.querySelector('#start-menu') && !!window.startMenu?.isOpen);
   await f.tap(await at('#start-menu .sm-item[data-id="sim"]'));
   await phone.waitForFunction(() => !window.startMenu.isOpen, null, { timeout: 60000 });
