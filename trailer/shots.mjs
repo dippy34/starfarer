@@ -6,12 +6,18 @@
 //   id        folder name for the frames (timeline.py refers to it)
 //   url       query string: where the app starts (it also loads the right content first).
 //             earthref=0: no "Earth for scale" disc on the worlds (unexplained, it reads as a glitch)
-//   date      { at: ISO date (UTC), rate: simulated seconds per real second }
+//   date      { at: ISO date (UTC), rate: simulated seconds per real second, free: true: the app's
+//             own clock from that date (a change's watch and the ship's flight set its rate) }
 //   seconds   footage kept (the edit uses the first part; the rest is handle for a dissolve)
 //   preroll   seconds stepped before the first kept frame (exposure, bloom, motion settle)
-//   ui        true: the interface stays in the picture (whole-page screenshots), shown in a phone
-//   view, scale  that shot's own CSS viewport and density (the interface shot: an iPhone's)
-//   taps      [{ at: s, label: name in the sky | button: text }]: real touch events at those times
+//   ui        true: the interface stays in the picture (whole-page screenshots, toasts and CSS
+//             transitions on the shot's clock)
+//   frame     for an interface shot: 'phone' (shown inside a drawn phone) or 'full' (the screen
+//             itself fills the frame; a screen taller than 9:16 fills its height)
+//   view, scale  that shot's own CSS viewport and density (an iPhone's: 390 x 844)
+//   taps      [{ at: s, label: name in the sky | button: text | sel: CSS selector, fx, fy: where on
+//             it (shares of its size), to: { fx, fy }, dur: a drag there over dur s }]: real touch
+//             events at those times
 //   waitLoad  give streamed star tiles up to 2 s to arrive before each frame (long camera moves)
 
 /** CSS viewport: a small phone held upright. At device scale 3 the canvas is 1080x1920. */
@@ -50,59 +56,28 @@ export const SHOTS = [
     },
   },
   {
-    // Jupiter, 30 minutes a second: the bands turn, Europa's shadow crosses, Io's comes on
-    // (a double shadow transit on 24 Nov 2026, found with the app's own ephemeris)
-    id: 'jupiter',
-    url: '?menu=0&earthref=0&target=Jupiter&dist=4&paused=1&time=2026-11-24T01:45:00Z',
-    date: { at: '2026-11-24T01:45:00Z', rate: 1800 },
-    seconds: 3.5,
+    // Titan in the orange of its haze, Saturn behind it with its rings open, the Milky Way beyond
+    // (Titan nearly full, 18 June 2017); a slow push in
+    id: 'titan',
+    url: '?menu=0&earthref=0&target=Titan&dist=10&paused=1&time=2017-06-18T00:00:00Z',
+    date: { at: '2017-06-18T00:00:00Z', rate: 0 },
+    seconds: 2,
     preroll: 1,
     pose: (T, a, s) => {
-      const J = T.body('Jupiter');
-      const p = T.pole(J);
-      const d = T.around(J, p, 15, 3);
-      T.put(J, d, J.radius * T.lerp(3.8, 3.3, T.ease(s / 3.5)), d.clone().negate(), p);
+      const S = T.body('Saturn'), Ti = T.body('Titan');
+      const u = Ti.upos.sub(S.upos, T.V()).normalize();
+      const p = T.pole(S);
+      const side = u.clone().cross(p).normalize();
+      const dir = u.clone().multiplyScalar(Math.cos(14 * T.DEG)).addScaledVector(side, Math.sin(14 * T.DEG)).addScaledVector(p, 0.3).normalize();
+      a.rig.upos.copy(Ti.upos).addVec(dir, Ti.radius * T.lerp(10, 8.6, T.ease(s / 2)));
+      const toS = S.upos.sub(a.rig.upos, T.V()).normalize(), toT = Ti.upos.sub(a.rig.upos, T.V()).normalize();
+      a.rig.lookAt(toS.clone().lerp(toT, 0.55).normalize(), p);
+      a.rig.target = Ti;
+      a.rig.setAnchor(Ti);
       a.rig.fov = 50;
     },
   },
   // a run of one-beat shots: what else is there. Each with a push in and a turn you can see.
-  {
-    id: 'mars',
-    url: '?menu=0&earthref=0&target=Mars&dist=2.3&az=40&el=15&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 0 },
-    seconds: 2,
-    preroll: 1,
-    pose: (T, a, s) => { const o = T.body('Mars'); T.place(o, o.radius * T.lerp(2.4, 2.05, T.ease(s / 2)), 36 + s * 5, 15); a.rig.fov = 50; },
-  },
-  {
-    // the brightest comet within 3 AU of the Sun on the date (as scripts/shots/comet.mjs picks it)
-    id: 'comet',
-    url: '?menu=0&earthref=0&target=Sun&dist=50&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 0 },
-    seconds: 2,
-    preroll: 1,
-    setup: (T, a) => {
-      const sun = a.system.sun.upos;
-      let best = null;
-      for (const c of a.small.cometObjects) {
-        if (c.row[8] === null || !['P', 'C', 'I'].includes(c.row[1])) continue;
-        const r = c.upos.sub(sun).length() / T.AU;
-        const m = c.row[8] + (c.row[9] ?? 10) * Math.log10(Math.max(r, 0.1));
-        if (r < 3 && (!best || m < best.m)) best = { c, m };
-      }
-      T.comet = best.c;
-      a.select(best.c); // (its tail is drawn in full for the selection)
-    },
-    pose: (T, a, s) => {
-      const c = T.comet, anti = T.sunward(c).negate();
-      const side = anti.clone().cross(T.V(0, 0, 1)).normalize();
-      const D = 3e9 * T.lerp(1, 0.85, T.ease(s / 2));
-      const look = anti.clone().multiplyScalar(D * 0.35).addScaledVector(side, -D).normalize();
-      T.put(c, side, D, look, T.V(0, 0, 1));
-      T.turn(-2 + s * 2, 0);
-      a.rig.fov = 50;
-    },
-  },
   {
     id: 'orion',
     url: '?menu=0&earthref=0&target=Orion%20Nebula&dist=1.6&paused=1&time=2026-11-21T12:00:00Z',
@@ -118,6 +93,57 @@ export const SHOTS = [
     seconds: 2,
     preroll: 1,
     pose: (T, a, s) => { const o = T.body('Andromeda'); T.place(o, o.radius * T.lerp(2.7, 2.3, T.ease(s / 2)), 30 + s * 4, 30); a.rig.fov = 50; },
+  },
+  {
+    // the ship from behind (the chase view, as a phone boards it): SF-07 on its radiators, its
+    // nav lights, the reactionless drive's blue band lit, Jupiter ahead. The flight is the app's
+    // own (its physics move the ship); the shot only turns the ship, a slow yaw, by its attitude.
+    id: 'chase',
+    url: '?menu=0&earthref=0&target=Jupiter&dist=5&az=50&el=10&paused=1&time=2026-11-24T01:45:00Z&ship=chase',
+    date: { at: '2026-11-24T01:45:00Z', rate: 1, free: true },
+    seconds: 3,
+    preroll: 1,
+    setup: (T, a) => { a.select(null); },
+    pose: (T, a, s) => {
+      const f = a.game.flight, B = T.body('Jupiter');
+      a.game.viz.group.visible = false;
+      f.ship.drive = 'reactionless';
+      f.ship.throttle = 1;
+      T.up ??= T.pole(B);
+      a.rig.lookAt(B.upos.sub(a.rig.upos, T.V()).normalize(), T.up);
+      f.ship.quat.copy(a.rig.quat).multiply(T.Q().setFromAxisAngle(T.V(0, 1, 0), (9 - 9 * T.ease(s / 3)) * T.DEG)).multiply(T.Q().setFromAxisAngle(T.V(1, 0, 0), -6 * T.DEG));
+      f.ship.angVel.set(0, 0, 0);
+    },
+  },
+  {
+    // flying it by hand on a phone, the interface on, full frame (names and orbit lines off, as
+    // More allows): a thumb slides the thrust lever to the top and the fusion torch lights, its
+    // plume and its radiators heating; then a tap on the view switch, and the same from the cockpit
+    id: 'ship',
+    ui: true,
+    frame: 'full',
+    url: '?menu=0&earthref=0&target=Saturn&dist=8&az=35&el=12&paused=1&time=2017-06-15T00:00:00Z&ship=chase',
+    date: { at: '2017-06-15T00:00:00Z', rate: 1, free: true },
+    seconds: 5,
+    preroll: 1,
+    taps: [{ at: 0.5, sel: '.fl-lever', fy: 0.92, to: { fy: 0.06 }, dur: 0.6 }, { at: 2.9, sel: '.fl-view' }],
+    setup: (T, a) => {
+      a.select(null);
+      a.labels.enabled = false;
+      a.orbits.enabled = false;
+      // (no toasts: the view switch's says the desk's keys, "W/S throttle...", under the instruments)
+      const st = document.createElement('style');
+      st.textContent = '.hud-toast{display:none!important}';
+      document.head.append(st);
+    },
+    pose: (T, a, s) => {
+      const f = a.game.flight, B = T.body('Saturn');
+      a.game.viz.group.visible = false;
+      T.up ??= T.pole(B);
+      a.rig.lookAt(B.upos.sub(a.rig.upos, T.V()).normalize(), T.up);
+      f.ship.quat.copy(a.rig.quat).multiply(T.Q().setFromAxisAngle(T.V(0, 1, 0), (7 - 7 * T.ease(s / 5)) * T.DEG)).multiply(T.Q().setFromAxisAngle(T.V(1, 0, 0), 3 * T.DEG));
+      f.ship.angVel.set(0, 0, 0);
+    },
   },
   {
     // M87*: from far off a steady point on its jet, growing into its disk as the camera comes in
@@ -159,67 +185,95 @@ export const SHOTS = [
       a.rig.fov = 50;
     },
   },
+  // god mode, filmed on the owner's phone's screen (an iPhone's 390 x 844), full frame
   {
-    // the app in a hand: tap the Moon, its card comes up, Go there, the flight
-    id: 'ui',
+    // the Sun's card: Add, then "A second sun". Filmed from 42 AU over Neptune's side of the
+    // planets' plane: Add makes it 0.55 of the way to the eye, in that plane (23 AU out), and the
+    // app says what follows ("Neptune goes round Sun 2 now"); then the watch takes the camera out
+    id: 'sun2',
     ui: true,
+    frame: 'full',
     view: { width: 390, height: 844 },
-    scale: 1.5,
-    url: '?menu=0&earthref=0&target=Earth&dist=4&paused=1&time=2026-11-21T20:00:00Z',
-    date: { at: '2026-11-21T20:00:00Z', rate: 0 },
-    seconds: 5,
+    url: '?menu=0&earthref=0&target=Sun&dist=9000&paused=1&time=2026-11-21T12:00:00Z',
+    date: { at: '2026-11-21T12:00:00Z', rate: 0, free: true },
+    seconds: 4,
     preroll: 1,
-    taps: [{ at: 0.6, label: 'Moon' }, { at: 1.4, button: 'Go there' }],
-    setup: (T, a) => { a.select(null); },
-    pose: (T, a, s) => {
-      // a still camera until the flight takes it (the app's own autopilot from then on):
-      // behind Earth from the Moon, the Moon hanging above Earth's limb
-      if (s > 0.1 || a.rig.autopilot) return;
-      const E = T.body('Earth'), M = T.body('Moon');
-      const m = M.upos.sub(E.upos, T.V()).normalize();
-      const side = m.clone().cross(T.V(0, 0, 1)).cross(m).normalize();
-      const d = m.clone().negate().multiplyScalar(Math.cos(25 * T.DEG)).addScaledVector(side, Math.sin(25 * T.DEG));
-      const D = E.radius * 3.5;
-      const toMoon = M.upos.sub(E.upos, T.V()).addScaledVector(d, -D).normalize();
-      T.put(E, d, D, toMoon, side);
-      T.turn(0, -12);
+    taps: [{ at: 0.5, sel: '[data-power="add"]' }, { at: 1.3, sel: '[data-act="add-sun"]' }],
+    setup: (T, a) => {
+      const S = a.system.sun, N = T.body('Neptune');
+      a.select(S);
+      const ecl = T.V(0, -0.3978, 0.9175);
+      const n = N.upos.sub(S.upos, T.V()).normalize();
+      const flat = n.clone().addScaledVector(ecl, -n.dot(ecl)).normalize().applyAxisAngle(ecl, -25 * T.DEG);
+      const dir = ecl.clone().multiplyScalar(Math.sin(50 * T.DEG)).addScaledVector(flat, Math.cos(50 * T.DEG)).normalize();
+      a.rig.upos.copy(S.upos).addVec(dir, 42 * T.AU);
+      a.rig.lookAt(dir.clone().negate(), ecl);
+      a.rig.target = S;
+      a.rig.setAnchor(null);
     },
+    pose: (T, a) => { if (a.physics.live) a.physics.live.sim.now = () => 0; },
   },
   {
-    // live gravity: the Solar System from over the ecliptic's pole, every world simulated from the
-    // first frame (nothing changed yet: the same physics, now stepped), each leaving its trail
-    // (orbit lines off, trails on). At 2.25 s Jupiter is given a thousand times its mass (Mass,
-    // at the top of its slider: about the Sun's) and the planets' paths go wild. Filmed at half
-    // density, so the one-pixel trails are two pixels wide on the 1080 frame. The camera keeps
-    // the two heavy bodies' centre of mass in the middle. (The simulation is let finish each
-    // frame's step whatever it takes: `sim.now`, the clock it budgets by, is held still.)
-    id: 'live',
+    // what a second sun does, from over the planets (as v2's live gravity shot): the worlds
+    // simulated from the first frame, each leaving its trail (orbit lines off, trails on). At 1 s
+    // the Sun's Add makes a second sun (App.add, as the card's button does; the watch is off, as
+    // More's "Show me what happens" allows, and the camera is the shot's): from 14 AU, 78 degrees
+    // over the plane and leaning away from Jupiter, it is made about 7.7 AU out on the side away
+    // from Jupiter. The camera keeps the two suns' middle in the middle, the pair upright in the
+    // frame. Half density, scaled up (two-pixel trails); the stepping held to the full step.
+    id: 'sunlive',
     scale: 1.5,
     url: '?menu=0&earthref=0&target=Sun&dist=3000&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 1.5e7, from: 0 },
-    seconds: 7.6,
+    date: { at: '2026-11-21T12:00:00Z', rate: 2.6e7, from: 0 },
+    seconds: 5.5,
     preroll: 1,
     setup: (T, a) => {
+      a.showMe = false;
       a.orbits.enabled = true;
       const up = a.orbits.update.bind(a.orbits);
       a.orbits.update = (...x) => { up(...x); for (const o of a.orbits.objs.values()) o.line.visible = false; };
     },
     pose: (T, a, s) => {
-      const S = a.system.sun, J = T.body('Jupiter');
+      const S = a.system.sun;
       const ecl = T.V(0, -0.3978, 0.9175);
-      T.ref ??= J.upos.sub(S.upos, T.V()).normalize();
+      T.ref ??= T.body('Jupiter').upos.sub(S.upos, T.V()).normalize();
       const flat = T.ref.clone().addScaledVector(ecl, -T.ref.dot(ecl)).normalize();
       const dir = ecl.clone().multiplyScalar(Math.sin(78 * T.DEG)).addScaledVector(flat, -Math.cos(78 * T.DEG)).normalize();
-      const w = (J.gm / (J.gm + S.gm)) * T.ease((s - 2.25) / 2);
-      a.rig.upos.copy(S.upos).addVec(J.pos.clone().sub(S.pos).multiplyScalar(w), 1).addVec(dir, 11 * T.AU);
-      a.rig.lookAt(dir.clone().negate(), flat);
+      const D = 14 * T.AU * (1 + 0.025 * Math.max(0, s));
+      // the middle: halfway to where the new sun will be, then halfway between the two suns
+      const guess = S.upos.clone().addVec(flat, -0.55 * 14.2 * T.AU / 2);
+      const c = T.sun2 && T.sun2.valid ? S.upos.clone().addVec(T.sun2.upos.sub(S.upos, T.V()), 0.5) : guess;
+      const w = T.ease((s - 1) / 1.2);
+      const mid = guess.sub(guess, T.V()).lerp(c.sub(guess, T.V()), w);
+      a.rig.upos.copy(guess).addVec(mid, 1).addVec(dir, D);
+      a.rig.lookAt(dir.clone().negate(), flat.clone().negate());
       a.rig.target = S;
       a.rig.setAnchor(null);
       a.rig.fov = 50;
       if (s >= 0 && !a.physics.on) a.physics.setMass(S, S.gm, a.clock.jdTdb);
-      if (s >= 2.25 && !T.did) { T.did = true; a.select(J); a.setMass(3); a.select(null); }
+      if (s >= 1 && !T.did) { T.did = true; T.sun2 = a.add('sun', S); a.select(null); }
       if (a.physics.live) a.physics.live.sim.now = () => 0;
     },
+  },
+  {
+    // Jupiter's card: Mass, a thumb slides it to twenty times (the slider's 1.30 of 3, as log10),
+    // rests there a moment, lifts, and the watch: the camera eases out, time at its pace, the chip; the inner moons fall
+    // in one by one, told as they do. Only the start and the moment Europa hits are kept.
+    id: 'europa',
+    ui: true,
+    frame: 'full',
+    view: { width: 390, height: 844 },
+    url: '?menu=0&earthref=0&target=Jupiter&dist=30&paused=1&time=2026-10-01T23:00:00Z',
+    date: { at: '2026-10-01T23:00:00Z', rate: 0, free: true },
+    seconds: 13.2,
+    keep: [[0, 3.9], [9.5, 13.2]],
+    preroll: 1,
+    taps: [{ at: 0.5, sel: '[data-power="mass"]' }, { at: 1.3, sel: '.card .slider', to: { fx: 0.698 }, dur: 0.5, hold: 0.4 }],
+    setup: (T, a) => {
+      a.select(T.body('Jupiter'));
+      T.extra = (a) => { const J = a.findByName('Jupiter'); return { times: +(J.gm / a.physics.realGm(J)).toFixed(2) }; };
+    },
+    pose: (T, a) => { if (a.physics.live) a.physics.live.sim.now = () => 0; },
   },
   {
     // one continuous pull-out: Earth, the Moon's orbit, the planets' orbits, the nearby stars,

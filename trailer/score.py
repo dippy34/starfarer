@@ -14,7 +14,7 @@ import wave
 import numpy as np
 
 sys.path.insert(0, __file__.rsplit('/', 1)[0])
-from timeline import BAR, BEAT, FADE_OUT, LENGTH, TITLE_AT  # noqa: E402
+from timeline import BAR, BEAT, FADE_OUT, LENGTH, SUN2_AT, TITLE_AT, TORCH  # noqa: E402
 
 SR = 48000
 N = int(round(LENGTH * SR))
@@ -57,12 +57,12 @@ CHORDS = [
     (0, 38, [50, 57, 64, 66, 69]),        # Dmaj9
     (2, 35, [47, 54, 62, 64, 69]),        # Bm11
     (4, 31, [43, 50, 59, 66, 73]),        # Gmaj7#11
-    (6, 40, [52, 59, 62, 66, 67]),        # Em9
-    (7.5, 38, [50, 57, 64, 66, 69]),      # Dmaj9 (tap anything)
-    (9, 35, [47, 54, 62, 64, 69]),        # Bm11 (gravity let loose)
-    (10, 31, [43, 50, 59, 66, 73]),       # Gmaj7#11
-    (11.5, 35, [47, 54, 62, 66, 69]),     # Bm7 (the pull-out)
-    (12.5, 33, [45, 52, 59, 64, 69]),     # Asus2 (the rise)
+    (6.5, 40, [52, 59, 62, 66, 67]),      # Em9 (black holes)
+    (8.5, 38, [50, 57, 64, 66, 69]),      # Dmaj9 (a second sun)
+    (9.5, 35, [47, 54, 62, 64, 69]),      # Bm11 (gravity let loose)
+    (11, 31, [43, 50, 59, 66, 73]),       # Gmaj7#11 (Jupiter made heavy)
+    (13, 35, [47, 54, 62, 66, 69]),       # Bm7 (the pull-out)
+    (14, 33, [45, 52, 59, 64, 69]),       # Asus2 (the rise)
     (TITLE_AT / BAR, 26, [50, 57, 62, 64, 66, 69, 73]),  # Dmaj9, wide (the title)
 ]
 
@@ -212,8 +212,9 @@ def main(out):
         (4, 0, 83, 0.8), (4, 2, 78, 0.6), (5, 1, 85, 0.6),
         (6, 0, 79, 0.7), (6, 2.5, 78, 0.6), (7, 2, 74, 0.6),
         (8, 0, 81, 0.8), (8, 3, 76, 0.5),
-        (9, 0, 83, 0.7), (9, 2.5, 78, 0.6), (10, 1, 85, 0.6), (10, 3, 79, 0.5),
-        (11, 2, 81, 0.7),
+        (9, 0, 83, 0.6), (SUN2_AT / BAR, 0, 85, 1.0), (10, 1, 83, 0.6), (10, 3, 79, 0.5),
+        (11, 0, 81, 0.7), (11, 2.5, 78, 0.6), (12, 1, 76, 0.6), (12, 3, 74, 0.5),
+        (13, 2, 81, 0.7),
     ]
     # after the title, counted from it
     t_bar = TITLE_AT / BAR
@@ -265,6 +266,17 @@ def main(out):
     hit = (sub * 0.5 + body * 0.35 + puff * 0.35)
     place(dry, TITLE_AT, hit, 0)
     place(send, TITLE_AT, hit * 0.6, 0)
+
+    # the fusion torch: a low roar while it burns on screen (TORCH: from, to), a band of noise that
+    # flutters, with enough above 150 Hz for a phone's speaker; a little of it to the reverb
+    t0, t1 = TORCH
+    n = int((t1 - t0) * SR)
+    x = t_axis(n)
+    flutter = 1 + 0.25 * np.sin(2 * np.pi * 7.3 * x) * np.sin(2 * np.pi * 0.9 * x + 1)
+    for ch, pan in ((0, -0.3), (1, 0.3)):
+        roar = noise_band(n, np.full(n, 45.0), np.full(n, 700.0)) * flutter * smooth_env(n, 0.45, 0.12) * 0.32
+        place(dry, t0, roar, pan)
+        place(send, t0, roar * 0.25, pan)
 
     wet = convolve(send, reverb_ir(5.0, 4.2, 7))
     mix = dry + wet * 0.55

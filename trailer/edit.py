@@ -52,6 +52,8 @@ STYLES = {
     'tagline': ('Inter Display:weight=500', 50, 0.0, 1.3, 0.335),
     'url': ('Inter:weight=600', 62, 0.0, 1.0, 0.762),
     'name': ('Inter Display:weight=500', 50, 0.02, 1.0, 0.735),
+    # over a phone's screen: on a dark plate, in the part of the sky its interface leaves clear
+    'plate': ('Inter Display:weight=600', 62, -0.01, 1.18, 0.285),
 }
 
 
@@ -94,6 +96,14 @@ def render_card(style, lines):
         ImageDraw.Draw(pill).rounded_rectangle(box, (bottom - top) / 2, fill=(0, 0, 0, 120), outline=(255, 255, 255, 220), width=max(2, round(3 * K)))
         layer = Image.alpha_composite(pill, layer)
         return np.asarray(layer).astype(np.float32) / 255.0
+    if style == 'plate':
+        w = max(text_width(l, fnt, sp) for l in lines)
+        pad_x, pad_y = 40 * K, 26 * K
+        box = ((W - w) / 2 - pad_x, y0 - pad_y + 0.1 * px * K, (W + w) / 2 + pad_x, y0 + block + desc * 0.5 + pad_y)
+        plate = Image.new('RGBA', SIZE, (0, 0, 0, 0))
+        ImageDraw.Draw(plate).rounded_rectangle(box, 30 * K, fill=(8, 10, 16, 200))
+        layer = Image.alpha_composite(plate, layer)
+        return np.asarray(layer).astype(np.float32) / 255.0
     alpha = layer.split()[3]
     shadow = Image.new('RGBA', SIZE, (0, 0, 0, 0))
     shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(10 * K)).point(lambda v: int(v * 0.55)))
@@ -128,9 +138,11 @@ class Shot:
     def __init__(self, folder, shot_id):
         self.dir = os.path.join(folder, shot_id)
         self.files = sorted(f for f in os.listdir(self.dir) if f.startswith('f') and f.endswith('.png'))
+        self.last = int(self.files[-1][1:5])
         info_path = os.path.join(self.dir, 'info.json')
         self.info = json.load(open(info_path)) if os.path.exists(info_path) else {}
-        self.ui = bool(self.info.get('ui'))
+        # (an interface shot is shown inside a phone, unless it was filmed full frame)
+        self.ui = bool(self.info.get('ui')) and self.info.get('frame', 'phone') == 'phone'
         self.cache = {}
         if self.ui:
             im = Image.open(os.path.join(self.dir, self.files[0]))
@@ -138,12 +150,22 @@ class Shot:
             sw = round(sh * im.width / im.height)
             self.screen = (sw, sh)
             self.body, self.at, self.mask = phone_layer(sw, sh)
+        else:
+            # full frame; a screen taller than 9:16 (an iPhone's) fills the height, centred, and the
+            # sides show a dark, blurred copy of it, as phones show a screen recording
+            im = Image.open(os.path.join(self.dir, self.files[0]))
+            sw = min(W, round(H * im.width / im.height))
+            self.screen, self.at = (sw, H), ((W - sw) // 2, 0)
 
     def frame(self, i):
-        i = max(0, min(i, len(self.files) - 1))
+        # (frames by number: a shot may keep only parts of its run)
+        i = max(0, min(i, self.last))
         if i in self.cache:
             return self.cache[i]
-        im = Image.open(os.path.join(self.dir, self.files[i])).convert('RGB')
+        name = f'f{i:04d}.png'
+        if not os.path.exists(os.path.join(self.dir, name)):
+            sys.exit(f'{self.dir}: no frame {i}')
+        im = Image.open(os.path.join(self.dir, name)).convert('RGB')
         if self.ui:
             im = im.resize(self.screen, Image.LANCZOS)
             out = np.zeros((H, W, 3), np.float32)
@@ -154,22 +176,45 @@ class Shot:
             scr = np.asarray(im).astype(np.float32) / 255.0
             out[y0:y0 + sh, x0:x0 + sw] = out[y0:y0 + sh, x0:x0 + sw] * (1 - self.mask) + scr * self.mask
             out = self.taps(out, i)
+        elif self.screen[0] < W:
+            back = im.resize((W, round(W * im.height / im.width)), Image.BILINEAR)
+            top = (back.height - H) // 2
+            back = back.crop((0, top, W, top + H)).filter(ImageFilter.GaussianBlur(28 * K))
+            out = np.asarray(back).astype(np.float32) / 255.0 * 0.35
+            x0 = self.at[0]
+            out[:, x0:x0 + self.screen[0]] = np.asarray(im.resize(self.screen, Image.LANCZOS)).astype(np.float32) / 255.0
+            if self.info.get('taps'):
+                out = self.taps(out, i)
         else:
             if im.size != SIZE:
                 im = im.resize(SIZE, Image.LANCZOS)
             out = np.asarray(im).astype(np.float32) / 255.0
+            if self.info.get('taps'):
+                out = self.taps(out, i)
         self.cache = {i: out}
         return out
 
     def taps(self, out, i):
         """where the capture tapped the screen: a ring that grows and fades, as screen recordings show touches"""
         for tap in self.info.get('taps', []):
-            age = (i - tap['frame']) / FPS
-            if not 0 <= age < 0.5:
-                continue
             sw, sh = self.screen
             cx = self.at[0] + tap['x'] * sw
             cy = self.at[1] + tap['y'] * sh
+            if tap.get('what') == 'drag':
+                # a finger held down and moving: a steady ring where it is this frame
+                if tap['frame'] != i:
+                    continue
+                yy, xx = np.ogrid[:H, :W]
+                dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+                r = 30 * K
+                ring = np.clip(1 - np.abs(dist - r) / (4 * K), 0, 1) * 0.9
+                dot = np.clip((r * 0.75 - dist) / (2 * K), 0, 1) * 0.35
+                a = np.maximum(ring, dot)[..., None]
+                out = out * (1 - a) + a
+                continue
+            age = (i - tap['frame']) / FPS
+            if not 0 <= age < 0.5:
+                continue
             r = (22 + 30 * age) * K
             yy, xx = np.ogrid[:H, :W]
             dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)

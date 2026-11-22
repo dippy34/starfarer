@@ -38,7 +38,7 @@ function crankScript() {
   const realRaf = window.requestAnimationFrame.bind(window);
   const realCancel = window.cancelAnimationFrame.bind(window);
   const realNow = performance.now.bind(performance);
-  const C = { on: false, t: 0, cap: 25, startReal: 0, queue: new Map(), id: 1e9 };
+  const C = { on: false, t: 0, cap: 25, startReal: 0, queue: new Map(), id: 1e9, css: false };
   window.__crank = C;
   performance.now = () => (C.on ? C.t + Math.min(realNow() - C.startReal, C.cap) : realNow());
   window.requestAnimationFrame = (cb) => {
@@ -53,9 +53,13 @@ function crankScript() {
   C.step = (ms) => {
     C.t += ms;
     C.startReal = realNow();
+    // (the interface's CSS transitions too, when it is in the picture: each runs on the virtual
+    // clock, a step a frame, from the frame it began in; else they would end between two frames)
+    if (C.css) for (const an of document.getAnimations()) { if (an.__v) an.currentTime += ms; }
     const q = [...C.queue.values()];
     C.queue.clear();
     for (const cb of q) cb(C.t);
+    if (C.css) for (const an of document.getAnimations()) { if (!an.__v) { an.__v = true; an.pause(); an.currentTime = 0; } }
   };
 }
 
@@ -127,7 +131,7 @@ function helperScript() {
 /** The app's state worth recording beside each shot. */
 const STATE = () => {
   const a = window.app, s = a.debugState(), c = a.renderer.gl.domElement;
-  return { canvas: [c.width, c.height], renderScale: a.renderer.renderScale, pixelRatio: a.renderer.pixelRatio, exposure: s.exposure, starExposure: s.starExposure, mLim: s.mLim, pendingTiles: s.pendingTiles, proceduralPending: s.proceduralPending, textures: a.renderer.gl.info.memory.textures, lean: a.lean, jd: s.jd, selection: s.selection };
+  return { canvas: [c.width, c.height], renderScale: a.renderer.renderScale, pixelRatio: a.renderer.pixelRatio, exposure: s.exposure, starExposure: s.starExposure, mLim: s.mLim, pendingTiles: s.pendingTiles, proceduralPending: s.proceduralPending, textures: a.renderer.gl.info.memory.textures, lean: a.lean, jd: s.jd, selection: s.selection, ...(window.__T.extra ? { extra: window.__T.extra(a) } : {}) };
 };
 
 async function settle(page, label) {
@@ -142,14 +146,31 @@ async function settle(page, label) {
   if (calm < 6) console.log(`${label}: loading did not settle`);
 }
 
+/**
+ * Toasts run on the virtual clock: one stays up for its seconds of the shot's time (the app times
+ * it with a real-time timer, which would end it between two frames), and every toast is noted with
+ * its time for info.json (a clean shot hides them, but what the app told is on record).
+ */
+const VIRTUAL_TOASTS = () => {
+  const a = window.app, T = window.__T, h = a.hud;
+  T.toasts = [];
+  h.toast = (msg, seconds = 2.2) => {
+    h.toastEl.textContent = msg;
+    h.toastEl.classList.add('show');
+    T.toastEnd = T.s + seconds;
+    T.toasts.push({ s: +T.s.toFixed(3), msg });
+  };
+};
+
 /** Where a tap lands: the middle of a name in the sky (`label`) or of a visible button (`button`). */
-const TAP_AT = ({ label, button }) => {
+const TAP_AT = ({ label, button, sel, fx = 0.5, fy = 0.5 }) => {
   const el = label
     ? [...document.querySelectorAll('#labels *')].find((e) => e.textContent === label)
-    : [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === button && b.offsetParent !== null);
+    : sel ? [...document.querySelectorAll(sel)].find((b) => b.offsetParent !== null)
+      : [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === button && b.offsetParent !== null);
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  return { x: r.x + r.width * fx, y: r.y + r.height * fy };
 };
 
 async function shoot(browser, shot) {
@@ -177,24 +198,37 @@ async function shoot(browser, shot) {
     }
   }, shot.ui !== true);
   if (shot.ui !== true) await page.addStyleTag({ content: '.hud-toast{display:none!important}' });
+  await page.evaluate(VIRTUAL_TOASTS);
   if (shot.setup) await page.evaluate(`(${shot.setup})(window.__T, window.app)`);
   // take the clock; from here the shot's own function places the camera and sets the date each frame
-  await page.evaluate(({ pose, date, fps }) => {
+  await page.evaluate(({ pose, date, fps, ui }) => {
     const a = window.app, T = window.__T;
     T.pose = eval(`(${pose})`);
     T.s = 0;
-    // the date is a function of the shot's time alone (not of how many frames loading took)
     const jd0 = T.jdOf(date.at), rate = date.rate ?? 0;
-    a.clock.paused = false;
-    a.clock.rate = rate || 1;
-    a.clock.advance = () => { a.clock.jdTdb = jd0 + (rate * Math.max(T.s, date.from ?? -1e9)) / 86400; };
-    a.clock.advance();
+    if (date.free) {
+      // the app's own clock (a change's watch, the ship's flight set its rate): from the date, at its rate
+      a.clock.jdTdb = jd0;
+      a.clock.paused = !rate;
+      if (rate) a.clock.rate = rate;
+    } else {
+      // the date is a function of the shot's time alone (not of how many frames loading took)
+      a.clock.paused = false;
+      a.clock.rate = rate || 1;
+      a.clock.advance = () => { a.clock.jdTdb = jd0 + (rate * Math.max(T.s, date.from ?? -1e9)) / 86400; };
+      a.clock.advance();
+    }
     const follow = a.rig.followAnchor.bind(a.rig);
-    a.rig.followAnchor = () => { follow(); T.pose(T, a, T.s); };
+    a.rig.followAnchor = () => {
+      follow();
+      T.pose(T, a, T.s);
+      if (T.toastEnd !== undefined && T.s >= T.toastEnd) { a.hud.toastEl.classList.remove('show'); T.toastEnd = undefined; }
+    };
     T.pose(T, a, 0); // (the date and place for the first frame)
     window.__crank.start();
+    window.__crank.css = ui;
     window.__fps = fps;
-  }, { pose: shot.pose.toString(), date: shot.date, fps });
+  }, { pose: shot.pose.toString(), date: shot.date, fps, ui: !!shot.ui });
   const setS = (s) => page.evaluate((s) => { window.__T.s = s; }, s);
   await setS(-shot.preroll);
   await settle(page, shot.id);
@@ -207,11 +241,14 @@ async function shoot(browser, shot) {
   }
   const dir = `${out}/${shot.id}`;
   mkdirSync(dir, { recursive: true });
-  const keep = stills ? new Set(Array.from({ length: stills }, (_, k) => Math.round((k * (n - 1)) / Math.max(stills - 1, 1)))) : null;
+  // (stills: N evenly spaced frames; a shot's `keep`: only frames in those [from, to] s ranges are saved, all are run)
+  const keep = stills ? new Set(Array.from({ length: stills }, (_, k) => Math.round((k * (n - 1)) / Math.max(stills - 1, 1))))
+    : shot.keep ? new Set(Array.from({ length: n }, (_, i) => i).filter((i) => shot.keep.some(([a, b]) => i / fps >= a - 1e-9 && i / fps <= b + 1e-9))) : null;
   const states = [];
   const taps = [];
   const cdp = shot.taps ? await ctx.newCDPSession(page) : null;
   let touchClock = Date.now() / 1000;
+  let drag = null;
   const t1 = Date.now();
   let kept = 0, keptTime = 0;
   for (let i = 0; i < n; i++) {
@@ -222,8 +259,19 @@ async function shoot(browser, shot) {
       if (!p) { console.log(`${shot.id}: nothing to tap for ${JSON.stringify(tap)}`); continue; }
       const point = [{ x: p.x, y: p.y, id: 0, radiusX: 9, radiusY: 9, force: 0.5 }];
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point, timestamp: (touchClock += 0.5) });
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [], timestamp: (touchClock += 0.06) });
-      taps.push({ frame: i, x: p.x / view.width, y: p.y / view.height, what: tap.label ?? tap.button });
+      taps.push({ frame: i, x: p.x / view.width, y: p.y / view.height, what: tap.label ?? tap.button ?? tap.sel });
+      // a drag (tap.to: { fx, fy }, where the finger ends as shares of the element's size, over tap.dur s): the
+      // finger stays down and moves a step each frame; else it lifts at once
+      if (tap.to !== undefined) drag = { tap, from: p, to: await page.evaluate(TAP_AT, { ...tap, ...tap.to }), i0: i, n: Math.max(1, Math.round(tap.dur * fps)), hold: Math.round((tap.hold ?? 0) * fps) };
+      else await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [], timestamp: (touchClock += 0.06) });
+    }
+    if (drag && i > drag.i0) {
+      // (then the finger rests there for tap.hold s before it lifts)
+      const k = Math.min(1, (i - drag.i0) / drag.n), e = k * k * (3 - 2 * k), done = i - drag.i0 >= drag.n + drag.hold;
+      const x = drag.from.x + (drag.to.x - drag.from.x) * e, y = drag.from.y + (drag.to.y - drag.from.y) * e;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 0, radiusX: 9, radiusY: 9, force: 0.5 }], timestamp: (touchClock += 0.033) });
+      taps.push({ frame: i, x: x / view.width, y: y / view.height, what: 'drag', held: !done });
+      if (done) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [], timestamp: (touchClock += 0.06) }); drag = null; }
     }
     const tk = Date.now();
     // content that streams in as the camera moves: let the requests made last frame arrive first
@@ -247,15 +295,16 @@ async function shoot(browser, shot) {
     }
     kept++;
     keptTime += Date.now() - tk;
-    if (i % 15 === 0 || keep) {
+    if (i % 15 === 0 || stills) {
       const st = await page.evaluate(STATE);
       states.push({ frame: i, ...st });
       console.log(`${shot.id} ${i + 1}/${n} ${(keptTime / 1000 / kept).toFixed(1)} s/frame ${JSON.stringify(st)}`);
     }
   }
   const perFrame = keptTime / 1000 / Math.max(kept, 1);
+  const told = await page.evaluate(() => window.__T.toasts);
   const total = (Date.now() - t0) / 1000;
-  writeFileSync(`${dir}/info.json`, JSON.stringify({ id: shot.id, url: shot.url, ui: !!shot.ui, view, scale: shot.scale ?? scale, fps, frames: n, boot, perFrame, total, taps, states, errors: errors.slice(0, 20) }, null, 1));
+  writeFileSync(`${dir}/info.json`, JSON.stringify({ id: shot.id, url: shot.url, ui: !!shot.ui, frame: shot.frame ?? (shot.ui ? 'phone' : 'full'), toasts: told, view, scale: shot.scale ?? scale, fps, frames: n, boot, perFrame, total, taps, states, errors: errors.slice(0, 20) }, null, 1));
   console.log(`${shot.id}: boot+settle ${boot.toFixed(0)} s, ${perFrame.toFixed(2)} s per kept frame, ${total.toFixed(0)} s in all, ${errors.length} page errors`);
   await ctx.close();
 }
