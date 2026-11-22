@@ -9,27 +9,47 @@ import { GLOW_VERT, glowFrag } from './shaders/galaxy';
 export const GLOW_NEAR = 300;
 
 /**
+ * Which faces of the glow's cube map to draw this frame, and whether the map is whole after them:
+ * the first `maxFaces` of those not yet done.
+ */
+export function nextFaces(done: readonly boolean[], maxFaces: number): { faces: number[]; whole: boolean } {
+  const faces: number[] = [];
+  for (let f = 0; f < 6 && faces.length < maxFaces; f++) if (!done[f]) faces.push(f);
+  return { faces, whole: faces.length + done.filter(Boolean).length === 6 };
+}
+
+/**
  * The Milky Way's unresolved starlight from the explorer's position: the galaxy model ray-marched
- * into a cube map (shaders/galaxy.ts), refreshed a face at a time while the explorer moves, and
- * shown by the sky layer. From outside the galaxy the same map shows the whole spiral.
+ * into a cube map (shaders/galaxy.ts) and shown by the sky layer. From outside the galaxy the same
+ * map shows the whole spiral.
+ *
+ * When the eye has moved far enough to change it, the map is drawn again a face a frame (six faces
+ * at once would be six times a frame's work in one frame) into a second cube map, all six faces
+ * from one place, and the two are swapped once it is whole: the map shown is always of one place.
+ * (Drawn into the map in use, faces from places far apart met in hard seams across the sky while
+ * the app's own flight carried the eye thousands of parsecs a frame.)
  */
 export class GalaxyGlow {
+  /** the map shown: whole, and from one place (`cam`) */
   target: WebGLCubeRenderTarget;
-  /** galactocentric position (pc) each face was last rendered from */
-  private facePos: (Vector3 | null)[] = [null, null, null, null, null, null];
-  private face = 0;
+  /** the map being drawn, the faces of it done, and the place (galactocentric pc) it is drawn from */
+  private back: WebGLCubeRenderTarget;
+  private backDone: boolean[] = [false, false, false, false, false, false];
+  private backPos: Vector3 | null = null;
+  private shown = false;
   private scene = new Scene();
   private cubeCam: CubeCamera;
   private mat: ShaderMaterial;
   private seed = 0;
   /** headset quality: smaller map, fewer samples */
   vr = false;
-  /** last position the map was rendered from (galactocentric pc), for the sky's exposure curve */
+  /** the place the map shown was drawn from (galactocentric pc), for the sky's exposure curve */
   readonly cam = new Vector3();
 
   constructor() {
     this.target = make(512);
-    this.cubeCam = new CubeCamera(0.1, 10, this.target);
+    this.back = make(512);
+    this.cubeCam = new CubeCamera(0.1, 10, this.back);
     this.mat = new ShaderMaterial({
       name: 'galaxy-glow', vertexShader: GLOW_VERT, fragmentShader: glowFrag(DUST_NORM),
       uniforms: {
@@ -43,9 +63,9 @@ export class GalaxyGlow {
     this.scene.add(m);
   }
 
-  /** true once every face has been rendered at least once */
+  /** true once a whole map has been drawn */
   get ready(): boolean {
-    return this.facePos.every((p) => p !== null);
+    return this.shown;
   }
 
   /** Compile the ray-marching shader ahead of its first use. */
@@ -55,7 +75,7 @@ export class GalaxyGlow {
     const prevTarget = gl.getRenderTarget();
     const xrWas = gl.xr.enabled;
     gl.xr.enabled = false;
-    gl.setRenderTarget(this.target, 0);
+    gl.setRenderTarget(this.back, 0);
     void gl.compileAsync(this.scene, this.cubeCam.children[0] as PerspectiveCamera).catch(() => undefined);
     gl.xr.enabled = xrWas;
     gl.setRenderTarget(prevTarget);
@@ -68,49 +88,59 @@ export class GalaxyGlow {
   }
 
   /**
-   * Re-render up to `maxFaces` faces that are stale for galactocentric eye position `camGal` (pc).
+   * Go on drawing the map for the eye at galactocentric `camGal` (pc), up to `maxFaces` faces this
+   * frame: a map begun is finished from the place it was begun at, then shown; a new one is begun
+   * once the eye is far enough from the place of the map shown.
    */
   update(gl: WebGLRenderer, camGal: Vector3, maxFaces = 1): void {
     const size = this.vr ? 256 : 512;
     if (this.target.width !== size) {
       this.target.dispose();
+      this.back.dispose();
       this.target = make(size);
-      this.cubeCam.renderTarget = this.target;
-      this.facePos.fill(null);
+      this.back = make(size);
+      this.cubeCam.renderTarget = this.back;
+      this.shown = false;
+      this.backPos = null;
     }
-    const thr = this.threshold(camGal);
-    const stale: number[] = [];
-    for (let k = 0; k < 6; k++) {
-      const f = (this.face + k) % 6;
-      const p = this.facePos[f];
-      if (!p || p.distanceTo(camGal) > thr) stale.push(f);
+    if (!this.backPos) {
+      if (this.shown && this.cam.distanceTo(camGal) <= this.threshold(camGal)) return;
+      this.backPos = camGal.clone();
+      this.backDone.fill(false);
+      this.seed = (this.seed + 1) % 64; // (one jitter for the whole map)
     }
-    if (!stale.length) return;
-    const faces = stale.slice(0, maxFaces);
-    this.face = (faces[faces.length - 1] + 1) % 6;
+    const { faces, whole } = nextFaces(this.backDone, maxFaces);
     if (this.cubeCam.coordinateSystem !== gl.coordinateSystem) {
       this.cubeCam.coordinateSystem = gl.coordinateSystem;
       this.cubeCam.updateCoordinateSystem();
     }
     this.cubeCam.updateMatrixWorld(true);
     const u = this.mat.uniforms;
-    (u.uCam.value as Vector3).copy(camGal);
+    (u.uCam.value as Vector3).copy(this.backPos);
     u.uSteps.value = this.vr ? 80 : 128;
-    u.uSeed.value = this.seed = (this.seed + 1) % 64;
-    this.cam.copy(camGal);
+    u.uSeed.value = this.seed;
     const prevTarget = gl.getRenderTarget();
     const prevFace = gl.getActiveCubeFace();
     const prevMip = gl.getActiveMipmapLevel();
     const xrWas = gl.xr.enabled;
     gl.xr.enabled = false;
     for (const f of faces) {
-      this.target.texture.generateMipmaps = f === faces[faces.length - 1];
-      gl.setRenderTarget(this.target, f);
+      // (the mip levels are made once, with the last face)
+      this.back.texture.generateMipmaps = whole && f === faces[faces.length - 1];
+      gl.setRenderTarget(this.back, f);
       gl.render(this.scene, this.cubeCam.children[f] as PerspectiveCamera);
-      this.facePos[f] = camGal.clone();
+      this.backDone[f] = true;
     }
     gl.xr.enabled = xrWas;
     gl.setRenderTarget(prevTarget, prevFace, prevMip);
+    if (whole) {
+      // show it, and draw the next one into the map it replaces
+      [this.target, this.back] = [this.back, this.target];
+      this.cubeCam.renderTarget = this.back;
+      this.cam.copy(this.backPos);
+      this.backPos = null;
+      this.shown = true;
+    }
   }
 }
 

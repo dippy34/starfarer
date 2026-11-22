@@ -56,7 +56,7 @@ procedural generation for the rest. Never use SpaceEngine's own files.
   buffer — the layer asks for NeverDepth there on purpose.
 * Milky Way (done): `src/universe/Galaxy.ts` (parametric model, CPU reference `glowColumn`),
   `src/render/GalaxyLayer.ts` + `shaders/galaxy.ts` (glow ray-marched into a cube, one face per frame
-  while moving), `Sky.updateWith` cross-fades the NASA map to it 120-700 pc from the Sun (calibration
+  while moving, into a second cube shown once it is whole), `Sky.updateWith` cross-fades the NASA map to it 120-700 pc from the Sun (calibration
   constants in `SkyLayer`). Procedural stars: `src/universe/ProceduralStars.ts` (bands x cells,
   deterministic, no catalogue duplicates), generated in `src/workers/stars.worker.ts`, drawn by
   `src/render/ProceduralStarLayer.ts`. "Milky Way" destination: `src/universe/MilkyWay.ts`.
@@ -998,6 +998,15 @@ above is validated against JPL Horizons and stays as it is unless something is w
        its limb hazed by its air shell, as its card's picture always showed it. The mosaic
        (`textures/titan.jpg`, 1.4 MB) is no longer downloaded by the app; the pipeline still
        makes it. `scripts/places.mjs` checks the colour and that no map is bound (16 checks).
+     - *A hard seam across the Milky Way's glow during the flight to it* (Search "Milky Way", Go
+       there). The glow's cube map was redrawn a face a frame, in the map being shown, each face
+       from where the eye was that frame; the app's flight crosses thousands of parsecs a frame,
+       so faces from places far apart met along their edges. The map is now drawn into a second
+       cube, all six faces from one place, and the two are swapped once it is whole
+       (`GalaxyGlow.update`): the map shown is always of one place, at most eleven frames behind
+       a fast flight. One more cube of the same size (half floats, 512 px faces: some 17 MB of
+       the GPU's memory; 4 MB in a headset). `tests/galaxyglow.test.ts` runs the updates against a
+       stand-in renderer and fails on the code of before (a map of two places).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
    touch already), missions and the benchmark as screens of the app.
