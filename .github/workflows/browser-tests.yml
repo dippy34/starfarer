@@ -1,0 +1,131 @@
+# The browser suites (scripts/<suite>.mjs) on GitHub's runners, one runner per suite, all at once.
+#
+# Runs on a push to a throwaway branch `claude/test-**` (never on main or the deploy branch, and it
+# deploys nothing). scripts/remote-test.mjs pushes such a branch, waits for this run, fetches the
+# results and deletes the branch: see docs/notes/testing.md.
+#
+# Which suites: those scripts/affected.mjs picks for the change against claude/friendly-hypatia-up418z,
+# unless the head commit's message has a trailer line `Suites: all` or `Suites: flight walk`.
+#
+# The runner's Chromium is the one the pinned @playwright/test installs (CHROMIUM_PATH unset), not
+# the container's: the suites measure within a run, never against stored pictures, so nothing here
+# compares with pixels taken elsewhere.
+name: Browser tests
+
+on:
+  push:
+    branches:
+      - 'claude/test-**'
+
+permissions:
+  contents: read
+
+# a newer push to the same test branch replaces a run still going
+concurrency:
+  group: browser-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_BRANCH: claude/friendly-hypatia-up418z
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      suites: ${{ steps.pick.outputs.suites }}
+    steps:
+      # (history and trees only, and only scripts/ checked out: the data is not needed to choose)
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: scripts
+      - id: pick
+        run: |
+          git fetch --quiet --filter=blob:none origin "$BASE_BRANCH"
+          trailer="$(git log -1 --format=%B "$GITHUB_SHA" | sed -n 's/^Suites:[[:space:]]*//Ip' | tail -1)"
+          if [ "$trailer" = "all" ]; then
+            list="$(node scripts/affected.mjs --all)"
+          elif [ -n "$trailer" ]; then
+            list="$trailer"
+          else
+            list="$(node scripts/affected.mjs --base FETCH_HEAD --why)"
+          fi
+          echo "suites: $list (trailer: '${trailer}')"
+          json="$(node -e 'const s = process.argv[1].split(/[\s,]+/).filter(Boolean); console.log(JSON.stringify([...new Set(s)]))' "$list")"
+          echo "suites=$json" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.suites != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 1
+          # (nearly all of it is JPEG, PNG and packed binary already)
+          compression-level: 0
+
+  suite:
+    needs: [plan, build]
+    if: needs.plan.outputs.suites != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
+    name: ${{ matrix.suite }}
+    steps:
+      # the scripts, package.json and vite.config.ts (root files come with a sparse checkout); not the data
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - run: npx playwright install --with-deps chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist
+      - name: Serve the build
+        run: |
+          nohup npx vite preview --port 4173 --strictPort --host 127.0.0.1 > preview.log 2>&1 &
+          for i in $(seq 60); do curl -sf -o /dev/null http://127.0.0.1:4173/ && exit 0; sleep 1; done
+          cat preview.log; exit 1
+      - name: Run ${{ matrix.suite }}
+        run: |
+          mkdir -p out
+          start=$(date +%s)
+          set +e
+          node scripts/${{ matrix.suite }}.mjs http://127.0.0.1:4173/ out 2>&1 | tee out/${{ matrix.suite }}.log
+          rc=${PIPESTATUS[0]}
+          echo "exit $rc after $(( $(date +%s) - start )) s" | tee -a out/${{ matrix.suite }}.log
+          exit $rc
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.suite }}-${{ github.sha }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: warn
