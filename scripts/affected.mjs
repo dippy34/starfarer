@@ -5,7 +5,7 @@
 //   node scripts/affected.mjs --base <ref>              the files changed since <ref> (merge base), then as above
 //   node scripts/affected.mjs --all                     the full set
 //   add --why to see which rule picked each suite
-//   node scripts/affected.mjs --matrix <suites...>      the jobs for those suites, as JSON (the workflow's matrix)
+//   node scripts/affected.mjs --matrix <suites...>      the jobs for those suites, as JSON (the workflow's matrix; "none": [])
 //
 // The map is deliberately coarse and errs towards running more: everything the explorer does goes
 // through src/app/App.ts, so a file not named below (and anything that boots the app, draws every
@@ -106,7 +106,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   let files = args.filter((a) => !a.startsWith('--'));
   if (args.includes('--all')) { console.log(FULL.join(' ')); process.exit(0); }
   if (args.includes('--matrix')) {
-    const asked = files.flatMap((f) => f.split(/[\s,]+/)).filter(Boolean);
+    // ("none": no jobs at all; a push with `Suites: none` only supersedes the run before it on its branch)
+    const asked = files.flatMap((f) => f.split(/[\s,]+/)).filter((f) => f && f !== 'none');
     const unknown = asked.filter((s) => !FULL.includes(s));
     if (unknown.length) { console.error(`not a suite: ${unknown.join(' ')} (the suites: ${FULL.join(' ')})`); process.exit(2); }
     console.log(JSON.stringify(matrix([...new Set(asked)])));
