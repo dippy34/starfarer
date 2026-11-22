@@ -175,6 +175,20 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   check('a star goes by its catalogue number on its card', !!st0 && st.card === st.name && !/^(unnamed star|star)$/i.test(st.card ?? ''), JSON.stringify({ ...st0, ...st }));
 }
 
+// 4e. Search: "black" lists the black holes people know first; "proxima" lists Proxima once (it
+// was there twice, as the star and as the host of its planets); the tour has the famous holes
+{
+  const st = await page.evaluate(async () => {
+    const a = window.app;
+    a.searchItems('black'); a.searchItems('proxima');
+    await new Promise((r) => setTimeout(r, 3000)); // (the catalogue's results arrive later)
+    const proxima = a.searchItems('proxima').map((r) => r.label);
+    return { black: a.searchItems('black').slice(0, 3).map((r) => r.label), proxima, tour: a.tourItems().map((t) => t.label).filter((l) => /\*|Cygnus X-1/.test(l)) };
+  });
+  check('search ranks the famous black holes first, and lists Proxima once', st.black.join() === 'Sagittarius A*,M87*,Cygnus X-1'
+    && st.proxima.filter((l) => /^Proxima Cen(tauri)?$/.test(l)).length === 1 && st.tour.join() === 'Sagittarius A*,M87*,Cygnus X-1', JSON.stringify(st));
+}
+
 // 5. Search and go to a star
 await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');

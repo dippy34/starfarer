@@ -643,7 +643,7 @@ temperature, and size as well as mass.
 running (a build, not the dev server: an edit reloads the page under a running suite), each of
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
-49), `interact` (mouse and keys; 14), `verify` (35 scenes), `exposure` (looking away from bright
+49), `interact` (mouse and keys; 15), `verify` (35 scenes), `exposure` (looking away from bright
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
@@ -1339,6 +1339,13 @@ above is validated against JPL Horizons and stays as it is unless something is w
        "5.066 million km": the card wrote a star's (and a galaxy's, a nebula's) distance in light
        years whatever it was. It now uses the chip's words (`distanceText`: km, AU, then light
        years), measured to the star's surface like a world's (`destinations.ts`).
+     - *Search* (B4, E6): "proxima" listed the star twice, as the catalogue's star and as the
+       host of its planets in the exoplanet archive; a host that is a named star is now listed
+       once, as that star, saying "star with 2 known planets" (`Systems.search`,
+       `Systems.knownPlanets`). "black" listed fourteen obscure X-ray binaries: every black hole
+       matched the word alike, and the ties kept the catalogue's order. The curated holes now
+       rank in the order of the Explore list (`HOLES`: Sagittarius A*, M87*, Cygnus X-1, ...),
+       and the tour has those three beside Gaia BH1. `scripts/interact.mjs` (15 checks).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

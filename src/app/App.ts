@@ -68,7 +68,7 @@ import { type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
 import { canvasRatio, leanDevice } from '../core/device';
-import { describe, distanceText, distanceTo, moonWords, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
+import { describe, distanceText, distanceTo, HOLES, moonWords, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
 import { Systems } from './Systems';
 import { VRSupport } from './VR';
 import { Walk } from './Walk';
@@ -807,6 +807,9 @@ export class App {
       { label: 'Total lunar eclipse', detail: '3 March 2026 · the Moon in Earth\'s shadow', id: 'tour:eclipse' },
       { label: 'The brightest comet now', detail: 'coma, tails and its nucleus up close', id: 'tour:comet' },
       { label: 'Proxima Cen b', detail: 'nearest exoplanet · land on it', id: 'tour:proxima' },
+      { label: 'Sagittarius A*', detail: 'the black hole at the heart of the Milky Way', id: `bh:${idx(this.blackHoles.map((h) => ({ name: h.name })), 'Sagittarius A*')}` },
+      { label: 'M87*', detail: 'the first black hole ever pictured (2019)', id: `bh:${idx(this.blackHoles.map((h) => ({ name: h.name })), 'M87*')}` },
+      { label: 'Cygnus X-1', detail: 'a black hole pulling gas off its giant companion', id: `bh:${idx(this.blackHoles.map((h) => ({ name: h.name })), 'Cygnus X-1')}` },
       { label: 'Gaia BH1', detail: 'the nearest known black hole', id: `bh:${idx(this.blackHoles.map((h) => ({ name: h.name })), 'Gaia BH1')}` },
       { label: 'Orion Nebula', detail: 'a star-forming cloud, 1,300 light years', id: `dso:${idx(this.deepSky.objects, 'Orion Nebula')}` },
       { label: 'Andromeda Galaxy', detail: '2.5 million light years', id: `gx:${this.galaxies.galaxies.findIndex((g) => g.name.startsWith('Andromeda'))}` },
@@ -1370,7 +1373,9 @@ export class App {
       // SIMBAD-style aliases ("NAME Sgr A*", "M  87") match as typed
       const names = [h.name, ...h.data.aliases.map((a) => a.replace(/^NAME\s+/, '').replace(/\s+/g, ' ')), 'black hole'];
       const best = Math.min(...names.map(score).filter((x) => x >= 0));
-      if (Number.isFinite(best)) out.push({ label: h.name, detail: h.supermassive ? 'supermassive black hole' : 'black hole', id: `bh:${i}`, score: best - 0.1 });
+      // (the famous first: in the order of the Explore list, HOLES; a word such as "black" matches them all alike)
+      const fame = HOLES.indexOf(h.name);
+      if (Number.isFinite(best)) out.push({ label: h.name, detail: h.supermassive ? 'supermassive black hole' : 'black hole', id: `bh:${i}`, score: best - 0.1 + (fame >= 0 ? fame * 0.001 : 0.05) });
       if (h.companion && score(h.companion.name) >= 0) out.push({ label: h.companion.name, detail: 'star orbiting a black hole', id: `bhc:${i}`, score: score(h.companion.name) + 0.3 });
     });
     for (const st of this.named.list) {
@@ -1379,7 +1384,8 @@ export class App {
         const s = score(nm);
         if (s >= 0 && (best < 0 || s < best)) best = s;
       }
-      if (best >= 0) out.push({ label: st.names[0], detail: `star · ${st.names.slice(1, 3).join(', ')}`, id: `star:${st.index}`, score: best + (st.proper ? 0 : 0.3) });
+      const planets = best >= 0 ? this.systems.knownPlanets(st.index) : 0;
+      if (best >= 0) out.push({ label: st.names[0], detail: planets ? `star with ${planets} known planet${planets > 1 ? 's' : ''} · ${st.names.slice(1, 3).join(', ')}` : `star · ${st.names.slice(1, 3).join(', ')}`, id: `star:${st.index}`, score: best + (st.proper ? 0 : 0.3) });
     }
     out.push(...this.systems.search(q, score));
     this.deepSky.objects.forEach((o, i) => {

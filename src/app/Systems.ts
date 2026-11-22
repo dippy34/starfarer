@@ -31,6 +31,8 @@ export class Systems {
   private links = new Map<string, number>();
   /** archive index -> key of the catalogue star that carries its planets */
   private claimed = new Map<number, string>();
+  /** named catalogue star (index into NamedStars.list) -> its archive system, filled by indexNamed() */
+  private systemOfNamed = new Map<number, number>();
   /** archive index -> named catalogue star (by designation), filled by indexNamed() */
   private named = new Map<number, number>();
   loaded = false;
@@ -60,9 +62,15 @@ export class Systems {
     named.list.forEach((st, idx) => {
       for (const nm of st.names) {
         const i = this.byName.get(norm(nm));
-        if (i !== undefined && !this.named.has(i)) this.named.set(i, idx);
+        if (i !== undefined && !this.named.has(i)) { this.named.set(i, idx); this.systemOfNamed.set(idx, i); }
       }
     });
+  }
+
+  /** How many confirmed planets the named catalogue star `namedIndex` (into NamedStars.list) is known to have: 0 if none. */
+  knownPlanets(namedIndex: number): number {
+    const i = this.systemOfNamed.get(namedIndex);
+    return i === undefined ? 0 : this.archive[i].planets.length;
   }
 
   /** Index into NamedStars.list of the catalogue star hosting archive system `i`, if known. */
@@ -204,7 +212,8 @@ export class Systems {
         const sc = score(p.name);
         if (sc >= 0) out.push({ label: p.name, detail: `exoplanet · ${(s.distPc * 3.2616).toFixed(0)} ly`, id: `xp:${i}:${k}`, score: sc + 0.15 });
       });
-      const sh = score(s.host);
+      // (a host that is a named star of the catalogue is listed as that star, which says it has planets: App.searchItems)
+      const sh = this.named.has(i) ? -1 : score(s.host);
       if (sh >= 0) out.push({ label: s.host, detail: `star with ${s.planets.length} known planet${s.planets.length > 1 ? 's' : ''}`, id: `xh:${i}`, score: sh + 0.1 });
     });
     return out;
