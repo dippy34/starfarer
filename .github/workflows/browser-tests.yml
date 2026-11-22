@@ -105,6 +105,9 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - run: npx playwright install --with-deps chromium
+      # the full Chromium (new headless), as in the agents' container, not the headless shell
+      - run: echo "CHROMIUM_PATH=$(node -e "import('@playwright/test').then((m) => console.log(m.chromium.executablePath()))")" >> "$GITHUB_ENV"
+      - run: $CHROMIUM_PATH --version
       - uses: actions/download-artifact@v4
         with:
           name: dist-${{ github.sha }}

@@ -2,13 +2,14 @@
 // Run the browser suites on GitHub's runners (.github/workflows/browser-tests.yml) for the commit
 // checked out here, and bring the results back: pass/fail per suite, the logs and the pictures.
 //
-//   node scripts/remote-test.mjs [--suites "flight walk" | --suites all] [--name you] [--out dir] [--keep]
+//   node scripts/remote-test.mjs [--suites "flight walk" | --suites all] [--name you] [--out dir] [--delete]
 //
 // 1. pushes HEAD (or, with --suites, a commit on top of it with the same files and a `Suites:`
 //    trailer; your branch does not move) to a throwaway branch claude/test-<name>-<sha>-<stamp>
 // 2. waits for the workflow's run on it, printing each suite as it finishes
 // 3. downloads every suite's artifact into <out>/<suite>/ (default out/remote-<sha>), prints a summary
-// 4. deletes the branch (--keep leaves it)
+// 4. with --delete, deletes the branch. (Not by default: in the agents' container the git proxy
+//    refuses branch deletion with HTTP 403. The branch is printed; its artifacts expire in 3 days.)
 // Without --suites the workflow runs what scripts/affected.mjs picks for the change against
 // claude/friendly-hypatia-up418z (or what a `Suites:` trailer in HEAD's own message says).
 // Exit code 0 only when every suite that ran passed. Uncommitted changes are NOT tested.
@@ -19,9 +20,12 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+// (not a browser suite: keep out of the machine-wide count, `pgrep -fc '^node (scripts|trailer)/...'`)
+process.title = 'remote-test';
+
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
-const keep = args.includes('--keep');
+const del = args.includes('--delete');
 const suitesArg = opt('--suites', null);
 const name = (opt('--name', process.env.REMOTE_TEST_NAME || 'helper')).replace(/[^a-z0-9-]/gi, '-').toLowerCase();
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8' }).trim();
@@ -101,8 +105,8 @@ try {
   for (const j of bad.filter((j) => ['plan', 'build'].includes(j.name))) console.log(`FAIL ${j.name}: ${j.html_url}`);
   code = bad.length ? 1 : 0;
 } finally {
-  if (!keep) {
+  if (del) {
     try { git('push', '--quiet', 'origin', '--delete', branch); say(`deleted ${branch}`); } catch (e) { say(`could not delete ${branch}: ${e.message}`); }
-  }
+  } else say(`left the branch ${branch} (--delete deletes it where pushing a deletion is allowed)`);
 }
 process.exit(code);
