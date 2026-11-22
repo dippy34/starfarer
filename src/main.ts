@@ -29,6 +29,8 @@ async function main(): Promise<void> {
     await app.firstView(progress);
     const menu = StartMenu.wanted() ? new StartMenu(app) : null;
     if (menu) window.startMenu = menu;
+    // (More, Start menu: the title screen again, over the explorer as it is)
+    app.openMenu = () => { window.startMenu = new StartMenu(app); };
     installPerfTools(app, () => menu?.start());
     // (from here the explorer is ready to be used: the test scripts wait for this)
     window.app = app;

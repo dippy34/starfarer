@@ -121,9 +121,14 @@ Add it to the home screen to open it without the browser around it.
 | Twist | Roll the view |
 | Tap | Select what you tapped (or the name beside it) · tap empty sky to let go |
 | Double-tap | Fly there; on the world you are already at, come six times closer to the spot you tapped |
-| **Orbit / Look** button | What one finger does: turn round the world, or look around |
+| **Drag: orbit / Drag: look** button | Says what one finger does now (turn round the world, or look around); a tap changes it |
+| **Your ship** / **Fly there in your ship** | Board the spaceship; with something selected, fly there in it (the drive set strong enough for the trip) |
 
-In the ship (More → Spaceship):
+**More** starts with **How to move** (every touch), the **Missions** (goals to fly to, and how many
+are done) and the **Start menu**. After a long trip the **Time** panel offers **Back to today**; a
+flight to a place on the ground runs in real time (fast time would turn the place away under it).
+
+In the ship (the ship button, or More → Spaceship):
 
 | Touch | Action |
 |---|---|

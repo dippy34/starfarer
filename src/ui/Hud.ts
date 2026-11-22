@@ -19,8 +19,10 @@ export type HudAction =
   | 'go' | 'centre' | 'deselect' | 'stop' | 'home'
   | 'pause' | 'faster' | 'slower' | 'reverse' | 'now'
   | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot'
-  // board the ship (src/game/Game.ts) or leave it
-  | 'ship'
+  // board the ship (src/game/Game.ts) or leave it; board it and fly to the selection in it
+  | 'ship' | 'ship-go'
+  // back to today's date; back to the title screen
+  | 'today' | 'menu'
   // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
@@ -107,6 +109,10 @@ export interface HudState {
    * was asked ('' when it is). Null outside the ship.
    */
   ship?: { chip: string; rows: [string, string][]; why: string } | null;
+  /** the missions (src/game/Missions.ts): how many are done, and each with whether it is */
+  missions?: { done: number; total: number; items: { title: string; detail: string; done: boolean }[] } | null;
+  /** the date shown is far from today's: the words of the way back ('' when it is today, or cannot go back) */
+  today?: string;
   /** small print: frame rate, stars, the data in use */
   status: string;
 }
@@ -178,7 +184,8 @@ const TEMPLATE = `
   <div class="move-handle" hidden></div>
   <div class="hud-dock">
     <div class="hud-fabs">
-      <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What one finger does: orbit, or look around">${ICON.orbit}${ICON.look}<span></span></button>
+      <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What dragging one finger does now: turn round the world, or look around. Tap to change">${ICON.orbit}${ICON.look}<span></span></button>
+      <button class="fab ship-fab" type="button" data-act="ship-go">${ICON.ship}<span>Your ship</span></button>
     </div>
     <div class="hud-slot">
       <div class="hud-flight" hidden><span></span><button type="button" data-act="stop">${ICON.stop}Stop</button></div>
@@ -244,6 +251,7 @@ const TEMPLATE = `
         <div class="sheet-grab"></div>
         <div class="sheet-head"><h2>Time</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
         <div class="time-now"><div class="time-date"></div><div class="time-clock"></div><div class="time-rate"></div></div>
+        <button class="btn time-today" type="button" data-act="today" hidden>${ICON.now}<span>Back to today</span></button>
         <div class="ship-time" hidden><dl></dl><p></p></div>
         <div class="live-sheet" hidden>
           <h3>Live physics</h3>
@@ -272,6 +280,9 @@ const TEMPLATE = `
         <div class="sheet-grab"></div>
         <div class="sheet-head"><h2>${PRODUCT_NAME}</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
         <div class="list">
+          <button class="row" type="button" data-help>${ICON.help}<span class="row-text"><b>How to move</b><small class="touch-only">Every touch, in the ship too</small><small class="mouse-only">Every key and click</small></span>${ICON.chevron}</button>
+          <details class="missions"><summary>${ICON.flag}<span class="row-text"><b>Missions</b><small></small></span>${ICON.chevron}</summary><ul></ul></details>
+          <button class="row" type="button" data-act="menu">${ICON.menu}<span class="row-text"><b>Start menu</b><small>Back to the title screen</small></span>${ICON.chevron}</button>
           <h3>Show</h3>
           <button class="switch" type="button" role="switch" data-act="labels" aria-checked="true"><span><b>Names</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="orbits" aria-checked="true"><span><b>Orbits</b></span><i></i></button>
@@ -586,6 +597,8 @@ export class Hud {
     el.classList.toggle('touch', this.coarse || s.touch);
     el.dataset.mode = s.mode;
     setText(this.$('.place b'), s.place);
+    // (a long name gets a smaller letter before it gets cut: "Apollo 11 landing site" whole on a phone)
+    this.$('.place b').dataset.long = s.place.length > 26 ? '2' : s.place.length > 17 ? '1' : '';
     setText(this.$('.place small'), s.placeDetail);
     const [day, clock] = splitDate(s.date);
     setText(this.$('.clock b'), `${shortDay(day)}, ${clock.slice(0, 5)}`);
@@ -605,7 +618,13 @@ export class Hud {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
     this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
-    setText(this.$('.look-fab span'), s.look ? 'Look' : 'Orbit');
+    // (the button says what dragging does now; a tap changes it)
+    setText(this.$('.look-fab span'), s.look ? 'Drag: look' : 'Drag: orbit');
+    setText(this.$('.ship-fab span'), s.selection && !s.selection.here ? 'Fly there in your ship' : 'Your ship');
+    const today = this.$('.time-today');
+    today.hidden = !s.today;
+    if (s.today) setText(today.querySelector('span')!, s.today);
+    this.renderMissions(s.missions ?? null);
     setText(this.$('.status'), s.status);
     this.renderLive(s);
     this.renderWatch(s);
@@ -613,6 +632,18 @@ export class Hud {
     this.showSlot();
   }
 
+  /** The missions in the More sheet: how many are done, and the list (rebuilt only when it changes). */
+  private renderMissions(m: HudState['missions']): void {
+    const box = this.$('.more .missions');
+    box.hidden = !m;
+    if (!m) return;
+    setText(box.querySelector('summary small')!, `${m.done} of ${m.total} done · goals to fly to`);
+    const key = m.items.map((i) => `${i.done ? 1 : 0}${i.title}`).join('\n');
+    if (key === this.missionsKey) return;
+    this.missionsKey = key;
+    box.querySelector('ul')!.innerHTML = m.items.map((i) => `<li class="${i.done ? 'done' : ''}"><b>${i.done ? '✓ ' : ''}${escapeHtml(i.title)}</b><small>${escapeHtml(i.detail)}</small></li>`).join('');
+  }
+  private missionsKey = '';
   /** Watching what a change does: the chip above the panel, with Stop while it runs, and Replay once it is over. */
   private renderWatch(s: HudState): void {
     const chip = this.$('.hud-watch'), w = s.watch;
@@ -817,6 +848,7 @@ export class Hud {
     else if ('close' in d) this.closeSheet();
     else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
     else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
+    else if ('help' in d) this.$('.more .help-title').scrollIntoView({ block: 'start', behavior: 'smooth' });
     else if ('massReal' in d) { this.slider.value = '0'; this.host.massHeld(true); this.host.setMass(0); this.host.massHeld(false); }
     else if ('live' in d) { if (this.state?.live) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); } }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }

@@ -651,7 +651,9 @@ export class App {
       case 'faster': this.timeFaster(); break;
       case 'slower': this.timeSlower(); break;
       case 'reverse': this.timeReverse(); break;
-      case 'now': this.realTime(); break;
+      case 'now': case 'today': this.realTime(); break;
+      case 'ship-go': this.shipThere(); break;
+      case 'menu': if (this.openMenu) { this.hud.closeSheet(); this.openMenu(); } break;
       case 'labels': this.labels.enabled = !this.labels.enabled; this.hud.toast(`Names ${this.labels.enabled ? 'on' : 'off'}`); break;
       case 'orbits': this.orbits.enabled = !this.orbits.enabled; this.hud.toast(`Orbits ${this.orbits.enabled ? 'on' : 'off'}`); break;
       case 'minor': this.orbits.showMinor = !this.orbits.showMinor; this.hud.toast(`Orbits of asteroids and comets ${this.orbits.showMinor ? 'on' : 'off'}`); break;
@@ -771,14 +773,34 @@ export class App {
     this.rateIndex = 0;
     while (this.rateIndex + 1 < RATE_STEPS.length && RATE_STEPS[this.rateIndex + 1] <= next) this.rateIndex++;
   }
+  /** the title screen, opened again (src/main.ts sets it: the menu belongs to the page) */
+  openMenu: (() => void) | null = null;
+
+  /**
+   * "Your ship" (or "Fly there in your ship", with something selected): board the ship, and fly to
+   * the selection in it on the reactionless drive, set as strong as the trip needs (Flight.driveFor:
+   * enough to steer against gravity here, and to get there within about a day aboard).
+   */
+  shipThere(): void {
+    const sel = this.selection;
+    if (!this.game.active) this.game.setMode(this.input.touch ? 'chase' : 'cockpit');
+    const f = this.game.flight;
+    if (!sel || !f.on) return;
+    if (sel.upos.sub(this.rig.upos, new Vector3()).length() < Math.max(sel.radius * 6, 1e4)) return;
+    f.driveFor(sel);
+    f.autopilotTo(sel);
+  }
+
   realTime(): void {
-    // (in the ship the date cannot jump: the worlds would move from under it. Only the pace goes back)
+    // (in the ship too: back to today's date, the ship carried along with the world it was near, as
+    // a jump of the explorer's would; Flight.carryToNow)
     if (this.game.flight.on) {
+      this.game.flight.carryToNow(() => this.clock.setUtcNow());
       this.rateIndex = 0;
       this.rateSign = 1;
       this.clock.rate = 1;
       this.clock.paused = false;
-      this.hud.toast('Real time aboard (the date stays: the ship cannot jump in time)');
+      this.hud.toast('Back to today, real time: the ship goes along with the world it was near');
       return;
     }
     this.takeTime();
@@ -1268,6 +1290,14 @@ export class App {
       this.rig.flyTo(obj, 60, undefined, true, obj.approachDir());
       return;
     } else if (obj instanceof Landmark) {
+      // (with time running fast the ground would turn the place away under the flight: it would seem
+      // to fly backwards. The flight is made in real time)
+      if (!this.clock.paused && Math.abs(this.clock.rate) > 1 && !this.physics.on) {
+        this.rateIndex = 0;
+        this.rateSign = 1;
+        this.clock.rate = 1;
+        this.hud.toast(`Real time for the flight: the ground turns under ${obj.name}`, 3);
+      }
       // arrive above the place from the side lit by the Sun, looking down at it
       this.rig.flyTo(obj, obj.def.view * fit, undefined, true, obj.approachDir(this.system.sun.upos.sub(obj.world.upos, new Vector3()).normalize()));
       return;
@@ -2813,6 +2843,9 @@ export class App {
       mode: this.walk.active ? 'walk' : this.game.active ? 'ship' : 'explore',
       touch: this.input.touch,
       ship: flight.on ? flight.timeReport() : null,
+      missions: { done: this.game.missions.doneCount, total: this.game.missions.total, items: this.game.missions.list },
+      // (a day or more from today, and the date is the explorer's to set: not in live physics)
+      today: !this.physics.on && Math.abs(c.jdTdb - (Date.now() / 86_400_000 + 2_440_587.5)) > 1 ? 'Back to today' : '',
       status: [
         `${this.fps.toFixed(0)} fps`,
         `${(drawn / 1e3).toFixed(0)}k stars drawn, ${(loaded / 1e6).toFixed(2)}M of ${(total / 1e6).toFixed(2)}M loaded`,

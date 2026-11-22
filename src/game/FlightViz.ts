@@ -107,6 +107,20 @@ export class FlightViz {
   private tAttr = new Float32Array(MAX_POINTS);
   private mat: ShaderMaterial;
   private tags: Tag[] = [];
+
+  /**
+   * After update: a tag whose box on the screen (`project`: camera-relative point to CSS px) meets
+   * a part of the interface (`covers`), or runs off the screen, is not drawn.
+   */
+  clearOf(covers: readonly { l: number; t: number; r: number; b: number }[], project: (p: Vector3) => { x: number; y: number } | null, width: number, height: number): void {
+    for (const t of this.tags) {
+      if (!t.mesh.visible) continue;
+      const p = project(t.mesh.position);
+      const w = TAG_CSS_WIDTH, h = (w * 192) / 512;
+      const box = p && { l: p.x - w / 2, r: p.x + w / 2, t: p.y - h / 2, b: p.y + h / 2 };
+      if (!box || box.l < 0 || box.t < 0 || box.r > width || box.b > height || covers.some((c) => box.l < c.r + 4 && box.r > c.l - 4 && box.t < c.b + 4 && box.b > c.t - 4)) t.mesh.visible = false;
+    }
+  }
   private screenMat: ShaderMaterial;
   private shown: Predictor | null = null;
   private shownCount = -1;
@@ -227,7 +241,10 @@ export class FlightViz {
       if (dist <= 0) continue;
       const D = 300;
       t.mesh.position.copy(world).multiplyScalar(D / dist);
-      const size = (this.cssPixel > 0 ? this.cssPixel * TAG_CSS_WIDTH : Math.max(pixelAngle * 150, 0.004)) * D;
+      // (a wide view stretches what is near its edges, by 1/cos² of the angle off its axis: a tag there
+      // is drawn that much smaller, to be the size of the names everywhere)
+      const off = Math.max(0.25, _x.set(0, 0, -1).applyQuaternion(viewQuat).dot(world) / dist);
+      const size = (this.cssPixel > 0 ? this.cssPixel * TAG_CSS_WIDTH : Math.max(pixelAngle * 150, 0.004)) * D * off ** 1.5;
       t.mesh.scale.setScalar(size);
       t.mesh.quaternion.copy(viewQuat);
       // shift so the diamond (not the centre) sits on the point

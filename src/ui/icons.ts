@@ -37,6 +37,10 @@ export const ICON = {
   move: svg('<path d="M12 3v18M3 12h18"/><path d="m9.3 5.7 2.7-2.7 2.7 2.7M9.3 18.3l2.7 2.7 2.7-2.7M5.7 9.3 3 12l2.7 2.7M18.3 9.3 21 12l-2.7 2.7"/>'),
   live: svg('<path d="M2.5 12h4l2.5-6.5 4.5 13 2.5-6.5h5.5"/>'),
   back: svg('<path d="M9 5.5 4 10.5l5 5"/><path d="M4 10.5h10.5a5 5 0 0 1 0 10H11"/>'),
+  // the ship (a craft seen from above), missions (a flag), the start menu (a home)
+  ship: svg('<path d="M12 2.8c2 2.2 3 4.9 3 8.2v5.2l3.6 2.6v1.7l-3.9-1.3-1.3 2H10.6l-1.3-2-3.9 1.3v-1.7L9 16.2V11c0-3.3 1-6 3-8.2z"/><circle cx="12" cy="9.5" r="1.4"/>'),
+  flag: svg('<path d="M5.5 21V3.5"/><path d="M5.5 4.2c3.8-1.8 6.3 1.8 10.5 0v8.3c-4.2 1.8-6.7-1.8-10.5 0"/>'),
+  menu: svg('<path d="m3.5 11 8.5-7 8.5 7"/><path d="M6 9.4V20h12V9.4"/><path d="M10 20v-5.5h4V20"/>'),
   // a step back (the last change undone); a turn round and play (a change watched again)
   undo: svg('<path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M5 4.5V8.4h3.9"/>'),
   replay: svg('<path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M19 4.5V8.4h-3.9"/><path d="M10.4 9.3v5.4l4.3-2.7z" fill="currentColor"/>'),

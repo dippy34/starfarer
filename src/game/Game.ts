@@ -110,8 +110,12 @@ export class Game {
     this.hud.group.visible = m === 'cockpit';
     this.ship.group.visible = m === 'chase';
     this.app.rig.inertia = m === 'off' ? 0 : 1.2;
-    if (m === 'off') this.flight.disable();
-    else if (!this.flight.on) {
+    let toReal = false;
+    if (m === 'off') {
+      // (the ship's time warp is not the explorer's: leaving, time goes back to real time, the date kept)
+      if (this.flight.on && !this.app.clock.paused && this.app.clock.rate !== 1) { this.app.flightClock(); toReal = true; }
+      this.flight.disable();
+    } else if (!this.flight.on) {
       // a flight starts in real time (switching cockpit <-> chase keeps the flight going)
       this.app.flightClock();
       this.flight.enable();
@@ -126,8 +130,11 @@ export class Game {
     } else {
       this.audio.start();
     }
-    const say = m === 'off' ? 'Ship mode off' : m === 'cockpit'
-      ? 'In the ship: real physics. W/S throttle, arrows or drag to turn, Y SAS mode, I reactionless drive, J autopilot, V view'
+    // (on a touch screen, in the words of its controls)
+    const touch = this.app.input.touch;
+    const say = m === 'off' ? (toReal ? 'Ship mode off: time back to real time' : 'Ship mode off')
+      : touch ? 'In the ship: drag to turn it, the lever is the thrust, Stop brakes; choose a place and Go there flies it'
+      : m === 'cockpit' ? 'In the ship: real physics. W/S throttle, arrows or drag to turn, Y SAS mode, I reactionless drive, J autopilot, V view'
       : 'Chase view (V: switch)';
     this.app.hud.toast(say, m === 'cockpit' ? 4 : 2.2);
     if (this.app.vr.active) this.app.vr.flash(m === 'off' ? 'Ship mode off' : 'Real physics: left grip throttle, right stick steer, left stick RCS, stick click SAS');
@@ -193,6 +200,8 @@ export class Game {
     // (apsides are given as heights over the surface; for a black hole, from its centre)
     const R = D && D.rs === 0 ? f.core.groundR || D.radius : 0;
     this.viz.update(f.predictor, f.predictor.frame?.upos ?? null, app.rig.upos, app.view.quat, app.view.pixelAngle, !travelling && !!D, R);
+    // (no tag of the orbit's under the interface's cards and chips, nor half off the screen)
+    if (!app.vr.active) this.viz.clearOf(app.hud.covers(), (p) => app.project(p), app.view.width, app.view.height);
     this.viz.fitScreen(app.renderer.camera, app.vr.active);
     // vignette from about 3 g (gentle: comfort in VR), red-out from tides
     const vig = Math.max(0, Math.min(1, (r.gForce - 3) / 7)) * (app.vr.active ? 0.6 : 1) + Math.min(0.6, r.tidal / (100 * G0));
@@ -225,7 +234,13 @@ export class Game {
     if (sel && !this.docked) {
       const rel = sel.upos.sub(rig.upos, new Vector3());
       const d = rel.length();
-      tdir = rel.normalize().applyQuaternion(inv);
+      // (its bracket and distance, 96 x 72 CSS px about it, not under the interface nor off the screen)
+      const p = app.vr.active ? null : app.project(rel);
+      const covers = app.hud.covers();
+      const box = p && { l: p.x - 48, r: p.x + 48, t: p.y - 36, b: p.y + 44 };
+      const clear = app.vr.active || (!!box && box.l >= 0 && box.t >= 0 && box.r <= app.view.width && box.b <= app.view.height
+        && !covers.some((c) => box.l < c.r + 4 && box.r > c.l - 4 && box.t < c.b + 4 && box.b > c.t - 4));
+      tdir = clear ? rel.normalize().applyQuaternion(inv) : null;
       text = `${sel.name}|${formatDistance(Math.max(0, d - sel.radius))}`;
     }
     const v = rig.vel;

@@ -11,7 +11,7 @@ import { type Atmosphere, type Drive, FlightCore, type FlightEvent, G0, SHIP_SPE
 import { Body, type SpaceObject } from '../universe/Body';
 import { ExoPlanet, starProps } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
-import { autopilotRate, brake, inTheWay, placeSlot, type Situation, steer, type Steering } from './Autopilot';
+import { autopilotRate, brake, inTheWay, PLAN, placeSlot, type Situation, steer, type Steering } from './Autopilot';
 import { Station } from './Station';
 
 export type SasMode = 'off' | 'stability' | 'prograde' | 'retrograde' | 'normal' | 'antinormal' | 'radial-out' | 'radial-in' | 'target' | 'anti-target';
@@ -317,6 +317,7 @@ export class Flight {
     ship.shipTime = 0;
     this.paceShipTime = 0;
     this.paceSum = { real: 0, ship: 0, universe: 0, asked: 1 };
+    this.told.clear();
     this.readout.pace = this.readout.paceUniverse = 1;
     this.lastJd = app.clock.jdTdb;
     this.core.landed = null;
@@ -539,6 +540,41 @@ export class Flight {
   }
   private held = false;
 
+  /**
+   * "Fly there in your ship": the reactionless drive, set as strong as the trip needs, never weaker
+   * than it is: enough to steer against gravity here (as the autopilot asks), and for the
+   * flip-and-burn to take at most about a day aboard.
+   */
+  driveFor(target: SpaceObject): void {
+    const ship = this.ship;
+    const d = Math.max(0, target.upos.sub(ship.upos, this.tmp).length() - this.arrivalRadius(target));
+    const g = gravity.gravityAt(ship.upos, _g1).length();
+    let pick = DRIVE_STEPS[DRIVE_STEPS.length - 1];
+    for (const x of DRIVE_STEPS) {
+      const a = x * G0;
+      if (a < ship.driveAccel * (1 - 1e-9) || g > HOLD * a || flipAndBurn(d, PLAN * a, 0).tau > DAY) continue;
+      pick = x;
+      break;
+    }
+    ship.drive = 'reactionless';
+    ship.driveAccel = pick * G0;
+  }
+
+  /**
+   * Back to today's date in the ship (`jump` sets the clock): the ship goes with the world it was
+   * near, at the same place relative to it, and is matched to it again (as a jump of the explorer's
+   * is); far from everything it stays where it is. Any flight under way is let go.
+   */
+  carryToNow(jump: () => void): void {
+    const obj = this.core.frame?.obj as { upos?: UPos } | undefined;
+    this.carry = obj?.upos ? { obj: obj as { upos: UPos }, rel: this.ship.upos.sub(obj.upos, new Vector3()) } : null;
+    this.autopilot = null;
+    this.stopping = null;
+    jump();
+    if (!this.carry) this.dropIntoOrbit(false);
+  }
+  private carry: { obj: { upos: UPos }; rel: Vector3 } | null = null;
+
   /** The throttle from a touch screen's lever (0..1): the pilot takes the controls. */
   setThrottle(x: number): void {
     if (!this.on || this.ending) return;
@@ -710,8 +746,25 @@ export class Flight {
       core.maxSubsteps = Math.ceil(budget * 1.5);
     }
     this.simDt = want;
+    this.tellWhy(rawDt);
     return want;
   }
+
+  /**
+   * Time aboard held back for more than a moment, for a reason not yet told since boarding: say so
+   * once, in words (the Time chip marks it "held", and the Time sheet keeps the reason).
+   */
+  private tellWhy(rawDt: number): void {
+    const why = this.why;
+    this.whyFor = why && why === this.whyLast ? this.whyFor + rawDt : 0;
+    this.whyLast = why;
+    if (!why || this.whyFor < 1.5 || this.told.has(why)) return;
+    this.told.add(why);
+    this.app.hud.toast(`Time aboard runs slower than asked: ${why}`, 4);
+  }
+  private whyLast = '';
+  private whyFor = 0;
+  private told = new Set<string>();
 
   /** How strongly the other bodies perturb the ship relative to the frame body's pull. */
   private perturbationRatio(rel: Vector3): number {
@@ -742,6 +795,16 @@ export class Flight {
   /** After the bodies moved: place the ship, drive the camera, handle events and readouts. */
   after(dt: number): void {
     const app = this.app, rig = app.rig, ship = this.ship, core = this.core;
+    if (this.carry) {
+      // (back to today: the worlds are where they are today; the ship goes with the one it was near)
+      const c = this.carry;
+      this.carry = null;
+      ship.upos.copy(c.obj.upos).addVec(c.rel);
+      rig.upos.copy(ship.upos);
+      this.lastJd = app.clock.jdTdb;
+      this.anchorTrack = null;
+      this.dropIntoOrbit(false);
+    }
     this.universeTime += this.simDt;
     this.measurePace();
     this.exoVelocities((app.clock.jdTdb - this.lastJd) * DAY);
@@ -825,7 +888,7 @@ export class Flight {
     // (what was asked in the explorer's words when it is not one of the ship's steps: "7 days a second")
     const a = Math.abs(r.asked), asked = r.asked < 0 ? 'Time backwards' : WARP_STEPS.includes(a) ? fmtWarp(a) : fmtPace(a);
     const why = r.why && r.asked !== 0 ? `${asked} asked: ${r.why}.` : '';
-    return { chip: `${fmtWarp(r.pace)} aboard`, rows, why };
+    return { chip: `${fmtWarp(r.pace)} aboard${why ? ' · held' : ''}`, rows, why };
   }
 
   // ------------------------------------------------------------------ controls

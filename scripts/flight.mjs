@@ -216,7 +216,7 @@ await page.keyboard.press('KeyJ');
 await frames(3);
 const look = () => page.evaluate(() => { const a = window.app, f = a.game.flight, t = a.findByName('Rigil Kentaurus'); return { d: t.upos.sub(f.ship.upos).length(), jd: a.clock.jdTdb, ap: !!f.autopilot, rig: a.rig.autopilot, r: t.radius, hud: document.querySelector('.fl-panel')?.textContent.replace(/\s+/g, ' ') ?? '' }; });
 let prev = await look(), fastest = 0;
-const toGo = /to go \(flip-and-burn\)/.test(prev.hud) && /aboard/.test(prev.hud) && /universe/.test(prev.hud);
+const toGo = /to go \(speed up, turn, brake\)/.test(prev.hud) && /aboard/.test(prev.hud) && /outside/.test(prev.hud);
 const engaged = prev.ap && !prev.rig;
 const t0 = Date.now();
 while (Date.now() - t0 < 900000) {
@@ -227,7 +227,7 @@ while (Date.now() - t0 < 900000) {
   prev = cur;
   if (!cur.ap) break;
 }
-check('J: the autopilot flies to Rigil Kentaurus, the time to go in both clocks', engaged && toGo, prev.hud.match(/to go[^]*?universe/)?.[0] ?? '');
+check('J: the autopilot flies to Rigil Kentaurus, the time to go in both clocks', engaged && toGo, prev.hud.match(/to go[^]*?outside/)?.[0] ?? '');
 check('never faster than light on the way', fastest > 0.5 && fastest < 1, `fastest closing speed ${fastest.toFixed(6)} c`);
 check('arrives at the star', !prev.ap && prev.d < prev.r * 12, JSON.stringify({ d: prev.d, radius: prev.r, ap: prev.ap }));
 await shot('f14-alpha-cen.png');
@@ -245,6 +245,8 @@ await shot('f14-alpha-cen.png');
   if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
   await f.tap(await at('.hud-tabs [data-tab="more"]'));
   await f.frames(2);
+  await phone.evaluate(() => document.querySelector('.switch[data-act="ship"]').scrollIntoView({ block: 'center' }));
+  await phone.waitForTimeout(300);
   await f.tap(await at('.switch[data-act="ship"]'));
   await f.frames(4);
   st = await phone.evaluate(() => ({ mode: window.app.game.mode, on: window.app.game.flight.on, tabs: getComputedStyle(document.querySelector('.hud-tabs')).display !== 'none', g: window.app.game.flight.ship.driveAccel / 9.80665 }));
@@ -309,12 +311,15 @@ await shot('f14-alpha-cen.png');
   check('the Time chip says the warp the ship\'s clock runs at', st.chip === st.sheet && shown > 0 && Math.abs(shown / st.measured - 1) < 0.25 && /Aboard\s*×/.test(st.rows) && /In the universe/.test(st.rows), JSON.stringify({ chip: st.chip, measured: Math.round(st.measured), rows: st.rows.slice(0, 120) }));
   await phone.screenshot({ path: path.join(outDir, 'f17-phone-time.png'), timeout: 180000 });
 
-  // Now, in the ship: back to real time, the date kept (the worlds would jump from under it)
-  const jdNow0 = await phone.evaluate(() => window.app.clock.jdTdb);
+  // Now, in the ship: back to today and real time, the ship carried along with the world it was near
+  // (here the Sun, 0.1 light years off: the same distance from it after)
+  const sunDist = () => phone.evaluate(() => window.app.game.flight.ship.upos.sub(window.app.system.sun.upos).length());
+  const sun0 = await sunDist();
   await f.tap(await at('.transport [data-act="now"]'));
-  await f.frames(2);
-  st = await phone.evaluate((jd0) => ({ rate: window.app.clock.rate, dDays: window.app.clock.jdTdb - jd0 }), jdNow0);
-  check('Now in the ship: real time aboard, the date kept', st.rate === 1 && Math.abs(st.dDays) < 50, JSON.stringify(st));
+  await f.frames(3);
+  st = await phone.evaluate(() => ({ rate: window.app.clock.rate, fromToday: window.app.clock.jdTdb - (Date.now() / 86400000 + 2440587.5), on: window.app.game.flight.on }));
+  const sun1 = await sunDist();
+  check('Now in the ship: back to today, real time, the ship carried with the Sun', st.rate === 1 && Math.abs(st.fromToday) < 0.01 && st.on && Math.abs(sun1 / sun0 - 1) < 1e-3, JSON.stringify({ ...st, sun0, sun1 }));
   await f.tap(await at('.hud-tabs [data-tab="time"]')); // (closes the sheet: the lever shows again)
   await f.frames(2);
 
@@ -448,19 +453,114 @@ await shot('f14-alpha-cen.png');
         if (x) { const b = x.getBoundingClientRect(); closeOk = !!document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.closest('[data-act="deselect"]'); }
         // the names of the sky drawn now: none of them under any of it
         const names = [...document.querySelectorAll('#labels .label')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => ({ what: e.textContent, ...box(e) }));
-        return { mine, theirs, names, closeOk, W: innerWidth, H: innerHeight };
+        // the orbit's tags (drawn in the view): their boxes on the screen, as the app projects them
+        const a = window.app, vz = a.game.viz;
+        const tags = (vz.tags ?? []).filter((t) => t.mesh.visible).map((t) => { const p = a.project(t.mesh.position); return p ? { what: 'orbit tag', l: p.x - 52, r: p.x + 52, t: p.y - 19.5, b: p.y + 19.5 } : null; }).filter(Boolean);
+        return { mine, theirs, names, tags, closeOk, W: innerWidth, H: innerHeight };
       });
       const meet = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
       const hits = got.mine.flatMap((m) => got.theirs.filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
       const off = got.mine.filter((m) => m.l < 0 || m.t < 0 || m.r > got.W + 0.5 || m.b > got.H + 0.5).map((m) => `${m.what} off screen`);
       const glance = got.mine.some((m) => m.what === 'fl-glance');
-      const under = got.names.filter((n) => [...got.mine, ...got.theirs].some((o) => meet(n, o))).map((n) => n.what);
+      const under = [...got.names, ...got.tags].filter((n) => [...got.mine, ...got.theirs].some((o) => meet(n, o))).map((n) => n.what);
       named += got.names.length;
       if (hits.length || off.length || !got.closeOk || !glance || under.length) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, sheet, hits, off, close: got.closeOk, glance, under });
       if (sheet === 'card' && w === 844 && h === 280) await phone.screenshot({ path: path.join(outDir, 'f21-phone-side-bars.png'), timeout: 180000 });
     }
   }
   check('on every phone size, upright and on its side, bars or not, the ship\'s instruments and controls cover nothing of the interface (the card\'s close button stays free), and no name of the sky is under any of it', bad.length === 0 && named > 50, `${named} names looked at; ${JSON.stringify(bad).slice(0, 600)}`);
+  await ctx.close();
+}
+
+// 16. a new player on a phone (from the playtests): the ship found from a selected place ("Fly
+// there in your ship"), the missions, "How to move" and the start menu in More, back to today in the
+// Time sheet, a flight to a place on the ground in real time, the drag button saying what it does,
+// leaving the ship bringing time back to real time, and the read-out saying why a trip takes years
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?target=Earth`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  const shown = (q) => phone.evaluate((sel) => { const e = document.querySelector(sel); return !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden'; }, q);
+  // the drag button says what one finger does now
+  st = await phone.evaluate(() => document.querySelector('.look-fab span').textContent);
+  check('the drag button says what dragging does now', st === 'Drag: orbit', st);
+  // More: How to move at the top, the missions with their count, the start menu
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(2);
+  const more = await phone.evaluate(() => ({ first: document.querySelector('.more .list').firstElementChild.textContent.trim(), missions: document.querySelector('.more .missions summary').textContent, items: document.querySelectorAll('.more .missions li').length }));
+  await f.tap(await at('.more .missions summary'));
+  await f.frames(2);
+  const open = await phone.evaluate(() => document.querySelector('.more .missions').open);
+  await f.tap(await at('.more [data-help]'));
+  await phone.waitForTimeout(800);
+  const help = await phone.evaluate(() => { const t = document.querySelector('.more .help-title').getBoundingClientRect(), l = document.querySelector('.more .list').getBoundingClientRect(); return t.top >= l.top - 1 && t.bottom <= l.bottom; });
+  check('More: How to move first (and it scrolls to the help), the missions with their count', /^How to move/.test(more.first) && /\d+ of \d+ done/.test(more.missions) && more.items >= 20 && open && help, JSON.stringify({ ...more, open, help }));
+  await phone.evaluate(() => document.querySelector('.more [data-act="menu"]').scrollIntoView({ block: 'center' }));
+  await phone.waitForTimeout(300);
+  await f.tap(await at('.more [data-act="menu"]'));
+  await f.frames(3);
+  const menu = await phone.evaluate(() => !!document.querySelector('#start-menu') && !!window.startMenu?.isOpen);
+  await f.tap(await at('#start-menu .sm-item[data-id="sim"]'));
+  await phone.waitForFunction(() => !window.startMenu.isOpen, null, { timeout: 60000 });
+  await f.frames(3);
+  // (the first steps' card again, where this browser keeps nothing between pages)
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  st = await phone.evaluate(() => ({ hud: !document.querySelector('#hud').classList.contains('ui-off') }));
+  check('More: Start menu opens the title screen, and Simulator comes back', menu && st.hud, JSON.stringify({ menu, ...st }));
+
+  // a flight to a place on the ground with time running fast: made in real time, so it does not run away
+  await phone.evaluate(() => { const a = window.app; a.clock.rate = 86400; });
+  await phone.evaluate(() => { const a = window.app; const lm = a.landmarks.find((l) => l.name === 'Mount Everest'); a.select(lm); a.goTo(lm); });
+  await f.frames(2);
+  st = await phone.evaluate(() => ({ rate: window.app.clock.rate, toast: document.querySelector('.hud-toast').textContent }));
+  check('a flight to a place on the ground drops time to real time, and says so', st.rate === 1 && /Real time for the flight/.test(st.toast), JSON.stringify(st));
+  await phone.evaluate(() => { const a = window.app; a.rig.cancelGoto(); a.select(null); });
+
+  // back to today: offered in the Time sheet when the date is far from it
+  await phone.evaluate(() => { window.app.clock.jdTdb += 400 * 365.25; });
+  await f.tap(await at('.hud-tabs [data-tab="time"]'));
+  await f.frames(3);
+  const offered = await shown('.time-today');
+  await f.tap(await at('.time-today'));
+  await f.frames(3);
+  st = await phone.evaluate(() => ({ fromToday: window.app.clock.jdTdb - (Date.now() / 86400000 + 2440587.5), rate: window.app.clock.rate, gone: document.querySelector('.time-today').hidden }));
+  check('Back to today: offered 400 years on, one tap brings the date back', offered && Math.abs(st.fromToday) < 0.01 && st.rate === 1 && st.gone, JSON.stringify({ offered, ...st }));
+  await f.tap(await at('.hud-tabs [data-tab="time"]'));
+  await f.frames(2);
+
+  // the ship from a selected place: one button, it boards and flies there, the drive set for the trip
+  await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); });
+  await f.frames(4);
+  const label = await phone.evaluate(() => document.querySelector('.ship-fab span').textContent);
+  await f.tap(await at('.ship-fab'));
+  await f.frames(4);
+  st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, drive: fl.ship.drive, g: fl.ship.driveAccel / 9.80665, refusal: fl.autopilotRefusal(), fab: getComputedStyle(document.querySelector('.ship-fab')).display }; });
+  check('"Fly there in your ship": one tap boards the ship and its autopilot flies there, the drive set strong enough', label === 'Fly there in your ship' && st.mode === 'chase' && st.target === 'Moon' && st.drive === 'reactionless' && !st.refusal && st.fab === 'none', JSON.stringify({ label, ...st }));
+  await phone.screenshot({ path: path.join(outDir, 'f23-phone-ship-there.png'), timeout: 180000 });
+
+  // the read-out says why a trip would take years, and what to do
+  await phone.evaluate(() => { const a = window.app, fl = a.game.flight; fl.cancelAutopilot('test'); fl.ship.drive = 'torch'; a.select(a.findByName('Sirius')); });
+  await f.frames(6);
+  await phone.waitForTimeout(300);
+  st = await phone.evaluate(() => document.querySelector('.fl-l4').textContent);
+  check('the glance says why a trip on the torch takes years, and what to do', /torch's fuel can never get you there sooner/.test(st) && /reactionless drive/.test(st), st);
+
+  // leaving the ship with time running fast brings it back to real time
+  await phone.evaluate(() => { window.app.clock.rate = 1e5; });
+  await f.frames(2);
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(2);
+  await phone.evaluate(() => document.querySelector('.switch[data-act="ship"]').scrollIntoView({ block: 'center' }));
+  await phone.waitForTimeout(300);
+  await f.tap(await at('.switch[data-act="ship"]'));
+  await f.frames(3);
+  st = await phone.evaluate(() => ({ mode: window.app.game.mode, rate: window.app.clock.rate }));
+  check('leaving the ship: time back to real time', st.mode === 'off' && st.rate === 1, JSON.stringify(st));
   await ctx.close();
 }
 

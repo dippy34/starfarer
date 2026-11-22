@@ -15,6 +15,7 @@ const CSS = `
 .fl-panel .ok, .fl-glance .ok { color: #9dff8a; }
 .fl-panel .bar { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; margin: 2px 0 4px; overflow: hidden; }
 .fl-panel .bar i { display: block; height: 100%; background: #7fd4ff; }
+.fl-panel .tip { margin: 2px 0 4px; font: 12px/1.35 system-ui, sans-serif; color: #9fb6cf; }
 .fl-panel .sep { border-top: 1px solid rgba(120, 220, 255, 0.18); margin: 4px 0; }
 /* the full read-out in its sheet, on a touch screen: larger, and the sheet scrolls it */
 #hud .flight-body .fl-panel { font-size: 13px; line-height: 1.5; -webkit-user-select: text; user-select: text; }
@@ -60,6 +61,7 @@ const CSS = `
 .fl-touch span { min-width: 84px; display: flex; align-items: center; justify-content: center; padding: 0 6px; border-radius: 12px; background: rgba(6, 11, 22, 0.9);
   font: 600 13px/1 ui-monospace, 'SF Mono', Menlo, monospace; white-space: nowrap; }
 #hud.touch .fl-desk { display: none; }
+#hud.touch[data-mode='ship'] .hud-toast { top: calc(var(--fl-bottom, 200px) + 8px); z-index: 3; }
 /* flying by hand on a touch screen: the throttle lever and Stop, at the right edge under the right
    thumb (upright, under the instruments; on its side, in the corner) */
 .fl-stick { align-self: flex-end; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 64px; margin-top: 4px; pointer-events: none; }
@@ -289,7 +291,7 @@ export class FlightHud {
     if (touch) this.renderGlance(r);
     // the full read-out: the panel at the right with a mouse, the sheet on a touch screen (when open)
     if (!touch) this.desk.innerHTML = readout(r);
-    else if (open) this.sheet.flightBody.innerHTML = `<div class="fl-panel">${readout(r)}</div>`;
+    else if (open) this.sheet.flightBody.innerHTML = `<div class="fl-panel">${readout(r, true)}</div>`;
   }
 
   /**
@@ -315,6 +317,8 @@ export class FlightHud {
     };
     if (blocked()) top.classList.add('fl-tight');
     if (blocked()) top.classList.add('fl-tighter');
+    // (a message shows under the instruments, not behind them)
+    this.root.style.setProperty('--fl-bottom', `${Math.round(Math.max(0, ...mine().map((m) => m.bottom)))}px`);
     if (lying) return;
     // upright the lever and Stop stand under the instruments: shorten the lever to what is left above the panel below
     const s = stick.getBoundingClientRect(), lever = this.lever.getBoundingClientRect();
@@ -378,14 +382,32 @@ export function glance(r: FlightReadout): { speed: string; side: string; state: 
   let target = '', toGo = '';
   if (r.target) {
     target = `${r.target} · ${fmtDist(r.targetDist)}`;
-    if (Number.isFinite(r.etaShip)) toGo = `to go ${fmtTime(r.etaShip)} aboard · ${fmtTime(r.etaUniverse)} universe`;
+    if (Number.isFinite(r.etaShip)) toGo = `there in ${fmtTime(r.etaShip)} for you · ${fmtTime(r.etaUniverse)} outside`;
     else if (r.refusal) toGo = r.refusal.startsWith('In the air') ? 'autopilot: not in the air' : 'autopilot: drive too weak here';
   }
+  const tip = advice(r);
+  if (tip) toGo = toGo ? `${toGo}. ${tip}` : tip;
   return { speed, side, state, stateClass, target, toGo };
 }
 
+/**
+ * Why a trip would take so long, and what to do about it, in plain words ('' when there is
+ * nothing to say): the torch's propellant gives 25 km/s in all, so it coasts; a weak setting of the
+ * reactionless drive.
+ */
+function advice(r: FlightReadout): string {
+  if (!r.target || r.autopilot) return '';
+  const year = 3.15576e7;
+  const long = !Number.isFinite(r.etaShip) || r.etaShip > year;
+  if (!long) return '';
+  if (r.drive === 'torch') return 'The torch\'s fuel can never get you there sooner: tap Fusion torch for the reactionless drive';
+  if (r.etaBy === 'flip-and-burn') return 'At this setting it takes years: + makes the drive stronger';
+  return '';
+}
+
 /** The full read-out (HTML rows). */
-function readout(r: FlightReadout): string {
+/** The full read-out (HTML rows); `plain`: with a line of plain words where a number needs one (the touch screen's sheet). */
+function readout(r: FlightReadout, plain = false): string {
   const c = r.conic;
   const row = (k: string, v: string, cls = '') => `<div class="row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
   const bound = c && c.e < 1;
@@ -412,7 +434,9 @@ function readout(r: FlightReadout): string {
   let target = '';
   if (r.target) {
     target = `<div class="sep"></div>${row('target', `${esc(r.target)} · ${fmtDist(r.targetDist)}`)}`;
-    if (Number.isFinite(r.etaShip)) target += row(`to go (${r.etaBy})`, `${fmtTime(r.etaShip)} <span class="k">aboard ·</span> ${fmtTime(r.etaUniverse)} <span class="k">universe</span>`);
+    if (Number.isFinite(r.etaShip)) target += row(`to go (${r.etaBy === 'flip-and-burn' ? 'speed up, turn, brake' : r.etaBy})`, `${fmtTime(r.etaShip)} <span class="k">aboard ·</span> ${fmtTime(r.etaUniverse)} <span class="k">outside</span>`);
+    const tip = plain ? advice(r) : '';
+    if (tip) target += `<div class="tip">${esc(tip)}</div>`;
     // (far short of it, as at a galaxy: the times are to there, not to the target itself)
     if (r.arrival > 0.05 * r.targetDist) target += row('stopping', `${fmtDist(r.arrival)} <span class="k">short of it</span>`);
   }
@@ -437,7 +461,8 @@ function readout(r: FlightReadout): string {
     <div class="sep"></div>
     ${row('time warp', warp)}
     ${row('ship clock', fmtClock(r.shipTime) + dil)}
-    ${row('universe clock', fmtClock(r.universeTime))}`;
+    ${row('universe clock', fmtClock(r.universeTime))}
+    ${plain ? `<div class="tip">Aboard, time runs ${r.gamma > 1.0001 ? `${fmtGamma(r.gamma)} times slower than outside: that is the Lorentz factor` : 'as it does outside'}; nothing goes as fast as light, so the speed gains nines instead.</div>` : ''}`;
 }
 
 /** an angle: "2.6°", "0.004″" */

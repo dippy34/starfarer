@@ -1350,8 +1350,19 @@ above is validated against JPL Horizons and stays as it is unless something is w
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
    own warp, and flying it by hand: drag to steer, a throttle lever, Stop; see "The relativistic
-   ship"). Not on touch yet in the ship: the chase view, the SAS's modes (prograde and the rest),
-   the RCS.
+   ship"). Not on touch yet in the ship: the SAS's modes (prograde and the rest), the RCS.
+   From the first playtests (Part C1): a ship button over the card ("Your ship", or "Fly there in
+   your ship" with something selected: boards, sets the reactionless drive as strong as the trip
+   needs, `Flight.driveFor`, and starts the autopilot); More starts with How to move, the Missions
+   (folded list with the count) and the Start menu (`App.openMenu`, set by main.ts); Back to today
+   in the Time sheet when the date is a day or more off (in the ship the ship goes with the world
+   it was near: `Flight.carryToNow`); a flight to a place on a surface runs in real time (said so);
+   leaving the ship brings time back to real time; the drag button says what dragging does now;
+   the ship's read-out in plainer words ("there in 12 d for you · 2.28 million yr outside"; why a
+   torch trip takes 130,000 years and what to do); time aboard held back is said once, with why,
+   and the chip says "held"; messages show under the instruments; the orbit's tags are drawn at
+   the names' size across the view and, like the target's brackets, never under the interface.
+   The cockpit, the ship and their art: the ship-look work (HANDOFF "The ship's looks").
 8. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.

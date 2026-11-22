@@ -32,7 +32,7 @@ describe('the instruments at a glance (a touch screen)', () => {
     }));
     expect(g.state).toBe('Autopilot: accelerating');
     expect(g.target).toBe('Andromeda Galaxy · 2.466 million ly');
-    expect(g.toGo).toBe('to go 12 d 2 h aboard · 2.28 million yr universe');
+    expect(g.toGo).toBe('there in 12 d 2 h for you · 2.28 million yr outside');
   });
 
   it('while slow near a world: the height and the orbit', () => {
@@ -40,6 +40,17 @@ describe('the instruments at a glance (a touch screen)', () => {
     expect(g.speed).toBe('7.67 km/s');
     expect(g.side).toBe('393 km up');
     expect(g.state).toBe('Orbit 391 km × 395 km over Earth');
+  });
+});
+
+describe('a trip that would take years, in plain words', () => {
+  it('on the fusion torch: why, and what to do', () => {
+    // Sirius coasting on the torch (a playtester read "to go 130,252 yr" and nothing else)
+    const g = glance(readout({ drive: 'torch', target: 'Sirius', targetDist: 8.1e16, etaShip: 130_252 * 3.15576e7, etaUniverse: 130_252 * 3.15576e7, etaBy: 'coasting' }));
+    expect(g.toGo).toBe("there in 130,252 yr for you · 130,252 yr outside. The torch's fuel can never get you there sooner: tap Fusion torch for the reactionless drive");
+  });
+  it('a short trip needs no advice', () => {
+    expect(glance(readout({ target: 'Moon', targetDist: 3.8e8, etaShip: 3600, etaUniverse: 3600, etaBy: 'flip-and-burn' })).toGo).toBe('there in 1 h 0 min for you · 1 h 0 min outside');
   });
 });
 
