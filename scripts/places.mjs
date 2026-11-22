@@ -14,8 +14,17 @@ collectErrors(page, errors);
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`); };
 const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount > x, f + n, { timeout: 120000 }); };
+/**
+ * Load another view. A page left while star regions are still on their way has those downloads
+ * cut off, and the catalogue reports each as an error ("Failed to fetch": seen whenever the
+ * machine was busy enough for them to be late): they are let in first.
+ */
+const go = async (query) => {
+  await page.waitForFunction(() => !window.app?.debugState || window.app.debugState().pendingTiles === 0, null, { timeout: 180000 }).catch(() => undefined);
+  await page.goto(`${base}?${query}`, { waitUntil: 'load', timeout: 180000 });
+};
 
-await page.goto(`${base}?time=2026-10-01T20:00:00Z&paused=1&target=Saturn&dist=4`, { waitUntil: 'load', timeout: 180000 });
+await go('time=2026-10-01T20:00:00Z&paused=1&target=Saturn&dist=4');
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
 
 // 0. the tour (T) lists places that all resolve
@@ -74,6 +83,78 @@ await frames(4);
 st = await page.evaluate(() => window.app.bodies.ringParticles?.mesh.visible ?? false);
 check('particles are only drawn inside the ring layer', st === false);
 
+// 4b. Saturn from 6 radii, 20 degrees above its sunlit rings: where the rings pass in front of the
+// limb, the planet's air (drawn after them) leaves them as they are. It used to dim them there: a
+// thin dark arc across the rings (on the build of before, 1.5 % of these pixels lost a tenth or
+// more of their light, the worst 71 %; now 0.1 %, the worst 12 %).
+{
+  await page.evaluate(() => {
+    const a = window.app, S = a.findByName('Saturn');
+    const V = S.upos.sub(S.upos).constructor;
+    const p = new V().setFromMatrixColumn(S.orientation, 2).normalize();
+    const s = a.system.sun.upos.sub(S.upos).normalize();
+    if (s.dot(p) < 0) p.negate();
+    const flat = s.clone().addScaledVector(p, -s.dot(p)).normalize();
+    const D = Math.PI / 180;
+    const d = flat.applyAxisAngle(p, 60 * D).multiplyScalar(Math.cos(20 * D)).addScaledVector(p, Math.sin(20 * D)).normalize();
+    a.select(S);
+    a.rig.upos.copy(S.upos).addVec(d, S.radius * 6);
+    a.rig.lookAt(d.clone().negate(), p);
+    a.rig.target = S; a.rig.setAnchor(S);
+  });
+  await frames(8);
+  // the pixels whose sight line meets the dense B ring and then passes through the air beside the limb
+  const pts = await page.evaluate(() => {
+    const a = window.app, S = a.findByName('Saturn');
+    const A = S.radii[0], C = S.radii[2];
+    const R = S.orientation.clone().transpose();
+    const o = a.rig.upos.sub(S.upos).applyMatrix4(R);
+    const c = a.project(S.upos.sub(a.rig.upos));
+    const out = [];
+    for (let k = 0; k < 720; k++) {
+      const th = (k / 720) * 2 * Math.PI;
+      for (let r = 20; r < 400; r += 0.25) {
+        const x = c.x + r * Math.cos(th), y = c.y + r * Math.sin(th);
+        const dir = a.rig.ray(x, y).applyMatrix4(R).normalize();
+        const os = o.clone(); os.z *= A / C; const ds = dir.clone(); ds.z *= A / C; ds.normalize();
+        const tc = -os.dot(ds), miss = Math.sqrt(Math.max(0, os.lengthSq() - tc * tc));
+        if (miss < A || miss > A + 540e3) continue;
+        const tr = -o.z / dir.z, hit = o.clone().addScaledVector(dir, tr), rr = Math.hypot(hit.x, hit.y);
+        if (tr > 0 && tr < tc && rr > 94000e3 && rr < 115000e3) out.push([x, y]);
+      }
+    }
+    return out;
+  });
+  const light = () => page.evaluate((pts) => pts.map(([x, y]) => { const v = window.app.renderer.lightAt(x, y, 0); return v[0] + v[1] + v[2]; }), pts);
+  const withAir = await light();
+  await page.evaluate(() => { window.app.atmospheres.group.visible = false; });
+  await frames(3);
+  const without = await light();
+  await page.evaluate(() => { window.app.atmospheres.group.visible = true; });
+  const ratio = withAir.map((v, i) => v / Math.max(without[i], 1e-9)).sort((x, y) => x - y);
+  const dimmed = ratio.filter((v) => v < 0.9).length / Math.max(ratio.length, 1);
+  check('Saturn\'s air does not darken its rings in front of the limb', ratio.length > 100 && dimmed < 0.005 && ratio[0] > 0.6, JSON.stringify({ n: ratio.length, dimmed: +dimmed.toFixed(4), least: +ratio[0]?.toFixed(3) }));
+  await page.screenshot({ path: path.join(outDir, 'p2b-saturn-limb.png') });
+}
+
+// 4c. Titan from 3 radii is the orange of its haze (its measured spectrum), not the grey
+// near-infrared mosaic of its ground, which showed in patches with seams between them
+{
+  await page.evaluate(() => { const a = window.app, t = a.findByName('Titan'); a.select(t); a.placeNear(t, t.radius * 3, 40, 10); });
+  await frames(8);
+  const st = await page.evaluate(() => {
+    const a = window.app, t = a.findByName('Titan');
+    const p = a.project(t.upos.sub(a.rig.upos));
+    const v = a.renderer.lightAt(p.x, p.y, 4);
+    const rgb = [0, 0, 0];
+    for (let i = 0; i < v.length; i++) rgb[i % 3] += v[i] / (v.length / 3);
+    return { map: a.bodies.meshes.get(t).material.uniforms.uHasMap.value, rgb: rgb.map((x) => +x.toPrecision(3)) };
+  });
+  const [r, g, b] = st.rgb;
+  check('Titan is the orange of its haze, without the map of its ground', st.map === 0 && r > 1.15 * g && g > 1.15 * b, JSON.stringify(st));
+  await page.screenshot({ path: path.join(outDir, 'p2c-titan.png') });
+}
+
 // 5. a comet near the Sun: coma and tails (the brightest active one in the catalogue right now)
 st = await page.evaluate(() => {
   const a = window.app;
@@ -117,7 +198,7 @@ if (st) {
 }
 
 // 6. eclipses: the total lunar eclipse of 2026-03-03 (greatest 11:33 UTC): the Moon inside Earth's shadow
-await page.goto(`${base}?time=2026-03-03T11:33:00Z&paused=1&target=Moon&dist=4`, { waitUntil: 'load', timeout: 180000 });
+await go('time=2026-03-03T11:33:00Z&paused=1&target=Moon&dist=4');
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
 await frames(20);
 st = await page.evaluate(() => {
@@ -130,7 +211,7 @@ check('the Moon is in Earth\'s shadow on 2026-03-03', st.occluders >= 1 && st.re
 await page.screenshot({ path: path.join(outDir, 'p4-lunar-eclipse.png') });
 
 // 7. a shadow of a Galilean moon on Jupiter (searched for in the next two days)
-await page.goto(`${base}?time=2026-10-01T00:00:00Z&paused=1&target=Jupiter&dist=3`, { waitUntil: 'load', timeout: 180000 });
+await go('time=2026-10-01T00:00:00Z&paused=1&target=Jupiter&dist=3');
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
 st = await page.evaluate(() => {
   const a = window.app;
@@ -173,7 +254,7 @@ if (st) {
 
 // 8. landmarks: Valles Marineris and the Apollo 11 site, seen from where "go to" arrives
 for (const [id, name, body] of [['p6-valles-marineris', 'Valles Marineris', 'Mars'], ['p7-apollo-11', 'Apollo 11 landing site', 'Moon']]) {
-  await page.goto(`${base}?time=2026-10-01T12:00:00Z&paused=1&target=${body}&dist=3`, { waitUntil: 'load', timeout: 180000 });
+  await go(`time=2026-10-01T12:00:00Z&paused=1&target=${body}&dist=3`);
   await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
   await page.evaluate(() => { window.app.terrain.budgetMs = 60; });
   // the hour when the Sun stands about 30 degrees over the place (the clock is paused)

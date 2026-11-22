@@ -111,6 +111,115 @@ if (scr) {
 const sel = await page.evaluate(() => window.app.selection?.name);
 check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.stringify(scr)}`);
 
+// 4b. Earth for scale, in front of Jupiter, is named beside it ("Earth, to scale"), and is not drawn without its name
+{
+  const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 60000 }); };
+  await page.evaluate(() => { const a = window.app; const j = a.findByName('Jupiter'); a.select(j); a.placeNear(j, j.radius * 4, 30, 10); });
+  await frames(4);
+  const seen = () => page.evaluate(() => {
+    const a = window.app, at = a.awe.cues.earthAt;
+    const el = [...document.querySelectorAll('.label')].find((e) => e.textContent === 'Earth, to scale' && e.style.display !== 'none');
+    const p = at ? a.project(at) : null, r = el?.getBoundingClientRect();
+    return { drawn: !!at, named: !!el, gap: p && r ? Math.hypot(r.left - p.x, r.bottom - p.y) : null };
+  });
+  const on = await seen();
+  await page.evaluate(() => window.app.act('labels'));
+  await frames(3);
+  const off = await seen();
+  await page.evaluate(() => window.app.act('labels'));
+  check('Earth for scale is named beside it, and hidden with the names', on.drawn && on.named && on.gap !== null && on.gap < 30 && !off.drawn && !off.named, JSON.stringify({ on, off }));
+  // ... and wears the Earth's own map and clouds once they have loaded (it was a plain blue-grey
+  // ball, which against Jupiter read as a hole, not as the Earth)
+  const earthMaps = () => page.evaluate(() => {
+    const a = window.app, e = a.system.bodies.find((b) => b.name === 'Earth' && b.kind === 'planet');
+    const own = e && a.bodies.surfaceMap?.(e), u = a.awe.cues.earthMat.uniforms;
+    return { loaded: !!own?.clouds, map: !!own && u.uMap?.value === own.tex && u.uHasMap?.value === 1, clouds: !!own?.clouds && u.uClouds?.value === own.clouds && u.uHasClouds?.value === 1 };
+  });
+  await page.waitForFunction(() => { const a = window.app, e = a.system.bodies.find((b) => b.name === 'Earth' && b.kind === 'planet'); return !!a.bodies.surfaceMap?.(e)?.clouds; }, null, { timeout: 120000 }).catch(() => undefined);
+  await frames(2);
+  const worn = await earthMaps();
+  check("Earth for scale wears the Earth's own map and clouds", worn.loaded && worn.map && worn.clouds, JSON.stringify(worn));
+}
+
+// 4b2. With the mass slider holding the keyboard's focus the shortcuts still work (playtest D1: "]" eight
+// times did nothing after the slider was clicked); only the slider's own keys (arrows, Home, End, Page) are its
+{
+  const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 60000 }); };
+  await page.evaluate(() => { const a = window.app; a.select(a.findByName('Jupiter')); });
+  await frames(2);
+  await page.click('.card [data-power="mass"]');
+  await frames(2);
+  const focused = await page.evaluate(() => { const s = document.querySelector('.card input.slider'); s.focus(); return document.activeElement === s; });
+  const before = await page.evaluate(() => window.app.labels.enabled);
+  await page.keyboard.press('KeyL');
+  await frames(2);
+  const after = await page.evaluate(() => window.app.labels.enabled);
+  await page.keyboard.press('KeyL');
+  await frames(1);
+  check('with the mass slider focused the shortcuts still work', focused && before !== after, JSON.stringify({ focused, before, after }));
+  await page.click('.card [data-power="mass"]');
+  await frames(1);
+}
+
+// 4c. M87* from 1,000 of its radii (two light years): one name for the one point (the galaxy M87's
+// name stood on the hole's), and that name clear of the glowing middle of its disk
+{
+  const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 120000 }); };
+  await page.evaluate(() => { const a = window.app; const h = a.findByName('M87*'); a.select(h); a.placeNear(h, h.radius * 1000, 30, 10); });
+  await frames(8);
+  const st = await page.evaluate(() => {
+    const a = window.app, h = a.findByName('M87*');
+    const p = a.project(h.upos.sub(a.rig.upos));
+    const v = a.holes.views.find((x) => x.bh === h);
+    const disk = v ? v.innerDiskPx / a.view.pixelRatio : 0;
+    const names = [...document.querySelectorAll('.label')].filter((e) => e.style.display !== 'none' && /^M87\*?$/.test(e.textContent)).map((e) => {
+      const r = e.getBoundingClientRect();
+      return { text: e.textContent, clear: Math.hypot(Math.max(r.left - p.x, 0), Math.max(p.y - r.bottom, 0)) };
+    });
+    return { names, disk };
+  });
+  check('at M87* one name stands for the hole, clear of its disk', st.names.length === 1 && st.names[0].text === 'M87*' && st.names[0].clear >= st.disk, JSON.stringify(st));
+}
+
+// 4d. A star with no proper name, chosen before its number has arrived (its region's numbers not
+// yet downloaded): the card goes by its catalogue number once it comes, as the ship's instruments
+// and the name on the sky do (it said "Unnamed star" for good)
+{
+  const st0 = await page.evaluate(() => {
+    const a = window.app, cat = a.catalog;
+    for (let i = 0; i < cat.nodes.length; i++) {
+      const n = cat.nodes[i];
+      if (n.state !== 'ready' || n.idsState !== 'none' || !n.count) continue;
+      for (let slot = 0; slot < n.count; slot++) {
+        if (a.named.byNodeSlot.has(`${i}:${slot}`)) continue;
+        const s = a.getStar(cat, i, slot);
+        a.select(s);
+        window.__star = s;
+        return { first: s.name };
+      }
+    }
+    return null;
+  });
+  await page.waitForFunction(() => window.__star && window.__star.designations.length > 0, null, { timeout: 60000 }).catch(() => undefined);
+  await page.waitForTimeout(600);
+  const st = await page.evaluate(() => ({ name: window.__star?.name, card: document.querySelector('.card h2')?.textContent }));
+  check('a star goes by its catalogue number on its card', !!st0 && st.card === st.name && !/^(unnamed star|star)$/i.test(st.card ?? ''), JSON.stringify({ ...st0, ...st }));
+}
+
+// 4e. Search: "black" lists the black holes people know first; "proxima" lists Proxima once (it
+// was there twice, as the star and as the host of its planets); the tour has the famous holes
+{
+  const st = await page.evaluate(async () => {
+    const a = window.app;
+    a.searchItems('black'); a.searchItems('proxima');
+    await new Promise((r) => setTimeout(r, 3000)); // (the catalogue's results arrive later)
+    const proxima = a.searchItems('proxima').map((r) => r.label);
+    return { black: a.searchItems('black').slice(0, 3).map((r) => r.label), proxima, tour: a.tourItems().map((t) => t.label).filter((l) => /\*|Cygnus X-1/.test(l)) };
+  });
+  check('search ranks the famous black holes first, and lists Proxima once', st.black.join() === 'Sagittarius A*,M87*,Cygnus X-1'
+    && st.proxima.filter((l) => /^Proxima Cen(tauri)?$/.test(l)).length === 1 && st.tour.join() === 'Sagittarius A*,M87*,Cygnus X-1', JSON.stringify(st));
+}
+
 // 5. Search and go to a star
 await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');

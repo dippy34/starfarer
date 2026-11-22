@@ -121,6 +121,30 @@ let st = await page.evaluate(() => {
   return { body: b?.name ?? null, alt: a.rig.altitude, aboveRef: d - (b?.radius ?? 0) };
 });
 check('t2: flying down stops above the ground', st.body === 'Moon' && st.alt > 1.4 && st.alt < 60, JSON.stringify(st));
+// rocks only ever darken the ground: their shadows and the contact shading round their bases.
+// (Outside the shadow map's reach the contact term came back as -1 and lit the ground 40 % brighter
+// there: a hard-edged darker square round the explorer, from kilometres up to the ground.)
+{
+  const r = await page.evaluate(() => {
+    const a = window.app, M = a.terrain.drawn.find((n) => n.mesh)?.mesh.material.uniforms;
+    if (!M?.uRockOn || M.uRockOn.value < 0.5) return { rocks: false };
+    const w = a.rig.viewport.width, h = a.rig.viewport.height;
+    const grab = () => {
+      a.renderer.render();
+      const v = [];
+      for (let j = 1; j < 16; j++) for (let i = 1; i < 16; i++) { const q = a.renderer.lightAt((i / 16) * w, (j / 16) * h, 0); v.push(q[12] + q[13] + q[14]); }
+      return v;
+    };
+    const on = grab();
+    M.uRockOn.value = 0;
+    const off = grab();
+    M.uRockOn.value = 1;
+    let brighter = 0, worst = 1;
+    on.forEach((x, k) => { if (off[k] > 1e-6) { const q = x / off[k]; worst = Math.max(worst, q); if (q > 1.02) brighter++; } });
+    return { rocks: true, brighter, worst: +worst.toFixed(3), points: on.length };
+  });
+  check('t2: rocks only darken the ground (no brighter ground beyond their shadow map)', r.rocks && r.brighter === 0, JSON.stringify(r));
+}
 await page.screenshot({ path: path.join(outDir, 't2-moon-ground.png'), timeout: 180000 });
 // 3. Olympus Mons from 30 km (MOLA heights; the summit is 21 km up)
 await terrainScene('t3-olympus-mons', 'Mars', { lat: 18.65, lon: -133.8 - 2.5, sunEl: 25, alt: 30000, pitch: 25, yaw: 0 }, true);
