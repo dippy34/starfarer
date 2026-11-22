@@ -40,32 +40,60 @@ Every suite gets its own 4-core runner, all at once, instead of sharing this mac
     node scripts/remote-test.mjs --name <you> --suites all    # the full set
     node scripts/remote-test.mjs --name <you> --suites "flight walk"
 
-It pushes HEAD (committed work only; with `--suites` a commit on top with a `Suites:` trailer, your
-branch does not move) to a throwaway branch `claude/test-<you>-<sha>-<stamp>`, which runs
-`.github/workflows/browser-tests.yml` (build once, then one job per suite), waits, downloads each
-suite's log and pictures to `out/remote-<sha>/<suite>/` (or `--out <dir>`), prints pass/fail per
-suite with the failing checks, and exits 0 only if every suite passed. It takes about as long as
-the slowest chosen suite plus ~3 minutes (build, browser install). Run it in the background.
+It pushes a commit with the files of HEAD (committed work only; your branch does not move) to your
+test branch `claude/test-<you>`, which runs `.github/workflows/browser-tests.yml` (build once, then
+one job per suite), waits, downloads each job's log and pictures to `out/remote-<sha>/<job>/` (or
+`--out <dir>`), prints pass/fail per job with the failing checks, and exits 0 only if every job
+passed. It takes about as long as the slowest chosen job plus ~3 minutes (build, browser setup).
+Run it in the background.
 
+- **One full run at a time, for everyone.** The account runs about 20 jobs at once, shared by all
+  helpers *and by the live site's deploys* (deploy-pages.yml): a full set is 18 jobs. Start a
+  `--suites all` run only when no other full run is in flight (look at
+  https://github.com/dippy34/starfarer/actions or `mcp__github__actions_list` `list_workflow_runs`),
+  once per batch before a large push. Small runs (the affected suites, `--suites "a b"`) are fine
+  alongside one full run.
+- **Cancel what you supersede.** A push to your test branch cancels the run still going on it (the
+  workflow's `concurrency`), so a new trial replaces the last one by itself. To stop a run without
+  starting another: `node scripts/remote-test.mjs --name <you> --cancel` (it pushes a `Suites: none`
+  commit). Neither the GitHub API's cancel nor deleting a branch works from this container (both
+  HTTP 403), which is why each helper keeps one test branch instead of a new one per run. For a
+  second small run alongside your first, give it its own branch with `--lane <x>`.
+- The longest suites run in parts, one job each (`PARTS` in `scripts/affected.mjs`): walk as
+  `walk-touch`, `walk-desktop`, `walk-vr` (its own modes; `all` is the three), flight as
+  `flight-desk` (1-12) and `flight-phone` (13-16, `FLIGHT_ONLY=desk|phone`). The parts together are
+  the whole suite.
+- `--suites` writes a `Suites:` trailer into the pushed commit (`all`, `none` or suite names); without
+  it a `Suites:` trailer in HEAD's own message counts, else the map's choice for the change against
+  `claude/friendly-hypatia-up418z`.
+- To show that a new check fails on the app as it was before its fix:
+  `node scripts/remote-test.mjs --name <you> --suites interact --old <commit before the fix>` runs
+  today's scripts against the files of that commit.
 - The workflow runs only on `claude/test-**` branches. It cannot deploy (deploy-pages.yml runs on
   `main` and `claude/friendly-hypatia-up418z` only) and has read-only permissions and no secrets.
-- A `Suites: all` or `Suites: flight walk` trailer line in the pushed commit's message overrides the
-  map; `--suites` writes it for you.
-- The branch is left behind: the git proxy in this container refuses branch deletion (HTTP 403).
-  `--delete` tries anyway where that is allowed. The artifacts expire after 3 days.
-- **Share the runners.** The account runs about 20 jobs at once across all helpers; a full set is
-  15 of them. Use the affected suites for everyday changes, and `Suites: all` once per batch, so
-  two helpers' full sets do not queue behind each other.
-- `remote-test.mjs` is not a browser suite and does not count towards the local cap (below). It
+  Artifacts are kept 3 days.
+- `remote-test.mjs` is not a browser suite and does not count towards the local cap (below); it
   also renames its process to `remote-test`.
 
-**Differences from this container.** The runner uses the Chromium that the pinned
-`@playwright/test` installs (Chromium 141 headless shell, `CHROMIUM_PATH` unset; the container has
-Chrome for Testing 153), with the same SwiftShader flags, on Ubuntu 24.04 (Playwright 1.56 cannot
-install its browser on 26.04, today's `ubuntu-latest`). No suite compares against pictures stored
-from an earlier run: every measurement is made within the run, so there are no pixel baselines to
-keep per environment. Checks that measure wall-clock time (live physics speed, timed flights) are
-run on a quieter machine there, which is the fairer of the two.
+**The same browser as here.** The runner uses this container's browser build, Chrome for Testing
+153.0.8010.12 (`CHROME_VERSION` in the workflow; `/opt/pw-browsers/chromium --version` here),
+driven by the pinned `@playwright/test`, with the same SwiftShader flags, on Ubuntu 24.04
+(Playwright 1.56 cannot install its system libraries on 26.04, today's `ubuntu-latest`). With
+Playwright's own Chromium 141 the touch and scrolling checks of walk (t2, t3) and flight ("More:
+How to move first") failed there and passed here. If the container's browser changes, change
+`CHROME_VERSION` with it. (`CHROMIUM_PATH` unset, the scripts fall back to Playwright's own
+Chromium: that works too, it is just not this browser.)
+
+**No pixel baselines.** No suite compares with pictures stored from an earlier run: every
+measurement is made within the run (a frame against the frame before, a picture against the same
+scene drawn another way). So nothing has to be kept per machine; and a picture taken there is not
+to be diffed against one taken here.
+
+**Not the same machine.** A runner's 4 cores are its own, but frames are not uniformly faster
+there: verify's scenes draw 3-4x faster, walk and flight ran 2.4x slower than here under load.
+Checks that wait for wall-clock time or race the frame rate (interact's time acceleration and
+autopilot arrivals, game's landing) have failed there once and passed the next run; read a failure
+there the way you would a failure under load here, and run it again before believing it.
 
 ## 3. Run them here
 
