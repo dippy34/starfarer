@@ -1354,6 +1354,15 @@ above is validated against JPL Horizons and stays as it is unless something is w
        looked dark. The contact term is now never below 0 (`Materials.ts`). The ground beyond is
        as bright as within. `scripts/terrain.mjs` checks that the rocks only darken the ground
        (15 checks).
+     - *"Earth, to scale" read as a hole in Jupiter, not as the Earth* (C4). It was drawn as a
+       plain blue-grey ball (`ScaleCues`, one colour for oceans and clouds). It now wears the
+       Earth's own day map and cloud map, the same textures the Earth itself is drawn with
+       (`BodiesLayer.surfaceMap`), with the clouds as the Earth's light path draws them; the
+       blue-grey stays until those have loaded. No blue air over it: a Rayleigh tint was tried,
+       but it was code of its own, not the Earth's, so it was left out; the oceans are as dark as
+       the map makes them. "It doesn't follow a dragged Jupiter" was not seen: with Jupiter moved
+       by three of its radii (live physics), the camera, which follows it, kept it in the same
+       place on screen and the Earth stayed on it. `scripts/interact.mjs` (16 checks).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

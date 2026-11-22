@@ -128,6 +128,17 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   const off = await seen();
   await page.evaluate(() => window.app.act('labels'));
   check('Earth for scale is named beside it, and hidden with the names', on.drawn && on.named && on.gap !== null && on.gap < 30 && !off.drawn && !off.named, JSON.stringify({ on, off }));
+  // ... and wears the Earth's own map and clouds once they have loaded (it was a plain blue-grey
+  // ball, which against Jupiter read as a hole, not as the Earth)
+  const earthMaps = () => page.evaluate(() => {
+    const a = window.app, e = a.system.bodies.find((b) => b.name === 'Earth' && b.kind === 'planet');
+    const own = e && a.bodies.surfaceMap?.(e), u = a.awe.cues.earthMat.uniforms;
+    return { loaded: !!own?.clouds, map: !!own && u.uMap?.value === own.tex && u.uHasMap?.value === 1, clouds: !!own?.clouds && u.uClouds?.value === own.clouds && u.uHasClouds?.value === 1 };
+  });
+  await page.waitForFunction(() => { const a = window.app, e = a.system.bodies.find((b) => b.name === 'Earth' && b.kind === 'planet'); return !!a.bodies.surfaceMap?.(e)?.clouds; }, null, { timeout: 120000 }).catch(() => undefined);
+  await frames(2);
+  const worn = await earthMaps();
+  check("Earth for scale wears the Earth's own map and clouds", worn.loaded && worn.map && worn.clouds, JSON.stringify(worn));
 }
 
 // 4c. M87* from 1,000 of its radii (two light years): one name for the one point (the galaxy M87's

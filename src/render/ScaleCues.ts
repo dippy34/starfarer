@@ -1,4 +1,4 @@
-import { AdditiveBlending, BufferAttribute, BufferGeometry, Group, LineSegments, Matrix4, Mesh, Quaternion, ShaderMaterial, SphereGeometry, Vector3 } from 'three';
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Group, LineSegments, Matrix4, Mesh, Quaternion, ShaderMaterial, SphereGeometry, type Texture, Vector3 } from 'three';
 import { R_EARTH_M } from '../universe/Scale';
 import { FIX_LOGDEPTH, GLOBALS, OUTPUT_FRAGMENT, PROJECT_PARS } from './shaders/xr';
 
@@ -53,7 +53,9 @@ const EARTH_VERT = /* glsl */ `
 ${PROJECT_PARS}
 varying vec3 vN;
 varying vec3 vPos;
+varying vec2 vUv;
 void main() {
+  vUv = uv;
   vN = normalize(mat3(modelMatrix) * normal);
   vec4 wp = modelMatrix * vec4(position, 1.0);
   vPos = wp.xyz;
@@ -69,14 +71,28 @@ uniform vec3 uSunDir;
 uniform float uSunIrr;
 uniform float uExposure;
 uniform float uRim;
+uniform sampler2D uMap;      // the Earth's own map (Bodies: the Earth's surface material's), when it has loaded
+uniform float uHasMap;
+uniform float uAlbedoScale;  // the map's colours to the Earth's albedo, as the Earth itself is drawn
+uniform sampler2D uClouds;   // the Earth's cloud map (the same one the Earth wears), when it has loaded
+uniform float uHasClouds;
 varying vec3 vN;
 varying vec3 vPos;
+varying vec2 vUv;
+vec3 srgbToLinearE(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
 void main() {
   vec3 N = normalize(vN), V = normalize(cameraPosition - vPos);
   float mu = max(dot(N, uSunDir), 0.0);
   float facing = max(dot(N, V), 0.0);
-  // ocean-and-cloud blue day side; the night side stays a dark silhouette with a thin blue limb
-  vec3 day = vec3(0.22, 0.30, 0.42) * (uSunIrr / 3.14159265) * mu * uExposure;
+  // the day side: the Earth's own map and clouds, lit as the Earth is; until the maps are there,
+  // an ocean-and-cloud blue. The night side stays a dark silhouette with a thin blue limb.
+  vec3 albedo = vec3(0.22, 0.30, 0.42);
+  if (uHasMap > 0.5) {
+    albedo = srgbToLinearE(texture2D(uMap, vUv).rgb) * uAlbedoScale;
+    // the clouds as the Earth's own light path draws them (shaders/body.ts, uLite)
+    if (uHasClouds > 0.5) albedo = mix(albedo, vec3(0.72), smoothstep(0.28, 0.52, texture2D(uClouds, vUv).r));
+  }
+  vec3 day = albedo * (uSunIrr / 3.14159265) * mu * uExposure;
   vec3 rim = vec3(0.25, 0.5, 1.0) * uRim * pow(1.0 - facing, 4.0);
   gl_FragColor = vec4(min(day, vec3(6.0e4)) + rim + vec3(0.002, 0.003, 0.006), 1.0);
 ${OUTPUT_FRAGMENT}
@@ -90,6 +106,8 @@ export interface EarthRefTarget {
   /** camera-relative position of the star that lights it (m), and that star's visual luminosity (Suns) */
   sunRel: Vector3;
   sunLum: number;
+  /** the Earth's own map, the scale that brings its colours to the Earth's albedo, and its clouds, once loaded */
+  map?: { tex: Texture; albedoScale: number; clouds: Texture | null } | null;
   /**
    * The exposure Earth is seen at: the surfaces' beside a world; against a star's face the star's
    * own (with the eye open for the dark beside a small sun, the sunlit sliver round the silhouette
@@ -141,7 +159,11 @@ export class ScaleCues {
     this.dust.visible = false;
     this.earthMat = new ShaderMaterial({
       name: 'earth for scale', vertexShader: EARTH_VERT, fragmentShader: EARTH_FRAG,
-      uniforms: { uSunDir: { value: new Vector3(1, 0, 0) }, uSunIrr: { value: Math.PI }, uExposure: { value: 1 }, uRim: { value: 0.12 }, uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK },
+      uniforms: {
+        uSunDir: { value: new Vector3(1, 0, 0) }, uSunIrr: { value: Math.PI }, uExposure: { value: 1 }, uRim: { value: 0.12 },
+        uMap: { value: null }, uHasMap: { value: 0 }, uAlbedoScale: { value: 1 }, uClouds: { value: null }, uHasClouds: { value: 0 },
+        uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
+      },
     });
     this.earth = new Mesh(new SphereGeometry(1, 48, 24), this.earthMat);
     this.earth.matrixAutoUpdate = false;
@@ -200,6 +222,12 @@ export class ScaleCues {
     (this.earthMat.uniforms.uSunDir.value as Vector3).copy(toSun).divideScalar(Math.max(ds, 1));
     this.earthMat.uniforms.uSunIrr.value = Math.PI * t.sunLum * (AU_M / Math.max(ds, 1e6)) ** 2;
     this.earthMat.uniforms.uExposure = t.exposure;
+    const u = this.earthMat.uniforms;
+    u.uMap.value = t.map?.tex ?? null;
+    u.uHasMap.value = t.map ? 1 : 0;
+    u.uAlbedoScale.value = t.map?.albedoScale ?? 1;
+    u.uClouds.value = t.map?.clouds ?? null;
+    u.uHasClouds.value = t.map?.clouds ? 1 : 0;
     this.earth.visible = true;
     this.earthAt = pl.pos.clone();
     this.earthScale = k;

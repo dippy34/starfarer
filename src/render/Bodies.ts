@@ -383,6 +383,19 @@ export class BodiesLayer {
     return { tex: this.rings.has(b) ? this.ringTex : null, inner: (ring.innerKm * 1e3) / req, outer: (ring.outerKm * 1e3) / req };
   }
 
+  /**
+   * A body's colour map as its surface is drawn, the scale that brings the map's colours to the
+   * body's albedo, and its cloud map if it has one; null until the map has loaded, or for one without a map. (Earth for scale wears
+   * the Earth's: render/ScaleCues.ts.)
+   */
+  surfaceMap(b: Body): { tex: Texture; albedoScale: number; clouds: Texture | null } | null {
+    const m = this.meshes.get(b);
+    const u = m && (m.material as ShaderMaterial).uniforms;
+    if (!u || (u.uHasMap.value as number) < 0.5 || !u.uMap.value) return null;
+    const clouds = (u.uHasClouds?.value as number) > 0.5 ? (u.uClouds.value as Texture) : null;
+    return { tex: u.uMap.value as Texture, albedoScale: u.uAlbedoScale.value as number, clouds };
+  }
+
   /** The outer radius of a body's rings (m); 0 if it has none. */
   ringOuter(b: Body): number {
     return (this.rings_[b.name.toLowerCase()]?.outerKm ?? 0) * 1e3;

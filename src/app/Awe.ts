@@ -76,11 +76,13 @@ export class Awe {
     // silhouette); by the Sun, a planet of another star had it as a black disc.
     const star = sel instanceof CatalogStar || (sel instanceof Body && sel.kind === 'star');
     const sun = star ? sel : sel instanceof ExoPlanet ? sel.system.host : app.system.suns[0];
+    const earth = app.system.bodies.find((b) => b.name === 'Earth' && b.kind === 'planet') ?? null;
     if (sel && sun && app.labels.enabled && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth') {
       this.cues.updateEarth({
         rel: sel.upos.sub(cam, new Vector3()), radius: sel.radius, sunRel: sun.upos.sub(cam, new Vector3()),
         sunLum: sun instanceof CatalogStar ? 10 ** (-0.4 * (sun.absMag - SUN_ABS_MAG)) : sun instanceof Body ? app.system.brightness(sun) : 1,
         exposure: star ? app.bodies.lightExposure : app.bodies.surfaceExposure,
+        map: earth ? app.bodies.surfaceMap(earth) : null,
       }, fwd, app.view.pixelAngle);
     } else this.cues.updateEarth(null, fwd, app.view.pixelAngle);
 
