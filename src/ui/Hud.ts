@@ -28,8 +28,8 @@ export type HudAction =
   // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
-  // begin or end moving it with a finger, and what it is to do where it is left
-  | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle'
+  // begin or end moving it with a finger, and what it is to do where it is left (or throw it); a world just made is in place
+  | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle' | 'move-throw' | 'place-done'
   // undo the last change; watching what a change does (src/app/Watch.ts): stop, watch it again, put the offer away;
   // whether changes are watched at all
   | 'undo' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me';
@@ -46,6 +46,16 @@ export interface HudHost {
   setMass(slider: number): void;
   /** a finger (or the pointer) came down on the mass slider, or lifted (or the slider was left): all between is one change */
   massHeld(held: boolean): void;
+  /** the mass slider of a world just made, being put in place, was put at `s` (0 to 1; src/app/WhatIf.ts: madeMassAt) */
+  setMadeMass(s: number): void;
+}
+
+/** The slingshot's arrow over the view (src/app/Mover.ts: Aim): where the world is and its edge, the way and length of the arrow, and its marks (CSS px). */
+export interface AimView {
+  x: number; y: number; edge: number;
+  ux: number; uy: number; length: number;
+  circle: number; escape: number;
+  snapped: 'circle' | 'escape' | null;
 }
 
 export interface HudState {
@@ -72,17 +82,21 @@ export interface HudState {
     /** it can be taken away (a world of the Solar System) */
     removable: boolean;
     /**
-     * It can be moved with a finger, and that is under way (`on`): whether it is to be left on a
-     * circle, which plane the finger moves it in and the orbit it is on now, both in words.
+     * It can be moved with a finger, and that is under way (`on`): what it does where it is left
+     * (keeps its speed, goes in a circle, or is thrown), whether it has just been made and is being
+     * put in place, which plane the finger moves it in and the orbit it is on now, both in words.
      */
-    move: { on: boolean; circle: boolean; plane: string; orbit: string } | null;
+    move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string } | null;
+    /** It has just been made and is being put in place: where its mass slider stands (0 to 1), its mass and what it is at that mass, in words. */
+    place: { slider: number; mass: string; what: string } | null;
   } | null;
   /**
-   * Live physics, or null while the Solar System is the real one: since when, how fast time gets on
-   * when that is slower than asked ('' otherwise), what is carried on rails ('' when nothing is),
-   * what the simulation leaves out, and what has happened, newest first.
+   * Live physics, or null while the Solar System is the real one: since when, what the mark at the
+   * top says under its name (short: a phone's width), how fast time gets on when that is slower
+   * than asked ('' otherwise), what is carried on rails ('' when nothing is), what the simulation
+   * leaves out, and what has happened, newest first.
    */
-  live: { since: string; slow: string; rails: string; leftOut: readonly string[]; log: { day: string; text: string }[] } | null;
+  live: { since: string; mark: string; slow: string; rails: string; leftOut: readonly string[]; log: { day: string; text: string }[] } | null;
   /** the last change can be undone */
   undo: boolean;
   /** the real Solar System has just come back (Back to reality, or its first change undone): Undo is offered at the top for a moment */
@@ -188,6 +202,11 @@ const TEMPLATE = `
   </div>
   <div class="hud-toast" role="status" aria-live="polite"></div>
   <div class="move-handle" hidden></div>
+  <svg class="aim" hidden aria-hidden="true">
+    <line class="aim-guide"/><line class="aim-shaft"/><path class="aim-head"/>
+    <g class="aim-mark" data-mark="circle"><line/><text>circle</text></g>
+    <g class="aim-mark" data-mark="escape"><line/><text>escape</text></g>
+  </svg>
   <div class="hud-dock">
     <div class="hud-fabs">
       <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What dragging one finger does now: turn round the world, or look around. Tap to change">${ICON.orbit}${ICON.look}<span></span></button>
@@ -227,10 +246,20 @@ const TEMPLATE = `
           <p class="theory" hidden><b>Theory predicts</b><span></span></p>
         </div>
         <div class="power-panel" data-panel="move" hidden>
-          <p class="power-hint"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it. <span class="move-plane"></span></p>
+          <div class="placing" hidden>
+            <div class="power-read"><span><b></b><small></small></span><button class="place-done" type="button" data-act="place-done">Done</button></div>
+            <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass"/>
+          </div>
+          <p class="power-hint">
+            <span class="hint-move"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it.</span>
+            <span class="hint-throw"><span class="touch-only">Pull back from it and let go, like a slingshot, or flick it.</span><span class="mouse-only">Drag back from it and let go, like a slingshot, or flick it.</span> The arrow's marks: going round in a circle, and escaping.</span>
+            <span class="hint-place">Drag it to where you want it: let go and it goes round in a circle there, or flick it to throw it. Time waits until Done.</span>
+            <span class="move-plane"></span>
+          </p>
           <div class="seg" role="group" aria-label="What it does where you leave it">
             <button type="button" data-act="move-keep" aria-pressed="true">Keeps its speed</button>
             <button type="button" data-act="move-circle" aria-pressed="false">Goes in a circle</button>
+            <button type="button" data-act="move-throw" aria-pressed="false">Throw</button>
           </div>
           <p class="power-now"></p>
         </div>
@@ -239,7 +268,7 @@ const TEMPLATE = `
           <button class="row" type="button" data-act="add-earth">${ICON.rocky}<span class="row-text"><b>A planet like Earth</b><small>Its size and mass, on a circle round this star</small></span></button>
           <button class="row" type="button" data-act="add-jupiter">${ICON.giant}<span class="row-text"><b>A planet like Jupiter</b><small>318 Earths: heavy enough to throw worlds out</small></span></button>
           <button class="row" type="button" data-act="add-sun">${ICON.sun}<span class="row-text"><b>A second sun</b><small>A star like the Sun: they go round each other</small></span></button>
-          <p class="power-hint">It starts between you and this world, and can be moved, made heavier and removed like any other.</p>
+          <p class="power-hint">It starts between you and this world, with time waiting: put it where you want it, give it the mass you want, then Done. After that it is moved, made heavier and removed like any other.</p>
         </div>
         <div class="facts" hidden>
           <dl></dl>
@@ -344,8 +373,11 @@ export class Hud {
   private moved = false;
   /** the power whose panel is open on the card */
   private power: 'mass' | 'add' | null = null;
-  /** a finger is on the mass slider: where it stands is the finger's business */
+  /** a finger is on the mass slider (or on the one of a world being put in place): where it stands is the finger's business */
   private sliding = false;
+  private placeSliding = false;
+  /** what the slingshot's arrow was last drawn as */
+  private aimKey = '';
   private logKey = '';
   private leftOutKey = '';
   private thumbs: ThumbSheet | null = null;
@@ -361,6 +393,7 @@ export class Hud {
   private readonly slot: HTMLElement;
   private readonly input: HTMLInputElement;
   private readonly slider: HTMLInputElement;
+  private readonly placeSlider: HTMLInputElement;
   private readonly cats: HTMLElement;
   private readonly list: HTMLElement;
   private readonly toastEl: HTMLElement;
@@ -375,7 +408,8 @@ export class Hud {
     this.$ = (sel) => found.get(sel) ?? found.set(sel, el.querySelector<HTMLElement>(sel)!).get(sel)!;
     this.slot = this.$('.hud-slot');
     this.input = el.querySelector<HTMLInputElement>('.searchbox input')!;
-    this.slider = el.querySelector<HTMLInputElement>('.card .slider')!;
+    this.slider = el.querySelector<HTMLInputElement>('.card [data-panel="mass"] .slider')!;
+    this.placeSlider = el.querySelector<HTMLInputElement>('.card .placing .slider')!;
     this.cats = this.$('.cats');
     this.list = this.$('.explore .list');
     this.toastEl = this.$('.hud-toast');
@@ -404,6 +438,11 @@ export class Hud {
     for (const done of ['pointerup', 'pointercancel', 'blur']) this.slider.addEventListener(done, () => this.host.massHeld(false));
     // (the keys that move a slider are its own; every other key is still a shortcut while it has the focus)
     this.slider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
+    // the mass of a world being put in place: part of its making, until Done
+    this.placeSlider.addEventListener('input', () => this.host.setMadeMass(Number(this.placeSlider.value)));
+    this.placeSlider.addEventListener('pointerdown', () => { this.placeSliding = true; });
+    for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.placeSlider.addEventListener(done, () => { this.placeSliding = false; });
+    this.placeSlider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
     for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
     // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
     const full = this.$('[data-fullscreen]');
@@ -573,6 +612,38 @@ export class Hud {
     if (at) ring.style.transform = `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
   }
 
+  /**
+   * The slingshot's arrow (null: none is being pulled): from the edge of the world being thrown,
+   * the way it will go, as long as the throw is fast; behind it, faint, the rest of the way to the
+   * marks of a circle and of escape, the one the throw is exactly lit.
+   */
+  setAim(aim: AimView | null): void {
+    const svg = this.$('.aim');
+    const draw = !!aim && aim.length > 0;
+    const key = draw ? [aim.x, aim.y, aim.edge, aim.ux, aim.uy, aim.length].map((v) => v.toFixed(1)).join() + aim.snapped : '';
+    if (key === this.aimKey) return;
+    this.aimKey = key;
+    svg.toggleAttribute('hidden', !draw);
+    if (!draw) return;
+    const { ux, uy } = aim, nx = -uy, ny = ux;
+    const x0 = aim.x + ux * aim.edge, y0 = aim.y + uy * aim.edge, at = (d: number) => [x0 + ux * d, y0 + uy * d];
+    const line = (el: Element, a: number[], b: number[]) => { el.setAttribute('x1', a[0].toFixed(1)); el.setAttribute('y1', a[1].toFixed(1)); el.setAttribute('x2', b[0].toFixed(1)); el.setAttribute('y2', b[1].toFixed(1)); };
+    line(svg.querySelector('.aim-guide')!, at(0), at(Math.max(aim.length, aim.escape) + 24));
+    const tip = at(aim.length), HEAD = 12;
+    line(svg.querySelector('.aim-shaft')!, at(0), at(Math.max(0, aim.length - HEAD)));
+    svg.querySelector('.aim-head')!.setAttribute('d', `M${tip[0].toFixed(1)},${tip[1].toFixed(1)} L${(tip[0] - ux * HEAD + nx * 7).toFixed(1)},${(tip[1] - uy * HEAD + ny * 7).toFixed(1)} L${(tip[0] - ux * HEAD - nx * 7).toFixed(1)},${(tip[1] - uy * HEAD - ny * 7).toFixed(1)} Z`);
+    for (const g of svg.querySelectorAll<SVGGElement>('.aim-mark')) {
+      const which = g.dataset.mark as 'circle' | 'escape', p = at(aim[which]);
+      line(g.querySelector('line')!, [p[0] + nx * 9, p[1] + ny * 9], [p[0] - nx * 9, p[1] - ny * 9]);
+      // (the word stands beside its mark, on the side away from the screen's nearer edge)
+      const side = p[0] + nx * 20 < 40 || p[0] + nx * 20 > window.innerWidth - 40 ? -1 : 1;
+      const text = g.querySelector('text')!;
+      text.setAttribute('x', (p[0] + side * nx * 22).toFixed(1));
+      text.setAttribute('y', (p[1] + side * ny * 22 + 4).toFixed(1));
+      g.classList.toggle('on', aim.snapped === which);
+    }
+  }
+
   /** A control from elsewhere that belongs with the round buttons (the headset's "Enter VR"). */
   addFab(button: HTMLElement): void {
     this.fabs.appendChild(button);
@@ -718,7 +789,7 @@ export class Hud {
     }
     if (!live) return;
     setText(this.$('.live-what b'), 'Live physics');
-    setText(this.$('.live-what small'), live.slow || `since ${live.since}`);
+    setText(this.$('.live-what small'), live.mark);
     setText(this.$('.live-about'), `Since ${live.since} everything here moves under its own gravity: each world pulls on every other, and nothing is on its catalogued path any more.${live.rails ? ` Carried on rails while time runs this fast: ${live.rails}.` : ''}`);
     const key = live.log.map((e) => `${e.day}\n${e.text}`).join('\n');
     if (key !== this.logKey) {
@@ -778,10 +849,22 @@ export class Hud {
     const movePanel = card.querySelector<HTMLElement>('[data-panel="move"]')!;
     movePanel.hidden = !moving;
     if (sel.move && moving) {
+      const { how, placing } = sel.move;
       setText(movePanel.querySelector('.move-plane')!, sel.move.plane);
       setText(movePanel.querySelector('.power-now')!, sel.move.orbit);
-      movePanel.querySelector('[data-act="move-keep"]')!.setAttribute('aria-pressed', String(!sel.move.circle));
-      movePanel.querySelector('[data-act="move-circle"]')!.setAttribute('aria-pressed', String(sel.move.circle));
+      // (a world just made, being put in place: its mass, Done, and how a finger puts it; otherwise the choice of what it does where it is left)
+      movePanel.querySelector<HTMLElement>('.hint-move')!.hidden = placing || how === 'throw';
+      movePanel.querySelector<HTMLElement>('.hint-throw')!.hidden = placing || how !== 'throw';
+      movePanel.querySelector<HTMLElement>('.hint-place')!.hidden = !placing;
+      movePanel.querySelector<HTMLElement>('.seg')!.hidden = placing;
+      for (const h of ['keep', 'circle', 'throw'] as const) movePanel.querySelector(`[data-act="move-${h}"]`)!.setAttribute('aria-pressed', String(how === h));
+      const place = movePanel.querySelector<HTMLElement>('.placing')!;
+      place.hidden = !sel.place;
+      if (sel.place) {
+        setText(place.querySelector('.power-read b')!, sel.place.mass);
+        setText(place.querySelector('.power-read small')!, sel.place.what);
+        if (!this.placeSliding && Math.abs(Number(this.placeSlider.value) - sel.place.slider) > 0.002) this.placeSlider.value = String(sel.place.slider);
+      }
     }
     const panel = card.querySelector<HTMLElement>('[data-panel="mass"]')!;
     panel.hidden = this.power !== 'mass';
@@ -894,9 +977,14 @@ export class Hud {
     }
   }
 
-  /** Another panel of the card is opened: if the world was being moved, that is over. */
+  /** Another panel of the card is opened: if the world was being moved (or put in place), that is over. */
   private endMove(): void {
-    if (this.state?.selection?.move?.on) this.host.act('move');
+    const move = this.state?.selection?.move;
+    if (!move?.on) return;
+    this.host.act('move');
+    // (the card is drawn again at once, before the app's next word: as it now is, the world no longer moved, or the
+    // panel just opened would close again)
+    move.on = false;
   }
 
   private tab(name: string): void {

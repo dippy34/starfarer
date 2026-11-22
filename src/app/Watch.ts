@@ -45,15 +45,17 @@ export function sample(physics: LivePhysics, system: SolarSystem, touched: Body)
  * it left them (`after`), framed round `centre`, no faster than `most` (null: none of the worlds it
  * matters to goes round anything to be seen). The worlds it matters to are those whose
  * acceleration it changes by a hundredth or more (Powers.affected), weighed at one moment: the one
- * moved and what goes round it where they were and where they are, the rest where they are now.
- * The centre of a world taken away is the place it would have gone on to: it has no mass to frame
- * round, and nothing to turn round.
+ * moved and what goes round it where they were and where they are, the rest where they are now;
+ * and the world moved itself, always (one thrown from where it was pulls and is pulled as before:
+ * what changed is where it goes). The centre of a world taken away is the place it would have
+ * gone on to: it has no mass to frame round, and nothing to turn round.
  */
 export function planChange(kind: ChangeKind, body: Body, before: ReadonlyMap<Body, Sampled>, after: ReadonlyMap<Body, Sampled>, centre: Body | null, most: number): WatchFrame | null {
   const moved = (b: Body) => kind === 'move' && (b === body || goesRound(b, body));
   const was: Weighed[] = [...before].map(([b, s]) => ({ id: b.id, gm: s.gm, pos: moved(b) || !after.has(b) ? s.pos : after.get(b)!.pos }));
   const now: Weighed[] = [...after].map(([b, s]) => ({ id: b.id, gm: s.gm, pos: s.pos }));
   const hit = new Set(affected(was, now));
+  if (kind === 'move') hit.add(body.id);
   const worlds: Watched[] = [...after].filter(([b]) => hit.has(b.id)).map(([b, s]) => ({ ...s, was: before.get(b)?.period ?? Infinity }));
   const plan = watchPlan(worlds, centre && { gm: kind === 'remove' ? 0 : centre.gm, pos: centre.pos.toArray(), vel: centre.vel.toArray() }, most);
   return plan && { rate: plan.rate, radius: plan.radius, centre: plan.radius > 0 ? centre : null };

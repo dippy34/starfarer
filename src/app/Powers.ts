@@ -10,7 +10,8 @@ import { fmtDuration, G, M_EARTH, M_JUPITER, M_SUN, mainSequence } from '../sim/
  * where it is and how it moves, and how that is said.
  */
 
-const M_MOON = 7.346e22;
+/** the Moon's mass (kg) */
+export const M_MOON = 7.346e22;
 
 // ---------------------------------------------------------------- a mass, changed and said
 
@@ -88,6 +89,9 @@ function years(y: number): string {
 
 // ---------------------------------------------------------------- the orbit a body is on now
 
+/** an orbit whose energy is nearer nothing than this share of μ/r is open: its far end would be some 10¹² times as far away as it is now */
+const ESCAPE_EDGE = 1e-12;
+
 export interface Orbit {
   /** closed: it comes round again */
   bound: boolean;
@@ -112,7 +116,8 @@ export function orbitOf(r: ArrayLike<number>, v: ArrayLike<number>, mu: number):
   const h2 = hx * hx + hy * hy + hz * hz;
   const e = Math.sqrt(Math.max(0, 1 + (2 * energy * h2) / (mu * mu)));
   const peri = h2 / (mu * (1 + e));
-  if (!(energy < 0)) return { bound: false, e, peri, apo: Infinity, period: Infinity };
+  // (a body thrown at exactly the speed of escape is on the edge, which rounding would put on either side: it does not come back)
+  if (!(energy < -ESCAPE_EDGE * (mu / d))) return { bound: false, e, peri, apo: Infinity, period: Infinity };
   const a = -mu / (2 * energy);
   return { bound: true, e, peri, apo: 2 * a - peri, period: 2 * Math.PI * Math.sqrt((a * a * a) / mu) };
 }
@@ -177,6 +182,123 @@ export function onPlane(dir: Vec, on: Vec, n: Vec): Triple | null {
 export function circularVelocity(r: Vec, mu: number, n: Vec): Triple {
   const t: Triple = [n[1] * r[2] - n[2] * r[1], n[2] * r[0] - n[0] * r[2], n[0] * r[1] - n[1] * r[0]];
   const k = Math.sqrt(mu / Math.hypot(r[0], r[1], r[2])) / Math.hypot(t[0], t[1], t[2]);
+  return [k * t[0], k * t[1], k * t[2]];
+}
+
+// ---------------------------------------------------------------- a world thrown
+
+/*
+ * A throw's speed is told in speeds of a circle: f times √(μ/r), the speed that would keep the
+ * world going round in a circle where it is, about what holds sway there (r: the distance
+ * between the two, μ: G times their masses). At f = 1 a world thrown square to that line goes
+ * round in a circle; at f = √2 any world escapes, whichever way it is thrown.
+ */
+
+/** a finger lifting slower than this (CSS px a second) is not flicking */
+export const FLICK_SLOWEST = 250;
+/**
+ * a flick this fast (CSS px a second) throws at the speed of a circle. A starting value, reasoned
+ * from how fast a quick flick on a phone is (1,500 to 3,000 px a second: one at 1,700 escapes), not
+ * yet tried by a hand on an iPhone
+ */
+export const FLICK_PER_CIRCLE = 1200;
+/** a finger's speed as it lifts is taken over this much of its last movement (ms), not from its last two places */
+export const FLICK_WINDOW = 90;
+/** a finger that has been on the move for longer than this when it lifts (ms) was aiming, not flicking */
+export const FLICK_LONGEST = 300;
+/** a finger that has come no farther than this from where it came down (CSS px) has not moved */
+export const FINGER_SLOP = 10;
+/** a slingshot's arrow this long (CSS px) throws at the speed of a circle */
+export const AIM_PER_CIRCLE = 110;
+/** an arrow shorter than this (CSS px) throws nothing: the finger has come back to where it took hold */
+export const AIM_SHORTEST = 16;
+/** the fastest throw, in speeds of a circle (escape is √2) */
+export const THROW_MOST = 3;
+/** within this share of the speed of a circle, or of escape, a throw is exactly that */
+export const THROW_SNAP = 0.03;
+/** within this angle (rad) of square to the line from what holds sway, a throw is square to it */
+export const THROW_SQUARE = (3 * Math.PI) / 180;
+
+/** A throw's speed in speeds of a circle, made exactly 1 (a circle) or √2 (escape) within THROW_SNAP of either, and no more than THROW_MOST. */
+export function snapThrow(f: number): number {
+  const g = Math.max(0, Math.min(THROW_MOST, f));
+  for (const at of [1, Math.SQRT2]) if (Math.abs(g / at - 1) < THROW_SNAP) return at;
+  return g;
+}
+
+/** A flick of `pxPerSecond` as a throw, in speeds of a circle; null if it is too slow to be one. */
+export function flickFactor(pxPerSecond: number): number | null {
+  return pxPerSecond < FLICK_SLOWEST ? null : snapThrow(pxPerSecond / FLICK_PER_CIRCLE);
+}
+
+/** A slingshot's arrow `px` long as a throw, in speeds of a circle. */
+export function aimFactor(px: number): number {
+  return snapThrow(px / AIM_PER_CIRCLE);
+}
+
+/** Where a finger was and when: `t` in ms, `x` and `y` in CSS px. */
+export interface FingerAt { t: number; x: number; y: number }
+
+/**
+ * How fast and which way a finger was moving as it lifted (CSS px a second), from its places, the
+ * last where it lifted: from where it was `window` ms before that (between the two places either
+ * side of that moment), so that neither one late place nor a hand that slows in its last few
+ * milliseconds decides it, and a finger that rested before it lifted was not moving. A finger down
+ * for less than `window` is taken from where it came down.
+ */
+export function fingerVelocity(places: readonly FingerAt[], window = FLICK_WINDOW): { speed: number; dx: number; dy: number } {
+  const n = places.length, last = places[n - 1];
+  if (n < 2) return { speed: 0, dx: 0, dy: 0 };
+  const from = last.t - window;
+  let k = n - 1;
+  while (k > 0 && places[k - 1].t > from) k--;
+  let x = places[0].x, y = places[0].y, t = places[0].t;
+  if (k > 0) {
+    const a = places[k - 1], b = places[k], s = b.t > a.t ? (from - a.t) / (b.t - a.t) : 1;
+    x = a.x + s * (b.x - a.x);
+    y = a.y + s * (b.y - a.y);
+    t = from;
+  }
+  const dt = (last.t - t) / 1000;
+  if (!(dt > 0)) return { speed: 0, dx: 0, dy: 0 };
+  const dx = (last.x - x) / dt, dy = (last.y - y) / dt;
+  return { speed: Math.hypot(dx, dy), dx, dy };
+}
+
+/**
+ * Was a finger that took hold of a world, and has lifted, flicking it? From its places (the first
+ * where it came down, the last where it lifted): it set off no more than FLICK_LONGEST before it
+ * lifted (longer, and it was pulling an arrow back to aim) and was going at FLICK_SLOWEST or more
+ * as it lifted. If so the throw: `f` speeds of a circle, along (`dx`, `dy`) on the screen (a unit
+ * vector, the way the finger went); null otherwise.
+ */
+export function flickOf(places: readonly FingerAt[]): { f: number; dx: number; dy: number } | null {
+  const first = places[0], last = places[places.length - 1];
+  const off = first && places.find((p) => Math.hypot(p.x - first.x, p.y - first.y) > FINGER_SLOP);
+  if (!off || last.t - off.t > FLICK_LONGEST) return null;
+  const v = fingerVelocity(places), f = flickFactor(v.speed);
+  return f === null ? null : { f, dx: v.dx / v.speed, dy: v.dy / v.speed };
+}
+
+/**
+ * The velocity, against what holds sway, of a world thrown along `dir` (a unit vector) at `f`
+ * speeds of a circle from `r` (m) from it, the two of them having `mu` (G times their masses).
+ */
+export function throwVelocity(r: Vec, mu: number, dir: Vec, f: number): Triple {
+  const v = f * Math.sqrt(mu / Math.hypot(r[0], r[1], r[2]));
+  return [v * dir[0], v * dir[1], v * dir[2]];
+}
+
+/**
+ * The way a world is thrown (`dir`, a unit vector in the plane whose normal is `n`): square to the
+ * line `r` from what holds sway, going the nearer way round, if it is within `within` of that
+ * (so that a throw at the speed of a circle goes round in a circle); otherwise as it is.
+ */
+export function squareThrow(dir: Vec, r: Vec, n: Vec, within = THROW_SQUARE): Triple {
+  const t: Triple = [n[1] * r[2] - n[2] * r[1], n[2] * r[0] - n[0] * r[2], n[0] * r[1] - n[1] * r[0]];
+  const len = Math.hypot(t[0], t[1], t[2]), along = (dir[0] * t[0] + dir[1] * t[1] + dir[2] * t[2]) / len;
+  if (!(len > 0) || Math.abs(along) < Math.cos(within)) return [dir[0], dir[1], dir[2]];
+  const k = Math.sign(along) / len;
   return [k * t[0], k * t[1], k * t[2]];
 }
 
@@ -359,10 +481,10 @@ export function listed(names: readonly string[], most = 2): string {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-/** A date (TDB Julian) as a day in words: "21 November 2026". */
-export function dayWords(jd: number): string {
-  const c = jdToCalendar(tdbToUtc(jd));
-  return `${c.day} ${MONTHS[c.month - 1]} ${c.year}`;
+/** A date (TDB Julian) as a day in words: "21 November 2026" (`short`: "21 Nov 2026", where room is scarce). */
+export function dayWords(jd: number, short = false): string {
+  const c = jdToCalendar(tdbToUtc(jd)), month = MONTHS[c.month - 1];
+  return `${c.day} ${short ? month.slice(0, 3) : month} ${c.year}`;
 }
 
 /** A rate of time (simulated seconds a second) in words: "3 days a second", "1,200 years a second". */

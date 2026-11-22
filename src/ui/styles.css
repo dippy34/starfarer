@@ -303,15 +303,29 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .theory { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: rgba(127, 178, 255, 0.1); font-size: 13px; line-height: 1.35; }
 /* moving a world: what to do, the choice of what it does where it is left, the orbit it is on now */
 .power-hint { margin: 0 0 8px; font-size: 13px; line-height: 1.35; color: var(--dim); }
+/* (three choices across a phone: a long name takes two lines rather than be cut off) */
 .seg { display: flex; padding: 3px; border-radius: 14px; background: var(--fill); }
-#hud .seg button { flex: 1; min-height: 40px; padding: 0 8px; border-radius: 11px; font-size: 14px; font-weight: 600; color: var(--dim); white-space: nowrap; }
+#hud .seg button { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 2px 6px; border-radius: 11px; font-size: 13.5px; font-weight: 600; line-height: 1.15; color: var(--dim); }
 #hud .seg button[aria-pressed='true'] { background: var(--live); color: #2a1404; }
 .power-now { margin: 8px 0 0; font-size: 14px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+/* a world just made, being put in place: its mass and Done above its slider */
+.placing { margin-bottom: 6px; }
+#hud .power-read .place-done { background: var(--live); color: #2a1404; padding: 0 22px; }
 /* the ring round the world being moved (the view's own corner is its origin: it is placed by a transform) */
 .move-handle {
   position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; box-sizing: border-box; border-radius: 50%;
   border: 2px dashed var(--live); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); pointer-events: none; will-change: transform;
 }
+/* the slingshot's arrow: the way a world will be thrown, and the marks of a circle and of escape along it */
+.aim { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.aim line, .aim path { stroke-linecap: round; }
+.aim-guide { stroke: rgba(255, 176, 122, 0.35); stroke-width: 2; stroke-dasharray: 3 6; }
+.aim-shaft { stroke: var(--live); stroke-width: 4; filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8)); }
+.aim-head { fill: var(--live); filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8)); }
+.aim-mark line { stroke: rgba(233, 238, 247, 0.6); stroke-width: 2; }
+.aim-mark text { fill: var(--dim); font-size: 12.5px; font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 3px; }
+.aim-mark.on line { stroke: #fff; stroke-width: 3; }
+.aim-mark.on text { fill: #fff; }
 .theory b { display: block; margin-bottom: 2px; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 .facts { flex: 1 1 auto; min-height: 0; padding-top: 4px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); }
 .facts dl { margin: 0; }

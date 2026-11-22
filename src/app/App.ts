@@ -6,7 +6,7 @@ import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
 import { formatUtc, SimClock, utcToTdb, dateToJdUtc } from '../core/time';
 import { AU, DAY, formatDistance, formatSpeed, PC, SUN_RADIUS } from '../core/units';
-import { fmtDuration } from '../sim/physics';
+import { fmtDuration, G } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { BodiesLayer } from '../render/Bodies';
@@ -46,7 +46,7 @@ import { Body, type SpaceObject } from '../universe/Body';
 import { GALAXY, glowColumn } from '../universe/Galaxy';
 import { MilkyWay } from '../universe/MilkyWay';
 import { ExoPlanet, type PlanetarySystem } from '../universe/Planets';
-import { SolarSystem } from '../universe/SolarSystem';
+import { type BodyJson, SolarSystem } from '../universe/SolarSystem';
 import { StarCatalog } from '../universe/StarCatalog';
 import { CatalogStar, NamedStars } from '../universe/Stars';
 import { Catalog } from '../universe/Catalog';
@@ -58,10 +58,10 @@ import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
-import { canAdd, type Kind, MADE_FIRST_ID, newMoon, newTwin, TWIN_OF } from './WhatIf';
+import { canAdd, type Kind, MADE_FIRST_ID, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
 import { type LiveCheckpoint, LivePhysics } from './LivePhysics';
 import { Mover } from './Mover';
-import { farWords, frameDistance, massFactor, massOf, massSlider, massTheory, massWords, rateWords, spanWords, the, timesWords, viewFrame } from './Powers';
+import { dayWords, farWords, FRAME_MARGIN, frameDistance, massFactor, massOf, massSlider, massTheory, massWords, rateWords, spanWords, the, timesWords, viewFrame } from './Powers';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
@@ -252,6 +252,19 @@ export class App {
   private begun: Start | null = null;
   /** when the real Solar System came back (performance.now, ms), for the Undo offered just after; 0: not offered */
   private realAgain = 0;
+  /**
+   * A world just made is being put in place (src/app/Mover.ts: place): whether time was paused
+   * before it was made (null: the explorer has set the time since, which then stays as they set
+   * it), and the mass it was made with (kg: its slider means exactly that near it).
+   */
+  private placement: { paused: boolean | null; base: number } | null = null;
+  /**
+   * The world the camera was last framed round (a change's watch, or a new world being put in
+   * place): the camera rides with it while the watch lasts, or the placing, even from beyond its
+   * reach (the Earth and the Moon are framed from four million km, where the camera would ride
+   * with the Sun, and the Earth go out of the frame at days a second).
+   */
+  private framed: Body | null = null;
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -564,7 +577,7 @@ export class App {
   private bindKeys(): void {
     // (a finger on the view, or the wheel, takes the camera back from a watch at once: time keeps the watch's pace)
     this.input.onDown = () => { this.glide = null; };
-    this.input.grab = (x, y, touch) => this.mover.grab(x, y, touch);
+    this.input.grab = (x, y, touch, t) => this.mover.grab(x, y, touch, t);
     this.input.onTap = (x, y, touch) => {
       if (!touch && this.walk.onClick()) return; // walking: the click grabs the mouse
       if (touch && this.photoMode) { this.act('photo'); return; } // a tap brings the controls back
@@ -635,8 +648,10 @@ export class App {
       case 'add-sun': this.add('sun'); break;
       case 'remove': if (this.selection instanceof Body) this.removeBody(this.selection); break;
       case 'move': this.mover.toggle(this.selection instanceof Body && this.selection.valid ? this.selection : null); break;
-      case 'move-keep': this.mover.leave(false); break;
-      case 'move-circle': this.mover.leave(true); break;
+      case 'move-keep': this.mover.leave('keep'); break;
+      case 'move-circle': this.mover.leave('circle'); break;
+      case 'move-throw': this.mover.leave('throw'); break;
+      case 'place-done': this.mover.stop(true); break;
       case 'reality': this.backToReality(); break;
       case 'undo': this.undo(); break;
       case 'watch-stop': this.stopWatch(); break;
@@ -722,6 +737,8 @@ export class App {
    * if that pace lies between two steps: the step below it is already slower.
    */
   private takeTime(): boolean {
+    // (a world being put in place leaves time as the explorer sets it now)
+    if (this.placement) this.placement.paused = null;
     if (!this.watch.watching) return false;
     const rate = this.watch.rate;
     this.rateSign = 1;
@@ -983,12 +1000,12 @@ export class App {
     else if (this.hud.open) this.hud.closeSheet();
     else this.select(null);
   }
-  /** Human-readable time rate. */
-  rateText(): string {
-    const r = Math.abs(this.clock.rate);
-    const t = r === 1 ? 'real time' : r < 60 ? `${r}×` : r < 3600 ? `${(r / 60).toFixed(0)} min/s` : r < DAY ? `${(r / 3600).toFixed(0)} h/s`
+  /** Human-readable time rate (the clock's, unless told another). */
+  rateText(rate = this.clock.rate): string {
+    const r = Math.abs(rate);
+    const t = r === 1 ? 'real time' : r < 60 ? `${Number(r.toPrecision(3))}×` : r < 3600 ? `${(r / 60).toFixed(0)} min/s` : r < DAY ? `${(r / 3600).toFixed(0)} h/s`
       : r < 365.25 * DAY ? `${(r / DAY).toFixed(r < 7 * DAY ? 0 : 1)} d/s` : `${(r / (365.25 * DAY)).toFixed(0)} yr/s`;
-    return `${this.clock.rate < 0 ? '◀ ' : ''}${t}`;
+    return `${rate < 0 ? '◀ ' : ''}${t}`;
   }
 
   /**
@@ -1016,7 +1033,10 @@ export class App {
   /**
    * Add something to a world (the selected one, unless told which): a moon to a planet; to a star
    * a planet, or another sun. It starts between that world and the eye, is simulated from the
-   * start, and is selected. Null if that cannot be added there.
+   * start, and is selected. Then it is put in place (src/app/Mover.ts: place): time waits, a finger
+   * puts it where it is wanted and leaves it on a circle there, or flicks it, its mass can be set,
+   * and Done ends its making, watched (in the ship, walking or in the headset it is left where it
+   * starts). Null if that cannot be added there.
    */
   add(kind: Kind, to: SpaceObject | null = this.selection): Body | null {
     if (!(to instanceof Body) || !canAdd(to, this.made.length).includes(kind)) return null;
@@ -1034,8 +1054,46 @@ export class App {
     this.bodies.changed();
     this.select(made);
     this.tellNews(wasOn);
-    this.endChange();
+    if (this.game.flight.on || this.walk.active || this.vr.active) { this.endChange(); return made; }
+    this.placement = { paused: this.clock.paused, base: plan.json.madeAs?.kg ?? made.gm / G };
+    this.clock.paused = true;
+    this.mover.place(made);
+    // (where a finger can find it: unless it is in sight already, the camera eases out until what it was given to and
+    // its orbit are clear of the card)
+    this.updateHud();
+    const at = this.project(made.upos.sub(this.rig.upos, new Vector3())), free = this.hud.freeArea();
+    if (!at || at.x < free.left || at.x > free.right || at.y < free.top || at.y > free.bottom) this.frameOn(to, FRAME_MARGIN * plan.orbit);
     return made;
+  }
+
+  /**
+   * The world just made is in place (`done`: Done was tapped), or putting it in place was left
+   * (another world chosen, another panel opened, Escape): time runs again as it did before it was
+   * made, unless the explorer has set it since, and its making ends; it is watched only after Done.
+   */
+  placed(done: boolean): void {
+    const p = this.placement;
+    this.placement = null;
+    if (p && p.paused !== null) this.clock.paused = p.paused;
+    if (this.pending?.kind === 'add') this.endChange(done);
+  }
+
+  /** The mass slider of the world being put in place (0 to 1): that mass from now, and the size that follows from it, and a sun's light and colour (src/app/WhatIf.ts: madeSize). */
+  setMadeMass(s: number): void {
+    const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'], p = this.placement;
+    if (!b || !as || !p) return;
+    const kind = as.kind as Kind, kg = madeMassAt(kind, s, p.base);
+    if (kg === as.kg) return;
+    const size = madeSize(kind, kg, as.icy), k = size.radius / b.radius;
+    as.kg = kg;
+    this.physics.resize(b, G * kg, [k * b.radii[0], k * b.radii[1], k * b.radii[2]], this.clock.jdTdb);
+    if (size.teff && size.lum) {
+      b.teff = size.teff;
+      b.absMag = madeAbsMag(size.lum);
+      // (its face and its light are drawn afresh for its new temperature)
+      this.bodies.changed(b);
+    }
+    this.mover.recircle();
   }
 
   // ------------------------------------------------------------------ changes: one per gesture, undone, watched
@@ -1055,8 +1113,8 @@ export class App {
     this.pending = { kind, body, before: this.checkpoint(what), count: this.physics.changes, sample: this.sample(body) };
   }
 
-  /** The change is over (the finger has lifted; a pause after the last key): kept for Undo if it changed anything, and watched. */
-  endChange(): void {
+  /** The change is over (the finger has lifted; a pause after the last key): kept for Undo if it changed anything, and watched (unless `watch` is false: a world put in place without Done). */
+  endChange(watch = true): void {
     if (!this.run.end()) return;
     const c = this.pending;
     this.pending = null;
@@ -1067,7 +1125,19 @@ export class App {
     const frame = this.planWatch(c);
     if (!frame || !this.showMe) return;
     this.replayFrom = { cp: this.physics.checkpoint(this.clock.jdTdb), frame };
-    this.startWatch(frame);
+    if (watch) this.startWatch(frame);
+  }
+
+  /** The change under way came to nothing (a throw let go where it was taken hold of, or taken away by the browser): everything as it was before it began, and nothing kept for Undo. */
+  cancelChange(): void {
+    const c = this.pending;
+    if (!this.run.end() || !c) return;
+    this.pending = null;
+    if (this.physics.changes === c.count) return;
+    this.physics.restore(c.before.live);
+    this.clock.jdTdb = c.before.live.jd;
+    this.trails.clear();
+    this.bodies.changed();
   }
 
   /** A finger (or the pointer) has come down on the mass slider, or lifted from it: one change from the moment it comes down until it lifts. */
@@ -1079,6 +1149,8 @@ export class App {
 
   /** Undo: back to just before the last change, the date and the rate of time included. The first change undone is the real Solar System again. */
   undo(): void {
+    // (a world being put in place: its making ends, unwatched, and is what is undone)
+    if (this.mover.placing) this.mover.stop();
     if (this.run.open) this.endChange();
     const cp = this.history.pop();
     if (!cp) return;
@@ -1146,14 +1218,24 @@ export class App {
     // (the chip and the mark are drawn first, and an open panel of the card makes room on an upright
     // screen: the frame is fitted to what they leave clear)
     this.updateHud();
-    if (!f.centre || this.vr.active) return;
+    this.framed = null;
+    if (f.centre) this.frameOn(f.centre, f.radius);
+  }
+
+  /**
+   * Ease the camera to a frame `radius` (m) round `centre`, in the part of the view the interface
+   * leaves clear (an open panel of the card folding away to make room on an upright screen).
+   */
+  private frameOn(centre: Body, radius: number): void {
+    if (this.vr.active) return;
     this.hud.makeRoom();
     const v = viewFrame(this.hud.freeArea(), this.cssW, this.cssH, this.rig.fovY);
-    const d = frameDistance(Math.max(f.radius, 1.2 * f.centre.radius), v.halfX, v.halfY);
+    const d = frameDistance(Math.max(radius, 1.2 * centre.radius), v.halfX, v.halfY);
     if (this.rig.autopilot) this.rig.cancelGoto();
     // (a world taken away is a point to look at, nothing to turn round)
-    this.rig.target = f.centre.valid ? f.centre : null;
-    this.glide = new Glide(this.rig, f.centre, d, v.dir);
+    this.rig.target = centre.valid ? centre : null;
+    this.framed = centre.valid ? centre : null;
+    this.glide = new Glide(this.rig, centre, d, v.dir);
   }
 
   /** Stop: the explorer's rate of time comes back, the camera stays where it is, and Replay is offered. */
@@ -1258,10 +1340,11 @@ export class App {
    */
   backToReality(): void {
     if (!this.physics.on) return;
+    // (a world being put in place is left where it is first: its making is one of the changes undone)
+    this.mover.stop();
     if (this.run.open) this.endChange();
     this.putRate(this.watch.clear());
     this.glide = null;
-    this.mover.stop();
     this.replayFrom = null;
     this.history.push(this.checkpoint('Back to reality'));
     const begun = this.begun;
@@ -1602,6 +1685,9 @@ export class App {
   }
 
   private chooseAnchor(): void {
+    // (a watch's frame, or a new world's while it is put in place, rides with what it is framed round)
+    const framed = this.framed;
+    if (framed?.valid && (this.watch.state !== 'idle' || this.glide || this.mover.placing)) { this.rig.setAnchor(framed); return; }
     let best: Body | null = null;
     let bestSoi = Infinity;
     const rel = new Vector3();
@@ -2809,6 +2895,7 @@ export class App {
     }
     HITCH.lap('labels');
     this.hud.setHandle(this.mover.handle());
+    this.hud.setAim(this.mover.aim());
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.1;
@@ -2855,7 +2942,7 @@ export class App {
       }
       selection = {
         key: sel.key, name: sel.name, detail: describe(this, sel), rows, worked, picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
-        mass: null, removable: false, move: null, add: sel instanceof Body ? canAdd(sel, this.made.length) : [],
+        mass: null, removable: false, move: null, place: null, add: sel instanceof Body ? canAdd(sel, this.made.length) : [],
       };
       // the powers over a world of the Solar System
       if (sel instanceof Body && sel.valid) {
@@ -2867,10 +2954,20 @@ export class App {
           const factor = sel.gm / real;
           selection.mass = { slider: massSlider(factor), words: massWords(massOf(sel.gm)), times: timesWords(factor), theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '' };
         }
+        // a world just made, being put in place: its own mass slider, and what it is at that mass
+        const as = sel.meta.madeAs as BodyJson['madeAs'];
+        if (as && this.mover.placing && this.mover.body === sel) {
+          const kind = as.kind as Kind;
+          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy) };
+        }
       }
     }
     const status = this.physics.status();
-    const slow = status && !c.paused && status.share < 0.9 ? `getting ${rateWords(c.rate * status.share)}` : '';
+    const kept = status && !c.paused && status.share < 0.9 ? c.rate * status.share : 0;
+    const slow = kept ? `getting ${rateWords(kept)}` : '';
+    // (the mark at the top has the room of a phone: while a change is watched its chip says the pace, and the watch slows
+    // itself when the stepping falls behind)
+    const mark = kept && !this.watch.watching ? `only ${this.rateText(kept)}` : status ? `since ${dayWords(this.physics.live!.jd0, true)}` : '';
     // where the camera is: at its target (how high above it, or how far from it), or in open space
     const t = rig.target;
     let place = rig.anchor ? `Near ${rig.anchor.name}` : 'Open space';
@@ -2904,7 +3001,7 @@ export class App {
       paused: c.paused,
       reversed: c.rate < 0,
       selection,
-      live: status && { since: status.since, slow, rails: status.rails, leftOut: status.leftOut, log: status.log },
+      live: status && { since: status.since, mark, slow, rails: status.rails, leftOut: status.leftOut, log: status.log },
       undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0),
       realAgain: !this.physics.on && this.realAgain > 0 && this.history.size > 0,
       watch: this.watch.state === 'idle' ? null

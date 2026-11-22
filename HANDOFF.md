@@ -625,6 +625,115 @@ temperature, and size as well as mass.
   turned to, and the camera then rides with whatever it is near); Replay after a watch under heavy
   load can differ from the first run by metres (above); undoing a change does not undo the camera.
 
+### Part 2: throw, and add by placing and throwing (done)
+
+- *Throw* (`src/app/Mover.ts`; the arithmetic in `src/app/Powers.ts`, pure and tested). Move has a
+  third choice beside Keeps its speed and Goes in a circle: Throw. The world stays where it is and
+  the finger draws the throw.
+  - The slingshot: pulled back from the world, an arrow points the other way from it
+    (`Hud.setAim`, an SVG over the view), 110 px for each speed of a circle (`AIM_PER_CIRCLE`), marked
+    "circle" at 110 px and "escape" at 156 px, the one the throw is exactly lit. The world is given
+    the throw at once, time waiting, so the orbit line and the card ("Now round Earth: nearly a circle
+    (0), ...", "Now on an open path past Earth: it passes at 369,335 km, then leaves.") show where
+    it will go before it is let go; let go, it goes. Brought back within 16 px of where the finger
+    took hold, or taken away by the browser (`pointercancel`), nothing was thrown: `App.cancelChange`
+    puts back the state before the gesture exactly, and nothing is kept for Undo.
+  - The flick: a finger that set off no more than 300 ms before it lifted, going at 250 px a second
+    or more as it lifted (measured over its last 90 ms, from the event times: `fingerVelocity`), throws
+    the world the way it went, as fast as it went: 1,200 px a second is the speed of a circle
+    (`FLICK_PER_CIRCLE`), 1,700 escape, three speeds of a circle at most. Decision: one gesture does
+    both, told apart by time (`flickOf`): a pull that has gone on longer than 300 ms is an aim,
+    however fast the finger lifts (a slingshot let go while still pulling goes the way its arrow
+    pointed; a check covers it), a quick one is a flick. A slingshot snapped back and let go within
+    0.3 s is taken for a flick and goes the other way, slowly (Undo).
+  - Speeds are in speeds of a circle about what holds sway where the world is (`LivePhysics.swayAt`):
+    f √(μ/r). Snapped to exactly 1 and √2 within 3 % (`snapThrow`); and the way snapped square to the
+    line from what holds sway within 3° (`squareThrow`; decided: without it the circle mark could not
+    make a circle, a finger cannot hold a degree). In the plane the world is dragged in (`dragPlane`,
+    fixed for the gesture). Exactly the speed of escape is open (`orbitOf` takes an energy within
+    10⁻¹² of μ/r of nothing as open; rounding put it on either side).
+  - A throw is a change like the others (one per gesture, "Undone: throwing the Moon") and watched.
+    The world moved is now always among the worlds a change is watched for (`planChange`): thrown from
+    where it is, its pull and the pull on it are as they were, so `affected` found nothing to watch.
+  - The flick's numbers are reasoned (a quick flick on a phone is 1,500 to 3,000 px a second), not
+    tried by a hand on an iPhone: `FLICK_PER_CIRCLE`, `FLICK_SLOWEST`, `FLICK_LONGEST` are the knobs.
+    The browser checks give their events explicit times 16 ms apart (fingers and, new, the mouse:
+    `mouseHand` in `scripts/live.mjs`), so a flick is as fast whatever the machine's speed; a
+    synthetic finger lifts where its last move was, which the window counts as a short rest.
+- *Add, by placing and throwing* (`App.add`, `Mover.place`, `App.placed`, `App.setMadeMass`). Add
+  makes the world where it did (between you and what it is given to), selects it, and leaves it to
+  be put in place: time waits, Move is on, and the card has its mass, Done and its mass slider, and
+  says "Drag it to where you want it: let go and it goes round in a circle there, or flick it to
+  throw it. Time waits until Done." A drag puts it where the finger goes, on a circle there; let go
+  while still going (250 px a second or more over the last 90 ms; no 300 ms limit here: a drag ends
+  in the flick) it is thrown the way the finger went, and a new mass then leaves it thrown. Done ends
+  its making, watched. Anything else that ends it (another world chosen, another panel opened,
+  Escape, Undo, Back to reality) ends it unwatched; time then runs as it did before the Add, unless
+  the explorer set it meanwhile. Making, placing and mass are one change ("Undone: making Earth 2").
+  Where the new world is not in the part of the view the interface leaves clear (upright on a phone
+  it often starts under the card), the camera eases out to frame what it was given to and its orbit
+  (`App.frameOn`, the watch's framing; otherwise it stays). In the ship, walking or in the headset it
+  is left where it starts, as before.
+- *What is made: its mass, and the size that follows* (`src/app/WhatIf.ts`: `MADE_MASS`, `madeSize`,
+  `madeWords`, `madeWorking`). The slider runs in the logarithm, per kind, from a small moon to two
+  suns across the four: a moon 10⁻⁶ to 10 Moons; like the Earth 0.05 to 10 Earths; like Jupiter
+  10 Earths to 0.08 Suns; a sun 0.08 to 2 Suns; it snaps to the mass Add made within 0.03 powers of
+  ten. The size follows from the mass by the rule for what it is (the research's rules; one bridge
+  decided here):
+  - a moon: a ball of rock (3,000 kg/m³), or of ice and rock (1,500) beyond the frost line, as before;
+  - like the Earth: rock at the Earth's mean density (5,514 kg/m³, NASA's fact sheet), R = R⊕ (M /
+    M⊕)^⅓: 5 Earths are 1.71 R⊕;
+  - like Jupiter, from 0.3 Jupiters and as a brown dwarf from 13: about Jupiter's size (its
+    volumetric mean, 69,911 km: `R_JUPITER`, equal to the mean of the catalogue's radii);
+  - between 10 Earths and 0.3 Jupiters, where a world's size depends on how much gas it has gathered:
+    decided, the straight line in the logarithm between the two rules (from the rock of 10 Earths,
+    2.15 R⊕, to Jupiter's size), said so in its working (Neptune's 17 Earths come out 3.2 R⊕; it
+    measures 3.9);
+  - a sun: a star of the main sequence (`mainSequence`): its radius, temperature (its colour, drawn
+    afresh) and light. Its absolute magnitude is the Sun's moved by its light: light of every colour
+    is counted as visible, so a red dwarf (0.08 Suns: 0.13 R☉, 2,570 K, 7·10⁻⁴ of the Sun's light) is
+    drawn brighter than it would look; said in the code. Part 4's heat uses the light itself.
+  The original's mass gives the original's size; a copy keeps the shape and face of what it copies,
+  scaled. Its details say how its size was worked out (`Worked`: "Its size (made by you)", the
+  formula, the numbers, the rule). Afterwards the Mass power changes a made world's pull only, as
+  any world's (its "real mass" is the one it was made with); Part 4 brings Size.
+  `LivePhysics.resize` gives a made world its new mass and size in the simulation (collisions use it).
+- *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
+  thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
+  (its sphere of influence, some 0.9 million km). There the camera rode with the Sun
+  (`App.chooseAnchor` picks by reach), and at 3 days a second the Earth left the frame within
+  seconds. Now the world a watch is framed round, or a new world is being put in place round, is what
+  the camera rides with while the watch lasts (its Replay offer included) or the placing does
+  (`App.framed`). Part 1's Jupiter never showed it: its frame is well inside Jupiter's reach.
+- *The round buttons and a tall card* (found merging the phone's new player pass, e1e9491): with a
+  card's details open on an upright phone the round buttons rose to the top, over the clock chip and,
+  in live physics, over Back to reality (live's tap on it was blocked). The phone's C2 (ce1fa02) has
+  the same rule this part first made (the dock ends below the chips, or the mark of live physics, and
+  a tall panel gives way) and steps the buttons aside while details are read: it is the one kept.
+- *The mark at the top* (the coordinator, from Part 1's pictures): its second line said how fast the
+  stepping kept up ("getting 23 minutes a second"), cut off on a phone, and the watch's chip said
+  the pace anyway. Now: "since 1 Oct 2026"; outside a watch, when the stepping cannot keep up, "only
+  23 min/s" (the clock chip's way of writing rates); the Time sheet keeps the full sentence. During a
+  watch the chip says the pace, and the watch slows itself when the stepping falls behind.
+- Checked: the type check; the unit tests (new: the throw's arithmetic in `tests/powers.test.ts`,
+  the slingshot, the flick, an aim let go while still moving and placing in `tests/mover.test.ts`,
+  a world thrown from where it is watched in `tests/watch.test.ts`, the sizes and the slider in
+  `tests/whatif.test.ts`); `live` with two new blocks, `throw` (Throw offered, the slingshot's
+  arrow and its marks, the card and the orbit line while aiming, let go on a circle and watched,
+  the Earth and the Moon still in the frame days into the watch,
+  Undo, a flick past escape) and `place` (an Earth added and waiting in sight, 5 Earths at 1.71
+  times its size, dragged and left on a circle, Done watched, one Undo, a red dwarf), on a phone
+  and at a desk, and the mark's words in the watch block; `whatif` (its Add check measures from
+  the eye as Add was tapped: the camera may now ease out after it), `interact`, `touch`, `game`,
+  `flight`. The full `live` suite found one regression on the way (after Add, Mass needed two
+  taps: a tap on another panel ends a world's moving, and the card was drawn from the state before
+  it; `Hud.endMove`). The new checks fail on Part 1's build, and the frame's on the build just
+  before the camera rode with what it frames.
+- Not done here: the flick's speeds tuned by a hand on an iPhone; the slingshot and placing in the
+  headset; a made sun's light afterwards with the Mass power (it keeps the light it was made with);
+  the arrow may run under the card (the finger's pull can go anywhere on the screen: it is the
+  world's throw that is drawn).
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
@@ -647,8 +756,9 @@ running (a build, not the dev server: an edit reloads the page under a running s
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
-powers, each through the interface on a phone and at a desk, and watching a change, Replay and
-Undo, upright and sideways; 101: `LIVE_ONLY=watch,jupiter,sun,moon,made` picks blocks),
+powers, each through the interface on a phone and at a desk, watching a change, Replay and
+Undo, upright and sideways, throwing a world and putting a new one in place; 133:
+`LIVE_ONLY=watch,jupiter,sun,moon,made,throw,place` picks blocks),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
 `terrain` (15), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
 time on four cores (more

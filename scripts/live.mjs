@@ -89,7 +89,7 @@ async function pause(page) {
 
 /** Where on the slider's track a value is (the knob is 30 px wide and stays inside the track). */
 async function sliderPoint(page, value) {
-  const box = await page.locator('#hud .card .slider').boundingBox();
+  const box = await page.locator('#hud .card [data-panel="mass"] .slider').boundingBox();
   return { x: box.x + 15 + ((value + 3) / 6) * (box.width - 30), y: box.y + box.height / 2 };
 }
 
@@ -169,14 +169,14 @@ const framing = (page, name, centre) => page.evaluate(([name, centre]) => {
 
 /** The mass slider of the selected world in sight (its panel opened if it is folded). */
 async function massPanel(page) {
-  if (!(await shown(page, '#hud .card .slider'))) await press(page, '#hud .card [data-power="mass"]');
+  if (!(await shown(page, '#hud .card [data-panel="mass"] .slider'))) await press(page, '#hud .card [data-power="mass"]');
   await frames(page, 2);
 }
 
 /** The knob of the mass slider dragged from where it is to `value` (the logarithm of the factor), and let go. */
 async function slideMass(page, touch, value) {
   await massPanel(page);
-  const now = Number(await page.locator('#hud .card .slider').inputValue());
+  const now = Number(await page.locator('#hud .card [data-panel="mass"] .slider').inputValue());
   const from = await sliderPoint(page, now), to = await sliderPoint(page, value);
   if (touch) {
     await touch.press(from);
@@ -194,6 +194,56 @@ async function slideMass(page, touch, value) {
 /** Wait until `test` holds in the page (checked a frame at a time), or `seconds` have gone. */
 const until = (page, test, arg, seconds = 120) => page.waitForFunction(test, arg, { timeout: seconds * 1000, polling: 100 }).then(() => true, () => false);
 
+/** What the mark of live physics says, and whether its words are whole (not cut off with an ellipsis). */
+/**
+ * Every message the toast shows from now on, in order (read with `heard`): one can follow another before a frame
+ * is over, as the missions' "Discovered: the Sun" does when the camera comes to ride with the Sun.
+ */
+const listen = (page) => page.evaluate(() => {
+  window.toastsHeard = [];
+  if (window.toastWatch) return;
+  const t = document.querySelector('#hud .hud-toast');
+  window.toastWatch = new MutationObserver(() => window.toastsHeard.push(t.textContent));
+  window.toastWatch.observe(t, { childList: true, characterData: true, subtree: true });
+});
+const heard = (page) => page.evaluate(() => window.toastsHeard ?? []);
+
+/** Is a point (CSS px) inside a part of the view? */
+const within = (p, r) => !!p && p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom;
+
+const markWords = (page) => page.evaluate(() => {
+  const b = document.querySelector('#hud .live-what b'), s = document.querySelector('#hud .live-what small');
+  return { b: b.textContent, small: s.textContent, whole: b.scrollWidth <= b.clientWidth + 1 && s.scrollWidth <= s.clientWidth + 1 };
+});
+
+/**
+ * The mouse at a desk, its events given their times as the fingers' are (16 ms apart): a quick drag is
+ * as quick whatever this machine's speed. Same calls as the fingers' press, slide, lift and drag.
+ */
+async function mouseHand(page) {
+  const cdp = await page.context().newCDPSession(page);
+  let clock = Date.now() / 1000, at = { x: 0, y: 0 };
+  const send = (type, p, buttons) => { clock += 0.016; at = p; return cdp.send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: type === 'mouseMoved' && !buttons ? 'none' : 'left', buttons, clickCount: 1, timestamp: clock }); };
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const hand = {
+    async press(p) { await send('mouseMoved', p, 0); await send('mousePressed', p, 1); await frames(page, 1); },
+    async slide(p) { await send('mouseMoved', p, 1); await frames(page, 1); },
+    async lift(rest = 0.3) { clock += rest; await send('mouseReleased', at, 0); await frames(page, 1); },
+    async drag(a, b, { steps = 12, rest = 0.3 } = {}) {
+      await hand.press(a);
+      for (let i = 1; i <= steps; i++) await hand.slide(lerp(a, b, i / steps));
+      await hand.lift(rest);
+    },
+  };
+  return hand;
+}
+
+/** The finger, or the mouse with its events timed: press, slide, lift (after `rest` s still; 0: a flick) and drag. */
+async function handOf(page, touch) {
+  if (!touch) return mouseHand(page);
+  return { press: (p) => touch.press(p), slide: (p) => touch.slide(p), lift: async (rest = 0.3) => { touch.wait(rest - 0.3); await touch.lift(); }, drag: (a, b, o) => touch.drag(a, b, o) };
+}
+
 /**
  * Changes not watched (More: "Show me what happens", off): for the blocks that time the physics of a power by
  * the clock, where fifteen seconds at a watch's pace would run past what they measure.
@@ -205,7 +255,7 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made); the rest are left out */
+/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, place); the rest are left out */
 const only = process.env.LIVE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 
@@ -230,6 +280,11 @@ for (const kind of ['phone', 'desk']) {
     check(on('let go of the mass slider, time runs at the pace of what follows, and a chip says so, with Stop'),
       factor > 15 && factor < 27 && w0.state === 'watching' && w0.chip && w0.stop && !w0.paused && w0.clock === w0.rate && /^Watching: [\d.]+ (minutes|hours) a second$/.test(w0.text) && w0.rate > 60 && w0.rate < 3600 * 3,
       `${factor.toFixed(1)} times; "${w0.text}", the clock at ${(w0.clock / 60).toFixed(1)} min/s, paused before: ${real.paused}`);
+    // (the pace is the chip's to tell: the mark at the top says since when, short enough for a phone, whether or not the
+    // stepping keeps up)
+    const words = await markWords(page);
+    check(on('the mark at the top says since when live physics is on, in words a phone has room for; the pace is the chip\'s to tell'),
+      words.b === 'Live physics' && words.small === 'since 1 Oct 2026' && words.whole, `"${words.b}" / "${words.small}", whole: ${words.whole}`);
     // the camera eases out until Jupiter's four great moons fit in what the interface leaves clear
     await until(page, () => !window.app.glide, null, 60);
     const fit = await framing(page, 'Callisto', 'Jupiter');
@@ -239,7 +294,8 @@ for (const kind of ['phone', 'desk']) {
     check(on('the camera eases out to frame the moons the change matters to, Jupiter in the middle of the part of the view the interface leaves clear'),
       fit.d > 1.5 * before.d && moons.every((m) => inside(m.at, fit.free)) && Math.hypot(fit.centreAt.x - mid.x, fit.centreAt.y - mid.y) < 8 && inside(fit.centreAt, fit.free),
       `from ${(before.d / 1e9).toFixed(2)} to ${(fit.d / 1e9).toFixed(2)} million km; Jupiter ${Math.hypot(fit.centreAt.x - mid.x, fit.centreAt.y - mid.y).toFixed(1)} px from the middle of the clear part (${fit.free.left.toFixed(0)}-${fit.free.right.toFixed(0)} x ${fit.free.top.toFixed(0)}-${fit.free.bottom.toFixed(0)}); the moons ${moons.map((m) => `(${m.at?.x.toFixed(0)}, ${m.at?.y.toFixed(0)})`).join(' ')}`);
-    await page.screenshot({ path: path.join(outDir, `live-${kind}-watch.png`) });
+    // (at a desk Stop is pressed first: on a loaded machine a picture of 1280 x 800 can take longer than the watch)
+    if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-watch.png`) });
 
     // the watch ends by itself (phone), or is stopped (desk): the rate of time comes back as it was, and Replay is offered
     let end;
@@ -250,6 +306,7 @@ for (const kind of ['phone', 'desk']) {
       await press(page, '#hud .hud-watch .watch-stop');
       await frames(page, 2);
       end = await watching(page);
+      await page.screenshot({ path: path.join(outDir, `live-${kind}-watch.png`) });
     }
     check(on(`${kind === 'phone' ? 'after fifteen seconds the watch ends' : 'Stop ends the watch'}: time is as it was before (stopped), and the chip offers Replay`),
       end.state === 'ended' && end.paused === real.paused && end.clock === real.rate && end.chip && end.replay && !end.stop && /^Watched: [\d.]+ (hours|days|minutes)$/.test(end.text),
@@ -280,7 +337,7 @@ for (const kind of ['phone', 'desk']) {
     await press(page, '#hud .live-mark .live-undo');
     await frames(page, 2);
     await massPanel(page);
-    const undone = await page.evaluate(() => { const a = window.app, io = a.findByName('Io'), j = a.findByName('Jupiter'); return { on: a.physics.on, factor: j.gm / a.physics.realGm(j), jd: a.clock.jdTdb, paused: a.clock.paused, io: io.pos.toArray(), toast: document.querySelector('#hud .hud-toast').textContent, mark: !document.querySelector('#hud .live-mark').hidden, read: document.querySelector('#hud .power-read b').textContent }; });
+    const undone = await page.evaluate(() => { const a = window.app, io = a.findByName('Io'), j = a.findByName('Jupiter'); return { on: a.physics.on, factor: j.gm / a.physics.realGm(j), jd: a.clock.jdTdb, paused: a.clock.paused, io: io.pos.toArray(), toast: document.querySelector('#hud .hud-toast').textContent, mark: !document.querySelector('#hud .live-mark').hidden, read: document.querySelector('#hud [data-panel="mass"] .power-read b').textContent }; });
     check(on('Undo: Jupiter has its real mass, its moons are where the ephemeris has them, at the date before the change, and it says what was undone'),
       !undone.on && undone.factor === 1 && undone.jd === real.jd && undone.paused === real.paused && Math.hypot(...undone.io.map((x, k) => x - real.io[k])) < 1 && /^Undone: changing Jupiter's mass\. The real Solar System again$/.test(undone.toast) && !undone.mark && undone.read === '1 Jupiter',
       `"${undone.toast}"; Io ${Math.hypot(...undone.io.map((x, k) => x - real.io[k])).toFixed(3)} m from where it was`);
@@ -394,8 +451,8 @@ for (const kind of ['phone', 'desk']) {
 
     await press(page, '#hud .card [data-power="mass"]');
     await frames(page, 2);
-    check(on('Mass opens a slider at its real mass, said in Jupiters'), (await shown(page, '#hud .card .slider')) && (await text(page, '#hud .power-read b')) === '1 Jupiter' && (await text(page, '#hud .power-read small')) === 'its real mass',
-      `${await text(page, '#hud .power-read b')} · ${await text(page, '#hud .power-read small')}`);
+    check(on('Mass opens a slider at its real mass, said in Jupiters'), (await shown(page, '#hud .card [data-panel="mass"] .slider')) && (await text(page, '#hud [data-panel="mass"] .power-read b')) === '1 Jupiter' && (await text(page, '#hud [data-panel="mass"] .power-read small')) === 'its real mass',
+      `${await text(page, '#hud [data-panel="mass"] .power-read b')} · ${await text(page, '#hud [data-panel="mass"] .power-read small')}`);
     const before = { io: await about(page, 'Io', 'Jupiter') };
 
     // the knob dragged from the middle to about twice the mass, and looked at before it is let go
@@ -410,13 +467,13 @@ for (const kind of ['phone', 'desk']) {
     }
     await frames(page, 3);
     const held = await about(page, 'Io', 'Jupiter');
-    const read = await text(page, '#hud .power-read b');
+    const read = await text(page, '#hud [data-panel="mass"] .power-read b');
     check(on('with the finger still down physics is live, Jupiter is about twice as heavy and says so, and Io is on a new orbit'),
       held.on && held.factor > 1.6 && held.factor < 2.5 && /^\d(\.\d)? Jupiters$/.test(read) && Math.abs(Number(read.split(' ')[0]) - held.factor) < 0.06 && held.e > 0.3 && before.io.e < 0.02 && (await shown(page, '#hud .live-mark')),
       `${held.factor.toFixed(2)} times, "${read}"; Io's orbit ${before.io.e.toFixed(3)} -> ${held.e.toFixed(2)} from a circle`);
     if (touch) await touch.lift(); else await page.mouse.up();
     await frames(page, 3);
-    check(on('it is said that live physics is on, with the way back beside it'), /Live physics is on/.test(await toast(page)) && (await text(page, '#hud .live-what small')) === 'since 1 October 2026' && (await text(page, '#hud .live-back')) === 'Back to reality',
+    check(on('it is said that live physics is on, with the way back beside it'), /Live physics is on/.test(await toast(page)) && (await text(page, '#hud .live-what small')) === 'since 1 Oct 2026' && (await text(page, '#hud .live-back')) === 'Back to reality',
       `"${(await toast(page)).split('\n')[0]}" · ${await text(page, '#hud .live-what small')}`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-mass.png`) });
 
@@ -726,7 +783,7 @@ for (const kind of ['phone', 'desk']) {
     check(on('it can be changed like any world: its card has Mass, Move, Add and Remove'), made.powers === 'Mass,Move,Add,Remove', made.powers);
     await press(page, '#hud .card [data-power="mass"]');
     await frames(page, 2);
-    const mass = await text(page, '#hud .power-read b');
+    const mass = await text(page, '#hud [data-panel="mass"] .power-read b');
     await press(page, '#hud .card [data-details]');
     await frames(page, 2);
     const facts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#hud .card .facts dl div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd').textContent])));
@@ -815,6 +872,225 @@ for (const kind of ['phone', 'desk']) {
     });
     check(on('"Back to reality": nothing of what was made is left, and every body is where the ephemeris has it'),
       !real.on && real.bodies === real.fresh && real.off === 0 && real.made === 0 && real.suns === 'Sun' && real.found === 0, `${real.bodies} bodies, ${real.off} out of place, the suns: ${real.suns}`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ the Moon thrown: the slingshot, and a flick
+  if (want('throw')) {
+    const { ctx, page, touch } = await open(kind, 'target=Earth&dist=6');
+    const hand = await handOf(page, touch);
+    await find(page, 'Moon');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    await press(page, '#hud .card [data-act="move"]');
+    await press(page, '#hud .card [data-act="move-throw"]');
+    await frames(page, 2);
+    const offer = await page.evaluate(() => {
+      const card = document.querySelector('#hud .card').getBoundingClientRect();
+      const seg = [...document.querySelectorAll('#hud .card .seg button')].map((b) => { const r = b.getBoundingClientRect(); return { label: b.textContent, h: r.height, w: r.width, in: r.left >= card.left && r.right <= card.right, on: b.getAttribute('aria-pressed') === 'true' }; });
+      const hint = [...document.querySelectorAll('#hud .card .hint-throw > span')].find((s) => getComputedStyle(s).display !== 'none')?.textContent ?? '';
+      return { seg, hint, shown: !document.querySelector('#hud .card .hint-throw').hidden && document.querySelector('#hud .card .hint-move').hidden };
+    });
+    check(on('Move offers a third choice, Throw, beside Keeps its speed and Goes in a circle, each a thumb high and in the card; chosen, the card says how'),
+      offer.seg.map((b) => b.label).join() === 'Keeps its speed,Goes in a circle,Throw' && offer.seg.every((b) => b.h >= 44 && b.in) && offer.seg[2].on && offer.shown && /like a slingshot, or flick it\.$/.test(offer.hint),
+      `${offer.seg.map((b) => `${b.label} ${b.w.toFixed(0)} x ${b.h.toFixed(0)}`).join(', ')}; "${offer.hint}"`);
+    // (setup, not a power: the eye high over the Earth, with room ahead of the Moon, square to the line from the Earth
+    // the way it goes round, for an arrow in the open, and room on the screen behind it for the finger's pull)
+    const setView = () => page.evaluate(() => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon'), V = moon.pos.constructor;
+      const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab, #hud .hud-watch')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+      const open = (p) => !!p && p.x > 20 && p.x < innerWidth - 20 && p.y > 130 && p.y < innerHeight - 20 && walls.every((r) => p.x < r.left - 10 || p.x > r.right + 10 || p.y < r.top - 10 || p.y > r.bottom + 10);
+      const seen = (p) => p.x > 8 && p.x < innerWidth - 8 && p.y > 8 && p.y < innerHeight - 8;
+      for (const el of [75, 60]) for (const dist of [90, 120, 180, 260, 350]) for (let az = 0; az < 360; az += 15) {
+        a.placeNear(earth, dist * earth.radius, az, el);
+        a.frame();
+        const r = moon.pos.clone().sub(earth.pos), ahead = r.clone().cross(moon.vel.clone().sub(earth.vel)).cross(r).normalize();
+        const dot = a.project(moon.upos.sub(a.rig.upos, new V())), tip = a.project(moon.upos.sub(a.rig.upos, new V()).addScaledVector(ahead, 1e5));
+        if (!dot || !tip) continue;
+        const l = Math.hypot(tip.x - dot.x, tip.y - dot.y), ux = (tip.x - dot.x) / l, uy = (tip.y - dot.y) / l;
+        if ([0, 60, 120, 175].every((d) => open({ x: dot.x + ux * d, y: dot.y + uy * d })) && [60, 120, 175].every((d) => seen({ x: dot.x - ux * d, y: dot.y - uy * d }))) {
+          return { dot, ux, uy, ahead: ahead.toArray(), r: r.length(), pos: moon.pos.toArray(), vel: moon.vel.toArray(), jd: a.clock.jdTdb };
+        }
+      }
+      return null;
+    });
+    let view = await setView();
+    await frames(page, 3);
+    const along = (d) => ({ x: view.dot.x - view.ux * d, y: view.dot.y - view.uy * d });
+    const aimed = () => page.evaluate(() => {
+      const a = window.app, svg = document.querySelector('#hud .aim'), moon = a.findByName('Moon'), o = a.physics.orbit(moon);
+      return {
+        shown: !svg.hasAttribute('hidden') && svg.getBoundingClientRect().width > 0, lit: [...svg.querySelectorAll('.aim-mark.on')].map((g) => g.dataset.mark).join(), labels: [...svg.querySelectorAll('text')].map((t) => t.textContent).join(),
+        aim: a.mover.aim(), paused: a.clock.paused, now: document.querySelector('#hud .power-now').textContent, e: o?.e ?? -1, parent: moon.parent?.name, line: !!a.orbits.objs.get(moon)?.line.visible,
+      };
+    });
+
+    // the slingshot: a finger on the Moon pulled back, a little short of the mark of a circle
+    await hand.press(view.dot);
+    for (let i = 1; i <= 8; i++) await hand.slide(along((107 * i) / 8));
+    await frames(page, 2);
+    const circle = await aimed();
+    check(on('pulled back from the Moon, an arrow points the other way from it, marked where it would go round in a circle and where it would escape; time waits'),
+      !!view && circle.shown && circle.labels === 'circle,escape' && circle.paused && !!circle.aim && Math.abs(circle.aim.ux * view.ux + circle.aim.uy * view.uy - 1) < 1e-3,
+      `the arrow ${circle.aim ? `(${circle.aim.ux.toFixed(3)}, ${circle.aim.uy.toFixed(3)})` : 'none'}, the way ahead (${view?.ux.toFixed(3)}, ${view?.uy.toFixed(3)})`);
+    check(on('near the mark of a circle it is the speed of a circle: the mark lights, and the card and the orbit line show a circle round the Earth before it is let go'),
+      circle.lit === 'circle' && circle.aim?.length === 110 && circle.e < 1e-6 && circle.parent === 'Earth' && circle.line && /^Now round Earth: nearly a circle \(0\), /.test(circle.now), `"${circle.now}", e ${circle.e.toExponential(1)}`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-aim.png`) });
+    for (let i = 1; i <= 4; i++) await hand.slide(along(107 + (53 * i) / 4));
+    await frames(page, 2);
+    const escape = await aimed();
+    check(on('pulled on to the mark of escape it is the speed of escape: the card says it will not come back'),
+      escape.lit === 'escape' && Math.abs(escape.aim?.length - 110 * Math.SQRT2) < 1e-9 && /^Now on an open path past Earth: it passes at .+, then leaves\.$/.test(escape.now), `"${escape.now}"`);
+    // back to the circle, and let go (the orbit read the moment the throw ends: then time runs, and within a day the
+    // Sun's pull has stretched the circle by a hundredth, as it does the Moon's own orbit)
+    for (let i = 1; i <= 4; i++) await hand.slide(along(160 - (52 * i) / 4));
+    await page.evaluate((view) => {
+      const a = window.app, end = a.endChange;
+      a.endChange = (...args) => {
+        a.endChange = end;
+        const earth = a.findByName('Earth'), moon = a.findByName('Moon'), o = a.physics.orbit(moon);
+        window.atThrow = { e: o?.e ?? -1, parent: moon.parent?.name, r: moon.pos.distanceTo(earth.pos) / view.r };
+        return end.apply(a, args);
+      };
+    }, view);
+    await hand.lift();
+    await frames(page, 2);
+    const thrown = await page.evaluate(() => {
+      const a = window.app;
+      return { ...window.atThrow, watch: a.watch.state, chip: document.querySelector('#hud .watch-text').textContent, paused: a.clock.paused, arrow: !document.querySelector('#hud .aim').hasAttribute('hidden') };
+    });
+    check(on('let go, the Moon goes round the Earth in a circle from where it was, and the throw is watched'),
+      thrown.e < 1e-6 && thrown.parent === 'Earth' && Math.abs(thrown.r - 1) < 1e-6 && thrown.watch === 'watching' && /^Watching: [\d.]+ days a second$/.test(thrown.chip) && !thrown.paused && !thrown.arrow,
+      `e ${thrown.e?.toExponential(1)} round ${thrown.parent}, ${thrown.r?.toFixed(7)} of its distance; "${thrown.chip}", ${thrown.watch}, paused ${thrown.paused}, the arrow ${thrown.arrow ? "still drawn" : "gone"}`);
+    // days on, the frame still holds the Earth and the Moon: the camera rides with the Earth, which it frames from beyond
+    // the Earth's reach (riding with the Sun there, it would see the Earth leave the frame at days a second)
+    await until(page, () => !window.app.glide, null, 60);
+    const jd0 = await page.evaluate(() => window.app.clock.jdTdb);
+    await until(page, (jd0) => window.app.clock.jdTdb > jd0 + 2 || window.app.watch.state !== 'watching', jd0, 120);
+    const kept = await page.evaluate((jd0) => {
+      const a = window.app, earth = a.findByName('Earth'), V = earth.pos.constructor, at = (b) => a.project(b.upos.sub(a.rig.upos, new V()));
+      return { earth: at(earth), moon: at(a.findByName('Moon')), free: a.hud.freeArea(), days: a.clock.jdTdb - jd0, anchor: a.rig.anchor?.name ?? null, watch: a.watch.state };
+    }, jd0);
+    check(on('days into the watch the frame still holds the Earth and the Moon: the camera rides with the Earth'),
+      kept.watch === 'watching' && kept.days > 2 && within(kept.earth, kept.free) && within(kept.moon, kept.free) && kept.anchor === 'Earth',
+      `${kept.days.toFixed(1)} days on; the Earth at ${kept.earth ? `(${kept.earth.x.toFixed(0)}, ${kept.earth.y.toFixed(0)})` : 'nowhere'}, the Moon at ${kept.moon ? `(${kept.moon.x.toFixed(0)}, ${kept.moon.y.toFixed(0)})` : 'nowhere'} in ${kept.free.left.toFixed(0)}-${kept.free.right.toFixed(0)} x ${kept.free.top.toFixed(0)}-${kept.free.bottom.toFixed(0)}; riding with ${kept.anchor}`);
+    const words = await markWords(page);
+    check(on('while the throw is watched the mark at the top says since when, its words whole'), words.small === 'since 1 Oct 2026' && words.whole, `"${words.small}", whole: ${words.whole}`);
+    // (Undo ends the watch, whether or not its fifteen seconds are over)
+    await listen(page);
+    await press(page, '#hud .live-mark .live-undo');
+    await frames(page, 2);
+    const back = await page.evaluate((view) => {
+      const a = window.app, moon = a.findByName('Moon');
+      return { on: a.physics.on, jd: a.clock.jdTdb, off: Math.hypot(moon.pos.x - view.pos[0], moon.pos.y - view.pos[1], moon.pos.z - view.pos[2]), dv: Math.hypot(moon.vel.x - view.vel[0], moon.vel.y - view.vel[1], moon.vel.z - view.vel[2]) };
+    }, view);
+    const said = await heard(page);
+    check(on('Undo puts the Moon back where it was and as it was moving, at the date it was thrown, and says so'),
+      !back.on && back.jd === view.jd && back.off === 0 && back.dv === 0 && said.includes('Undone: throwing the Moon. The real Solar System again'), `"${said.join('" then "')}"; ${back.off} m, ${back.dv} m/s off`);
+
+    // a flick: changes not watched now, so that what the throw did is still there to be read (and Move on again: Undo
+    // ended it)
+    await quiet(page);
+    await press(page, '#hud .card [data-act="move"]');
+    await press(page, '#hud .card [data-act="move-throw"]');
+    view = await setView();
+    await frames(page, 3);
+    await hand.drag(view.dot, { x: view.dot.x + view.ux * 120, y: view.dot.y + view.uy * 120 }, { steps: 3, rest: 0 });
+    await frames(page, 2);
+    const flicked = await page.evaluate((view) => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon');
+      const rel = moon.vel.clone().sub(earth.vel), r = moon.pos.distanceTo(earth.pos), mu = earth.gm + moon.gm;
+      return {
+        f: rel.length() / Math.sqrt(mu / r), ahead: rel.normalize().dot({ x: view.ahead[0], y: view.ahead[1], z: view.ahead[2] }), now: document.querySelector('#hud .power-now').textContent,
+        paused: a.clock.paused, on: a.physics.on, told: a.physics.log.map((e) => e.text), toast: document.querySelector('#hud .hud-toast').textContent,
+      };
+    }, view);
+    // (120 px in 64 ms: 1,875 px a second, 1.56 speeds of a circle, past escape's 1.41: free of the Earth at once, and
+    // the simulation has it go round the Sun)
+    check(on('a quick flick ahead throws the Moon the way the finger went, as fast as the finger was going: past escape, it leaves the Earth for the Sun, and that is said'),
+      flicked.on && Math.abs(flicked.f - 1875 / 1200) < 0.01 && flicked.ahead > 0.9999 && flicked.paused && /^Now round the Sun: /.test(flicked.now)
+        && flicked.told.includes('The Moon goes round the Sun now, no longer round Earth.') && /The Moon goes round the Sun now, no longer round Earth\./.test(flicked.toast),
+      `${flicked.f.toFixed(3)} speeds of a circle, ${(Math.acos(Math.min(1, flicked.ahead)) * 57.3).toFixed(2)} deg off ahead; "${flicked.now}"; "${flicked.toast.split('\n').join(' / ')}"`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ a world made, put in place, its mass set; Done
+  if (want('place')) {
+    const { ctx, page, touch } = await open(kind, 'target=Sun&dist=473&el=40');
+    const hand = await handOf(page, touch);
+    await press(page, '#hud .card [data-power="add"]');
+    await press(page, '#hud .card [data-act="add-earth"]');
+    await until(page, () => !window.app.glide, null, 60);
+    await frames(page, 2);
+    const placing = () => page.evaluate(() => {
+      const a = window.app, m = a.selection, V = m.pos.constructor, sun = a.system.sun, panel = document.querySelector('#hud .card .placing'), done = panel.querySelector('.place-done').getBoundingClientRect();
+      return {
+        name: m.name, placing: a.mover.placing && a.mover.body === m, paused: a.clock.paused, at: a.project(m.upos.sub(a.rig.upos, new V())), free: a.hud.freeArea(),
+        read: panel.querySelector('b').textContent, what: panel.querySelector('small').textContent, panel: !panel.hidden && !panel.closest('[hidden]'), done: done.height, slider: panel.querySelector('.slider').getBoundingClientRect().height,
+        hint: document.querySelector('#hud .hint-place').textContent, seg: !document.querySelector('#hud .card .seg').hidden, ratio: m.radius / 6.371e6, earths: m.gm / 6.6743e-11 / 5.9722e24,
+        e: a.physics.orbit(m)?.e ?? -1, d: m.pos.distanceTo(sun.pos), jd: a.clock.jdTdb, history: !document.querySelector('#hud .live-mark .live-undo').hidden,
+      };
+    });
+    const p0 = await placing();
+    const inRect = (p, r) => !!p && p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom;
+    check(on('a planet like Earth is made and waits to be put in place: time waits; the card has its mass, Done and a slider, and says how; the new world is in sight, clear of the card'),
+      p0.name === 'Earth 2' && p0.placing && p0.paused && inRect(p0.at, p0.free) && p0.panel && p0.read === '1 Earth' && p0.what === "Rock, the Earth's size" && p0.done >= 44 && p0.slider >= 44 && !p0.seg
+        && p0.hint === 'Drag it to where you want it: let go and it goes round in a circle there, or flick it to throw it. Time waits until Done.',
+      `at (${p0.at?.x.toFixed(0)}, ${p0.at?.y.toFixed(0)}) in ${p0.free.left.toFixed(0)}-${p0.free.right.toFixed(0)} x ${p0.free.top.toFixed(0)}-${p0.free.bottom.toFixed(0)}; "${p0.read}", "${p0.what}"`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-placing.png`) });
+    // its mass: the knob to 5 Earths
+    const box = await page.locator('#hud .card .placing .slider').boundingBox();
+    const knob = (s) => ({ x: box.x + 15 + s * (box.width - 30), y: box.y + box.height / 2 });
+    const from = knob(Number(await page.locator('#hud .card .placing .slider').inputValue())), to = knob(Math.log(5 / 0.05) / Math.log(10 / 0.05));
+    await hand.press(from);
+    for (let i = 1; i <= 6; i++) await hand.slide({ x: from.x + ((to.x - from.x) * i) / 6, y: from.y });
+    await hand.lift();
+    await frames(page, 2);
+    const p1 = await placing();
+    check(on('its mass set to 5 Earths, it is a rock of the Earth\'s density, 1.71 times the Earth\'s size, still on its circle, and the card says so'),
+      /^(4\.9|5|5\.1) Earths$/.test(p1.read) && /^Rock, 1\.7\d times the Earth's size$/.test(p1.what) && Math.abs(p1.earths - 5) < 0.15 && Math.abs(p1.ratio - Math.cbrt(p1.earths)) < 1e-4 && p1.e < 1e-6 && p1.paused && p1.placing,
+      `"${p1.read}", "${p1.what}"; ${p1.earths.toFixed(3)} Earths, ${p1.ratio.toFixed(4)} of its radius`);
+    // dragged out to 1.3 times as far from the Sun, the finger resting before it lifts
+    const out = await page.evaluate(() => {
+      const a = window.app, m = a.selection, sun = a.system.sun, V = m.pos.constructor, r = m.pos.clone().sub(sun.pos);
+      return { from: a.project(m.upos.sub(a.rig.upos, new V())), to: a.project(sun.upos.sub(a.rig.upos, new V()).add(r.multiplyScalar(1.3))) };
+    });
+    await hand.drag(out.from, out.to, { steps: 10, rest: 0.3 });
+    await frames(page, 2);
+    const p2 = await placing();
+    check(on('dragged out half as far again and let go: on a circle round the Sun there; time still waits, for Done'),
+      Math.abs(p2.d / p0.d - 1.3) < 0.06 && p2.e < 1e-6 && p2.paused && p2.placing && p2.jd === p0.jd, `${(p2.d / p0.d).toFixed(3)} of its distance, e ${p2.e.toExponential(1)}`);
+    await press(page, '#hud .card .place-done');
+    await frames(page, 2);
+    const p3 = await watching(page);
+    const left = await page.evaluate(() => ({ placing: window.app.mover.placing, panel: !document.querySelector('#hud .card [data-panel="move"]').hidden }));
+    check(on('Done: time runs, and what follows is watched'), p3.state === 'watching' && !p3.paused && /^Watching: [\d.]+ (days|hours) a second$/.test(p3.text) && !left.placing && !left.panel, `"${p3.text}"`);
+    // (Undo ends the watch, whether or not its fifteen seconds are over)
+    await listen(page);
+    await press(page, '#hud .live-mark .live-undo');
+    await frames(page, 2);
+    const p4 = await page.evaluate(() => { const a = window.app; return { on: a.physics.on, made: a.made.length, found: a.searchItems('Earth 2').length, jd: a.clock.jdTdb }; });
+    const said = await heard(page);
+    check(on('one Undo takes the new world away, its mass and its place with it: the real Solar System, at the date it was made, and says so'),
+      !p4.on && p4.made === 0 && p4.found === 0 && p4.jd === p0.jd && said.includes('Undone: making Earth 2. The real Solar System again'), `"${said.join('" then "')}"`);
+    // a second sun, made as light as a star can be: a red dwarf, its size, warmth and light the main sequence's
+    await find(page, 'Sun');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    await press(page, '#hud .card [data-power="add"]');
+    await press(page, '#hud .card [data-act="add-sun"]');
+    await until(page, () => !window.app.glide, null, 60);
+    const sbox = await page.locator('#hud .card .placing .slider').boundingBox();
+    const sfrom = { x: sbox.x + 15 + Number(await page.locator('#hud .card .placing .slider').inputValue()) * (sbox.width - 30), y: sbox.y + sbox.height / 2 };
+    await hand.drag(sfrom, { x: sbox.x + 2, y: sfrom.y }, { steps: 6 });
+    await frames(page, 3);
+    const dwarf = await page.evaluate(() => {
+      const a = window.app, s = a.selection;
+      return { name: s.name, read: document.querySelector('#hud .card .placing b').textContent, what: document.querySelector('#hud .card .placing small').textContent, teff: s.teff, absMag: s.absMag, suns: s.gm / a.system.sun.gm, radius: s.radius / 695.7e6, drawn: a.bodies.views.has(s), lit: a.system.brightness(s) };
+    });
+    check(on('a second sun made as light as a star can be is a red dwarf: smaller, cooler and fainter, as the main sequence has it, and the card says so'),
+      dwarf.name === 'Sun 2' && Math.abs(dwarf.suns - 0.08) < 1e-3 && dwarf.teff > 2400 && dwarf.teff < 2700 && Math.abs(dwarf.radius - 0.08 ** 0.8) < 2e-3 && dwarf.lit < 1e-3 && dwarf.drawn
+        && /^A star, 0\.13 times the Sun's size, 2,5\d0 K$/.test(dwarf.what),
+      `"${dwarf.read}", "${dwarf.what}"; ${dwarf.teff.toFixed(0)} K, ${dwarf.radius.toFixed(3)} of the Sun's radius, ${dwarf.lit.toExponential(2)} of its light`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-red-dwarf.png`) });
     await ctx.close();
   }
 }
