@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { circularVelocity, dayWords, dragPlane, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, reachWords, shapeWords, the, timesWords } from '../src/app/Powers';
+import { affected, circularVelocity, dayWords, dragPlane, FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, reachWords, shapeWords, spanWords, the, timesWords, viewFrame, WATCH_SECONDS, WATCH_SLOWEST, watchPlan, watchRate } from '../src/app/Powers';
 import { M_EARTH, M_JUPITER, M_SUN } from '../src/sim/physics';
 
 const AU = 149_597_870_700, GM_SUN = 1.32712440018e20, DAY = 86_400;
@@ -188,5 +188,104 @@ describe('saying things', () => {
     expect(rateWords(3 * DAY)).toBe('3 days a second');
     expect(rateWords(DAY)).toBe('1 day a second');
     expect(rateWords(-1200 * 365.25 * DAY)).toBe('1,200 years a second');
+  });
+
+  it('a stretch of time in the unit a person counts it in', () => {
+    expect(spanWords(51 * DAY)).toBe('51 days');
+    expect(spanWords(6.6 * 3600)).toBe('6.6 hours');
+    expect(spanWords(DAY)).toBe('1 day');
+    expect(spanWords(150 * 365.25 * DAY)).toBe('150 years');
+    expect(spanWords(90)).toBe('1.5 minutes');
+  });
+});
+
+const YEAR = 365.25 * DAY;
+
+describe('watching what a change does', () => {
+  it('goes at the pace at which the quickest orbit goes round in eight seconds: the Moon\'s month at 3.4 days a second, Mercury\'s year at 11', () => {
+    expect(watchRate([27.32 * DAY], 10 * YEAR)! / DAY).toBeCloseTo(3.4, 1);
+    expect(watchRate([87.97 * DAY, 365.25 * DAY], 10 * YEAR)! / DAY).toBeCloseTo(11, 0);
+    // (the quickest sets it, whatever else is there; what goes round nothing has no period to go by)
+    expect(watchRate([Infinity, 365.25 * DAY, 27.32 * DAY], 10 * YEAR)).toBe(watchRate([27.32 * DAY], 10 * YEAR));
+    expect(watchRate([Infinity], 10 * YEAR)).toBeNull();
+    expect(watchRate([], 10 * YEAR)).toBeNull();
+  });
+
+  it('no faster than the stepping is allowed to go, and never slower than a minute a second', () => {
+    // Neptune's 165 years would ask for 20 years a second: on a phone, ten
+    expect(watchRate([164.8 * YEAR], 10 * YEAR)).toBe(10 * YEAR);
+    expect(watchRate([164.8 * YEAR], 100 * YEAR)! / YEAR).toBeCloseTo(20.6, 1);
+    // a made moon skimming its planet in two minutes: a minute a second
+    expect(watchRate([120], 10 * YEAR)).toBe(WATCH_SLOWEST);
+  });
+
+  it('matters to the bodies whose acceleration it changes by a hundredth or more: a mass, a body taken away, made, or moved', () => {
+    // a star, a planet 1 AU out with a moon 400,000 km beyond it, and a far planet at 30 AU
+    const sun = { id: 1, gm: 1.327e20, pos: [0, 0, 0] }, earth = { id: 2, gm: 3.986e14, pos: [AU, 0, 0] };
+    const moon = { id: 3, gm: 4.9e12, pos: [AU + 3.84e8, 0, 0] }, far = { id: 4, gm: 6.8e15, pos: [30 * AU, 0, 0] };
+    const bodies = [sun, earth, moon, far];
+    // the planet ten times heavier: its moon feels it, and so does the star, whose own small acceleration is mostly the
+    // planet's pull; the far planet does not
+    expect(affected(bodies, [sun, { ...earth, gm: 10 * earth.gm }, moon, far])).toEqual([1, 3]);
+    // the star taken away: everything that went round it
+    expect(affected(bodies, [earth, moon, far])).toEqual([2, 3, 4]);
+    // a body made counts, and so does what it pulls: a second star beside the planet
+    expect(affected(bodies, [...bodies, { id: 5, gm: 1.327e20, pos: [1.5 * AU, 0, 0] }])).toEqual([1, 2, 3, 4, 5]);
+    // the moon moved to twice its distance: it feels the change, the planet by less than a hundredth
+    expect(affected(bodies, [sun, earth, { ...moon, pos: [AU + 7.68e8, 0, 0] }, far])).toEqual([3]);
+    // nothing changed: nothing
+    expect(affected(bodies, bodies)).toEqual([]);
+  });
+
+  it('frames the worlds that go round within twenty times the quickest: a world 30 AU out does not shrink the inner ones to dots', () => {
+    const inner = [{ period: 88 * DAY, reach: 0.47 * AU }, { period: 365 * DAY, reach: 1.02 * AU }, { period: 687 * DAY, reach: 1.67 * AU }];
+    expect(frameRadius(inner) / AU).toBeCloseTo(FRAME_MARGIN * 1.67, 9);
+    expect(frameRadius([...inner, { period: 164.8 * YEAR, reach: 30.3 * AU }]) / AU).toBeCloseTo(FRAME_MARGIN * 1.67, 9);
+    expect(frameRadius([])).toBe(0);
+  });
+
+  it('plans a watch from the worlds a change matters to: their periods about the centre, else about what they go round, else before the change', () => {
+    const mu = 1.267e17, centre = { gm: mu, pos: [0, 0, 0], vel: [0, 0, 0] };
+    // a moon on a circle 1,000,000 km out about the centre: its period sets the pace, its distance the frame
+    const r = 1e9, v = Math.sqrt(mu / r), P = 2 * Math.PI * Math.sqrt(r ** 3 / mu);
+    const moon = { gm: 1e12, pos: [r, 0, 0], vel: [0, v, 0], period: P, was: P };
+    const plan = watchPlan([moon], centre, 10 * YEAR)!;
+    expect(plan.rate * 8 / P).toBeCloseTo(1, 3);
+    expect(plan.radius / (FRAME_MARGIN * r)).toBeCloseTo(1, 3);
+    // thrown off (twice the speed of escape): its month before the change is its pace, and the frame reaches as far as it goes in the watch
+    const thrown = { ...moon, vel: [0, 2 * Math.SQRT2 * v, 0], period: Infinity };
+    const out = watchPlan([thrown], centre, 10 * YEAR)!;
+    expect(out.rate).toBeCloseTo(P / 8, 3);
+    expect(out.radius / (FRAME_MARGIN * (r + 2 * Math.SQRT2 * v * out.rate * WATCH_SECONDS))).toBeCloseTo(1, 6);
+    // a moon of another planet far off (as Iapetus is when the Sun is taken away): its month sets the pace with the
+    // rest, but it goes where its planet goes, and is not what the frame is fitted to
+    const elsewhere = { gm: 1e12, pos: [100 * r, 0, 0], vel: [0, 50 * v, 0], period: P / 4, was: P / 4 };
+    const both = watchPlan([moon, elsewhere], centre, 10 * YEAR)!;
+    expect(both.rate).toBeCloseTo(P / 32, 3);
+    expect(both.radius / (FRAME_MARGIN * r)).toBeCloseTo(1, 3);
+    // with nothing to frame round, only the pace; with nothing that has a pace, nothing
+    expect(watchPlan([moon], null, 10 * YEAR)).toEqual({ rate: P / 8, radius: 0 });
+    expect(watchPlan([{ ...thrown, was: Infinity }], centre, 10 * YEAR)).toBeNull();
+  });
+
+  it('fits the frame to what the interface leaves clear, upright and sideways', () => {
+    // an upright phone, the whole view clear: 70 degrees tall, 35.9 across, the narrower side sets the distance
+    const up = viewFrame({ left: 0, top: 0, right: 390, bottom: 844 }, 390, 844, 70);
+    expect(up.dir).toEqual([0, 0, -1]);
+    expect(up.halfY * 360 / Math.PI).toBeCloseTo(70, 6);
+    expect(up.halfX * 360 / Math.PI).toBeCloseTo(35.86, 2);
+    expect(frameDistance(1, up.halfX, up.halfY)).toBeCloseTo(1 / Math.tan(up.halfX), 9);
+    expect(frameDistance(1, up.halfX, up.halfY)).toBeCloseTo(3.09, 2);
+    // sideways: 50 degrees tall sets it
+    const side = viewFrame({ left: 0, top: 0, right: 844, bottom: 390 }, 844, 390, 50);
+    expect(frameDistance(1, side.halfX, side.halfY)).toBeCloseTo(1 / Math.tan((25 * Math.PI) / 180), 9);
+    // upright with the chips at the top and the card at the foot: the middle of what is left is up the view, and the frame stands farther back
+    const card = viewFrame({ left: 8, top: 130, right: 382, bottom: 520 }, 390, 844, 70);
+    expect(card.dir[1]).toBeGreaterThan(0.1);
+    expect(frameDistance(1, card.halfX, card.halfY)).toBeGreaterThan(frameDistance(1, up.halfX, up.halfY));
+    // sideways with the panel at the left: the middle is to the right
+    const panel = viewFrame({ left: 470, top: 64, right: 836, bottom: 382 }, 844, 390, 50);
+    expect(panel.dir[0]).toBeGreaterThan(0.3);
+    expect(Math.min(panel.halfX, panel.halfY)).toBeLessThan(Math.min(side.halfX, side.halfY));
   });
 });

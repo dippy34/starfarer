@@ -76,7 +76,7 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
   background: var(--glass); border: 1px solid var(--line);
   -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
 }
-.sheet, .hud-toast, .hud-flight, .coach-card {
+.sheet, .hud-toast, .hud-flight, .hud-watch, .coach-card {
   background: var(--solid); border: 1px solid var(--line);
   -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5);
 }
@@ -116,7 +116,7 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 }
 #hud .live-what { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px 0 10px; border-radius: 22px; text-align: left; color: var(--live); }
 .live-what span { min-width: 0; }
-.live-what b { display: block; font-size: 14px; font-weight: 650; }
+.live-what b { display: block; font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-what small { display: block; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 #hud .live-back {
   flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px 0 10px; border-radius: 22px;
@@ -125,6 +125,16 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .live-back .icon { width: 20px; height: 20px; }
 #hud .live-what:active { background: var(--live-fill); }
 #hud .live-back:active { filter: brightness(1.15); }
+/* undo: beside the way back, as plain as the mark's own words */
+#hud .live-undo {
+  flex: none; display: flex; align-items: center; gap: 5px; min-height: 44px; padding: 0 12px 0 9px; border-radius: 22px;
+  background: var(--live-fill); color: var(--live); font-size: 14px; font-weight: 650; white-space: nowrap;
+}
+#hud .live-undo .icon { width: 20px; height: 20px; }
+#hud .live-undo:active { background: rgba(255, 176, 122, 0.3); }
+/* just back to reality: the mark says so for a moment, with Undo */
+.live-mark.after { background: var(--solid); border-color: var(--line); }
+#hud .live-mark.after .live-what { color: var(--fg); cursor: default; }
 #hud[data-live] .hud-toast { top: calc(var(--safe-t) + 122px); }
 
 /* the bottom: round buttons, the flight in progress, one panel, the tab bar */
@@ -155,6 +165,19 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
   display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 16px 0 10px; border-radius: 22px;
   background: var(--fill); font-weight: 650;
 }
+/* watching what a change does: the pace, Stop; then how long was watched, Replay (where the flight's chip goes) */
+.hud-watch {
+  pointer-events: auto; align-self: center; display: flex; align-items: center; gap: 6px; max-width: 100%; box-sizing: border-box;
+  padding: 4px 4px 4px 16px; border-radius: 27px; border-color: rgba(255, 176, 122, 0.5); font-size: 14px; font-weight: 550; color: var(--live);
+}
+.watch-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+#hud .hud-watch button {
+  flex: none; display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 44px; min-height: 44px; padding: 0 14px 0 10px;
+  border-radius: 22px; background: var(--fill); color: var(--fg); font-weight: 650;
+}
+#hud .hud-watch .watch-close { padding: 0; color: var(--dim); background: none; }
+#hud .hud-watch button:active { background: var(--press); }
+#hud .hud-watch:not(.ended) :is(.watch-replay, .watch-close), #hud .hud-watch.ended .watch-stop { display: none; }
 
 .hud-slot { min-width: 0; display: flex; flex-direction: column; gap: 8px; container-type: inline-size; }
 .hud-slot > * { pointer-events: auto; }
@@ -324,7 +347,9 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .time-clock { font-size: 34px; font-weight: 300; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .time-rate { margin-top: 2px; font-size: 14px; font-weight: 600; color: var(--accent); }
 .time.paused .time-rate { color: var(--warn); }
-.transport { display: flex; align-items: center; gap: 4px; padding: 4px 10px 14px; }
+/* (the last thing in the sheet, whatever is above it: it stands at the same place over the tab bar, live physics or not) */
+.transport { flex: none; display: flex; align-items: center; gap: 4px; padding: 4px 10px 14px; }
+.live-sheet:not([hidden]) + .transport { border-top: 1px solid var(--line); padding-top: 10px; }
 #hud .transport button {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 56px;
   border-radius: 16px; font-size: 11px; font-weight: 550; color: var(--dim);
@@ -360,7 +385,9 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .live-left[open] summary .icon { transform: rotate(90deg); }
 .live-left ul { margin: 0 0 8px; padding: 0 2px 0 20px; font-size: 13px; line-height: 1.4; color: var(--dim); }
 .live-left li { margin-bottom: 6px; }
-#hud .live-sheet .btn { width: 100%; margin-top: 6px; background: var(--live-fill); color: var(--live); }
+/* undo and the way back: at the top of what live physics shows, far from the buttons of time below */
+.live-ways { display: flex; gap: 8px; margin: 4px 0 10px; }
+#hud .live-ways .btn { background: var(--live-fill); color: var(--live); }
 
 /* settings and help */
 .more .list h3 { margin: 14px 8px 4px; font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
@@ -416,6 +443,13 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
   #hud .hud-tabs button:hover { color: var(--fg); }
 }
 
+/* a phone, upright or on its side: the mark of live physics holds its words, Undo and the way back on one line (its sign gives way) */
+@media (max-width: 440px), (orientation: landscape) and (max-height: 480px) {
+  #hud .live-what > .icon { display: none; }
+  #hud .live-what { padding: 0 4px 0 12px; }
+  #hud .live-undo { padding: 0 11px 0 8px; gap: 4px; }
+  #hud .live-back { padding: 0 12px 0 9px; gap: 5px; }
+}
 /* the smallest phones (320 px across): tighter chips */
 @media (max-width: 359px) {
   #hud .chip { gap: 6px; padding: 5px 10px 5px 8px; }

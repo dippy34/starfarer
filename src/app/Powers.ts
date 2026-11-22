@@ -180,6 +180,170 @@ export function circularVelocity(r: Vec, mu: number, n: Vec): Triple {
   return [k * t[0], k * t[1], k * t[2]];
 }
 
+// ---------------------------------------------------------------- watching what a change does
+
+/** A body as a change is weighed against: its number, G times its mass (m³/s²) and where it is (m). */
+export interface Weighed { id: number; gm: number; pos: Vec }
+
+/** a change matters to a body whose acceleration it changes by this share of what it was, or more */
+export const MATTERS = 0.01;
+
+/** The pull of every other body of `bodies` on the one at `k` (m/s²), into `out`. */
+function pullOn(bodies: readonly Weighed[], k: number, out: Triple): Triple {
+  const p = bodies[k].pos;
+  out[0] = out[1] = out[2] = 0;
+  for (let j = 0; j < bodies.length; j++) {
+    const q = bodies[j];
+    if (j === k || !(q.gm > 0)) continue;
+    const dx = q.pos[0] - p[0], dy = q.pos[1] - p[1], dz = q.pos[2] - p[2], r2 = dx * dx + dy * dy + dz * dz;
+    if (!(r2 > 0)) continue;
+    const f = q.gm / (r2 * Math.sqrt(r2));
+    out[0] += f * dx; out[1] += f * dy; out[2] += f * dz;
+  }
+  return out;
+}
+
+/**
+ * The bodies a change matters to (their numbers): those whose acceleration, the pull of everything
+ * else on them, it changes by MATTERS of what it was or more. `before` and `after` are the bodies
+ * as they were and as they are, at one moment: one only in `after` was made (it counts), one only
+ * in `before` was taken away; one in both pulls with its mass as it is from where it is. So a mass
+ * changed by Δm pulls every other body GΔm/r² harder, one taken away no longer pulls by Gm/r², one
+ * made pulls by Gm/r², and one moved pulls from its new place instead of its old one.
+ */
+export function affected(before: readonly Weighed[], after: readonly Weighed[], share = MATTERS): number[] {
+  const was = new Map(before.map((b, k) => [b.id, k]));
+  const now: Triple = [0, 0, 0], then: Triple = [0, 0, 0], out: number[] = [];
+  after.forEach((b, k) => {
+    const j = was.get(b.id);
+    if (j === undefined) { out.push(b.id); return; }
+    pullOn(after, k, now);
+    pullOn(before, j, then);
+    const change = Math.hypot(now[0] - then[0], now[1] - then[1], now[2] - then[2]);
+    if (change > 0 && change >= share * Math.hypot(then[0], then[1], then[2])) out.push(b.id);
+  });
+  return out;
+}
+
+/** a watch goes at the pace at which the quickest orbit among the worlds a change matters to goes round once in this many seconds */
+export const WATCH_TURN = 8;
+/** a watch lasts this many seconds */
+export const WATCH_SECONDS = 15;
+/** and never runs time slower than a minute a second */
+export const WATCH_SLOWEST = 60;
+
+/**
+ * How fast time runs while a change is watched (simulated seconds a second): the quickest of
+ * `periods` (s) in WATCH_TURN seconds, no faster than `most` and no slower than a minute a second.
+ * Null where there is no period to go by.
+ */
+export function watchRate(periods: Iterable<number>, most: number): number | null {
+  let quickest = Infinity;
+  for (const p of periods) if (p > 0 && p < quickest) quickest = p;
+  if (!Number.isFinite(quickest)) return null;
+  return Math.max(WATCH_SLOWEST, Math.min(most, quickest / WATCH_TURN));
+}
+
+/** the frame reaches this many times as far as the farthest of the worlds it frames gets */
+export const FRAME_MARGIN = 1.5;
+/** the worlds framed are those that go round in at most this many times the quickest's period */
+export const FRAME_PERIODS = 20;
+
+/** A world in a watch's frame: how long once round takes it (s), and how far from the frame's centre it gets while it is watched (m). */
+export interface Framed { period: number; reach: number }
+
+/**
+ * How far from its centre a watch's frame reaches (m): FRAME_MARGIN times as far as the farthest
+ * reach of the worlds whose period is at most FRAME_PERIODS times the quickest (by default the
+ * quickest of theirs). (A world 30 AU out does not shrink the inner planets to dots when the Sun
+ * is taken away.) 0: nothing to frame.
+ */
+export function frameRadius(worlds: readonly Framed[], quickest = Math.min(...worlds.map((w) => (w.period > 0 ? w.period : Infinity)))): number {
+  let far = 0;
+  for (const w of worlds) if (w.period <= FRAME_PERIODS * quickest && Number.isFinite(w.reach)) far = Math.max(far, w.reach);
+  return FRAME_MARGIN * far;
+}
+
+/** A world a change matters to, as its watch is planned from it. */
+export interface Watched {
+  /** G times its mass (m³/s²), where it is (m) and how it moves (m/s) */
+  gm: number; pos: Vec; vel: Vec;
+  /** how long once round takes it on the orbit it is on now about what it goes round, and took it on the one it was on before the change (s; Infinity: an open path, or round nothing) */
+  period: number; was: number;
+}
+
+/** What a watch does: how fast time runs (simulated seconds a second), and how far from the frame's centre the frame reaches (m; 0: the camera stays where it is). */
+export interface WatchPlan { rate: number; radius: number }
+
+/**
+ * The watch of a change, from the worlds it matters to and the centre of the frame: where that is,
+ * how it moves and G times its mass (null: there is nothing to frame round). A world's period is
+ * that of its orbit about the centre where it is bound to it (a moon round the planet made
+ * heavier, the planets round a sun); else of the orbit it is on about what it goes round; else of
+ * the one it was on before the change (a moon thrown off by a planet made lighter keeps the pace
+ * of its month). The frame holds the worlds bound to the centre, as far as the far end of each
+ * one's orbit about it, and those that go round nothing now, as far as each gets in the watch;
+ * a world that goes round something else (a moon of Saturn when the Sun is taken away) sets the
+ * pace with the others but goes where what it goes round goes. Null where none of the worlds has
+ * a period to go by: nothing is to be seen going round.
+ */
+export function watchPlan(worlds: readonly Watched[], centre: { gm: number; pos: Vec; vel: Vec } | null, most: number): WatchPlan | null {
+  const about = worlds.map((w) => {
+    if (!centre) return null;
+    const r: Triple = [w.pos[0] - centre.pos[0], w.pos[1] - centre.pos[1], w.pos[2] - centre.pos[2]];
+    const v: Triple = [w.vel[0] - centre.vel[0], w.vel[1] - centre.vel[1], w.vel[2] - centre.vel[2]];
+    const d = Math.hypot(r[0], r[1], r[2]);
+    return d > 0 ? { d, speed: Math.hypot(v[0], v[1], v[2]), o: orbitOf(r, v, w.gm + centre.gm) } : null;
+  });
+  const periods = worlds.map((w, k) => {
+    const a = about[k];
+    if (a?.o.bound) return a.o.period;
+    return Number.isFinite(w.period) ? w.period : w.was;
+  });
+  const rate = watchRate(periods, most);
+  if (rate === null) return null;
+  if (!centre) return { rate, radius: 0 };
+  const T = rate * WATCH_SECONDS, framed: Framed[] = [];
+  worlds.forEach((w, k) => {
+    const a = about[k];
+    if (a?.o.bound) framed.push({ period: periods[k], reach: a.o.apo });
+    else if (a && !Number.isFinite(w.period)) framed.push({ period: periods[k], reach: a.d + a.speed * T });
+  });
+  return { rate, radius: frameRadius(framed, Math.min(...periods.map((p) => (p > 0 ? p : Infinity)))) };
+}
+
+/** A part of the view, in CSS px from its top-left corner. */
+export interface Rect { left: number; top: number; right: number; bottom: number }
+
+/**
+ * Where in a view of `width` by `height` CSS px, with the vertical field `fovY` (deg), a subject is
+ * framed when only `free` is clear of the interface: the direction of the middle of that part in
+ * the camera's own axes (x to the right, y up, -z ahead: as CameraRig.ray has them), and the
+ * angles (rad) from there to the nearer of its sides and to the nearer of its top and bottom.
+ */
+export function viewFrame(free: Rect, width: number, height: number, fovY: number): { dir: Triple; halfX: number; halfY: number } {
+  const t = Math.tan((fovY * Math.PI) / 360), aspect = width / height;
+  const ray = (x: number, y: number): Triple => {
+    const v: Triple = [((2 * x) / width - 1) * t * aspect, (1 - (2 * y) / height) * t, -1], l = Math.hypot(v[0], v[1], v[2]);
+    return [v[0] / l, v[1] / l, v[2] / l];
+  };
+  const angle = (p: Triple, q: Triple) => Math.acos(Math.min(1, p[0] * q[0] + p[1] * q[1] + p[2] * q[2]));
+  const x = (free.left + free.right) / 2, y = (free.top + free.bottom) / 2, dir = ray(x, y);
+  return {
+    dir,
+    halfX: Math.min(angle(dir, ray(free.left, y)), angle(dir, ray(free.right, y))),
+    halfY: Math.min(angle(dir, ray(x, free.top)), angle(dir, ray(x, free.bottom))),
+  };
+}
+
+/**
+ * How far from the centre of a frame of `radius` (m) the eye stands for the frame to fill the clear
+ * part of the view, `halfX` and `halfY` (rad) either way of its middle: radius / tan(the smaller).
+ */
+export function frameDistance(radius: number, halfX: number, halfY: number): number {
+  return radius / Math.tan(Math.min(halfX, halfY));
+}
+
 // ---------------------------------------------------------------- saying things
 
 /** A body's name as it stands in a sentence: "the Sun", "the Moon", "Jupiter". */
@@ -209,6 +373,16 @@ export function rateWords(rate: number): string {
   if (r >= 3600) return `${count(r / 3600, 'hour')} a second`;
   if (r >= 60) return `${count(r / 60, 'minute')} a second`;
   return r === 1 ? 'real time' : `${round(r)} times real time`;
+}
+
+/** A stretch of time in words: "51 days", "6.6 hours", "1,200 years". */
+export function spanWords(seconds: number): string {
+  const s = Math.abs(seconds), DAY = 86_400, YEAR = 365.25 * DAY;
+  if (s >= YEAR) return count(s / YEAR, 'year');
+  if (s >= DAY) return count(s / DAY, 'day');
+  if (s >= 3600) return count(s / 3600, 'hour');
+  if (s >= 60) return count(s / 60, 'minute');
+  return count(s, 'second');
 }
 
 /** A speed in words for an event: "12 km/s", "340 m/s". */

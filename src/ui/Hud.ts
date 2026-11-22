@@ -25,7 +25,10 @@ export type HudAction =
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
   // begin or end moving it with a finger, and what it is to do where it is left
-  | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle';
+  | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle'
+  // undo the last change; watching what a change does (src/app/Watch.ts): stop, watch it again, put the offer away;
+  // whether changes are watched at all
+  | 'undo' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me';
 
 export interface HudHost {
   act(action: HudAction): void;
@@ -37,6 +40,8 @@ export interface HudHost {
   pickDestination(id: string): void;
   /** the mass slider of the selected world was put at `slider` (src/app/Powers.ts: massFactor) */
   setMass(slider: number): void;
+  /** a finger (or the pointer) came down on the mass slider, or lifted (or the slider was left): all between is one change */
+  massHeld(held: boolean): void;
 }
 
 export interface HudState {
@@ -74,6 +79,17 @@ export interface HudState {
    * what the simulation leaves out, and what has happened, newest first.
    */
   live: { since: string; slow: string; rails: string; leftOut: readonly string[]; log: { day: string; text: string }[] } | null;
+  /** the last change can be undone */
+  undo: boolean;
+  /** the real Solar System has just come back (Back to reality, or its first change undone): Undo is offered at the top for a moment */
+  realAgain: boolean;
+  /**
+   * Watching what a change does (src/app/Watch.ts): what the chip says, whether the watch is over,
+   * and if so whether it can be watched again (Replay). Null: no watch, nothing offered.
+   */
+  watch: { text: string; ended: boolean; replay?: boolean } | null;
+  /** changes are watched: time speeds up and the camera frames what follows (the switch in More) */
+  showMe: boolean;
   /** the destination of the flight in progress */
   flying: string | null;
   labels: boolean;
@@ -103,6 +119,8 @@ type Sheet = 'explore' | 'time' | 'more' | 'flight';
 
 /** the height the selection's card takes above the tab bar, with its gap (px): its three buttons, and the powers under them */
 const CARD_ROOM = 196;
+/** a watch is given at least this share of an upright view's height: an open panel of the card folds away for it (makeRoom) */
+const FOLD_BELOW = 0.4;
 
 const TOUCH_HELP: [string, string][] = [
   ['Drag', 'Turn round the world you are at'],
@@ -128,6 +146,7 @@ const KEY_HELP: [string, string][] = [
   ['Space', 'Pause / resume time'],
   ['[  ]  \\', 'Slower / faster / reverse time'],
   ['Backspace', 'Real time, now'],
+  ['Ctrl+Z', 'Undo the last change to a world'],
   ['L / O / M', 'Names / orbits / minor-body orbits'],
   ['U · P', 'Photo mode · save a picture'],
   ['Esc', 'Stop a flight / clear the selection / close a panel'],
@@ -152,6 +171,7 @@ const TEMPLATE = `
   </header>
   <div class="live-mark" hidden>
     <button class="live-what" type="button" data-live aria-label="Live physics: what is simulated, and what has happened">${ICON.live}<span><b>Live physics</b><small></small></span></button>
+    <button class="live-undo" type="button" data-act="undo" aria-label="Undo the last change">${ICON.undo}<span>Undo</span></button>
     <button class="live-back" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
   </div>
   <div class="hud-toast" role="status" aria-live="polite"></div>
@@ -162,6 +182,12 @@ const TEMPLATE = `
     </div>
     <div class="hud-slot">
       <div class="hud-flight" hidden><span></span><button type="button" data-act="stop">${ICON.stop}Stop</button></div>
+      <div class="hud-watch" role="status" hidden>
+        <span class="watch-text"></span>
+        <button class="watch-stop" type="button" data-act="watch-stop">${ICON.stop}Stop</button>
+        <button class="watch-replay" type="button" data-act="replay">${ICON.replay}Replay</button>
+        <button class="watch-close" type="button" data-act="watch-close" aria-label="Close">${ICON.close}</button>
+      </div>
       <section class="sheet card" data-sheet="card" aria-label="Selected">
         <div class="card-head">
           <span class="thumb"></span>
@@ -218,20 +244,23 @@ const TEMPLATE = `
         <div class="sheet-grab"></div>
         <div class="sheet-head"><h2>Time</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
         <div class="time-now"><div class="time-date"></div><div class="time-clock"></div><div class="time-rate"></div></div>
+        <div class="ship-time" hidden><dl></dl><p></p></div>
+        <div class="live-sheet" hidden>
+          <h3>Live physics</h3>
+          <div class="live-ways">
+            <button class="btn" type="button" data-act="undo">${ICON.undo}<span>Undo</span></button>
+            <button class="btn" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
+          </div>
+          <p class="live-about"></p>
+          <div class="live-log"></div>
+          <details class="live-left"><summary><span>What the simulation leaves out</span>${ICON.chevron}</summary><ul></ul></details>
+        </div>
         <div class="transport">
           <button type="button" data-act="reverse" aria-pressed="false">${ICON.reverse}<span>Reverse</span></button>
           <button type="button" data-act="slower">${ICON.slower}<span>Slower</span></button>
           <button type="button" class="big" data-act="pause" aria-label="Pause or resume time">${ICON.pause}${ICON.play}</button>
           <button type="button" data-act="faster">${ICON.faster}<span>Faster</span></button>
           <button type="button" data-act="now">${ICON.now}<span>Now</span></button>
-        </div>
-        <div class="ship-time" hidden><dl></dl><p></p></div>
-        <div class="live-sheet" hidden>
-          <h3>Live physics</h3>
-          <p class="live-about"></p>
-          <div class="live-log"></div>
-          <details class="live-left"><summary><span>What the simulation leaves out</span>${ICON.chevron}</summary><ul></ul></details>
-          <button class="btn" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
         </div>
       </section>
       <section class="sheet flight" data-sheet="flight" aria-label="The ship's instruments">
@@ -247,6 +276,7 @@ const TEMPLATE = `
           <button class="switch" type="button" role="switch" data-act="labels" aria-checked="true"><span><b>Names</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="orbits" aria-checked="true"><span><b>Orbits</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="minor" aria-checked="false"><span><b>Orbits of asteroids and comets</b></span><i></i></button>
+          <button class="switch" type="button" role="switch" data-act="show-me" aria-checked="true"><span><b>Show me what happens</b><small>After you change a world, time speeds up for a while and the view frames what follows</small></span><i></i></button>
           <h3>Travel</h3>
           <button class="switch" type="button" role="switch" data-act="ship" aria-checked="false"><span><b>Spaceship</b><small>Physics all the way up: as fast as you like, never faster than light. Go there flies it</small></span><i></i></button>
           <h3>Camera</h3>
@@ -345,10 +375,12 @@ export class Hud {
       }
       e.stopPropagation(); // typing a name is not flying
     });
-    // the mass slider reports where it is put, as it is moved
+    // the mass slider reports where it is put, as it is moved, and when a finger comes down on it and lifts (one change, to undo and to watch)
     this.slider.addEventListener('input', () => this.host.setMass(Number(this.slider.value)));
-    this.slider.addEventListener('pointerdown', () => { this.sliding = true; });
+    this.slider.addEventListener('pointerdown', () => { this.sliding = true; this.host.massHeld(true); });
     for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.slider.addEventListener(done, () => { this.sliding = false; });
+    // (not on 'change': a key press changes it too, and a run of them is one change, which the app ends after a pause)
+    for (const done of ['pointerup', 'pointercancel', 'blur']) this.slider.addEventListener(done, () => this.host.massHeld(false));
     this.slider.addEventListener('keydown', (e) => e.stopPropagation()); // (its arrow keys are its own)
     for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
     // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
@@ -370,16 +402,16 @@ export class Hud {
 
   /**
    * The parts of the interface that stand over the view (the chips, the tab bar, the open card or
-   * sheet, the round buttons, and whatever else is marked `data-cover`, as the ship's instruments
-   * are): no name of the sky is to be drawn under them (src/render/Labels.ts). Measured at most five
-   * times a second; none in photo mode.
+   * sheet, the round buttons, the chip of a flight or of a watch, and whatever else is marked
+   * `data-cover`, as the ship's instruments are): no name of the sky is to be drawn under them
+   * (src/render/Labels.ts). Measured at most five times a second; none in photo mode.
    */
   covers(): readonly { l: number; t: number; r: number; b: number }[] {
     const now = performance.now();
     if (now - this.coversAt < 200) return this.coverBoxes;
     this.coversAt = now;
     if (this.el.classList.contains('ui-off')) return (this.coverBoxes = []);
-    const sel = '.hud-top .chip, .hud-tabs, .hud-slot > .on, .hud-flight:not([hidden]), .live-mark:not([hidden]), .hud-fabs > *, [data-cover]';
+    const sel = '.hud-top .chip, .hud-tabs, .hud-slot > .on, .hud-flight:not([hidden]), .hud-watch:not([hidden]), .live-mark:not([hidden]), .hud-fabs > *, [data-cover]';
     const root = this.el.getBoundingClientRect();
     this.coverBoxes = [...this.el.querySelectorAll<HTMLElement>(sel)].map((e) => e.getBoundingClientRect())
       .filter((r) => r.width > 0 && r.height > 0)
@@ -465,6 +497,50 @@ export class Hud {
   }
 
   /**
+   * Room for watching what a change does: where the card with a power's panel or the details open
+   * would leave less than FOLD_BELOW of an upright view's height clear, or does not fit beside a
+   * wide view with the chip above it (a phone on its side), the panel folds away (the card keeps
+   * its buttons; one tap opens it again). Moving a world keeps its panel: the finger is still at
+   * work on it.
+   */
+  makeRoom(): void {
+    if (this.power === null && !this.details) return;
+    const card = this.$('.card');
+    const cramped = getComputedStyle(this.$('.hud-dock')).flexDirection === 'column'
+      ? this.freeArea().bottom - this.freeArea().top < FOLD_BELOW * window.innerHeight
+      : card.scrollHeight > card.clientHeight + 1;
+    if (!cramped) return;
+    this.power = null;
+    this.details = false;
+    if (this.state) this.renderCard(this.state);
+  }
+
+  /**
+   * The part of the view the interface leaves clear as it stands now (CSS px from the view's
+   * top-left corner), for a frame to fit in: below the chips and the mark of live physics, and
+   * above the panel and the tab bar (beside them, where they stand at the left of a wide view),
+   * with a margin. The whole view if what is left is too small to frame anything in.
+   */
+  freeArea(): { left: number; top: number; right: number; bottom: number } {
+    const W = window.innerWidth, H = window.innerHeight, MARGIN = 8;
+    const box = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? r : null; };
+    let top = 0, left = 0, bottom = H;
+    for (const el of [this.$('.hud-top'), this.$('.live-mark')]) {
+      const r = (el as HTMLElement).hidden ? null : box(el);
+      if (r && r.top < H / 2) top = Math.max(top, r.bottom);
+    }
+    const row = getComputedStyle(this.$('.hud-dock')).flexDirection !== 'column';
+    for (const el of [...this.slot.children, this.$('.hud-tabs')]) {
+      const r = box(el);
+      if (!r) continue;
+      if (row) left = Math.max(left, r.right);
+      else bottom = Math.min(bottom, r.top);
+    }
+    const free = { left: left + MARGIN, top: top + MARGIN, right: W - MARGIN, bottom: bottom - MARGIN };
+    return free.right - free.left > 120 && free.bottom - free.top > 120 ? free : { left: 0, top: 0, right: W, bottom: H };
+  }
+
+  /**
    * Where the world being moved is on the screen (px), or null when none is: a ring is drawn round
    * it, for the finger to find it by.
    */
@@ -525,15 +601,26 @@ export class Hud {
     const flight = this.$('.hud-flight');
     flight.hidden = !s.flying;
     if (s.flying) setText(flight.firstElementChild as HTMLElement, `Flying to ${s.flying}`);
-    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['look', s.look], ['ship', s.mode === 'ship']] as const) {
+    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['look', s.look], ['ship', s.mode === 'ship']] as const) {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
     this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
     setText(this.$('.look-fab span'), s.look ? 'Look' : 'Orbit');
     setText(this.$('.status'), s.status);
     this.renderLive(s);
+    this.renderWatch(s);
     this.renderCard(s);
     this.showSlot();
+  }
+
+  /** Watching what a change does: the chip above the panel, with Stop while it runs, and Replay once it is over. */
+  private renderWatch(s: HudState): void {
+    const chip = this.$('.hud-watch'), w = s.watch;
+    chip.hidden = !w;
+    if (!w) return;
+    chip.classList.toggle('ended', w.ended);
+    setText(this.$('.watch-text'), w.text);
+    this.$('.watch-replay').hidden = !w.ended || !w.replay;
   }
 
   /** In the ship, the Time sheet says how fast each clock runs, and why the warp is not what was asked. */
@@ -549,14 +636,28 @@ export class Hud {
     setText(why, ship.why);
   }
 
-  /** Live physics: the mark at the top, with the way back; in the Time sheet, what has happened and what is left out. */
+  /**
+   * Live physics: the mark at the top, with Undo and the way back; in the Time sheet, what has
+   * happened and what is left out. Just after the real Solar System has come back, the mark says so
+   * for a moment, with Undo: the changed world can be had back.
+   */
   private renderLive(s: HudState): void {
-    const live = s.live;
-    this.el.toggleAttribute('data-live', !!live);
-    this.$('.live-mark').hidden = !live;
+    const live = s.live, after = !live && s.realAgain;
+    this.el.toggleAttribute('data-live', !!live || after);
+    const mark = this.$('.live-mark');
+    mark.hidden = !live && !after;
+    mark.classList.toggle('after', after);
+    this.$('.live-undo').hidden = !s.undo;
+    this.$('.live-back').hidden = !live;
+    this.$('.live-ways [data-act="undo"]').hidden = !s.undo;
     const sheet = this.$('.live-sheet');
     sheet.hidden = !live;
+    if (after) {
+      setText(this.$('.live-what b'), 'Back to reality');
+      setText(this.$('.live-what small'), 'the real Solar System again');
+    }
     if (!live) return;
+    setText(this.$('.live-what b'), 'Live physics');
     setText(this.$('.live-what small'), live.slow || `since ${live.since}`);
     setText(this.$('.live-about'), `Since ${live.since} everything here moves under its own gravity: each world pulls on every other, and nothing is on its catalogued path any more.${live.rails ? ` Carried on rails while time runs this fast: ${live.rails}.` : ''}`);
     const key = live.log.map((e) => `${e.day}\n${e.text}`).join('\n');
@@ -716,8 +817,8 @@ export class Hud {
     else if ('close' in d) this.closeSheet();
     else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
     else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
-    else if ('massReal' in d) { this.slider.value = '0'; this.host.setMass(0); }
-    else if ('live' in d) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); }
+    else if ('massReal' in d) { this.slider.value = '0'; this.host.massHeld(true); this.host.setMass(0); this.host.massHeld(false); }
+    else if ('live' in d) { if (this.state?.live) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); } }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
     else if (d.act) {

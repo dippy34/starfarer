@@ -24,7 +24,7 @@ async function setup() {
   const sys = await SolarSystem.load('/data');
   await sys.ephemeris.request(JD);
   sys.update(JD);
-  const physics = new LivePhysics(sys, { left: () => undefined });
+  const physics = new LivePhysics(sys, { left: () => undefined, dropped: () => undefined });
   const clock = new SimClock(JD);
   const named = (name: string) => sys.bodies.find((b) => b.name === name)!;
   /** run the clock on by `days` as the app's frames do */
@@ -260,8 +260,9 @@ describe('a planet or a sun made for a star', () => {
     expect(planet.valid).toBe(false);
     expect(moon.valid).toBe(true);
     expect(physics.simulated(moon)).toBe(true);
+    // (what was made is taken out by the return to reality itself, the moon first)
     physics.backToReality(clock);
-    for (const b of [moon, planet]) sys.remove(b);
+    expect(physics.made).toEqual([]);
     expect(sys.bodies.length).toBe(before);
     expect(sys.bodies.every((b) => !b.meta.made)).toBe(true);
     expect(sun.children).not.toContain(planet);

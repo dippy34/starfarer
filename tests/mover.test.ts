@@ -24,7 +24,7 @@ async function setup(eye: (s: SolarSystem) => Vector3, aim: (s: SolarSystem) => 
   await sys.ephemeris.request(JD);
   sys.update(JD);
   const named = (name: string) => sys.bodies.find((b) => b.name === name)!;
-  const physics = new LivePhysics(sys, { left: () => undefined });
+  const physics = new LivePhysics(sys, { left: () => undefined, dropped: () => undefined });
   const clock = new SimClock(JD);
   const at = eye(sys), to = aim(sys).sub(at).normalize();
   // the camera looks along its own -z, with x to the right and y up
@@ -36,14 +36,15 @@ async function setup(eye: (s: SolarSystem) => Vector3, aim: (s: SolarSystem) => 
     return v.z < 0 ? { x: 500 + v.x / -v.z / PIXEL, y: 500 - v.y / -v.z / PIXEL } : null;
   };
   const views = { get: (b: Body) => (b.valid ? { rel: rel(b), pixelRadius: Math.atan2(b.radius, rel(b).length()) / PIXEL } : undefined) };
-  let told = 0;
+  let told = 0, begun = 0, ended = 0;
   const mover = new Mover({
     rig: { ray: (x: number, y: number) => new Vector3((x - 500) * PIXEL, (500 - y) * PIXEL, -1).normalize().applyQuaternion(quat), upos: { toVector3: () => at.clone() } },
     physics, clock, bodies: { views }, view: { quat, pixelRatio: 1 }, project, tellNews: () => { told++; },
+    beginChange: () => { begun++; }, endChange: () => { ended++; },
   } as unknown as ConstructorParameters<typeof Mover>[0]);
   /** the pixel at which a place (m from the system's centre) is seen */
   const pixel = (p: Vector3) => project(p.clone().sub(at))!;
-  return { sys, named, physics, clock, mover, pixel, told: () => told };
+  return { sys, named, physics, clock, mover, pixel, told: () => told, gestures: () => [begun, ended] };
 }
 
 /** from far above the plane of the Moon's orbit, over the Earth */
@@ -55,7 +56,7 @@ const aboveTheMoon = (s: SolarSystem) => {
 
 describe('moving a world with a finger', () => {
   it('takes hold only of the world whose Move is on, and only where its dot is; time waits while it is held', async () => {
-    const { named, mover, clock, pixel, physics } = await setup(aboveTheMoon, (s) => s.byId.get(399)!.pos.clone());
+    const { named, mover, clock, pixel, physics, gestures } = await setup(aboveTheMoon, (s) => s.byId.get(399)!.pos.clone());
     const moon = named('Moon'), dot = pixel(moon.pos);
     expect(mover.grab(dot.x, dot.y, true)).toBeNull();
     mover.toggle(moon);
@@ -72,6 +73,8 @@ describe('moving a world with a finger', () => {
     hold.end();
     expect(mover.holding).toBe(false);
     expect(clock.paused).toBe(false);
+    // (the hold is one change for Undo and the watch, begun when it took hold and ended when it let go)
+    expect(gestures()).toEqual([1, 1]);
     mover.toggle(moon);
     expect(mover.body).toBeNull();
   });
@@ -100,7 +103,7 @@ describe('moving a world with a finger', () => {
   });
 
   it('left on a circle, it goes round what holds sway where it was put, the way it was going; asked back, it has its own velocity again', async () => {
-    const { named, mover, pixel, physics } = await setup(aboveTheMoon, (s) => s.byId.get(399)!.pos.clone());
+    const { named, mover, pixel, physics, gestures } = await setup(aboveTheMoon, (s) => s.byId.get(399)!.pos.clone());
     const earth = named('Earth'), moon = named('Moon');
     const r = moon.pos.clone().sub(earth.pos), v = moon.vel.clone();
     const turning = r.clone().cross(moon.vel.clone().sub(earth.vel)).normalize();
@@ -110,6 +113,8 @@ describe('moving a world with a finger', () => {
     hold.move(to.x, to.y);
     hold.end();
     mover.leave(true);
+    // (the choice of what it does where it is left is a change of its own)
+    expect(gestures()).toEqual([2, 2]);
     const o = physics.orbit(moon)!;
     expect(moon.parent).toBe(earth);
     expect(o.e).toBeLessThan(1e-6);

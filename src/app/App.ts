@@ -58,9 +58,12 @@ import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
 import { canAdd, type Kind, MADE_FIRST_ID, newMoon, newTwin, TWIN_OF } from './WhatIf';
-import { LivePhysics } from './LivePhysics';
+import { type LiveCheckpoint, LivePhysics } from './LivePhysics';
 import { Mover } from './Mover';
-import { farWords, massFactor, massOf, massSlider, massTheory, massWords, rateWords, the, timesWords } from './Powers';
+import { farWords, frameDistance, massFactor, massOf, massSlider, massTheory, massWords, rateWords, spanWords, the, timesWords, viewFrame } from './Powers';
+import { Gesture, History } from './History';
+import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
+import { recall, remember } from '../platform/storage';
 import { type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
@@ -120,6 +123,21 @@ const RATE_STEPS = [1, 10, 60, 600, 3600, 21600, DAY, 7 * DAY, 30.4375 * DAY, 36
 const FAR_ARRIVAL = 30;
 /** in live physics time can be asked to run faster still: a thousand years a second (it runs as fast as the stepping allows) */
 const LIVE_RATE = 365250 * DAY;
+/**
+ * A change is watched at most this fast (simulated seconds a second): on a touch screen ten years a
+ * second until a phone's stepping has been measured, a hundred at a desk (a quarter of one of this
+ * machine's cores keeps up with about that with every planet there: docs/notes/gravity-engine.md)
+ */
+const WATCH_MOST_TOUCH = 10 * 365.25 * DAY, WATCH_MOST = 100 * 365.25 * DAY;
+/** after the return to reality, Undo is offered at the top for this long (ms); then what was undone is let go */
+const REAL_AGAIN_MS = 20_000;
+
+/** The moment the world here was last the real one: the date, the rate of time, and whether the clock was following the present then. */
+interface Start { jd: number; rate: RateState; present: boolean }
+/** What Undo goes back to: the worlds (LivePhysics), the rate of time, and the moment the changes began; `what`: the change it undoes, in words. */
+interface Checkpoint { live: LiveCheckpoint; rate: RateState; present: boolean; begun: Start | null; what: string }
+/** A change under way: what kind, to which world (for an Add, the one added to), the state before it, how many changes there had been, the worlds as it found them (src/app/Watch.ts). */
+interface Pending { kind: ChangeKind; body: Body; before: Checkpoint; count: number; sample: Map<Body, Sampled> }
 
 export class App {
   readonly renderer: Renderer;
@@ -216,6 +234,23 @@ export class App {
   readonly trails = new TrailsLayer();
   /** the power to move a world with a finger (src/app/Mover.ts) */
   readonly mover: Mover;
+  /** watching what a change does (src/app/Watch.ts): the rate of time while it runs, then Replay */
+  readonly watch = new Watch();
+  /** after a change, time and the camera show what it does (More: "Show me what happens", remembered on the device) */
+  showMe = recall('show-me') !== '0';
+  /** the camera on its way to a watch's frame */
+  private glide: Glide | null = null;
+  /** Undo: the state before each of the last changes (src/app/History.ts) */
+  private readonly history = new History<Checkpoint>();
+  /** one change per gesture: a finger on the mass slider until it lifts, a world held, a run of keys */
+  private readonly run = new Gesture();
+  private pending: Pending | null = null;
+  /** the moment just after the last change, and how it was watched: Replay goes back to it */
+  private replayFrom: { cp: LiveCheckpoint; frame: WatchFrame } | null = null;
+  /** where the changes began (the world here the real one): Back to reality returns to it */
+  private begun: Start | null = null;
+  /** when the real Solar System came back (performance.now, ms), for the Undo offered just after; 0: not offered */
+  private realAgain = 0;
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -237,7 +272,7 @@ export class App {
     this.hud = new Hud(hudRoot, this);
     this.labels = new Labels(labelRoot);
     this.clock = SimClock.now();
-    this.physics = new LivePhysics(system, { left: (b, into) => this.bodyLeft(b, into) });
+    this.physics = new LivePhysics(system, { left: (b, into) => this.bodyLeft(b, into), dropped: (b) => this.bodies.changed(b) });
     this.mover = new Mover(this);
     orbits.simulated = (b) => this.physics.simulated(b);
     // (with the orbit lines: what hides them hides these)
@@ -526,6 +561,8 @@ export class App {
   }
 
   private bindKeys(): void {
+    // (a finger on the view, or the wheel, takes the camera back from a watch at once: time keeps the watch's pace)
+    this.input.onDown = () => { this.glide = null; };
     this.input.grab = (x, y, touch) => this.mover.grab(x, y, touch);
     this.input.onTap = (x, y, touch) => {
       if (!touch && this.walk.onClick()) return; // walking: the click grabs the mouse
@@ -568,6 +605,7 @@ export class App {
         case 'KeyK': this.showMissions(); break;
         case 'Comma': this.hud.toast(this.awe.toggleEarth()); break;
         case 'KeyY': if (this.game.flight.on) this.game.flight.cycleSas(e.shiftKey); break;
+        case 'KeyZ': if ((e.ctrlKey || e.metaKey) && !this.game.flight.on) { this.undo(); e.preventDefault(); } break;
         case 'KeyI': if (this.game.flight.on) this.game.flight.toggleDrive(); break;
         default:
           if (/^Digit\d$/.test(e.code)) {
@@ -599,6 +637,15 @@ export class App {
       case 'move-keep': this.mover.leave(false); break;
       case 'move-circle': this.mover.leave(true); break;
       case 'reality': this.backToReality(); break;
+      case 'undo': this.undo(); break;
+      case 'watch-stop': this.stopWatch(); break;
+      case 'replay': this.replay(); break;
+      case 'watch-close': this.putRate(this.watch.clear()); break;
+      case 'show-me':
+        this.showMe = !this.showMe;
+        remember('show-me', this.showMe ? '1' : '0');
+        this.hud.toast(this.showMe ? 'After a change, time speeds up and the view frames what it does' : 'Changes no longer speed up time or move the view');
+        break;
       case 'stop': this.rig.cancelGoto(); break;
       case 'pause': this.togglePause(); break;
       case 'faster': this.timeFaster(); break;
@@ -655,26 +702,43 @@ export class App {
 
   // ------------------------------------------------------------------ actions
   togglePause(): void {
+    this.takeTime();
     this.clock.paused = !this.clock.paused;
   }
   /** the rate of step `i` (one past the list's end: live physics' own) */
   private rateAt(i: number): number {
     return this.rateSign * (RATE_STEPS[i] ?? LIVE_RATE);
   }
+  /**
+   * The explorer reaches for time while a change is being watched: the watch's pace becomes theirs
+   * to go on from (its step is the one at or below it) and the watch ends, nothing put back. True
+   * if that pace lies between two steps: the step below it is already slower.
+   */
+  private takeTime(): boolean {
+    if (!this.watch.watching) return false;
+    const rate = this.watch.rate;
+    this.rateSign = 1;
+    this.rateIndex = 0;
+    while (this.rateIndex + 1 < RATE_STEPS.length && RATE_STEPS[this.rateIndex + 1] <= rate) this.rateIndex++;
+    this.watch.yieldRate();
+    return rate > RATE_STEPS[this.rateIndex] * 1.0001;
+  }
   timeFaster(): void {
     if (this.game.flight.on) { this.shipWarp(1); return; }
+    this.takeTime();
     this.rateIndex = Math.min(RATE_STEPS.length - (this.physics.on ? 0 : 1), this.rateIndex + 1);
     this.clock.rate = this.rateAt(this.rateIndex);
     this.clock.paused = false;
   }
   timeSlower(): void {
     if (this.game.flight.on) { this.shipWarp(-1); return; }
-    this.rateIndex = Math.max(0, this.rateIndex - 1);
+    if (!this.takeTime()) this.rateIndex = Math.max(0, this.rateIndex - 1);
     this.clock.rate = this.rateAt(this.rateIndex);
   }
   timeReverse(): void {
     // (the ship's clock only runs forwards: its physics would not undo itself)
     if (this.game.flight.on) { this.hud.toast('Time cannot run backwards aboard the ship'); return; }
+    this.takeTime();
     this.rateSign *= -1;
     this.clock.rate = this.rateAt(this.rateIndex);
     // (a simulation run backwards undoes what its gravity did; two bodies that became one stay one)
@@ -682,6 +746,9 @@ export class App {
   }
   /** Boarding the ship: time runs, at 1x (the date is kept). */
   flightClock(): void {
+    // (the ship keeps its own time: a watch under way ends)
+    this.watch.clear();
+    this.glide = null;
     if (this.clock.paused || this.clock.rate !== 1) {
       this.rateIndex = 0;
       this.rateSign = 1;
@@ -714,6 +781,7 @@ export class App {
       this.hud.toast('Real time aboard (the date stays: the ship cannot jump in time)');
       return;
     }
+    this.takeTime();
     // (in live physics the date is the simulation's: only the pace goes back to real time)
     if (!this.physics.on) this.clock.setUtcNow();
     this.rateIndex = 0;
@@ -817,9 +885,10 @@ export class App {
     this.hud.toast(`Missions ${m.doneCount}/${m.total}\n${lines}${recent ? `\nRecently discovered: ${recent}` : ''}`, 9);
   }
 
-  /** Escape: stop the flight, or close the open panel, or let go of the selection. */
+  /** Escape: stop watching a change, or stop the flight, or close the open panel, or let go of the selection. */
   cancelOrDeselect(): void {
-    if (this.mover.body) this.mover.stop();
+    if (this.watch.watching) this.stopWatch();
+    else if (this.mover.body) this.mover.stop();
     else if (this.rig.autopilot) this.rig.cancelGoto();
     else if (this.hud.open) this.hud.closeSheet();
     else this.select(null);
@@ -846,10 +915,12 @@ export class App {
   // ------------------------------------------------------------------ what if (src/app/WhatIf.ts)
   /**
    * The bodies the explorer has made since the system was last the real one (those taken away
-   * again among them: they are gone like any world taken away, until the return to reality), and
-   * how many ever: their numbers are not used twice.
+   * again among them: they are gone like any world taken away, until the return to reality).
    */
-  readonly made: Body[] = [];
+  get made(): readonly Body[] {
+    return this.physics.made;
+  }
+  /** how many bodies were ever made: their numbers are not used twice */
   private madeEver = 0;
 
   /**
@@ -866,14 +937,167 @@ export class App {
       ? newTwin(like, this.bodies.textureKey(like), to, eye, this.made.filter((m) => m.twinOf === like).length, id)
       : newMoon(to, eye, sun ? to.pos.distanceTo(sun.pos) : Infinity, this.made.filter((m) => this.system.homeOf(m) === to).length, id);
     const where = to.kind === 'star' ? `${farWords(plan.orbit)} from ${the(to.name)}` : `${formatDistance(plan.orbit - to.radius)} up`;
+    this.beginChange('add', to, true, `making ${plan.json.name}`);
     const wasOn = this.physics.on;
     const made = this.physics.make(plan.json, to, plan.pos, plan.vel, this.clock.jdTdb,
       `${plan.json.name} is new: ${where}, once round in ${fmtDuration(plan.periodDays * DAY)}.`);
-    this.made.push(made);
     this.bodies.changed();
     this.select(made);
     this.tellNews(wasOn);
+    this.endChange();
     return made;
+  }
+
+  // ------------------------------------------------------------------ changes: one per gesture, undone, watched
+  /**
+   * A change to a world begins (`what`: it, in words, for Undo): the mass slider touched, a world
+   * taken hold of, Add or Remove tapped. `held`: by a finger or the pointer, and the change ends
+   * when it lifts; otherwise it is a run of key presses, which a pause ends. The state before it is
+   * kept for Undo (the first change also keeps where the changes began, for Back to reality), and
+   * the worlds as they are, for its watch. A watch under way ends first, its rate of time put back.
+   */
+  beginChange(kind: ChangeKind, body: Body, held: boolean, what: string): void {
+    if (this.run.open && this.pending && (this.pending.kind !== kind || this.pending.body !== body)) this.endChange();
+    if (!this.run.begin(performance.now(), held)) return;
+    this.putRate(this.watch.clear());
+    this.glide = null;
+    this.realAgain = 0;
+    this.pending = { kind, body, before: this.checkpoint(what), count: this.physics.changes, sample: this.sample(body) };
+  }
+
+  /** The change is over (the finger has lifted; a pause after the last key): kept for Undo if it changed anything, and watched. */
+  endChange(): void {
+    if (!this.run.end()) return;
+    const c = this.pending;
+    this.pending = null;
+    if (!c || this.physics.changes === c.count) return;
+    this.history.push(c.before);
+    if (!c.before.live.sim) this.begun = { jd: c.before.live.jd, rate: c.before.rate, present: c.before.present };
+    this.replayFrom = null;
+    const frame = this.planWatch(c);
+    if (!frame || !this.showMe) return;
+    this.replayFrom = { cp: this.physics.checkpoint(this.clock.jdTdb), frame };
+    this.startWatch(frame);
+  }
+
+  /** A finger (or the pointer) has come down on the mass slider, or lifted from it: one change from the moment it comes down until it lifts. */
+  massHeld(held: boolean): void {
+    const b = this.selection;
+    if (held && b instanceof Body && b.valid) this.beginChange('mass', b, true, `changing ${the(b.name)}'s mass`);
+    else if (!held && this.pending?.kind === 'mass') this.endChange();
+  }
+
+  /** Undo: back to just before the last change, the date and the rate of time included. The first change undone is the real Solar System again. */
+  undo(): void {
+    if (this.run.open) this.endChange();
+    const cp = this.history.pop();
+    if (!cp) return;
+    this.restore(cp);
+    this.realAgain = !cp.live.sim && this.history.size > 0 ? performance.now() : 0;
+    this.hud.toast(`Undone: ${cp.what}${cp.live.sim ? '' : '. The real Solar System again'}`, 3);
+  }
+
+  /** Everything as it is now, for Undo: the worlds, the rate of time, whether the clock follows the present; `what` is the change about to be made. */
+  private checkpoint(what: string): Checkpoint {
+    const now = utcToTdb(dateToJdUtc(new Date()));
+    return { live: this.physics.checkpoint(this.clock.jdTdb), rate: this.rateState(), present: !this.clock.paused && this.clock.rate === 1 && Math.abs(this.clock.jdTdb - now) < 120 / DAY, begun: this.begun, what };
+  }
+
+  /** Back to a state Undo kept: the worlds, the date (the present, if the clock was following it in the real Solar System) and the rate of time. */
+  private restore(cp: Checkpoint): void {
+    this.watch.clear();
+    this.glide = null;
+    this.mover.stop();
+    this.replayFrom = null;
+    this.physics.restore(cp.live);
+    this.clock.jdTdb = cp.live.jd;
+    if (!cp.live.sim && cp.present) { this.clock.setUtcNow(); this.system.update(this.clock.jdTdb); }
+    this.putRate(cp.rate);
+    this.begun = cp.begun;
+    this.trails.clear();
+    this.bodies.changed();
+  }
+
+  /** The rate of time as the explorer has it now, to put back (Watch.ts). */
+  private rateState(): RateState {
+    return { index: this.rateIndex, sign: this.rateSign, rate: this.clock.rate, paused: this.clock.paused };
+  }
+
+  private putRate(s: RateState | null): void {
+    if (!s) return;
+    this.rateIndex = s.index;
+    this.rateSign = s.sign;
+    this.clock.rate = s.rate;
+    this.clock.paused = s.paused;
+  }
+
+  /** The worlds as they are now, for a change's watch (src/app/Watch.ts: sample). */
+  private sample(touched: Body): Map<Body, Sampled> {
+    return sample(this.physics, this.system, touched);
+  }
+
+  /**
+   * How a change is watched (src/app/Watch.ts: planChange; null: nothing it matters to goes round
+   * anything to be seen). The frame's centre: the world made heavier or lighter; the one something
+   * was added to; what holds sway where a world was put; where a world taken away would have gone.
+   */
+  private planWatch(c: Pending): WatchFrame | null {
+    const centre = c.kind === 'move' ? this.physics.swayAt(c.body.pos.toArray(), c.body) ?? c.body.parent : c.body;
+    return planChange(c.kind, c.body, c.sample, this.sample(c.body), centre, this.input.touch ? WATCH_MOST_TOUCH : WATCH_MOST);
+  }
+
+  /** Watch a change: time at the watch's pace for its length (src/app/Watch.ts), and the camera eased to its frame. */
+  private startWatch(f: WatchFrame): void {
+    // (the ship keeps its own time, and walking its own camera)
+    if (this.game.flight.on || this.walk.active) return;
+    this.watch.start(f.rate, this.rateState());
+    this.clock.rate = f.rate;
+    this.clock.paused = false;
+    // (the chip and the mark are drawn first, and an open panel of the card makes room on an upright
+    // screen: the frame is fitted to what they leave clear)
+    this.updateHud();
+    if (!f.centre || this.vr.active) return;
+    this.hud.makeRoom();
+    const v = viewFrame(this.hud.freeArea(), this.cssW, this.cssH, this.rig.fovY);
+    const d = frameDistance(Math.max(f.radius, 1.2 * f.centre.radius), v.halfX, v.halfY);
+    if (this.rig.autopilot) this.rig.cancelGoto();
+    // (a world taken away is a point to look at, nothing to turn round)
+    this.rig.target = f.centre.valid ? f.centre : null;
+    this.glide = new Glide(this.rig, f.centre, d, v.dir);
+  }
+
+  /** Stop: the explorer's rate of time comes back, the camera stays where it is, and Replay is offered. */
+  private stopWatch(): void {
+    this.putRate(this.watch.stop());
+    this.glide = null;
+  }
+
+  /** Each frame: the watch's pace, lowered if the stepping cannot keep up, and the explorer's put back when it is over; a run of keys ended by its pause. */
+  private tickWatch(dt: number, ran: number): void {
+    const what = this.watch.tick(dt, ran, this.physics.keeping);
+    if (what === 'slower') this.clock.rate = this.watch.rate;
+    else if (what === 'over') this.putRate(this.watch.stop());
+    const now = performance.now();
+    if (this.run.due(now)) this.endChange();
+    // (what was undone by the return to reality is let go once Undo is no longer offered)
+    if (this.realAgain && now - this.realAgain > REAL_AGAIN_MS) {
+      this.realAgain = 0;
+      if (!this.physics.on) this.history.clear();
+    }
+  }
+
+  /** Replay: back to the moment just after the last change, watched again. The simulation goes the same way: it is the same event. */
+  replay(): void {
+    const r = this.replayFrom;
+    if (!r || this.run.open) return;
+    this.watch.clear();
+    this.glide = null;
+    this.mover.stop();
+    this.physics.restore(r.cp);
+    this.clock.jdTdb = r.cp.jd;
+    this.trails.clear();
+    this.bodies.changed();
+    this.startWatch(r.frame);
   }
 
   // ------------------------------------------------------------------ the powers (src/app/LivePhysics.ts)
@@ -910,13 +1134,17 @@ export class App {
     if (news.length) this.hud.toast(news.join('\n'), 3 + 1.5 * news.length);
   }
 
-  /** The mass slider of the selected world was moved: it has that many times its real mass from now on. */
+  /**
+   * The mass slider of the selected world was moved: it has that many times its real mass from now
+   * on. (Without a finger on the slider, its arrow keys: a run of them is one change.)
+   */
   setMass(slider: number): void {
     const b = this.selection;
     if (!(b instanceof Body) || !b.valid) return;
     const real = this.physics.realGm(b), gm = massFactor(slider) * real;
     // (put back where it stood, with nothing changed yet: nothing to simulate)
     if (!(real > 0) || gm === b.gm) return;
+    this.beginChange('mass', b, false, `changing ${the(b.name)}'s mass`);
     const wasOn = this.physics.on;
     this.physics.setMass(b, gm, this.clock.jdTdb);
     this.tellNews(wasOn);
@@ -925,25 +1153,41 @@ export class App {
   /** Take a world away: everything else carries on without it. */
   removeBody(b: Body): void {
     if (!b.valid || !this.system.bodies.includes(b)) return;
+    this.beginChange('remove', b, true, `taking away ${the(b.name)}`);
     const wasOn = this.physics.on;
     this.physics.remove(b, this.clock.jdTdb);
     this.tellNews(wasOn);
+    this.endChange();
   }
 
-  /** Undo everything: the real Solar System again, what was made taken away, what the simulation drew cleared. */
+  /**
+   * Undo everything: the real Solar System again as it was when the first change was made, the
+   * date and the rate of time with it (the clock following the present again if it was then),
+   * what was made taken away, what the simulation drew cleared. It is a change like the others:
+   * for a moment Undo is offered at the top, and brings the changed world back.
+   */
   backToReality(): void {
     if (!this.physics.on) return;
+    if (this.run.open) this.endChange();
+    this.putRate(this.watch.clear());
+    this.glide = null;
     this.mover.stop();
-    const said = this.physics.backToReality(this.clock);
-    // (what was made goes, the last made first: a moon before the planet it was made for)
-    for (const b of this.made.splice(0).reverse()) {
-      this.bodyLeft(b, null);
-      this.system.remove(b);
-      this.bodies.changed(b);
-    }
+    this.replayFrom = null;
+    this.history.push(this.checkpoint('Back to reality'));
+    const begun = this.begun;
+    let said = this.physics.backToReality(this.clock);
     this.trails.clear();
     this.bodies.changed();
-    if (this.rateIndex >= RATE_STEPS.length) { this.rateIndex = RATE_STEPS.length - 1; this.clock.rate = this.rateAt(this.rateIndex); }
+    if (begun) {
+      this.putRate(begun.rate);
+      if (begun.present) {
+        this.clock.setUtcNow();
+        this.system.update(this.clock.jdTdb);
+        said = 'Back to reality, and to the present';
+      }
+    } else if (this.rateIndex >= RATE_STEPS.length) { this.rateIndex = RATE_STEPS.length - 1; this.clock.rate = this.rateAt(this.rateIndex); }
+    this.begun = null;
+    this.realAgain = performance.now();
     this.hud.toast(said, 4);
   }
 
@@ -972,6 +1216,8 @@ export class App {
   private trailWarm: ReturnType<TrailsLayer['warmupObject']> | null = null;
 
   goTo(obj: SpaceObject): void {
+    // (a flight asked for takes the camera from a watch's frame)
+    this.glide = null;
     if (obj instanceof Body) this.bodies.prefetch(obj);
     // in the ship nothing outruns light: the ship's autopilot flies there
     if (this.game.flight.on) { this.game.flight.autopilotTo(obj); return; }
@@ -2213,6 +2459,7 @@ export class App {
     else this.clock.advance(Math.min(rawDt, 1));
     // (live physics: the simulation goes where the clock asks as far as a frame allows, and the clock shows where it got)
     this.physics.follow(this.clock, rawDt);
+    this.tickWatch(Math.min(rawDt, 1), (this.clock.jdTdb - jd0) * DAY);
     if (flight.on) {
       flight.simDt = Math.max(0, (this.clock.jdTdb - jd0) * DAY);
       flight.step();
@@ -2261,7 +2508,7 @@ export class App {
     if (this.vr.active) this.vr.updateInput(dt);
     this.rig.braking = this.input.keys.has('KeyX');
     // walking (src/app/Walk.ts) owns the camera while on foot; otherwise free flight
-    if (this.walk.update(dt)) { /* on foot */ }
+    if (this.walk.update(dt)) { this.glide = null; /* on foot */ }
     else if (flight.on) {
       // the docking computer flies the rig; physics resumes after it
       if (flight.external) this.rig.update(dt, this.input);
@@ -2269,6 +2516,8 @@ export class App {
     }
     else {
       this.rig.update(dt, this.input);
+      // (a watch's frame: the camera eased to it, unless a finger has taken it back)
+      if (this.glide && !this.glide.step(dt)) this.glide = null;
       this.keepOutsideHorizons();
       this.keepAboveGround(dt);
     }
@@ -2544,6 +2793,12 @@ export class App {
       reversed: c.rate < 0,
       selection,
       live: status && { since: status.since, slow, rails: status.rails, leftOut: status.leftOut, log: status.log },
+      undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0),
+      realAgain: !this.physics.on && this.realAgain > 0 && this.history.size > 0,
+      watch: this.watch.state === 'idle' ? null
+        : this.watch.watching ? { text: `Watching: ${rateWords(this.watch.rate)}`, ended: false }
+          : { text: `Watched: ${spanWords(this.watch.shown)}`, ended: true, replay: !!this.replayFrom },
+      showMe: this.showMe,
       flying: rig.autopilot && t ? t.name : null,
       labels: this.labels.enabled,
       orbits: this.orbits.enabled,

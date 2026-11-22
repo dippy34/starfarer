@@ -1,9 +1,9 @@
 import type { SimClock } from '../core/time';
 import { AU, DAY } from '../core/units';
-import { LEFT_OUT, type SimEvent } from '../sim/NBody';
+import { LEFT_OUT, NBody, type NBodySnapshot, type SimEvent } from '../sim/NBody';
 import { apply, capture, type Live, liveDate, release, riders } from '../sim/SystemSim';
 import type { Body } from '../universe/Body';
-import type { BodyJson, SolarSystem } from '../universe/SolarSystem';
+import type { BodyJson, Family, SolarSystem } from '../universe/SolarSystem';
 import { dayWords, listed, type Orbit, orbitOf, reachWords, shapeWords, speedWords, the } from './Powers';
 
 /**
@@ -33,6 +33,8 @@ import { dayWords, listed, type Orbit, orbitOf, reachWords, shapeWords, speedWor
 export interface LiveScene {
   /** `b` is no longer there: taken away, or made one with `into` */
   left(b: Body, into: Body | null): void;
+  /** `b`, which the explorer made, has been taken out of the system altogether (back to reality, or its making undone) */
+  dropped(b: Body): void;
 }
 
 /** a moon is simulated from the start if G times its mass is at least this (m³/s²): Mimas, the least of the round ones, has 2.5 times it */
@@ -68,6 +70,29 @@ const LOG_MOST = 60;
 
 interface Real { gm: number; systemGm: number; radius: number; radii: [number, number, number] }
 
+/** A body as a checkpoint keeps it: its mass and size, where it stands in the families, and whether it is there. */
+interface Kept extends Family { gm: number; systemGm: number; radius: number; radii: [number, number, number] }
+
+/**
+ * Everything live physics and the worlds it changes are at a moment, for Undo and Replay: the
+ * simulation to the last bit (NBody.snapshot) and what its bodies stand for, every body's mass,
+ * size and family and whether it is there, what the explorer has made, the log, and how the
+ * stepping was keeping up. Restored (`restore`), everything carries on from there exactly as it
+ * did the first time.
+ */
+export interface LiveCheckpoint {
+  /** the date (TDB Julian) */
+  readonly jd: number;
+  /** the simulation, and the moons each of its bodies stands for; null: the real Solar System */
+  readonly sim: { readonly snap: NBodySnapshot; readonly jd0: number; readonly carried: readonly [number, readonly Body[]][] } | null;
+  readonly bodies: readonly Kept[];
+  readonly made: readonly Body[];
+  readonly real: readonly [Body, Real][];
+  readonly log: readonly { jd: number; text: string }[];
+  /** the share of the time asked for that the stepping managed, the rate what is on rails was chosen for, the frames it has fallen short, the stage, the simulation's own word on crossing */
+  readonly pace: readonly [number, number, number, number, number];
+}
+
 export interface LiveStatus {
   /** the day it began, in words */
   since: string;
@@ -86,6 +111,14 @@ export class LivePhysics {
   live: Live | null = null;
   /** what has happened, oldest first */
   readonly log: { jd: number; text: string }[] = [];
+  /**
+   * The bodies the explorer has made since the system was last the real one, oldest first (those
+   * taken away again among them: they are gone like any world taken away, until the return to
+   * reality).
+   */
+  readonly made: Body[] = [];
+  /** how many changes have been made, ever: a gesture that changed nothing leaves it as it was */
+  changes = 0;
   private news: string[] = [];
   /** the catalogue's values of the bodies whose mass or size has been changed */
   private real = new Map<Body, Real>();
@@ -118,6 +151,11 @@ export class LivePhysics {
     return this.real.get(b)?.gm ?? b.gm;
   }
 
+  /** The share of the time asked for that the stepping has managed lately (1: all of it, and while nothing is live). */
+  get keeping(): number {
+    return this.live ? Math.max(0, Math.min(1, this.share)) : 1;
+  }
+
   /**
    * Are the asteroids and comets that are not bodies of their own (the belt's 75,000, the comets)
    * where they belong? They are drawn on their catalogued paths round the Sun and cannot be
@@ -133,6 +171,7 @@ export class LivePhysics {
   /** Give a body another mass (G times it, m³/s²): its pull changes from now on, its size and look stay. */
   setMass(b: Body, gm: number, jd: number): void {
     const live = this.start(jd);
+    this.changes++;
     this.keep(b);
     // (what rides on it would keep its catalogued path round a body that no longer pulls as it did)
     release(live, this.system, [b, ...riders(live, this.system, b)]);
@@ -148,6 +187,7 @@ export class LivePhysics {
    */
   move(b: Body, pos: ArrayLike<number>, vel: ArrayLike<number>, jd: number): void {
     const live = this.start(jd);
+    this.changes++;
     release(live, this.system, b);
     const d = [pos[0] - b.pos.x, pos[1] - b.pos.y, pos[2] - b.pos.z], w = [vel[0] - b.vel.x, vel[1] - b.vel.y, vel[2] - b.vel.z];
     // (the simulated bodies that go round it, and round those; what rides on any of them follows by itself)
@@ -182,7 +222,9 @@ export class LivePhysics {
    */
   make(json: BodyJson, about: Body, pos: ArrayLike<number>, vel: ArrayLike<number>, jd: number, told: string): Body {
     const live = this.start(jd);
+    this.changes++;
     const b = this.system.add(json);
+    this.made.push(b);
     live.sim.add({
       id: b.id, gm: b.gm, radius: b.radius, stepped: b.kind === 'star',
       pos: [about.pos.x + pos[0], about.pos.y + pos[1], about.pos.z + pos[2]],
@@ -196,6 +238,7 @@ export class LivePhysics {
   /** Take a body away: everything else carries on without it. */
   remove(b: Body, jd: number): void {
     const live = this.start(jd);
+    this.changes++;
     release(live, this.system, riders(live, this.system, b));
     if (live.sim.indexOf(b.id) >= 0) live.sim.remove(b.id);
     this.depart(b, null);
@@ -259,25 +302,81 @@ export class LivePhysics {
   // ------------------------------------------------------------------ back to reality
 
   /**
-   * End it: every body as the catalogue has it and where the ephemeris has it, at the date the
-   * simulation reached if the ephemeris covers that date, else at the date it began. Returns what
-   * to tell the explorer.
+   * End it: every body as the catalogue has it and where the ephemeris has it, at the moment the
+   * first change was made, and what was made taken away (the last made first: a moon before the
+   * planet it was made for). Everything after that moment belongs to the changed world, the time
+   * the watches ran on included (src/app/App.ts puts the rate of time back as it was then). Returns
+   * what to tell the explorer.
    */
   backToReality(clock: SimClock): string {
     const live = this.live;
     if (!live) return '';
-    const reached = liveDate(live);
-    const known = this.system.ephemeris.inRange(reached);
     for (const [b, r] of this.real) { b.gm = r.gm; b.systemGm = r.systemGm; b.radius = r.radius; b.radii = r.radii; }
     this.real.clear();
     this.system.settle();
+    for (const b of this.made.splice(0).reverse()) this.drop(b);
     this.live = null;
     this.log.length = 0;
     this.news = [];
     this.share = 1;
-    clock.jdTdb = known ? reached : live.jd0;
+    clock.jdTdb = live.jd0;
     this.system.update(clock.jdTdb);
-    return known ? 'Back to reality' : `Back to reality, on ${dayWords(live.jd0)}: where the real planets are is only known from 1849 to 2150`;
+    return `Back to reality, on ${dayWords(live.jd0)}`;
+  }
+
+  // ------------------------------------------------------------------ undo and replay
+
+  /**
+   * Everything as it is now (see LiveCheckpoint), at `jd` (the clock's date; while physics is live
+   * the simulation's, which the clock follows). Nothing is disturbed: the run of the simulation
+   * goes on exactly as it would have.
+   */
+  checkpoint(jd: number): LiveCheckpoint {
+    const live = this.live;
+    return {
+      jd: live ? liveDate(live) : jd,
+      sim: live && { snap: live.sim.snapshot(), jd0: live.jd0, carried: [...live.carried].map(([id, family]) => [id, [...family]]) },
+      bodies: this.system.bodies.map((b) => ({ ...this.system.familyOf(b), gm: b.gm, systemGm: b.systemGm, radius: b.radius, radii: [b.radii[0], b.radii[1], b.radii[2]] })),
+      made: [...this.made],
+      real: [...this.real].map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]),
+      log: this.log.map((e) => ({ ...e })),
+      pace: [this.share, this.rate, this.slowFor, this.stage, this.cross],
+    };
+  }
+
+  /**
+   * Back to a checkpoint, as if nothing since had happened: what was made since leaves (the last
+   * made first), what was made before and taken out since comes back, every body has the mass,
+   * size, family and presence it had, the simulation is where it was, and the bodies are put
+   * there. The scene is told of each body that leaves it. The clock is the caller's to set
+   * (`cp.jd`); a checkpoint can be restored any number of times.
+   */
+  restore(cp: LiveCheckpoint): void {
+    const system = this.system;
+    const then = new Map(cp.bodies.map((k) => [k.b, k]));
+    const madeThen = new Set(cp.made);
+    // (told while each still stands where it does now: the camera and the selection go to what it goes round)
+    const leaving = this.made.filter((b) => !madeThen.has(b)).reverse();
+    for (const b of leaving) if (!system.isGone(b)) this.scene.left(b, null);
+    for (const b of system.bodies) if (!system.isGone(b) && then.get(b)?.gone) this.scene.left(b, null);
+    for (const b of cp.made) system.bringBack(b);
+    for (const k of cp.bodies) {
+      k.b.gm = k.gm; k.b.systemGm = k.systemGm; k.b.radius = k.radius; k.b.radii = [k.radii[0], k.radii[1], k.radii[2]];
+    }
+    system.restoreFamilies(cp.bodies);
+    for (const b of leaving) this.drop(b, false);
+    this.made.splice(0, this.made.length, ...cp.made);
+    this.real = new Map(cp.real.map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]));
+    this.log.splice(0, this.log.length, ...cp.log.map((e) => ({ ...e })));
+    this.news = [];
+    [this.share, this.rate, this.slowFor, this.stage, this.cross] = cp.pace;
+    const sim = cp.sim;
+    this.live = sim && {
+      sim: NBody.restore(sim.snap), jd0: sim.jd0, carried: new Map(sim.carried.map(([id, family]) => [id, [...family]])),
+      index: new Map(), layout: -1, shift: new Float64Array(0),
+    };
+    system.update(cp.jd);
+    this.place(cp.jd);
   }
 
   // ------------------------------------------------------------------ telling
@@ -351,6 +450,13 @@ export class LivePhysics {
   /** Remember a body's catalogued mass and size before the first change to them. */
   private keep(b: Body): void {
     if (!this.real.has(b)) this.real.set(b, { gm: b.gm, systemGm: b.systemGm, radius: b.radius, radii: [b.radii[0], b.radii[1], b.radii[2]] });
+  }
+
+  /** A body the explorer made is taken out of the system altogether (`tell`: the scene is told first that it leaves). */
+  private drop(b: Body, tell = true): void {
+    if (tell) this.scene.left(b, null);
+    this.system.remove(b);
+    this.scene.dropped(b);
   }
 
   /** A body leaves the scene: what went round it goes round what it went round, until the simulation says otherwise. */
@@ -460,12 +566,19 @@ export class LivePhysics {
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** Does `m` go round `b`, directly or as a moon of something that does? */
-function goesRound(m: Body, b: Body): boolean {
+export function goesRound(m: Body, b: Body): boolean {
   for (let p = m.parent; p; p = p.parent) if (p === b) return true;
   return false;
 }
 /** a body worth telling of by name: a star, a planet or a dwarf planet, or a moon heavy enough to be weighed */
 const isWorld = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind === 'dwarf' || (b.kind === 'moon' && b.gm > 0);
+/**
+ * A world heavy enough to matter to what is seen of a change (src/app/App.ts watches the worlds a
+ * change matters to): a star, a planet, a dwarf planet, a moon from Mimas up (those simulated from
+ * the start), or one the explorer made. The moons below that go round in hours (Metis in 35
+ * minutes once Jupiter is twenty times heavier): their pace would leave nothing else to be seen.
+ */
+export const weighty = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind === 'dwarf' || (b.kind === 'moon' && b.gm >= MOON_GM) || b.meta.made === true;
 
 /** How near two bodies passed, in words. */
 function passWords(m: number): string {

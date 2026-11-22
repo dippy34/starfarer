@@ -20,7 +20,7 @@ const FINGER_REACH = 30, POINTER_REACH = 14;
 /** nothing is left nearer what holds sway there than this many times the two radii together */
 const CLEAR = 1.05;
 
-type What = Pick<App, 'rig' | 'physics' | 'clock' | 'bodies' | 'view' | 'project' | 'tellNews'>;
+type What = Pick<App, 'rig' | 'physics' | 'clock' | 'bodies' | 'view' | 'project' | 'tellNews' | 'beginChange' | 'endChange'>;
 
 export class Mover {
   /** the world that can be moved now (its card's Move is on), or null */
@@ -47,12 +47,14 @@ export class Mover {
     this.holding = false;
   }
 
-  /** Where it is left it goes in a circle (`on`), or keeps the velocity it had: from now, where it is. */
+  /** Where it is left it goes in a circle (`on`), or keeps the velocity it had: from now, where it is. (A change of its own, to undo and to watch.) */
   leave(circle: boolean): void {
     const b = this.body;
     if (!b || circle === this.circle) return;
+    this.app.beginChange('move', b, true, `moving ${the(b.name)}`);
     this.circle = circle;
     this.put(b, b.pos.clone());
+    this.app.endChange();
   }
 
   /** A pointer has come down at (x, y): if it is on the world being moved, it has hold of it until it lifts. */
@@ -69,6 +71,8 @@ export class Mover {
     const first = onPlane(app.rig.ray(x, y).toArray(), through.toArray(), normal);
     const off = first ? view.rel.clone().sub(new Vector3(...first)) : new Vector3();
     if (!this.circle) this.kept.copy(b.vel);
+    // (the hold is one change, to undo and to watch: a watch under way ends first, its rate of time put back)
+    app.beginChange('move', b, true, `moving ${the(b.name)}`);
     const paused = app.clock.paused;
     app.clock.paused = true;
     this.holding = true;
@@ -78,8 +82,11 @@ export class Mover {
         if (hit && this.body === b) this.put(b, app.rig.upos.toVector3().add(off).add(new Vector3(...hit)));
       },
       end: () => {
-        app.clock.paused = paused;
+        // (time runs again as it did before the hold, then the watch of the change begins; unless the hold was ended from
+        // elsewhere meanwhile: Undo sets the clock itself)
+        if (this.holding) app.clock.paused = paused;
         this.holding = false;
+        app.endChange();
       },
     };
   }

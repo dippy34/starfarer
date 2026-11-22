@@ -247,9 +247,17 @@ pictures and the same frame as before.
   at most (`App.tellNews`): after the explorer's own act its line first ("Sun 2 is new", "Ceres
   is gone"), then what follows from it, the weightiest first; the rest is in the log.
 * **Back to reality** puts back every mass, size and parent, takes away what was made, and gives
-  the bodies to the ephemeris again at the date reached, or, if that is outside 1849 to 2150, at
-  the date it began. `tests/livephysics.test.ts` compares every body with a system that was never
-  touched: the same to the last bit.
+  the bodies to the ephemeris again at the moment the first change was made (the app puts the rate
+  of time back as it was then). `tests/livephysics.test.ts` compares every body with a system that
+  was never touched: the same to the last bit.
+* **Undo and Replay** (`checkpoint`, `restore`): a checkpoint is the simulation itself
+  (`NBody.snapshot`), what its bodies stand for (`Live.carried`, copied: `release` changes it in
+  place), every body's mass, size, family and presence, what was made, the log, and how the
+  stepping was keeping up. Restored, everything carries on from there exactly as it did: tested to
+  the last bit after a mass changed, a world moved, made, taken away, and a collision. Exactly,
+  that is, while the stepping keeps up: what is carried on rails follows the frame's share of work,
+  and a run that falls behind carries more (so a Replay on a loaded machine can differ from the
+  first run by metres). One checkpoint per gesture, never per frame (`src/app/History.ts`).
 * **Light.** A system may have no sun, or more than one: `SolarSystem.suns` and `sunAt` (the one
   brightest at a place), and each body's `BodyView.sun`. A world is lit by one sun at a time;
   each sun has a face of its own, and the one corona and the one glare there are go to the sun

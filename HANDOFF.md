@@ -372,7 +372,8 @@ it: `docs/notes/gravity-engine.md`.
   (a collision, a world thrown out, a capture) and kept in a log in the Time sheet. A mark at the
   top says physics is live; one tap shows the log, a second what the simulation leaves out.
   "Back to reality" puts every mass, body and parent back, takes away what was made, and gives
-  the bodies to the ephemeris again at the date reached (1849 to 2150), else at the date it began.
+  the bodies to the ephemeris again at the moment the first change was made, with the rate of time
+  it had then (until god mode's part 1, below: at the date reached, if the ephemeris covers it).
 - *A system with no sun, or two.* `SolarSystem.suns`, `sunAt` (the brightest at a place) and each
   drawn body's `BodyView.sun`: the light on a world, its shadows, its air and the exposure follow
   its own sun, or none (then the eye adapts to the Earth's cities). One corona and one glare, for
@@ -512,6 +513,118 @@ overlays drawn with no depth test, the names, the tags and the brackets.)
   phone has the interface's card, and its view switch (chase and cockpit) is the phone-flying
   work's.
 
+## God mode, wave 1 (godmode worker)
+
+The owner, after the powers went live: "Genuinely god mode and ship suck rn". The research behind
+this wave (what SpaceEngine lets you change, and what Starfarer should build; read before wave 2)
+found that live physics already does what SpaceEngine cannot (everything pulls, things collide,
+Back to reality undoes it), and that it feels flat because nothing shows the consequences: they
+take months of simulated time, time stays at whatever rate it was, the camera stays put. Wave 1
+ships in four parts, each live before the next: (1) watch it happen, with Replay, and Undo; (2)
+throw, and add by placing and throwing; (3) impacts you can see, and the future drawn; (4) live
+temperature, and size as well as mass.
+
+### Part 1: watch it happen, Replay, Undo (done)
+
+- *Watch it happen* (`src/app/Watch.ts`, the arithmetic in `src/app/Powers.ts`). When a change
+  ends (the finger lifts off the mass slider or off a dragged world, Add or Remove is tapped, Keeps
+  its speed / Goes in a circle is chosen), time runs for 15 seconds at a pace at which what follows
+  can be seen, and the camera eases to a frame that holds the worlds the change matters to. A chip
+  where the flight's chip goes says "Watching: 26.3 minutes a second" with Stop; then "Watched: 6.4
+  hours" with Replay (offered for 30 s). Stop, and the end of the watch, put the explorer's rate of
+  time back as it was (stopped, if it was); a finger on the view (or the wheel) takes the camera
+  back at once and time keeps the watch's pace; any of Faster, Slower, Pause, Reverse, Now during a
+  watch makes the watch's pace the explorer's (its step the one at or below it) and goes on from
+  there. A switch in More ("Show me what happens") turns it off, remembered on the device through
+  `src/platform/storage.ts` (the first module of `src/platform`: the browser's storage is reached
+  from there in new code).
+  - *Which worlds a change matters to* (`Powers.affected`): those whose acceleration it changes by a
+    hundredth or more, weighed at one moment (a mass changed by Δm pulls GΔm/r² harder; a world taken
+    away no longer pulls; one made pulls; one moved pulls from its new place, it and what goes round it
+    weighed where they were and where they are). Decision (the code over the research): only the
+    worlds heavy enough to matter to what is seen count (`LivePhysics.weighty`: stars, planets,
+    dwarf planets, moons from Mimas up, what was made). Counting every simulated body, Metis (35
+    minutes round a Jupiter twenty times heavier) set a pace at which nothing else moved.
+  - *The pace* (`Powers.watchRate`, `watchPlan`): the quickest period among those worlds goes round
+    once in 8 seconds (the Moon's month: 3.4 days a second), no slower than a minute a second, no
+    faster than 10 years a second on a touch screen (a phone's stepping has not been measured) or 100
+    at a desk; if the stepping falls behind (less than 3/4 of the time asked for, 12 frames running)
+    the watch goes 0.6 times as fast (not half: live physics takes a change of the rate by two as a
+    new rate). A world's period is its orbit about the frame's centre where it is bound to it, else
+    the orbit it is on about what it goes round, else the one it had before the change (a moon thrown
+    off keeps the pace of its month).
+  - *The frame* (`watchPlan`, `frameRadius`, `viewFrame`, `frameDistance`): 1.5 times as far as the
+    farthest of the worlds whose period is at most 20 times the quickest, each as far as the far end
+    of its orbit about the centre, or, on an open path, where it is plus how far it goes in the watch.
+    Decision (found by the tests): a world bound to something other than the centre sets the pace
+    but is not what the frame is fitted to (when the Sun is taken away Iapetus, 79 days round Saturn,
+    made a frame of 14 AU round where the Sun was; now 2.8 AU, the inner planets leaving). The centre:
+    the world made heavier or lighter, the one something was added to, what holds sway where a world
+    was put, and where a world taken away would have gone on to (a point: nothing to turn round, the
+    camera's target is let go). The distance is the radius over the tangent of the smaller half-angle
+    of the part of the view the interface leaves clear (`Hud.freeArea`: below the chips and the mark,
+    above the card and the tab bar, or right of the panel on a wide screen), and the camera turns so
+    the centre stands in the middle of that part (`Glide`: in the logarithm of the distance along the
+    line it was on, over 1.2 to 3 seconds; a horizontal aim the rest of the app does not have yet). The
+    card's open Mass, Add or Details panel folds away when it would leave less than 40 % of an upright
+    view's height, or would not fit beside a wide one with the chip above it (a phone on its side, where
+    the slider's panel was already cut off at the foot of the screen) (`Hud.makeRoom`; one tap opens it
+    again; Move keeps its panel). On a phone, upright or on its side, the mark of live physics drops its
+    sign so that its words, Undo and Back to reality fit on one line.
+    Nothing is to be seen going round after Ceres is taken away, or the Moon: no watch then.
+  - *Replay* restores the moment just after the change (a checkpoint, below) and watches again. It
+    is the same event to the last bit when the stepping keeps up (`tests/livephysics.test.ts`); on a
+    machine falling behind, live physics carries more on rails as the frame's work allows, and a
+    replay can differ from the first run by what that changes (metres).
+- *Undo, many steps* (`src/app/History.ts`; `LivePhysics.checkpoint`/`restore`). Undo at the top
+  beside Back to reality, and in the Time sheet; Ctrl+Z at a desk. Each tap goes back to just
+  before the last change, the date and the rate of time included, and says what it undid ("Undone:
+  changing Jupiter's mass"); twenty steps, no redo; the first change undone is the real Solar System
+  again, at the date before it (the present, if the clock was following it). One checkpoint per
+  gesture, never per frame (`Gesture`: from the finger down to the finger up; arrow keys with less
+  than 600 ms between them are one change). A checkpoint is the simulation itself (`NBody.snapshot`),
+  what its bodies stand for (`Live.carried`, copied: `release` changes it in place), every body's
+  mass, size, family and presence (`SolarSystem.familyOf`/`restoreFamilies`), the catalogue values
+  of what was changed, what was made, the log, and how the stepping was keeping up (so that what is
+  on rails is chosen as before). What was made now belongs to `LivePhysics.made` (App.made reads it):
+  a restore takes out what was made since (the scene is told: `LiveScene.dropped`) and brings back
+  what was made before and taken out since (`SolarSystem.bringBack`, in its place at the end of the
+  list). Tested to the last bit after a mass change, a move, an Add, a Remove (the Sun) and a
+  collision (Mars and the two small moons that rode on it come back); two changes and two undos are
+  a system never touched, the same as the return to reality.
+- *Back to reality, by mistake* (a tester meant to tap Faster in the Time sheet and hit Back to
+  reality: the sheet grew when live physics came on, and the buttons moved up under the finger).
+  The Time sheet's buttons of time are now its last row, where they always are, live physics or
+  not; what live physics shows sits above them, with Undo and Back to reality at its top (they end
+  more than 60 px above the buttons of time). And Back to reality is a change like the others: for
+  20 seconds the mark at the top says "Back to reality · the real Solar System again" with Undo,
+  which brings the changed world back as it was; then what it undid is let go.
+- *Back to reality and the date* (decided): it returns to the moment the first change was made, the
+  date and the rate of time with it (stopped if it was; following the present again if it was:
+  "Back to reality, and to the present"). Before, it kept the date the simulation had reached (or
+  went to the start where the ephemeris did not reach) and the rate as it was. Everything after the
+  first change belongs to the changed world, the time the watches ran on included; and a rate only
+  live physics offers (a thousand years a second) would carry the real planets past the end of the
+  ephemeris within a second.
+- Checked (headless Chromium, software WebGL, against production builds served by `vite preview`,
+  on a machine shared with other agents' suites): the type check; the unit tests (new:
+  `tests/history.test.ts`, `tests/watch.test.ts`, the watch's arithmetic in `tests/powers.test.ts`,
+  and in `tests/livephysics.test.ts` the checkpoints restored to the last bit, two undos equal to a
+  system never touched, Back to reality undone, a replay that goes the same way twice; the speed
+  measurements failed once with three suites running beside them and passed run alone); `live`
+  (the first block new: the watch, its frame upright, sideways and at a desk, Stop, the end,
+  Replay, a finger taking the camera back, Undo a step at a time, Back to reality undone and its
+  date, the Time sheet's buttons standing still, the switch in More; the other blocks run with the
+  switch off, as they time a power's physics by the clock), `whatif` (likewise off), `game`,
+  `touch`, `interact`, `flight`: see the commit for the counts. The new checks were run against
+  the build before this part: they fail (no chip, no frame, no Replay; and there, with live
+  physics on, the Time sheet's Faster stood 253 px higher, and Back to reality left the date
+  three days on). `LIVE_ONLY=watch` runs the new block alone.
+- Not done here: a watch in the headset (the rate changes there, the camera does not move); the
+  camera does not follow the place a world taken away would have gone (it is a point the eye is
+  turned to, and the camera then rides with whatever it is near); Replay after a watch under heavy
+  load can differ from the first run by metres (above); undoing a change does not undo the camera.
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
@@ -534,7 +647,8 @@ running (a build, not the dev server: an edit reloads the page under a running s
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
-powers, each through the interface on a phone and at a desk; 75),
+powers, each through the interface on a phone and at a desk, and watching a change, Replay and
+Undo, upright and sideways; 101: `LIVE_ONLY=watch,jupiter,sun,moon,made` picks blocks),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
 `terrain` (14), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
 time on four cores (more

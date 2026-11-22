@@ -41,6 +41,8 @@ export class Input {
   onTap: ((x: number, y: number, touch: boolean) => void) | null = null;
   onDoubleTap: ((x: number, y: number, touch: boolean) => void) | null = null;
   onKey: ((ev: KeyboardEvent) => void) | null = null;
+  /** any finger or button that comes down on the view, and the wheel turned over it: the explorer has the camera in hand */
+  onDown: (() => void) | null = null;
   /**
    * Asked whenever a finger or the left mouse button comes down on the view: is there something
    * under it to take hold of (a world the explorer is moving)? If so that pointer is the hold's
@@ -72,6 +74,7 @@ export class Input {
       try { el.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
       const p = this.local(e);
       this.lastPointer = e.pointerType;
+      this.onDown?.();
       // (touching the view leaves any text field: the on-screen keyboard goes away)
       if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur();
       if (!this.held && (e.pointerType !== 'mouse' || e.button === 0)) {
@@ -118,6 +121,7 @@ export class Input {
     el.addEventListener('dblclick', (e) => { if (this.lastPointer === 'mouse') { const p = this.local(e); this.onDoubleTap?.(p.x, p.y, false); } });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
+      this.onDown?.();
       this.frame.wheel += Math.sign(e.deltaY) * Math.min(3, Math.abs(e.deltaY) / 100 + 0.5);
       this.frame.wheelAt = this.local(e);
     }, { passive: false });

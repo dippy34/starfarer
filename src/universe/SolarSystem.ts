@@ -38,6 +38,9 @@ interface BodyJson {
 
 export type { BodyJson };
 
+/** Where a body stands in the families now: what it goes round, its moons in their order, and whether it is away (for undo: src/app/LivePhysics.ts). */
+export interface Family { b: Body; parent: Body | null; children: Body[]; gone: boolean }
+
 export interface SystemJson {
   nutPrecAngles: NutPrecAngles;
   leapSeconds: [number, number, number, number][];
@@ -176,6 +179,27 @@ export class SolarSystem {
     return this.gone.has(b);
   }
 
+  /** Where a body stands in the families now (see `Family`). */
+  familyOf(b: Body): Family {
+    return { b, parent: b.parent, children: [...b.children], gone: this.gone.has(b) };
+  }
+
+  /**
+   * Every body where `families` had it: what it went round, its moons in their order, away or
+   * there. A body they do not name (one made since) goes round nothing and has no moons.
+   */
+  restoreFamilies(families: Iterable<Family>): void {
+    for (const b of this.bodies) { b.parent = null; b.children.length = 0; }
+    for (const b of this.gone) b.valid = true;
+    this.gone.clear();
+    for (const f of families) {
+      f.b.parent = f.parent;
+      f.b.children.push(...f.children);
+      if (f.gone) { this.gone.add(f.b); f.b.valid = false; }
+    }
+    this.listSuns();
+  }
+
   /** Back to the catalogue: everything there again, each body going round what it does there, its moons in their order. */
   settle(): void {
     for (const b of this.gone) b.valid = true;
@@ -252,6 +276,26 @@ export class SolarSystem {
     this.prepare(b);
     this.listSuns();
     return b;
+  }
+
+  /**
+   * A body that `add` put in and `remove` took out comes back, as it was (undo: src/app/LivePhysics.ts),
+   * at the end of the list as when it was made. Nothing for one that is there.
+   */
+  bringBack(b: Body): void {
+    if (this.byId.has(b.id) || !b.meta.made) return;
+    this.bodies.push(b);
+    this.byId.set(b.id, b);
+    this.ephemOf.set(b, { kind: 'placed' });
+    const home = typeof b.meta.parent === 'number' ? this.byId.get(b.meta.parent) ?? null : null;
+    this.home.set(b, home);
+    if (home) {
+      const moons = this.homeMoons.get(home);
+      if (moons) moons.push(b);
+      else this.homeMoons.set(home, [b]);
+    }
+    b.valid = true;
+    this.listSuns();
   }
 
   /** Take a body out again (one that `add` put in: the catalogue's stay). */

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LivePhysics } from '../src/app/LivePhysics';
 import { circularVelocity } from '../src/app/Powers';
+import { MADE_FIRST_ID, newMoon } from '../src/app/WhatIf';
 import { SimClock } from '../src/core/time';
 import { liveDate } from '../src/sim/SystemSim';
 import type { Body } from '../src/universe/Body';
@@ -13,7 +14,7 @@ import { SolarSystem } from '../src/universe/SolarSystem';
 const PUBLIC = join(fileURLToPath(new URL('..', import.meta.url)), 'public');
 globalThis.fetch = (async (url: string | URL) => new Response(readFileSync(join(PUBLIC, String(url).replace(/^\//, ''))))) as typeof fetch;
 
-const DAY = 86_400, YEAR = 365.25 * DAY;
+const DAY = 86_400, YEAR = 365.25 * DAY, AU = 149_597_870_700;
 const JD = 2461300.5; // 2026-09-17 (TDB)
 
 /** The system at a date (the ephemeris for it loaded), live physics over it, and what the scene was told. */
@@ -22,7 +23,8 @@ async function setup(jd = JD) {
   await sys.ephemeris.request(jd);
   sys.update(jd);
   const left: [string, string | null][] = [];
-  const physics = new LivePhysics(sys, { left: (b, into) => left.push([b.name, into?.name ?? null]) });
+  const dropped: string[] = [];
+  const physics = new LivePhysics(sys, { left: (b, into) => left.push([b.name, into?.name ?? null]), dropped: (b) => dropped.push(b.name) });
   const clock = new SimClock(jd);
   const named = (name: string) => sys.bodies.find((b) => b.name === name)!;
   /** run the clock on to `to` as the app's frames do: the clock is advanced, the simulation follows, the bodies are placed */
@@ -35,7 +37,7 @@ async function setup(jd = JD) {
       physics.place(clock.jdTdb);
     }
   };
-  return { sys, physics, clock, named, run, left };
+  return { sys, physics, clock, named, run, left, dropped };
 }
 
 const state = (b: Body) => [b.pos.x, b.pos.y, b.pos.z, b.vel.x, b.vel.y, b.vel.z];
@@ -132,20 +134,21 @@ describe('live physics', () => {
     expect(physics.rows(named('Earth'))[1]).toEqual(['Goes round', 'nothing: it flies free']);
   });
 
-  it('back to reality puts every body exactly where the ephemeris has it, as the catalogue has it', async () => {
+  it('back to reality puts every body exactly where the ephemeris has it, as the catalogue has it, at the moment the first change was made', async () => {
     const { sys, physics, clock, named, run } = await setup();
     physics.setMass(named('Jupiter'), 300 * named('Jupiter').gm, JD);
     physics.remove(named('Mars'), JD);
     physics.remove(named('Titan'), JD);
     run(JD + 20, 2);
     expect(named('Mars').valid).toBe(false);
-    expect(physics.backToReality(clock)).toBe('Back to reality');
+    // (everything after the first change belongs to the changed world, the time it ran on included)
+    expect(physics.backToReality(clock)).toBe('Back to reality, on 16 September 2026');
     expect(physics.on).toBe(false);
-    expect(clock.jdTdb).toBe(JD + 20);
+    expect(clock.jdTdb).toBe(JD);
     // a system that was never touched, at the same date
     const fresh = await SolarSystem.load('/data');
-    await fresh.ephemeris.request(JD + 20);
-    fresh.update(JD + 20);
+    await fresh.ephemeris.request(JD);
+    fresh.update(JD);
     expect(sys.bodies.length).toBe(fresh.bodies.length);
     sys.bodies.forEach((b, k) => {
       const f = fresh.bodies[k];
@@ -158,7 +161,7 @@ describe('live physics', () => {
     expect(sys.suns).toEqual([sys.sun]);
   }, 60_000);
 
-  it('beyond the years the ephemeris knows, reality is where it began, and says so', async () => {
+  it('from beyond the years the ephemeris knows, reality is the moment it began too', async () => {
     const { physics, clock, named } = await setup();
     physics.remove(named('Ceres'), JD);
     // (a hundred and thirty years on, the moons carried on rails to get there in a moment)
@@ -166,7 +169,7 @@ describe('live physics', () => {
     sim.railsBelow = 2 * YEAR;
     sim.advance(130 * YEAR);
     clock.jdTdb = liveDate(physics.live!);
-    expect(physics.backToReality(clock)).toBe('Back to reality, on 16 September 2026: where the real planets are is only known from 1849 to 2150');
+    expect(physics.backToReality(clock)).toBe('Back to reality, on 16 September 2026');
     expect(clock.jdTdb).toBe(JD);
     expect(named('Ceres').valid).toBe(true);
   });
@@ -318,6 +321,171 @@ describe('live physics', () => {
     expect(status.leftOut.length).toBeGreaterThan(3);
     expect(status.log[0].text).toBe('Ceres is gone.');
   });
+});
+
+/** Everything a checkpoint must bring back, as plain values: every body (there or not, mass, size, place, motion, family), what the simulation's bodies stand for, what was made, the log. */
+function everything(sys: SolarSystem, physics: LivePhysics) {
+  return {
+    bodies: sys.bodies.map((b) => [b.id, b.valid, sys.isGone(b), b.gm, b.systemGm, b.radius, ...b.radii, ...state(b), b.parent?.id ?? null, b.children.map((c) => c.id).join()]),
+    carried: physics.live ? [...physics.live.carried].map(([id, family]) => [id, family.map((b) => b.id)]) : null,
+    made: physics.made.map((b) => b.id),
+    log: physics.log.map((e) => `${e.jd} ${e.text}`),
+    on: physics.on,
+  };
+}
+
+/**
+ * The stepping is never told that its budget has run out: how a run is cut up into steps is then the
+ * same every time, and so is what is carried on rails (live physics puts more on rails when a frame's
+ * share of work is not enough, which on a loaded machine it sometimes is not). In the app the
+ * budget is the frame's: a replay on a machine that is falling behind can differ from the first run
+ * by what that changes (metres, in the run checked here).
+ */
+function steady(physics: LivePhysics): void {
+  const follow = physics.follow.bind(physics);
+  physics.follow = (clock, dt) => {
+    if (physics.live) physics.live.sim.now = () => 0;
+    follow(clock, dt);
+  };
+}
+
+describe('undo and replay', () => {
+  /** The system run on for `days`, then a checkpoint; `change` made and run on; the checkpoint restored: everything as it was, to the last bit, and it goes on from there as it did before. */
+  async function undone(change: (s: Awaited<ReturnType<typeof setup>>) => void) {
+    const s = await setup();
+    const { sys, physics, clock, named, run } = s;
+    steady(physics);
+    // (live, and some days on, so that the moment kept is one of the simulation's own)
+    physics.setMass(named('Jupiter'), 1.5 * named('Jupiter').gm, JD);
+    run(JD + 3, 0.5);
+    const cp = physics.checkpoint(clock.jdTdb);
+    expect(cp.jd).toBe(clock.jdTdb);
+    const then = everything(sys, physics);
+    // and where it all is three days on, if nothing is done
+    run(JD + 6, 0.5);
+    const later = everything(sys, physics);
+    physics.restore(cp);
+    clock.jdTdb = cp.jd;
+    expect(everything(sys, physics)).toEqual(then);
+    change(s);
+    run(JD + 8, 0.5);
+    physics.restore(cp);
+    clock.jdTdb = cp.jd;
+    expect(everything(sys, physics)).toEqual(then);
+    run(JD + 6, 0.5);
+    expect(everything(sys, physics)).toEqual(later);
+    return s;
+  }
+
+  it('a checkpoint restored after a mass changed is that moment to the last bit, and the run goes on from it as before', async () => {
+    const { named, physics } = await undone(({ physics, named, clock }) => physics.setMass(named('Saturn'), 50 * named('Saturn').gm, clock.jdTdb));
+    expect(named('Saturn').gm).toBe(physics.realGm(named('Saturn')));
+  }, 60_000);
+
+  it('...after a world moved, with what goes round it', async () => {
+    await undone(({ physics, named, clock }) => {
+      const earth = named('Earth');
+      physics.move(earth, earth.pos.clone().multiplyScalar(1.5).toArray(), earth.vel.toArray(), clock.jdTdb);
+    });
+  }, 60_000);
+
+  it('...after a moon was made: it leaves the system altogether, and the scene is told', async () => {
+    const { sys, dropped, physics } = await undone(({ physics, named, clock }) => {
+      const earth = named('Earth');
+      const plan = newMoon(earth, [3e8, 0, 0], 1.0 * AU, 0, MADE_FIRST_ID);
+      physics.make(plan.json, earth, plan.pos, plan.vel, clock.jdTdb, 'new');
+    });
+    expect(dropped).toEqual(["Earth's new moon"]);
+    expect(sys.byId.has(MADE_FIRST_ID)).toBe(false);
+    expect(physics.made).toEqual([]);
+  }, 60_000);
+
+  it('...after a world was taken away, the Sun among them', async () => {
+    const { sys } = await undone(({ physics, sys, clock }) => physics.remove(sys.sun, clock.jdTdb));
+    expect(sys.suns).toEqual([sys.sun]);
+    expect(sys.sun.valid).toBe(true);
+  }, 60_000);
+
+  it('...after a collision: both come back, with the small moons that rode on the one absorbed', async () => {
+    const { named, left } = await undone(({ physics, sys, named }) => {
+      // Mars sent at the Sun from 0.02 AU at 200 km/s: Phobos and Deimos, which ride on it, go with it
+      const mars = named('Mars'), sun = sys.sun, to = sun.pos.clone().sub(mars.pos).normalize();
+      physics.live!.sim.setState(mars.id, sun.pos.clone().addScaledVector(to, -0.02 * AU).toArray(), sun.vel.clone().addScaledVector(to, 2e5).toArray());
+    });
+    // (they left the scene, the Sun having taken them in: and Jupiter, half as heavy again, two of its own small moons)
+    const gone = left.map(([b]) => b);
+    for (const name of ['Mars', 'Phobos', 'Deimos']) {
+      expect(gone, name).toContain(name);
+      expect(named(name).valid, name).toBe(true);
+    }
+  }, 60_000);
+
+  it('two changes and two undos are a system never touched, the same as the return to reality', async () => {
+    const { sys, physics, clock, named, run } = await setup();
+    steady(physics);
+    const real = physics.checkpoint(clock.jdTdb);
+    expect(real.sim).toBeNull();
+    physics.setMass(named('Jupiter'), 20 * named('Jupiter').gm, JD);
+    run(JD + 2, 0.5);
+    const first = physics.checkpoint(clock.jdTdb);
+    const plan = newMoon(named('Mars'), [5e7, 0, 0], 1.5 * AU, 0, MADE_FIRST_ID);
+    physics.make(plan.json, named('Mars'), plan.pos, plan.vel, clock.jdTdb, 'new');
+    run(JD + 4, 0.5);
+    physics.restore(first);
+    clock.jdTdb = first.jd;
+    physics.restore(real);
+    clock.jdTdb = real.jd;
+    expect(physics.on).toBe(false);
+    const fresh = await SolarSystem.load('/data');
+    await fresh.ephemeris.request(JD);
+    fresh.update(JD);
+    const untouched = (s: SolarSystem) => s.bodies.map((b) => [b.id, b.valid, b.gm, b.systemGm, b.radius, ...b.radii, ...state(b), b.parent?.id ?? null, b.children.map((c) => c.id).join(), ...b.orientation.elements]);
+    expect(untouched(sys)).toEqual(untouched(fresh));
+    // and the same by the return to reality, from the changed world
+    physics.restore(first);
+    clock.jdTdb = first.jd;
+    run(JD + 3, 0.5);
+    physics.backToReality(clock);
+    sys.update(clock.jdTdb);
+    expect(clock.jdTdb).toBe(JD);
+    expect(untouched(sys)).toEqual(untouched(fresh));
+  }, 60_000);
+
+  it('the return to reality undone: what was made comes back, in its place among the bodies, and the changed world goes on', async () => {
+    const { sys, physics, clock, named, run } = await setup();
+    steady(physics);
+    const earth = named('Earth'), plan = newMoon(earth, [3e8, 0, 0], AU, 0, MADE_FIRST_ID);
+    const moon = physics.make(plan.json, earth, plan.pos, plan.vel, JD, 'new');
+    run(JD + 2, 0.5);
+    const cp = physics.checkpoint(clock.jdTdb);
+    const then = everything(sys, physics);
+    physics.backToReality(clock);
+    expect(sys.bodies.includes(moon)).toBe(false);
+    physics.restore(cp);
+    clock.jdTdb = cp.jd;
+    expect(sys.bodies[sys.bodies.length - 1]).toBe(moon);
+    expect(moon.valid).toBe(true);
+    expect(physics.made).toEqual([moon]);
+    expect(everything(sys, physics)).toEqual(then);
+    run(JD + 4, 0.5);
+    expect(physics.orbit(moon)!.bound).toBe(true);
+    expect(moon.parent).toBe(earth);
+  }, 60_000);
+
+  it('a replay from the moment just after a change goes the same way every time', async () => {
+    const { sys, physics, clock, named, run } = await setup();
+    steady(physics);
+    physics.setMass(named('Jupiter'), 20 * named('Jupiter').gm, JD);
+    const after = physics.checkpoint(clock.jdTdb);
+    run(JD + 1.5, 0.05);
+    const once = everything(sys, physics);
+    // (the moons fell in: what happened is the same event the second time)
+    expect(once.log.length).toBeGreaterThan(2);
+    physics.restore(after);
+    clock.jdTdb = after.jd;
+    run(JD + 1.5, 0.05);
+    expect(everything(sys, physics)).toEqual(once);
+  }, 60_000);
 });
 
 describe('speed', () => {

@@ -6,6 +6,9 @@
 //     simulated from the start (scripts/live.mjs has the planets and the suns that can be made)
 //   - the moon says it was made, and is taken away like any world; with the return to reality
 //     nothing of it is left
+// (Changes are not watched here: "Show me what happens" is switched off in More first. The watch moves the
+// camera and runs time on, and this measures where the moon starts against the eye and times a quarter of its
+// period by the clock; scripts/live.mjs watches changes.)
 // Usage: node scripts/whatif.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { phoneContext } from './lib/touch.mjs';
@@ -41,6 +44,13 @@ const details = async (page) => {
   await frames(page, 2);
 };
 const press = async (page, sel) => { const b = page.locator(sel); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
+/** Changes not watched (More: "Show me what happens", off). */
+const quiet = async (page) => {
+  await press(page, '#hud .hud-tabs [data-tab="more"]');
+  if ((await page.locator('#hud .switch[data-act="show-me"]').getAttribute('aria-checked')) === 'true') await press(page, '#hud .switch[data-act="show-me"]');
+  await press(page, '#hud .sheet.more [data-close]');
+  await frames(page, 2);
+};
 
 for (const kind of ['phone', 'desk']) {
   const ctx = kind === 'phone' ? await phoneContext(browser) : await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -49,6 +59,7 @@ for (const kind of ['phone', 'desk']) {
   await page.goto(`${base}?menu=0&target=Earth&dist=6&time=2026-10-01T20:00:00Z`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 });
   const on = (name) => `${kind}: ${name}`;
+  await quiet(page);
 
   // --- the working behind the facts
   await details(page);

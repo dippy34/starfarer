@@ -43,7 +43,10 @@ over), landing on solid worlds, missions and a discovery log.
 
 **Gravity for real (tap a world: Mass, Move, Add, Remove):** the Solar System is the real one,
 where the ephemeris has it, until you change something in it. From that moment it is simulated:
-everything in it pulls on everything else, and one button, **Back to reality**, undoes it all. Make
+everything in it pulls on everything else, and one button, **Back to reality**, undoes it all.
+**You see what happens**: after each change time speeds up for fifteen seconds, to a pace at which
+the worlds it matters to go round, and the view eases out to frame them ("Watching: 26 minutes a
+second", with Stop; then **Replay**). **Undo** steps back one change at a time, the date with it. Make
 Jupiter twenty times heavier and its moons fall onto new orbits, some of them into it. Take the Sun
 away and the planets leave on straight lines, in the dark. Drag the Moon out to twice its distance
 and within four months the Sun has taken it from the Earth. Add a second Jupiter near the Earth's
@@ -76,6 +79,8 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 <img src="docs/img/stars-up-close.jpg" width="640" alt="Stars up close: the Sun (its face a map of the real one), Sirius, Betelgeuse and Proxima Centauri, each with the face of its kind"> <img src="docs/img/loading.jpg" width="640" alt="The loading screen: what has arrived, what it brought, how much was downloaded">
 
 <img src="docs/img/live-physics.jpg" width="640" alt="Live physics on a phone: Jupiter made twice as heavy with the mass slider, the Moon dragged to twice its distance and left on a circle, and a second sun beside the first"> <img src="docs/img/whatif.jpg" width="640" alt="What if: the Earth given a second moon with Add, told as it is made, and the new moon's card: simulated since it was made, its orbit, and the powers that change or remove it">
+
+<img src="docs/img/watch.jpg" width="640" alt="Watching a change on a phone: Jupiter made twenty times heavier, the view eased out to frame its four great moons on their new orbits, time at 26 minutes a second with Stop; then, the watch over, Replay, and Europa told to have hit Jupiter; then Undo, and the real Jupiter again at the date before the change">
 
 *Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
 verification run, not hand-picked renders.*
@@ -136,7 +141,10 @@ Any control (a drag, the lever) takes the ship back from the autopilot or from S
 The card of what you selected has **Go there**, **Look at** and **Details**; nothing moves the
 camera until you go. A flight in progress shows a **Stop** button. Under them, for a world of the
 Solar System, is what you can do to it: **Mass**, **Move**, **Add**, **Remove** (gravity for real,
-above); the first use switches live physics on, and **Back to reality** at the top undoes it.
+above); the first use switches live physics on, and at the top **Undo** steps back a change at a
+time and **Back to reality** undoes it all (itself undone, for a moment, by Undo). A finger on the
+view while a change is being watched gives you the camera back; More → *Show me what happens*
+turns the watching off.
 
 **With a mouse and keyboard** the same interface stands at the left edge, and every key still works:
 
@@ -152,6 +160,7 @@ above); the first use switches live physics on, and **Back to reality** at the t
 | Enter or `/` | Find by name (planets, 459 moons, 302 large asteroids/TNOs, 4,077 comets, 12,585 named stars, 6,333 exoplanets, spacecraft, galaxies) |
 | 0–9 | Sun, Mercury … Pluto |
 | Space · `[` `]` · `\` · Backspace | Pause · slower/faster time · reverse · real time now |
+| Ctrl+Z | Undo the last change to a world |
 | L · O · M | Names · orbits · minor-body orbits |
 | P · H · Esc | Screenshot · help · stop autopilot / close a panel / deselect |
 | V · J | Spaceship (cockpit / chase / off) · in it, the autopilot to the selection |
@@ -309,7 +318,14 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   is touched. A mark says physics is live, with **Back to reality** beside it; the Time sheet has
   the log of what happened (which two collided and how fast, who was thrown out, who was captured)
   and the list of what the simulation leaves out. Orbit lines are drawn from where each body is
-  and how it moves now, with a trail of where it has been. A system with no sun, or with two, is
+  and how it moves now, with a trail of where it has been. Each change is watched (`src/app/Watch.ts`):
+  time runs for fifteen seconds at the pace at which the quickest orbit among the worlds whose pull
+  it changes by a hundredth or more goes round in eight, and the camera eases to a frame that holds
+  them, in the part of the view the interface leaves clear; then the rate comes back as it was, and
+  Replay watches it again from just after the change (the simulation goes the same way). **Undo**
+  goes back a change at a time, twenty deep, each to the last bit (`src/app/History.ts`,
+  `LivePhysics.checkpoint`); Back to reality returns to the moment the first change was made, and
+  can itself be undone for a moment. A system with no sun, or with two, is
   lit accordingly. Time: up to a year a second in full with every planet there, about a hundred
   years a second when more is asked, a thousand with the Sun gone (one core, a quarter of each
   frame). Checked by tests against the textbook (a moon's period after its planet's mass is
