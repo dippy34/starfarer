@@ -46,6 +46,10 @@ const SCENES = [
   { id: 'sgr-a', label: 'the disk of Sagittarius A*', query: 'target=Sagittarius%20A*&dist=60', disk: true },
 ];
 const STEP = 3, TURN = 40, HOLD = 24, BACK = 6;
+// (A frame is a tenth of a second of the app's time: App.frame clamps its step to 0.1 s, so each
+// frame is stepped at least 105 ms after the one before it began (App.lastTime). The measuring and
+// the screenshots between frames take longer than that here, and are no longer followed by a
+// further 105 ms of waiting; a frame that comes sooner still waits out the rest.)
 
 for (const scene of SCENES) {
   if (only.length && !only.includes(scene.id)) continue;
@@ -71,7 +75,7 @@ for (const scene of SCENES) {
   const frame = (deg) => page.evaluate(async ([deg, light]) => {
     const a = window.app, r = a.rig;
     if (deg) r.quat.multiply(r.quat.clone().set(0, Math.sin((deg * Math.PI) / 360), 0, Math.cos((deg * Math.PI) / 360)));
-    await new Promise((res) => setTimeout(res, 105));
+    await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now())))));
     a.frame();
     // the frame as drawn, small: how bright, how much of it burnt out
     const c = window.__meter ?? (window.__meter = Object.assign(document.createElement('canvas'), { width: 96, height: 96 }));
@@ -210,7 +214,7 @@ for (const hole of APPROACHES) {
     const a = window.app, r = a.rig, t = r.target;
     const from = r.upos.sub(t.upos);
     r.upos.copy(t.upos).addVec(from.normalize(), dist * t.radius);
-    await new Promise((res) => setTimeout(res, 105));
+    await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now())))));
     a.frame();
     const at = a.project(t.upos.sub(r.upos));
     // what is behind the hole: the middle value round the edge of a square, colour by colour
