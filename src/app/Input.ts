@@ -28,10 +28,14 @@ export function emptyFrame(): InputFrame {
   };
 }
 
-/** A pointer that has taken hold of something in the view: told where it goes, and when it lets go. */
+/**
+ * A pointer that has taken hold of something in the view: told where it goes and when (`t`: the
+ * event's time, ms), and where and when it lets go; `cancelled`: the browser took it away (a
+ * system gesture, a call), and what it was doing is not to be finished.
+ */
 export interface Hold {
-  move(x: number, y: number): void;
-  end(): void;
+  move(x: number, y: number, t: number): void;
+  end(x: number, y: number, t: number, cancelled: boolean): void;
 }
 
 /** Keyboard, mouse and touch, collected between frames. */
@@ -48,8 +52,8 @@ export class Input {
    * under it to take hold of (a world the explorer is moving)? If so that pointer is the hold's
    * until it lifts: it neither turns the view nor taps.
    */
-  grab: ((x: number, y: number, touch: boolean) => Hold | null) | null = null;
-  private held: { id: number; hold: Hold } | null = null;
+  grab: ((x: number, y: number, touch: boolean, t: number) => Hold | null) | null = null;
+  private held: { id: number; hold: Hold; x: number; y: number } | null = null;
   /** mouse motion while the pointer is locked (walking, src/app/Walk.ts) */
   look = { dx: 0, dy: 0 };
   /** a finger has touched the view */
@@ -78,10 +82,10 @@ export class Input {
       // (touching the view leaves any text field: the on-screen keyboard goes away)
       if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur();
       if (!this.held && (e.pointerType !== 'mouse' || e.button === 0)) {
-        const hold = this.grab?.(p.x, p.y, e.pointerType !== 'mouse');
+        const hold = this.grab?.(p.x, p.y, e.pointerType !== 'mouse', e.timeStamp);
         if (hold) {
           if (e.pointerType !== 'mouse') this.touched = true;
-          this.held = { id: e.pointerId, hold };
+          this.held = { id: e.pointerId, hold, x: p.x, y: p.y };
           return;
         }
       }
@@ -95,7 +99,7 @@ export class Input {
     el.addEventListener('pointermove', (e) => {
       if (document.pointerLockElement === el) { this.look.dx += e.movementX; this.look.dy += e.movementY; return; }
       const p = this.local(e);
-      if (this.held?.id === e.pointerId) { this.held.hold.move(p.x, p.y); return; }
+      if (this.held?.id === e.pointerId) { this.held.x = p.x; this.held.y = p.y; this.held.hold.move(p.x, p.y, e.timeStamp); return; }
       if (e.pointerType !== 'mouse') { this.gestures.move(e.pointerId, p.x, p.y, e.timeStamp); return; }
       this.mouse = p;
       const d = this.down;
@@ -106,14 +110,14 @@ export class Input {
       else { f.orbit.dx += e.movementX; f.orbit.dy += e.movementY; }
     });
     el.addEventListener('pointerup', (e) => {
-      if (this.letGo(e.pointerId)) return;
       const p = this.local(e);
+      if (this.letGo(e.pointerId, p, e.timeStamp, false)) return;
       if (e.pointerType !== 'mouse') { this.gestures.up(e.pointerId, p.x, p.y, e.timeStamp); return; }
       if (this.down && !this.down.moved && this.down.button === 0) this.onTap?.(p.x, p.y, false);
       this.down = null;
     });
     el.addEventListener('pointercancel', (e) => {
-      if (this.letGo(e.pointerId)) return;
+      if (this.held?.id === e.pointerId && this.letGo(e.pointerId, this.held, e.timeStamp, true)) return;
       if (e.pointerType !== 'mouse') this.gestures.cancel(e.pointerId);
       else this.down = null;
     });
@@ -138,11 +142,12 @@ export class Input {
     window.addEventListener('blur', () => this.keys.clear());
   }
 
-  /** The pointer that held something has lifted: true if it was this one. */
-  private letGo(id: number): boolean {
-    if (this.held?.id !== id) return false;
-    this.held.hold.end();
+  /** The pointer that held something has lifted at `at` (or been cancelled there): true if it was this one. */
+  private letGo(id: number, at: Point, t: number, cancelled: boolean): boolean {
+    const held = this.held;
+    if (held?.id !== id) return false;
     this.held = null;
+    held.hold.end(at.x, at.y, t, cancelled);
     return true;
   }
 

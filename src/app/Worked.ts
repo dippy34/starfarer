@@ -7,6 +7,7 @@ import { Body, type SpaceObject } from '../universe/Body';
 import { BlackHole } from '../universe/BlackHoles';
 import { ExoPlanet } from '../universe/Planets';
 import { the } from './Powers';
+import { type Kind, madeWorking } from './WhatIf';
 
 /** One thing that follows from what is known about an object: what it comes to, and how. */
 export interface Worked {
@@ -49,6 +50,9 @@ function ofBody(b: Body, catalogue: Catalogued | null): Worked[] {
   const out: Worked[] = [];
   const mass = b.gm > 0 ? b.gm / G : 0;
   const sized = b.radius > 0 && !b.radiusEstimated;
+  // what the explorer made: how its size followed from the mass it was made with
+  const as = b.meta.madeAs as { kind: Kind; kg: number; icy: boolean } | undefined;
+  if (as) out.push(madeWorking(as.kind, as.kg, as.icy));
   if (b.kind === 'star') {
     if (sized && b.teff) {
       const lum = luminosity(b.radius, b.teff);

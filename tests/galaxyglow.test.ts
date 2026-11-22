@@ -24,7 +24,7 @@ function fakeRenderer(glow: GalaxyGlow) {
       drawnFrom.set(bound.t, faces);
     },
   } as unknown as WebGLRenderer;
-  return { gl, shownFrom: () => drawnFrom.get(glow.target) ?? [] };
+  return { gl, shownFrom: () => drawnFrom.get(glow.target) ?? [], prevFrom: () => drawnFrom.get(glow.prev) ?? [] };
 }
 
 describe('the Milky Way glow', () => {
@@ -49,8 +49,35 @@ describe('the Milky Way glow', () => {
       expect(places.size).toBe(1);
       expect([...places][0]).toBe(glow.cam.toArray().join(','));
     }
-    // and it follows: the map shown is never more than eleven frames behind (six to draw one, five waiting for it)
+    // and it follows: the newest map is never more than eleven frames behind (six to draw one, five waiting for it)
     expect(glow.cam.distanceTo(eye)).toBeLessThanOrEqual(11 * Math.hypot(700, 300, 1200) + 1);
+  });
+
+  it('goes over from one map to the next a little each frame: no step every sixth frame', () => {
+    const glow = new GalaxyGlow();
+    const { gl, shownFrom, prevFrom } = fakeRenderer(glow);
+    const eye = new Vector3(-8200, 0, 20), v = new Vector3(-150, 60, 250);
+    glow.update(gl, eye, 6);
+    const seen = (): Vector3 => glow.prevCam.clone().lerp(glow.cam, glow.blend);
+    let last = seen();
+    const steps: number[] = [];
+    for (let frame = 0; frame < 60; frame++) {
+      eye.add(v);
+      glow.update(gl, eye, 1);
+      // the two maps the sky blends (the one before only while it is seen) are each whole and of one place
+      for (const [faces, at] of glow.blend < 1 ? [[shownFrom(), glow.cam], [prevFrom(), glow.prevCam]] as const : [[shownFrom(), glow.cam]] as const) {
+        expect(faces.every((p) => p !== null)).toBe(true);
+        expect(new Set(faces.map((p) => p!.join(','))).size).toBe(1);
+        expect(faces[0]!.join(',')).toBe(at.toArray().join(','));
+      }
+      const now = seen();
+      steps.push(now.distanceTo(last));
+      last = now;
+    }
+    // once under way (two maps drawn), the place the sky is seen from moves as the eye does, a frame's way a frame
+    const going = steps.slice(14);
+    expect(Math.max(...going)).toBeLessThanOrEqual(v.length() * 1.001);
+    expect(Math.min(...going)).toBeGreaterThanOrEqual(v.length() * 0.999);
   });
 
   it('does nothing while the eye stays put', () => {

@@ -155,6 +155,9 @@ void main() {
       if (T.g < 1e-4) break;
     }
   }
-  gl_FragColor = vec4(L, 1.0);
+  // (the map holds half floats: a sight line through the bulge's very middle can sum past their
+  // largest, 65,504, and was stored as infinity; the sky's model of it then made NaN of the whole
+  // frame once the glow had spread it, a white wash until the next map)
+  gl_FragColor = vec4(min(L, vec3(6.0e4)), 1.0);
 }`;
 }

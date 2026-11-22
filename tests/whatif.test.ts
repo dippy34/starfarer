@@ -4,12 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { LivePhysics } from '../src/app/LivePhysics';
-import { canAdd, MADE_FIRST_ID, MADE_MOST, newMoon, newTwin, type Plan } from '../src/app/WhatIf';
+import {
+  canAdd, EARTH_DENSITY, GIANT_FROM, MADE_FIRST_ID, MADE_MASS, MADE_MOST, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, madeWorking,
+  newMoon, newTwin, type Plan, ROCKY_MOST, STAR_FROM,
+} from '../src/app/WhatIf';
 import { workedOut } from '../src/app/Worked';
 import { OBLIQUITY_J2000 } from '../src/core/frames';
 import { SimClock } from '../src/core/time';
 import { AU } from '../src/core/units';
-import { G } from '../src/sim/physics';
+import { G, M_EARTH, M_JUPITER, M_SUN, mainSequence, R_EARTH, R_JUPITER, R_SUN } from '../src/sim/physics';
 import type { Body } from '../src/universe/Body';
 import { SolarSystem } from '../src/universe/SolarSystem';
 
@@ -271,5 +274,96 @@ describe('a planet or a sun made for a star', () => {
     const again = newTwin(named('Earth'), 'earth_day', sun, [0, 2 * AU, 0], 0, MADE_FIRST_ID);
     sys.add(again.json);
     expect(() => sys.add(again.json)).toThrow('there already');
+  });
+});
+
+describe('the size of what is made, from its mass', () => {
+  it('a world like the Earth is rock at the Earth\'s density: 5 Earths have 1.71 times its radius; the Earth\'s own mass gives the Earth\'s size', () => {
+    expect(madeSize('earth', 5 * M_EARTH, false)).toEqual({ radius: R_EARTH * Math.cbrt(5), rule: 'earth' });
+    expect(madeSize('earth', 5 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(1.71, 2);
+    expect(madeSize('earth', M_EARTH, false).radius).toBe(R_EARTH);
+    // (a ball of 5,514 kg/m³)
+    const r = madeSize('earth', 3 * M_EARTH, false).radius;
+    expect((3 * M_EARTH) / ((4 / 3) * Math.PI * r ** 3)).toBeCloseTo(EARTH_DENSITY, -1);
+    expect(madeWords('earth', 5 * M_EARTH, false)).toEqual({ mass: '5 Earths', what: "Rock, 1.71 times the Earth's size" });
+    expect(madeWords('earth', M_EARTH, false).what).toBe("Rock, the Earth's size");
+  });
+
+  it('a giant from 0.3 Jupiters, and a brown dwarf, are about Jupiter\'s size (the catalogue\'s mean radius); between 10 Earths and 0.3 Jupiters the size goes from one to the other', async () => {
+    const { named } = await setup();
+    expect(R_JUPITER / 1e3).toBeCloseTo(named('Jupiter').radius / 1e3, 0);
+    expect(madeSize('jupiter', 5 * M_JUPITER, false)).toEqual({ radius: R_JUPITER, rule: 'giant' });
+    expect(madeSize('jupiter', 20 * M_JUPITER, false)).toEqual({ radius: R_JUPITER, rule: 'brown dwarf' });
+    expect(madeSize('jupiter', GIANT_FROM, false).radius).toBe(R_JUPITER);
+    // at 10 Earths it is the rock of 10 Earths; Neptune's 17 Earths come out 3.2 Earth radii (it measures 3.9)
+    expect(madeSize('jupiter', ROCKY_MOST, false).radius).toBeCloseTo(madeSize('earth', ROCKY_MOST, false).radius, 3);
+    expect(madeSize('jupiter', 17.15 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(3.2, 1);
+    expect(madeSize('jupiter', 17.15 * M_EARTH, false).rule).toBe('between');
+    // never smaller for more mass
+    let last = 0;
+    for (let k = 0; k <= 100; k++) {
+      const [lo, hi] = MADE_MASS.jupiter, r = madeSize('jupiter', lo * (hi / lo) ** (k / 100), false).radius;
+      expect(r).toBeGreaterThanOrEqual(last * (1 - 1e-12));
+      last = r;
+    }
+    expect(madeWords('jupiter', 5 * M_JUPITER, false).what).toBe("A giant of gas, Jupiter's size");
+    expect(madeWords('jupiter', 20 * M_JUPITER, false).what).toBe("A brown dwarf, Jupiter's size");
+  });
+
+  it('a sun is a star of the main sequence: half a Sun has 0.57 of its radius, a sixteenth of its light, 3,810 K; the Sun\'s mass gives the Sun', () => {
+    const half = madeSize('sun', 0.5 * M_SUN, false), ms = mainSequence(0.5);
+    expect(half).toEqual({ radius: ms.radius.value, rule: 'star', teff: ms.teff.value, lum: ms.lum.value });
+    expect(half.radius / R_SUN).toBeCloseTo(0.574, 3);
+    expect(half.lum).toBeCloseTo(0.0625, 6);
+    expect(half.teff! / 10).toBeCloseTo(380.8, 0);
+    const one = madeSize('sun', M_SUN, false);
+    expect(one.radius).toBe(R_SUN);
+    expect(one.teff).toBeCloseTo(5772, 9);
+    expect(madeAbsMag(1)).toBe(4.831);
+    expect(madeAbsMag(one.lum!)).toBeCloseTo(4.831, 12);
+    expect(madeAbsMag(half.lum!)).toBeCloseTo(4.831 + 2.5 * Math.log10(16), 9);
+    expect(madeWords('sun', M_SUN, false).what).toBe('A star like the Sun');
+    expect(madeWords('sun', 0.5 * M_SUN, false).what).toBe("A star, 0.57 times the Sun's size, 3,810 K");
+  });
+
+  it('a moon is a ball of rock, or of ice and rock beyond the frost line, as Add makes one', async () => {
+    const { named } = await setup();
+    const plan = newMoon(named('Earth'), [8 * named('Earth').radius, 0, 0], AU, 0, MADE_FIRST_ID);
+    const as = plan.json.madeAs!;
+    expect(as).toEqual({ kind: 'moon', kg: (plan.json.gm! * 1e9) / G, icy: false });
+    expect(madeSize('moon', as.kg, false).radius / 1e3).toBeCloseTo(plan.json.radii![0], 6);
+    expect(madeSize('moon', 1e20, true).radius).toBeCloseTo(Math.cbrt((3 * 1e20) / (4 * Math.PI * 1500)), 6);
+    expect(madeWords('moon', 1e20, true).what).toMatch(/^Ice and rock, 25\d km in radius$/);
+  });
+
+  it('its slider runs from a small moon to two suns across the four kinds, even in the logarithm, and finds the mass Add made near it', () => {
+    expect(MADE_MASS.moon[0]).toBeCloseTo(7.346e16, -12);
+    expect(MADE_MASS.sun[1]).toBe(2 * M_SUN);
+    expect(MADE_MASS.earth[1]).toBe(MADE_MASS.jupiter[0]);
+    expect(MADE_MASS.jupiter[1]).toBe(MADE_MASS.sun[0]);
+    expect(MADE_MASS.sun[0]).toBe(STAR_FROM);
+    for (const kind of ['moon', 'earth', 'jupiter', 'sun'] as const) {
+      const [lo, hi] = MADE_MASS[kind], base = Math.sqrt(lo * hi) * 1.7;
+      expect(madeMassAt(kind, 0, base) / lo).toBeCloseTo(1, 12);
+      expect(madeMassAt(kind, 1, base) / hi).toBeCloseTo(1, 12);
+      expect(madeSlider(kind, madeMassAt(kind, 0.3, base))).toBeCloseTo(0.3, 12);
+      // within 0.03 powers of ten of what Add made: exactly that
+      expect(madeMassAt(kind, madeSlider(kind, base * 1.06), base)).toBe(base);
+      expect(madeMassAt(kind, madeSlider(kind, base * 1.08), base) / (base * 1.08)).toBeCloseTo(1, 12);
+    }
+  });
+
+  it('says how its size was worked out, with the rule it follows: in its details, as every made thing does', async () => {
+    const { named, make } = await setup();
+    const sun = named('Sun');
+    const earth2 = make(newTwin(named('Earth'), 'earth_day', sun, [0, 2 * AU, 0], 0, MADE_FIRST_ID), sun);
+    const line = workedOut(earth2).find((w) => w.label === 'Its size (made by you)')!;
+    expect(line.text).toBe('6,371 km');
+    expect(line.math).toBe("R = R⊕ (M / M⊕)^⅓ = 6,371 km·(1)^⅓ = 6,371 km: rock at the Earth's mean density, 5,514 kg/m³");
+    expect(madeWorking('jupiter', 5 * M_JUPITER, false).math).toMatch(/^R ≈ R♃ = 69,911 km: a giant planet is about Jupiter's size/);
+    expect(madeWorking('sun', 0.5 * M_SUN, false).math).toMatch(/^R = M\^0\.8 R☉ = 0\.5\^0\.8 R☉ = 0\.5743 R☉ .*: a star of the main sequence/);
+    expect(madeWorking('jupiter', 30 * M_EARTH, false).math).toMatch(/: between a rock of 10 Earths and Jupiter's size at 0\.3 Jupiters/);
+    // (nothing of the catalogue's says so)
+    expect(workedOut(named('Earth')).some((w) => w.label.includes('made by you'))).toBe(false);
   });
 });

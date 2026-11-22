@@ -314,6 +314,71 @@ for (const hole of APPROACHES) {
   await page.close();
 }
 
+// Out of the galaxy (scene "glow-out"): the eye carried from 1 to 15 kpc from the Sun, 5 % farther
+// each frame (55 frames; the trailer's pull-out goes three times as fast), looking back at the
+// galaxy's middle, out along the line the Milky Way is seen whole from. The glow's cube map is
+// drawn again a face a frame, and each new map was shown at once: a step every six frames (in
+// trailer v3's scan, 20 to 40 levels), and now and then a map with one sight line summed past
+// what its half floats hold, which washed the whole frame white until the next. Shown blended
+// from the last, the frame changes a little each frame: no frame by more than twice what the
+// frames round it do (the two before and the two after, their middle value).
+if (!only.length || only.includes('glow-out')) {
+  const dir = path.join(outDir, 'exposure-glow-out');
+  fs.mkdirSync(dir, { recursive: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  collectErrors(page, errors);
+  await page.goto(`${base}?menu=0&time=2026-10-01T20:00:00Z&target=Sun&dist=40`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.app && window.app.frameCount > 30, null, { timeout: 600000 });
+  await page.evaluate(() => {
+    const a = window.app;
+    a.renderer.gl.setAnimationLoop(null);
+    a.hud.setHidden(true);
+    a.labels.enabled = false;
+    a.orbits.enabled = false;
+    a.rig.target = null;
+    a.rig.setAnchor(null);
+  });
+  const GROW = 1.05;
+  // one frame with the eye `kpc` from the Sun, out along the line the galaxy is seen whole from;
+  // the frame small (96 x 96), in display levels
+  const frame = (kpc) => page.evaluate(async (kpc) => {
+    const a = window.app, r = a.rig, S = a.system.sun, mw = a.milkyWay;
+    const out = mw.viewDir();
+    r.upos.copy(S.upos).addVec(out, kpc * 1e3 * 3.0857e16);
+    r.lookAt(mw.upos.sub(r.upos).normalize(), out.clone().set(0, 0, 1));
+    await new Promise((res) => setTimeout(res, 105));
+    a.frame();
+    const c = window.__meter ?? (window.__meter = Object.assign(document.createElement('canvas'), { width: 96, height: 96 }));
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(a.renderer.gl.domElement, 0, 0, 96, 96);
+    return Array.from(g.getImageData(0, 0, 96, 96).data.filter((_, i) => i % 4 !== 3));
+  }, kpc);
+  for (let i = 0; i < 30; i++) await frame(1);            // the glow drawn, the eye settled
+  const seq = [];
+  let prev = await frame(1);
+  for (let kpc = 1; kpc < 15; kpc = Math.min(15, kpc * GROW)) {
+    const now = await frame(kpc * GROW);
+    // how much the frame changed: the mean of each pixel's change, in levels
+    let sum = 0;
+    for (let i = 0; i < now.length; i++) sum += Math.abs(now[i] - prev[i]);
+    seq.push({ kpc: Math.min(15, kpc * GROW), change: sum / now.length });
+    prev = now;
+    if (seq.length % 6 === 1) await page.screenshot({ path: path.join(dir, `f${String(seq.length).padStart(3, '0')}.png`) });
+  }
+  fs.writeFileSync(path.join(dir, 'log.json'), JSON.stringify(seq));
+  // each frame's change against the middle of its neighbours' (two before, two after)
+  let worst = { by: 0, at: seq[0], round: 0 };
+  for (let i = 0; i < seq.length; i++) {
+    const near = [seq[i - 2], seq[i - 1], seq[i + 1], seq[i + 2]].filter(Boolean).map((s) => s.change).sort((p, q) => p - q);
+    const round = (near[(near.length - 1) >> 1] + near[near.length >> 1]) / 2;
+    const by = seq[i].change / Math.max(round, 1.5);
+    if (by > worst.by) worst = { by, at: seq[i], round };
+  }
+  check('out of the galaxy, 1 to 15 kpc: its glow changes a little each frame, never in a step', worst.by <= 2,
+    `at most x${worst.by.toFixed(2)} the change round it (${worst.at.change.toFixed(1)} levels against ${worst.round.toFixed(1)}, at ${worst.at.kpc.toFixed(1)} kpc); ${seq.map((s) => s.change.toFixed(1)).join(' ')}`);
+  await page.close();
+}
+
 console.log(errors.length ? `console errors:\n${errors.slice(0, 10).join('\n')}` : 'no console errors');
 check('no console errors', errors.length === 0);
 await browser.close();

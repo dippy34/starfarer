@@ -42,10 +42,10 @@ const MOON_GM = 1e9;
 /** What live physics leaves out besides what the simulation itself does (NBody's LEFT_OUT), in plain words. */
 const ALSO_LEFT_OUT: readonly string[] = [
   'A moon too light to pull on anything, and a world whose mass is not known, keeps its real path round its planet until you change that planet or it.',
-  'A world keeps its size and its look whatever mass you give it. What theory says it would turn into is told, not shown.',
+  'A world keeps its size and its look whatever mass you give it. What theory says it would turn into is told, not shown. (A world you are adding is the one exception: its size follows the mass you give it before Done.)',
   'The 75,000 small asteroids of the belt and the comets cannot be simulated one by one: they keep their real paths while the Sun is as it was, and are left out once you change it or take it away. The real spacecraft are left out too: they flew their paths in the real Solar System.',
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
-  'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the size, mass, spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up.',
+  'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up. Its size follows the mass you give it by a rule, said in its details: rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence. A star made lighter than the Sun is drawn as if all its light were visible light: a red dwarf would look fainter.',
   'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
 ];
 /** an unbound body this far from what it left has left for good */
@@ -178,6 +178,22 @@ export class LivePhysics {
     live.sim.setMass(b.id, gm);
     b.systemGm += gm - b.gm;
     b.gm = gm;
+    this.settle(live);
+  }
+
+  /**
+   * Give a body the explorer has made another mass (G times it, m³/s²) and size (`radii`, m), as
+   * while it is being put in place (src/app/WhatIf.ts: madeSize). What it was made with is its own
+   * mass from then on: there is no catalogue's to go back to.
+   */
+  resize(b: Body, gm: number, radii: readonly [number, number, number], jd: number): void {
+    const live = this.start(jd);
+    this.changes++;
+    b.systemGm += gm - b.gm;
+    b.gm = gm;
+    b.radii = [radii[0], radii[1], radii[2]];
+    b.radius = Math.cbrt(radii[0] * radii[1] * radii[2]);
+    live.sim.setMass(b.id, gm, b.radius);
     this.settle(live);
   }
 

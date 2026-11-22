@@ -1,9 +1,9 @@
 import { OBLIQUITY_J2000 } from '../core/frames';
-import { AU } from '../core/units';
-import { G } from '../sim/physics';
+import { AU, SUN_ABS_MAG } from '../core/units';
+import { G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER, R_SUN, radiusFromDensity } from '../sim/physics';
 import type { Body } from '../universe/Body';
 import type { BodyJson } from '../universe/SolarSystem';
-import { circularVelocity } from './Powers';
+import { circularVelocity, M_MOON, massWords } from './Powers';
 
 /**
  * What if: what the explorer adds to the worlds (the card's Add, src/ui/Hud.ts). A planet or a
@@ -15,7 +15,9 @@ import { circularVelocity } from './Powers';
  *
  * A copy (of the Earth, of Jupiter, of the Sun) has the size, mass, spin and face of what it is a
  * copy of, and nothing else of it: no air, clouds, rings or lights of its own, and where it has
- * ground to stand on that ground is not the original's.
+ * ground to stand on that ground is not the original's. While it is being put in place its mass
+ * can be set, from a small moon to two suns across the four kinds (MADE_MASS), and its size then
+ * follows from its mass by the rule for what it is (madeSize), and for a sun its light and colour.
  */
 
 /** the bodies made here are numbered from this on (the catalogue's ids end far below) */
@@ -88,7 +90,7 @@ export function newMoon(parent: Body, eye: ArrayLike<number>, sunDistance: numbe
       id, name: `${parent.name}'s new moon${count > 0 ? ` ${count + 1}` : ''}`, type: 'moon', parent: parent.id, made: true,
       radii: [radius / 1e3, radius / 1e3, radius / 1e3], gm: gm / 1e9,
       albedo: icy ? 0.55 : 0.12, color: icy ? [0.82, 0.84, 0.88] : [0.52, 0.5, 0.47],
-      ephem: { kind: 'placed' },
+      ephem: { kind: 'placed' }, madeAs: { kind: 'moon', kg: gm / G, icy },
     },
   };
 }
@@ -104,11 +106,12 @@ export function newTwin(like: Body, texture: string | null, star: Body, eye: Arr
   const described = like.meta as unknown as BodyJson, gm = (described.gm ?? 0) * 1e9;
   const nearest = like.kind === 'star' ? NEAREST_SUN : NEAREST_PLANET;
   const orbit = Math.min(FARTHEST, Math.max(nearest, TOWARDS_EYE * Math.hypot(eye[0], eye[1], eye[2])));
+  const kind = (Object.keys(TWIN_OF) as (keyof typeof TWIN_OF)[]).find((k) => TWIN_OF[k] === like.id) ?? 'earth';
   return {
     ...circle(orbit, star.gm + gm, PLANETS_POLE, eye),
     json: {
       ...described, id, name: `${like.name} ${count + 2}`, parent: star.id, made: true, twinOf: like.id,
-      systemGm: undefined, texture: texture ?? undefined, ephem: { kind: 'placed' },
+      systemGm: undefined, texture: texture ?? undefined, ephem: { kind: 'placed' }, madeAs: { kind, kg: gm / G, icy: false },
     },
   };
 }
@@ -130,4 +133,132 @@ function circle(orbit: number, mu: number, normal: Triple, eye: ArrayLike<number
   const k = orbit / Math.hypot(...side);
   const pos: Triple = [k * side[0], k * side[1], k * side[2]];
   return { orbit, periodDays: (2 * Math.PI * Math.sqrt(orbit ** 3 / mu)) / 86400, pos, vel: circularVelocity(pos, mu, normal) };
+}
+
+// ---------------------------------------------------------------- what is made: its mass, and the size that follows
+
+/** worlds like the Earth are made of rock at the Earth's mean density, up to this mass (kg) */
+export const ROCKY_MOST = 10 * M_EARTH;
+/** the Earth's mean density (kg/m³; NASA's planetary fact sheet): R = R⊕ (M / M⊕)^⅓ is a ball of it */
+export const EARTH_DENSITY = 5514;
+/** from this mass (kg) a giant planet is about Jupiter's size: its insides are squeezed so hard that more mass makes it no larger */
+export const GIANT_FROM = 0.3 * M_JUPITER;
+/** from here (kg) deuterium fuses in a giant's core: a brown dwarf, still about Jupiter's size */
+const BROWN_DWARF_FROM = 13 * M_JUPITER;
+/** from here (kg) hydrogen fuses: a star of the main sequence (src/sim/physics.ts, mainSequence) */
+export const STAR_FROM = 0.08 * M_SUN;
+
+/**
+ * The masses each kind can be made with (kg): from a small moon to two suns across the four. A
+ * moon from a millionth of the Moon's mass (a rock some 36 km across) to ten Moons; a world like
+ * the Earth from a twentieth of the Earth's (Mercury has 0.055) to ten Earths; one like Jupiter from
+ * there to where a star begins; a sun from there to two Suns.
+ */
+export const MADE_MASS: Record<Kind, readonly [number, number]> = {
+  moon: [1e-6 * M_MOON, 10 * M_MOON],
+  earth: [0.05 * M_EARTH, ROCKY_MOST],
+  jupiter: [ROCKY_MOST, STAR_FROM],
+  sun: [STAR_FROM, 2 * M_SUN],
+};
+
+/** How a made body's size follows from its mass (madeSize). */
+export type SizeRule = 'rock' | 'ice' | 'earth' | 'between' | 'giant' | 'brown dwarf' | 'star';
+
+export interface Sized {
+  /** its mean radius (m), and the rule that gave it */
+  radius: number;
+  rule: SizeRule;
+  /** a sun's surface temperature (K) and light (times the Sun's), from the main sequence */
+  teff?: number;
+  lum?: number;
+}
+
+/** the radius of a rock of ROCKY_MOST (m), and the power of the mass that takes it to Jupiter's at GIANT_FROM */
+const ROCK_TOP = R_EARTH * Math.cbrt(ROCKY_MOST / M_EARTH);
+const BETWEEN = Math.log(R_JUPITER / ROCK_TOP) / Math.log(GIANT_FROM / ROCKY_MOST);
+
+/**
+ * The size of a body made as `kind` with `kg` of mass (`icy`: a moon made beyond the frost line):
+ * - a moon: a ball of rock (3,000 kg/m³), or of ice and rock (1,500), as newMoon makes one;
+ * - a world like the Earth: rock at the Earth's mean density, R = R⊕ (M / M⊕)^⅓ (5 Earths: 1.71 R⊕);
+ * - a giant from 0.3 Jupiters on, and a brown dwarf: about Jupiter's size;
+ * - between 10 Earths and 0.3 Jupiters, where a world's size depends on how much gas it has
+ *   gathered: the straight line between the two in the logarithm, from the rock of 10 Earths
+ *   (2.15 R⊕) to Jupiter's size (Neptune's 17 Earths come out 3.2 R⊕; it measures 3.9);
+ * - a sun: a star of the main sequence of that mass: its radius, temperature and light.
+ */
+export function madeSize(kind: Kind, kg: number, icy: boolean): Sized {
+  switch (kind) {
+    case 'moon': return { radius: radiusFromDensity(kg, icy ? ICE : ROCK), rule: icy ? 'ice' : 'rock' };
+    case 'earth': return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
+    case 'jupiter':
+      if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: kg >= BROWN_DWARF_FROM ? 'brown dwarf' : 'giant' };
+      return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
+    case 'sun': {
+      const ms = mainSequence(kg / M_SUN);
+      return { radius: ms.radius.value, rule: 'star', teff: ms.teff.value, lum: ms.lum.value };
+    }
+  }
+}
+
+/**
+ * A made sun's absolute magnitude, from its light (times the Sun's): the Sun's, brighter or fainter
+ * by that. (Light of every colour is counted as if it were visible light: a red dwarf would look
+ * fainter than this, its light being mostly infrared.)
+ */
+export function madeAbsMag(lum: number): number {
+  return SUN_ABS_MAG - 2.5 * Math.log10(lum);
+}
+
+/** within this many powers of ten of what Add makes, the slider means exactly that */
+const MADE_SNAP = 0.03;
+
+/** Where on its slider (0 to 1, even in the logarithm) a body made as `kind` with `kg` stands. */
+export function madeSlider(kind: Kind, kg: number): number {
+  const [lo, hi] = MADE_MASS[kind];
+  return Math.max(0, Math.min(1, Math.log(kg / lo) / Math.log(hi / lo)));
+}
+
+/** The mass (kg) at `s` (0 to 1) on the slider of `kind`: exactly `base` (what Add makes) within MADE_SNAP powers of ten of it. */
+export function madeMassAt(kind: Kind, s: number, base: number): number {
+  const [lo, hi] = MADE_MASS[kind];
+  const kg = lo * Math.pow(hi / lo, Math.max(0, Math.min(1, s)));
+  return Math.abs(Math.log10(kg / base)) < MADE_SNAP ? base : kg;
+}
+
+/** A ratio as a person says it: "1.71", "3.18", "0.13". */
+const times = (x: number) => String(Number(x.toPrecision(x < 1 ? 2 : 3)));
+const km = (m: number) => `${Math.round(m / 1e3).toLocaleString('en-US')} km`;
+
+/** What a body made as `kind` with `kg` of mass is, in words: its mass, and what it is and how big. */
+export function madeWords(kind: Kind, kg: number, icy: boolean): { mass: string; what: string } {
+  const s = madeSize(kind, kg, icy), mass = massWords(kg);
+  switch (s.rule) {
+    case 'rock': return { mass, what: `Rock, ${km(s.radius)} in radius` };
+    case 'ice': return { mass, what: `Ice and rock, ${km(s.radius)} in radius` };
+    case 'earth': return { mass, what: Math.abs(s.radius / R_EARTH - 1) < 0.005 ? "Rock, the Earth's size" : `Rock, ${times(s.radius / R_EARTH)} times the Earth's size` };
+    case 'between': return { mass, what: `Rock and gas, ${times(s.radius / R_EARTH)} times the Earth's size` };
+    case 'giant': return { mass, what: "A giant of gas, Jupiter's size" };
+    case 'brown dwarf': return { mass, what: "A brown dwarf, Jupiter's size" };
+    case 'star': return { mass, what: Math.abs(kg / M_SUN - 1) < 0.005 ? 'A star like the Sun' : `A star, ${times(s.radius / R_SUN)} times the Sun's size, ${(Math.round(s.teff! / 10) * 10).toLocaleString('en-US')} K` };
+  }
+}
+
+/** How the size of a body made as `kind` with `kg` of mass was worked out: the formula, the numbers put in, the result, and the rule. */
+export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: string; text: string; math: string } {
+  const s = madeSize(kind, kg, icy), text = km(s.radius), label = 'Its size (made by you)';
+  switch (s.rule) {
+    case 'rock': case 'ice': {
+      const rho = s.rule === 'ice' ? ICE : ROCK;
+      return { label, text, math: `R = (3M / 4πρ)^⅓ = (3·${num(kg)} kg / (4π·${rho.toLocaleString('en-US')} kg/m³))^⅓ = ${text}: a ball of ${s.rule === 'ice' ? 'ice and rock (beyond the frost line)' : 'rock'}` };
+    }
+    case 'earth':
+      return { label, text, math: `R = R⊕ (M / M⊕)^⅓ = 6,371 km·(${num(kg / M_EARTH)})^⅓ = ${text}: rock at the Earth's mean density, ${EARTH_DENSITY.toLocaleString('en-US')} kg/m³` };
+    case 'between':
+      return { label, text, math: `R = R₁₀ (M / 10 M⊕)^${num(BETWEEN, 3)} = ${km(ROCK_TOP)}·(${num(kg / ROCKY_MOST)})^${num(BETWEEN, 3)} = ${text}: between a rock of 10 Earths and Jupiter's size at 0.3 Jupiters (a world's size here depends on how much gas it has gathered)` };
+    case 'giant': case 'brown dwarf':
+      return { label, text, math: `R ≈ R♃ = ${km(R_JUPITER)}: ${s.rule === 'giant' ? 'a giant planet' : 'a brown dwarf'} is about Jupiter's size whatever its mass, its insides squeezed so hard that more mass makes it no larger` };
+    case 'star':
+      return { label, text, math: `${mainSequence(kg / M_SUN).radius.math}: a star of the main sequence (its temperature and light follow from its mass too)` };
+  }
 }

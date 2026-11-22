@@ -20,6 +20,7 @@ export const T_SUN = 5772;            // K
 export const M_EARTH = 5.9722e24;     // kg
 export const R_EARTH = 6.371e6;       // m
 export const M_JUPITER = 1.89813e27;  // kg
+export const R_JUPITER = 69_911e3;    // m (volumetric mean, NASA's fact sheet: the mean of the catalogue's 71,492 × 71,492 × 66,854 km)
 
 export interface Derived {
   value: number;

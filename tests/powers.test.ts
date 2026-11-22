@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { affected, circularVelocity, dayWords, dragPlane, FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, reachWords, shapeWords, spanWords, the, timesWords, viewFrame, WATCH_SECONDS, WATCH_SLOWEST, watchPlan, watchRate } from '../src/app/Powers';
+import {
+  affected, AIM_PER_CIRCLE, aimFactor, circularVelocity, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf,
+  FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords,
+  reachWords, shapeWords, snapThrow, spanWords, squareThrow, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
+  WATCH_SLOWEST, watchPlan, watchRate,
+} from '../src/app/Powers';
 import { M_EARTH, M_JUPITER, M_SUN } from '../src/sim/physics';
 
 const AU = 149_597_870_700, GM_SUN = 1.32712440018e20, DAY = 86_400;
@@ -168,6 +173,101 @@ describe('a body moved by a finger', () => {
   });
 });
 
+describe('a world thrown', () => {
+  it('is thrown at the speed of a circle or of escape exactly when near either, and no faster than three times a circle', () => {
+    expect(snapThrow(0.975)).toBe(1);
+    expect(snapThrow(1.025)).toBe(1);
+    expect(snapThrow(0.96)).toBe(0.96);
+    expect(snapThrow(1.38)).toBe(Math.SQRT2);
+    expect(snapThrow(1.45)).toBe(Math.SQRT2);
+    expect(snapThrow(1.5)).toBe(1.5);
+    expect(snapThrow(7)).toBe(THROW_MOST);
+    expect(snapThrow(-1)).toBe(0);
+    // never slower for a harder throw
+    let last = -1;
+    for (let f = 0; f <= 4; f += 0.001) {
+      const g = snapThrow(f);
+      expect(g).toBeGreaterThanOrEqual(last);
+      last = g;
+    }
+  });
+
+  it('by a flick as fast as the finger went: under 250 px a second no flick; 1,200 a circle, 1,700 escape; by a slingshot as long as its arrow', () => {
+    expect(flickFactor(240)).toBeNull();
+    expect(flickFactor(FLICK_SLOWEST)).toBeCloseTo(FLICK_SLOWEST / FLICK_PER_CIRCLE, 12);
+    expect(flickFactor(1200)).toBe(1);
+    expect(flickFactor(1700)).toBe(Math.SQRT2);
+    expect(flickFactor(2400)).toBe(2);
+    expect(flickFactor(50_000)).toBe(THROW_MOST);
+    expect(aimFactor(AIM_PER_CIRCLE)).toBe(1);
+    expect(aimFactor(Math.SQRT2 * AIM_PER_CIRCLE + 2)).toBe(Math.SQRT2);
+    expect(aimFactor(0.5 * AIM_PER_CIRCLE)).toBe(0.5);
+    expect(aimFactor(1000)).toBe(THROW_MOST);
+  });
+
+  it('takes a finger\'s speed as it lifts over its last 90 ms: not from one late place, and nothing for a finger that rested', () => {
+    // 1,000 px a second to the right, a place every 16 ms
+    const steady = Array.from({ length: 12 }, (_, k) => ({ t: 16 * k, x: 16 * k, y: 0 }));
+    const v = fingerVelocity(steady);
+    expect(v.speed).toBeCloseTo(1000, 9);
+    expect(v.dx).toBeCloseTo(1000, 9);
+    expect(v.dy).toBeCloseTo(0, 9);
+    // a last place that jumps 30 px does not decide it: it counts for what it moves in the window
+    const late = [...steady, { t: 16 * 12, x: 16 * 11 + 30, y: 0 }];
+    expect(fingerVelocity(late).speed).toBeLessThan(1400);
+    // fast, then still for 120 ms before it lifts: not moving
+    const rested = [...steady, { t: 16 * 11 + 120, x: 16 * 11, y: 0 }];
+    expect(fingerVelocity(rested).speed).toBe(0);
+    // a finger down for less than the window: from where it came down
+    expect(fingerVelocity([{ t: 0, x: 0, y: 0 }, { t: 40, x: 0, y: -40 }]).dy).toBeCloseTo(-1000, 9);
+    expect(fingerVelocity([{ t: 0, x: 5, y: 5 }]).speed).toBe(0);
+  });
+
+  it('is a flick if the finger set off less than 300 ms before it lifted, going fast; a pull held longer is an aim', () => {
+    // 200 px in 120 ms, after resting on the world for half a second: a flick, the way it went
+    const quick = [{ t: 0, x: 100, y: 100 }, { t: 500, x: 100, y: 100 }, ...Array.from({ length: 6 }, (_, k) => ({ t: 520 + 20 * k, x: 100 + 40 * (k + 1) * 0.6, y: 100 - 40 * (k + 1) * 0.8 }))];
+    const f = flickOf(quick)!;
+    expect(f).not.toBeNull();
+    expect(f.dx).toBeCloseTo(0.6, 9);
+    expect(f.dy).toBeCloseTo(-0.8, 9);
+    expect(f.f).toBe(snapThrow(2000 / FLICK_PER_CIRCLE));
+    // the same last 120 ms after 400 ms of pulling: an aim
+    const pulled = [{ t: 0, x: 100, y: 100 }, ...Array.from({ length: 20 }, (_, k) => ({ t: 20 * (k + 1), x: 100 + 2 * (k + 1), y: 100 })), ...quick.slice(2).map((p) => ({ ...p, x: p.x + 40 }))];
+    expect(flickOf(pulled)).toBeNull();
+    // slow, or never off the world: no flick
+    expect(flickOf([{ t: 0, x: 0, y: 0 }, { t: 100, x: 20, y: 0 }])).toBeNull();
+    expect(flickOf([{ t: 0, x: 0, y: 0 }, { t: 30, x: 5, y: 5 }])).toBeNull();
+    expect(flickOf([])).toBeNull();
+  });
+
+  it('at the speed of a circle, square to what holds sway, goes round in a circle; at the speed of escape any way, it does not come back', () => {
+    const r = [0.6 * AU, 0.8 * AU, 0], n = [0, 0, 1], d = Math.hypot(...r);
+    const square = [-r[1] / d, r[0] / d, 0];
+    const c = orbitOf(r, throwVelocity(r, GM_SUN, square, 1), GM_SUN);
+    expect(c.bound).toBe(true);
+    expect(c.e).toBeLessThan(1e-9);
+    expect(c.period / (365.25 * DAY)).toBeCloseTo(1.0, 2);
+    for (const dir of [square, [r[0] / d, r[1] / d, 0], [0.6 * square[0] + 0.8 * r[0] / d, 0.6 * square[1] + 0.8 * r[1] / d, 0]]) {
+      const o = orbitOf(r, throwVelocity(r, GM_SUN, dir, Math.SQRT2), GM_SUN);
+      expect(o.bound).toBe(false);
+      expect(reachWords(o)).toMatch(/then leaves$/);
+    }
+    // half a circle's speed, square: an oval with its far end where it was thrown
+    const h = orbitOf(r, throwVelocity(r, GM_SUN, square, 0.5), GM_SUN);
+    expect(h.apo / AU).toBeCloseTo(1, 9);
+    expect(h.e).toBeCloseTo(0.75, 9);
+    // within 3 degrees of square it is thrown square, the nearer way round; beyond, as aimed
+    const askew = (deg: number, sign = 1) => {
+      const a = (deg * Math.PI) / 180;
+      return [sign * (Math.cos(a) * square[0] + Math.sin(a) * r[0] / d), sign * (Math.cos(a) * square[1] + Math.sin(a) * r[1] / d), 0];
+    };
+    squareThrow(askew(2.5), r, n).forEach((x, k) => expect(x).toBeCloseTo(square[k], 12));
+    squareThrow(askew(2.5, -1), r, n).forEach((x, k) => expect(x).toBeCloseTo(-square[k], 12));
+    squareThrow(askew(4), r, n).forEach((x, k) => expect(x).toBeCloseTo(askew(4)[k], 12));
+    expect(THROW_SQUARE).toBeCloseTo((3 * Math.PI) / 180, 12);
+  });
+});
+
 describe('saying things', () => {
   it('names as they stand in a sentence, alone and in a list', () => {
     expect(the('Sun')).toBe('the Sun');
@@ -183,6 +283,8 @@ describe('saying things', () => {
     // (the day in UTC: J2000 is noon on the first of January, and half a day on is the second)
     expect(dayWords(2451545.0)).toBe('1 January 2000');
     expect(dayWords(2451545.6)).toBe('2 January 2000');
+    // (where there is little room, as in the mark of live physics on a phone)
+    expect(dayWords(2461315.0, true)).toBe('1 Oct 2026');
     expect(rateWords(1)).toBe('real time');
     expect(rateWords(600)).toBe('10 minutes a second');
     expect(rateWords(3 * DAY)).toBe('3 days a second');

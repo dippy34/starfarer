@@ -177,6 +177,29 @@ describe('what a change is watched for, in the real Solar System', () => {
     expect(plan.radius / (FRAME_MARGIN * o.apo)).toBeCloseTo(1, 3);
   });
 
+  it('the Moon thrown from where it is: its pull and the pull on it are as they were, and it is watched all the same; at escape the pace is its old month\'s', async () => {
+    const { sys, physics, named } = await setup();
+    const earth = named('Earth'), moon = named('Moon');
+    // three quarters of the speed of a circle, square to the Earth: an oval with its far end here
+    const r = moon.pos.clone().sub(earth.pos), ahead = r.clone().cross(moon.vel.clone().sub(earth.vel)).cross(r).normalize();
+    const mu = earth.gm + moon.gm, circle = Math.sqrt(mu / r.length());
+    let before = sample(physics, sys, moon);
+    physics.move(moon, moon.pos.toArray(), earth.vel.clone().addScaledVector(ahead, 0.75 * circle).toArray(), JD);
+    let plan = planChange('move', moon, before, sample(physics, sys, moon), earth, TOUCH_MOST)!;
+    const o = physics.orbit(moon)!;
+    expect(o.bound && o.e > 0.4).toBe(true);
+    expect(plan.rate).toBeCloseTo(o.period / 8, 0);
+    expect(plan.radius / (FRAME_MARGIN * o.apo)).toBeCloseTo(1, 3);
+    expect(plan.centre).toBe(earth);
+    // at the speed of escape: open, so the pace is the month it had before it was thrown
+    before = sample(physics, sys, moon);
+    const month = before.get(moon)!.period;
+    physics.move(moon, moon.pos.toArray(), earth.vel.clone().addScaledVector(ahead, Math.SQRT2 * circle).toArray(), JD);
+    plan = planChange('move', moon, before, sample(physics, sys, moon), earth, TOUCH_MOST)!;
+    expect(plan.rate).toBeCloseTo(month / 8, 0);
+    expect(plan.radius).toBeGreaterThan(FRAME_MARGIN * r.length());
+  });
+
   it('a moon made for the Earth: framed round the Earth, going round in its own period', async () => {
     const { sys, physics, named } = await setup();
     const earth = named('Earth');

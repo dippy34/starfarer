@@ -202,6 +202,13 @@ pictures and the same frame as before.
   that distance (72.7 days) and keeps to it for a fortnight; half way to the edge of the Earth's
   reach the Sun pulls hard, in ten weeks the Moon swings between half and one and a half times
   that distance, and after four months it goes round the Sun.
+  Or it is thrown (Move's Throw): it stays where it is and is given a velocity against what holds
+  sway there of f √(μ/r), f from the length of a slingshot's arrow (110 px for each speed of a
+  circle) or from a flick's speed (1,200 px a second), snapped to exactly 1 and √2, the way snapped
+  square to the line from what holds sway within 3°, at most f = 3 (`Powers.snapThrow`,
+  `squareThrow`, `throwVelocity`; `LivePhysics.move` with its place unchanged). The Moon flicked at
+  1.56 speeds of a circle is free of the Earth at once: the simulation has it go round the Sun, on
+  an orbit like the Earth's, and says so.
 * **Add** (`src/app/WhatIf.ts`, `LivePhysics.make`). A planet or a dwarf planet can be given a
   moon; a star a planet like the Earth, one like Jupiter, or a second sun. A plan says what the
   new body is, as the catalogue would describe one, and where it starts: on a circle, 0.55 of the
@@ -217,7 +224,11 @@ pictures and the same frame as before.
   Neptune and two others behind at once). A copy has the size, mass, spin and face of the
   catalogue's body (whatever has been done to the original since), and its nature where the code
   knows a world by its name (`Body.nature`: a copy of a gas giant is one); not its air, clouds,
-  rings, lights or measured ground. What was made stays in `App.made` until the return to reality
+  rings, lights or measured ground. While it is put in place its mass can be set (`App.setMadeMass`,
+  `LivePhysics.resize`: mass and size in the simulation), and its size follows from it by the rule
+  for its kind (`WhatIf.madeSize`: rock and ice for a moon, the Earth's density, Jupiter's size
+  from 0.3 Jupiters, a bridge between the two in the logarithm, a star of the main sequence).
+  What was made stays in `App.made` until the return to reality
   (what was removed again too: gone like any removed world), at most 24. Two bodies of exactly one
   mass are possible now. The lighter side of a pair goes round the heavier, and of two sides of
   exactly one mass the second goes round the first (`NBody.primaries`), so that `Body.parent`
