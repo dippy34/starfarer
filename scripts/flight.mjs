@@ -562,7 +562,16 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the 
   await f.frames(2);
   const open = await phone.evaluate(() => document.querySelector('.more .missions').open);
   await f.tap(await at('.more [data-help]'));
-  await phone.waitForTimeout(800);
+  // (the list scrolls to the help smoothly, a frame at a time: until the help is in sight and the
+  // list has stood still for two frames, rather than a fixed 800 ms, which at one frame a second
+  // on a runner was over before the scroll began; what is checked below is unchanged)
+  await phone.waitForFunction(() => {
+    const t = document.querySelector('.more .help-title').getBoundingClientRect(), list = document.querySelector('.more .list'), l = list.getBoundingClientRect();
+    const w = (window.__helpScroll ??= { top: -1, still: 0 });
+    w.still = list.scrollTop === w.top ? w.still + 1 : 0;
+    w.top = list.scrollTop;
+    return t.top >= l.top - 1 && t.bottom <= l.bottom && w.still >= 2;
+  }, null, { timeout: 60000, polling: 'raf' }).catch(() => undefined);
   const help = await phone.evaluate(() => { const t = document.querySelector('.more .help-title').getBoundingClientRect(), l = document.querySelector('.more .list').getBoundingClientRect(); return t.top >= l.top - 1 && t.bottom <= l.bottom; });
   check('More: How to move first (and it scrolls to the help), the missions with their count', /^How to move/.test(more.first) && /\d+ of \d+ done/.test(more.missions) && more.items >= 20 && open && help, JSON.stringify({ ...more, open, help }));
   await phone.evaluate(() => document.querySelector('.more [data-act="menu"]').scrollIntoView({ block: 'center' }));
