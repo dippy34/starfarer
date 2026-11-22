@@ -89,6 +89,10 @@ float rockShadow(vec3 p, float bias, float lite, out float ao) {
   if (lit < 0.0) lit = rockPcf((uRockShM1 * vec4(p, 1.0)).xyz, 0.5, bias * 3.0, lite);
   ao = rockAoAt((uRockAOM * vec4(p, 1.0)).xy, 0.0);
   if (ao < 0.0) ao = rockAoAt((uRockAOM1 * vec4(p, 1.0)).xy, 0.5);
+  // (beyond both cascades there is no contact shading: rockAoAt's -1 for "outside" used to come
+  // back as the shading itself, and lit all the ground beyond 40 % brighter than within: a
+  // hard-edged darker square round the explorer)
+  ao = max(ao, 0.0);
   return lit < 0.0 ? 1.0 : lit;
 }
 `;

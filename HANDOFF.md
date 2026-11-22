@@ -650,7 +650,7 @@ of stars, measured from the frames; 18),
 powers, each through the interface on a phone and at a desk, and watching a change, Replay and
 Undo, upright and sideways; 101: `LIVE_ONLY=watch,jupiter,sun,moon,made` picks blocks),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
-`terrain` (14), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
+`terrain` (15), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
 time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
@@ -1346,6 +1346,14 @@ above is validated against JPL Horizons and stays as it is unless something is w
        matched the word alike, and the ties kept the catalogue's order. The curated holes now
        rank in the order of the Explore list (`HOLES`: Sagittarius A*, M87*, Cygnus X-1, ...),
        and the tour has those three beside Gaia BH1. `scripts/interact.mjs` (15 checks).
+     - *Hard-edged darker squares on the Moon's ground* (C1; two players, four places, from
+       kilometres up down to 30 m). The rocks' shadow map covers a square round the explorer (two
+       cascades, ±13 and ±100 m; ±10 and ±60 on a phone); its contact shading (`rockAoAt`) says -1
+       for a point outside both, and `rockShadow` passed that on: the ground shader brightens by
+       `1 - 0.4 * ao`, so everything beyond the map was 40 % too bright and the map's square
+       looked dark. The contact term is now never below 0 (`Materials.ts`). The ground beyond is
+       as bright as within. `scripts/terrain.mjs` checks that the rocks only darken the ground
+       (15 checks).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
