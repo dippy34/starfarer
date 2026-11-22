@@ -234,7 +234,8 @@ await shot('f14-alpha-cen.png');
   await f.tap(await at('.switch[data-act="ship"]'));
   await f.frames(4);
   st = await phone.evaluate(() => ({ mode: window.app.game.mode, on: window.app.game.flight.on, tabs: getComputedStyle(document.querySelector('.hud-tabs')).display !== 'none', g: window.app.game.flight.ship.driveAccel / 9.80665 }));
-  const boarded = st.mode === 'cockpit' && st.on && st.tabs;
+  // (a phone opens the ship in the chase view)
+  const boarded = st.mode === 'chase' && st.on && st.tabs;
   await f.tap(await at('.fl-touch [data-step="up"]'));
   await f.frames(2);
   const g2 = await phone.evaluate(() => ({ g: window.app.game.flight.ship.driveAccel / 9.80665, shown: document.querySelector('.fl-touch span').textContent }));

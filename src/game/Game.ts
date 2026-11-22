@@ -8,6 +8,7 @@ import { ShipAudio } from './Audio';
 import { Cockpit } from './Cockpit';
 import { Missions } from './Missions';
 import { LIGHT, ShipModel } from './ShipModel';
+import { ShipArt } from './ShipArt';
 import { Traffic, TrafficShip } from './Traffic';
 import { HudMarkers } from './HudMarkers';
 import { Station } from './Station';
@@ -50,6 +51,8 @@ export class Game {
   readonly flight: Flight;
   readonly viz = new FlightViz();
   readonly flightHud: FlightHud;
+  /** the ship's looks: light, drive, framing, the names' mask (ShipArt.ts) */
+  readonly art: ShipArt;
   private hudTimer = 0;
   /** docking in progress: offset of the camera from the hold point when it started (station axes) */
   private docking: { station: Station; t: number; from: Vector3; q0: Quaternion } | null = null;
@@ -80,6 +83,7 @@ export class Game {
       toggleDrive: () => this.flight.toggleDrive(),
     });
     this.missions = new Missions(app);
+    this.art = new ShipArt(app, this);
     this.missions.onComplete = (m) => {
       app.hud.toast(`Mission complete: ${m.title}!`);
       if (app.vr.active) app.vr.flash(`Mission complete: ${m.title}!`);
@@ -142,6 +146,7 @@ export class Game {
 
   update(dt: number): void {
     this.missions.update(dt);
+    this.art.update(dt);
     if (!this.active) return;
     const app = this.app, rig = app.rig;
     this.updateLight();

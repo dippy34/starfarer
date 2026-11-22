@@ -396,6 +396,107 @@ it: `docs/notes/gravity-engine.md`.
   `powers.test.ts`, `mover.test.ts`, `whatif.test.ts`; `scripts/live.mjs` (`npm run verify:live`:
   every power through the interface, on a phone with fingers and at a desk) and `scripts/whatif.mjs`.
 
+## The ship's looks (an art pass)
+
+The owner, with a screenshot from an iPhone held sideways in orbit of the Earth: "The spaceship
+looks horrible." What it showed: the cockpit was greybox (flat grey slabs for the windscreen's
+pillars and a beam across the top, a grey desk with three tilted screens, coloured hexagons for
+lamps), eating a third of the view; the names of stars stood on the beam ("Pollux", "Elnath"); the
+orbit's "Ap" marker was large over the Earth and the target's brackets large round the target. The
+chase view's ship was primitives: grey cylinders with flat white caps, thin wings edged in orange.
+(The orbit lines were in fact hidden by the frame, on the phone as here: what crossed it were the
+overlays drawn with no depth test, the names, the tags and the brackets.)
+
+- *The ship* (`src/game/shipDesign.ts`, built by `shipGeometry.ts`, painted by `stencil.ts`): an
+  original surveyor of the near future, 17.4 m long, 15.7 across its radiators, nose to -z. A crew
+  cabin shaped as a lifting body (it lands on worlds): white plates with their seams, a dark tiled
+  heat shield underneath, a wraparound canopy of dark glass (glossy: what it mirrors is its look)
+  with two pillars and a bow, its name on the flanks; a waist with the reactionless drive's emitter
+  band; two radiators swept back like wings (a fusion torch must reject its heat), a dark coat
+  framed by light-painted booms and joints (whatever light they catch, the star's or a world's,
+  draws their outline against black space), its registration on them, the navigation lights on their
+  tips (red to port, green to starboard), a strobe on the engine and a red beacon underneath; the
+  fusion torch: the reactor's housing in a band of gold foil and a bell of brushed metal held by two
+  field coils, dark inside, the throat glowing deep in it. 12,231 triangles in one draw call, the
+  lamps' halos in one, the plume in one (the shadow map one more). Traffic ships wear the same model
+  in their own paint, without the markings or the shadow map, culled when out of view. Made up: the
+  name STARFARER and the registration SF-07; no agency's marks, no film's ship.
+- *The drive shows* (`ShipModel.setDrive`, fed by `ShipArt` from `Flight`): the torch, a plume (a
+  bright core leaving the bell, fading within metres: a fusion exhaust is all but invisible), the
+  radiators glowing a dull red from their roots while it burns (they take seconds to heat and longer
+  to cool), the bell's inside orange with its heat after a burn; the reactionless drive, no exhaust
+  (it has none to show), its band glowing a pale blue with a slow shimmer.
+- *Materials and light* (`shipShader.ts`, `ShipLight.ts`): physically based (GGX, Smith, Schlick),
+  every vertex carrying its finish (base colour, roughness, metalness, a pattern drawn in metres
+  along the surface: painted plates with seams, brushed metal, tiles, the radiators' heat pipes,
+  foil, dark anodising, lamps), one tileable noise texture built from typed arrays. Lit by the star
+  the app lights everything with (display-referred as before: a white plate square to the Sun at 1
+  AU is shown at `KEY`, 1.4; half that by Saturn), dimmed by the share of its disc a world covers
+  (in the Earth's shadow the ship is dark but for its own lamps), and by the world nearby: its
+  sunlit face lights the side turned to it by its albedo and phase, in its colour (Earthshine,
+  Saturn's warm light), and is mirrored in what shines. No ambient term. The lamps light the hull
+  round them; the ship casts shadows on itself from the star (`shipShadow.ts`: a 1024 x 1024 map of
+  the hull seen from the star, redrawn each frame of the chase view, kept by MIN blending so it is
+  the same in either depth mode; four taps).
+- *The cockpit* (`Cockpit.ts`): a slim frame round a large canopy, dark (a dielectric black whose
+  rounded edges catch the star: backlit it is a dark rod with a bright rim), placed so that space
+  fills the view (`cockpitDesign.ts`): the windscreen's pillars 55 degrees out all the way up (a
+  phone held sideways sees them at its edges, an upright one and a desk's wide view not at all), the
+  bow 28 degrees up (an upright phone sees it as a thin line just under its instruments; one held
+  sideways along its top), the spine starting high overhead, the sill 34 degrees down. On a touch
+  screen the dashboard is only its top, low in the view (the numbers are the interface's card); at a
+  desk and in a headset a console under the windscreen carries the three live screens (bezelled,
+  restyled as dark glass), a thin light line under its lip and a few lamps. The glass shows only
+  what glass shows: a sharp glint of the star where it mirrors it, a faint sheen, and, looking
+  towards the star, the dust and smudges it lights and a soft haze.
+- *No clutter.* What covers the view (the frame's members and the dashboard in the cockpit, the ship
+  in the chase view) is a mask of shapes on the screen (`render/ViewMask.ts`, set each frame by
+  `ShipArt`): a name whose object is behind it goes, and a name whose text would lie across it moves
+  to the other side of its point or goes (`layoutLabels`, its `mask` argument). The head-up brackets
+  (`HudMarkers.ts`) and the orbit's tags (`FlightViz.ts`) are depth-tested and set beyond the frame
+  and the ship (4 m and 300 m out), so the frame and the ship hide them as they hide the sky; and
+  they are sized in CSS pixels: brackets 34 px square (96 px with the distance under them), a tag
+  104 px wide with its name about 11 px high. The tags were sized in the frame's own pixels (150 of
+  them), so when the quality governor drew the frame at a lower resolution they grew: on the owner's
+  phone the "Ap" was about 13 CSS px high where it was meant to be 6.
+- *The chase view* (`ShipModel.frameChase`): the camera looks down on the ship by about 20 degrees
+  (the view's own slant and the ship's nose 12 degrees up from it), so the radiators' tops, the
+  registration and the canopy show; upright the ship is centred under the middle, its radiators
+  about 70 % of the width, clear of the instruments above and the card below; sideways a third of
+  the width and to the right of the middle, over the shoulder (the selection card covers the middle
+  of a sideways phone, and the middle stays clear for what is ahead). Turning, the ship leads the
+  camera a little and banks into the turn (`ShipArt`: the rig's turn rate, smoothed).
+- *On a phone the ship opens in the chase view* (`App.act('ship')`; a desk still opens the cockpit,
+  V switches): it is what this pass is for (the ship, its lamps, which drive is on, the plume) and
+  shows only from outside, and a phone's cockpit view is nearly all open space anyway: the
+  interface's card carries the instruments, and upright the frame is a line under them. A touch
+  button to switch between the two views is the phone-flying work's (Hud/FlightHud).
+- Checks: `tests/shipart.test.ts` (8: the geometry's winding and soundness, the triangle budget, the
+  frame's share of a phone's view, the mask, names in the ship, the light's arithmetic, the chase
+  framing); `scripts/ship.mjs` (25 checks, upright and sideways on a phone: the frame slim, no name
+  over the frame or the ship and a name turned behind the frame hidden, the markers' sizes in CSS px
+  also at a lower resolution, overlays never drawn over the frame or the ship (to the pixel, measured
+  without the bloom, whose glow falls over everything), the ship on the screen and not under the
+  interface, lit, the drives, draw calls and triangles).
+- Frame time on the owner's screen (390 x 844 CSS px at 3, software WebGL here; the scene, the
+  best of seven renders, the two builds in turn, in orbit of Earth and of Saturn). This machine's
+  load moved the same "ship off" view by up to 13 % between the builds' turns, so the comparison
+  is coarse: the chase view the same within that (Earth upright 881 -> 878 ms, sideways 794 ->
+  871); the cockpit view 10 to 30 % more (Earth upright 798 -> 936 ms), as the old cockpit hid a
+  third of the view and the new one shows it. Drawn with and without in one page (where the load
+  cancels), the new frame and dashboard cost 6 % of the scene (53 ms of 900) and the glass nothing
+  to speak of: it spans the whole view, so its shader works only where it shows something (its
+  mirror images of the star and of the world, and round the star); worked out everywhere it took
+  a fifth of the cockpit's drawing time. Draw calls fell (cockpit view 172 -> 154, chase 158 ->
+  142); triangles rose by 6,000 in the cockpit view and 11,500 in the chase view.
+- Seen and left: the stations (`Station.ts`) keep the old flat `litMaterial`; next to the ship they
+  now look plainer than it. In a headset the names are 3D sprites the frame does not mask (the mask
+  is for the names laid over a screen). Whether a radiator reads in shade depends on what lights it:
+  its light-painted edges and the world's light show its outline, but a panel turned from every
+  light is dark, as it would be. The cockpit's screens are the desk's and the headset's only; a
+  phone has the interface's card, and its view switch (chase and cockpit) is the phone-flying
+  work's.
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
@@ -420,7 +521,8 @@ of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
 powers, each through the interface on a phone and at a desk; 75),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
-`terrain` (14), `flight` (34). At most three at a time on four cores (more
+`terrain` (14), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
+time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
 Every script starts its browser through `scripts/lib/browser.mjs`; set `CHROMIUM_PATH` to use an

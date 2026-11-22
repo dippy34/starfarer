@@ -1,3 +1,5 @@
+import { VIEW_MASK, type ViewMask } from './ViewMask';
+
 /** HTML labels with greedy overlap rejection. */
 export interface LabelCandidate {
   key: string;
@@ -31,16 +33,24 @@ export const ONE_POINT = 3;
  * Where the names go (pure: no DOM): by priority, each up and to the right of its object, clear of
  * the object's own disc (`radius`, counted up to 40 px), skipping one that would overlap a name
  * already placed, lie off the screen, or name a point already named (but for one set over another
- * object on purpose).
+ * object on purpose). In the ship, `mask` is what covers the view (the cockpit's frame, the ship
+ * itself: `ViewMask`): an object behind it goes unnamed, and a name that would lie across it goes
+ * to the other side of its point, or goes.
  */
-export function layoutLabels(cands: LabelCandidate[], width: number, height: number): Shown[] {
+export function layoutLabels(cands: LabelCandidate[], width: number, height: number, mask: ViewMask | null = null): Shown[] {
   const shown: Shown[] = [];
   const sorted = [...cands].sort((a, b) => b.priority - a.priority);
+  const masked = !!mask && !mask.empty;
   for (const c of sorted) {
     if (shown.length >= MAX_SHOWN) break;
+    if (masked && mask.covers(c.x, c.y)) continue;
     const w = 7 * c.text.length + 6, h = 14;
-    const x = c.x + Math.min(c.radius, 40) * 0.72 + 4;
+    let x = c.x + Math.min(c.radius, 40) * 0.72 + 4;
     const y = c.y - Math.min(c.radius, 40) * 0.72 - h + 2;
+    if (masked && mask.overlapsRect(x, y, w, h)) {
+      x = c.x - Math.min(c.radius, 40) * 0.72 - 4 - w;
+      if (mask.overlapsRect(x, y, w, h)) continue;
+    }
     if (x > width || y > height || x + w < 0 || y + h < 0) continue;
     let free = true;
     for (const b of shown) {
@@ -61,7 +71,7 @@ export class Labels {
 
   update(cands: LabelCandidate[], width: number, height: number): void {
     this.used.clear();
-    this.shown = this.enabled ? layoutLabels(cands, width, height) : [];
+    this.shown = this.enabled ? layoutLabels(cands, width, height, VIEW_MASK) : [];
     for (const { x, y, c } of this.shown) {
       let el = this.nodes.get(c.key);
       if (!el) {

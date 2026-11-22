@@ -1,5 +1,5 @@
 import {
-  BufferAttribute, BufferGeometry, CanvasTexture, DynamicDrawUsage, Group, LinearFilter, Line, Mesh, MeshBasicMaterial,
+  BufferAttribute, BufferGeometry, CanvasTexture, DynamicDrawUsage, Group, LinearFilter, LinearMipmapLinearFilter, Line, Mesh, MeshBasicMaterial,
   NormalBlending, PlaneGeometry, type PerspectiveCamera, type Quaternion, ShaderMaterial, SRGBColorSpace, Vector3,
 } from 'three';
 import type { UPos } from '../core/upos';
@@ -36,7 +36,14 @@ ${OUTPUT_FRAGMENT}
 
 const MAX_POINTS = 2400;
 
-/** A flat label sprite drawn on a canvas, kept at a fixed apparent size in front of the eye. */
+/** Width of a tag on the screen (CSS px): its title about 11 px high, as the names on the sky. */
+export const TAG_CSS_WIDTH = 104;
+
+/**
+ * A flat label sprite drawn on a canvas, kept at a fixed size on the screen in CSS pixels (a
+ * phone's as a desk's, whatever the resolution the frame is drawn at), depth-tested so that the
+ * ship and the cockpit's frame hide it.
+ */
 class Tag {
   readonly mesh: Mesh;
   private canvas = document.createElement('canvas');
@@ -45,13 +52,14 @@ class Tag {
   private last = '';
 
   constructor() {
-    this.canvas.width = 256;
-    this.canvas.height = 96;
+    this.canvas.width = 512;
+    this.canvas.height = 192;
     this.ctx = this.canvas.getContext('2d')!;
     this.tex = new CanvasTexture(this.canvas);
     this.tex.colorSpace = SRGBColorSpace;
-    this.tex.minFilter = LinearFilter;
-    this.mesh = new Mesh(new PlaneGeometry(1, 96 / 256), new MeshBasicMaterial({ map: this.tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    this.tex.minFilter = LinearMipmapLinearFilter;
+    this.tex.magFilter = LinearFilter;
+    this.mesh = new Mesh(new PlaneGeometry(1, 192 / 512), new MeshBasicMaterial({ map: this.tex, transparent: true, depthTest: true, depthWrite: false, toneMapped: false }));
     this.mesh.renderOrder = 998;
     this.mesh.frustumCulled = false;
     this.mesh.visible = false;
@@ -62,19 +70,26 @@ class Tag {
     if (key === this.last) return;
     this.last = key;
     const c = this.ctx;
-    c.clearRect(0, 0, 256, 96);
-    // a diamond on the left marks the exact spot
+    c.clearRect(0, 0, 512, 192);
+    // (drawn at 512 for 104 CSS px: about five canvas pixels to the CSS pixel)
+    // a small diamond on the left marks the exact spot
     c.fillStyle = color;
+    c.strokeStyle = 'rgba(0, 8, 16, 0.6)';
+    c.lineWidth = 6;
     c.beginPath();
-    c.moveTo(16, 30); c.lineTo(28, 42); c.lineTo(16, 54); c.lineTo(4, 42); c.closePath(); c.fill();
-    c.font = '700 30px system-ui, sans-serif';
+    c.moveTo(22, 50); c.lineTo(40, 68); c.lineTo(22, 86); c.lineTo(4, 68); c.closePath();
+    c.stroke();
+    c.fill();
     c.textBaseline = 'middle';
-    c.shadowColor = 'rgba(0,0,0,0.9)';
-    c.shadowBlur = 6;
-    c.fillText(title, 38, 30);
-    c.font = '500 24px system-ui, sans-serif';
-    c.fillStyle = 'rgba(230,240,255,0.95)';
-    c.fillText(sub, 38, 66);
+    c.lineJoin = 'round';
+    c.font = '700 54px Inter, system-ui, sans-serif';
+    c.lineWidth = 10;
+    c.strokeText(title, 58, 54, 448);
+    c.fillText(title, 58, 54, 448);
+    c.font = '500 46px Inter, system-ui, sans-serif';
+    c.fillStyle = 'rgba(230,240,255,0.92)';
+    c.strokeText(sub, 58, 118, 448);
+    c.fillText(sub, 58, 118, 448);
     this.tex.needsUpdate = true;
   }
 }
@@ -95,6 +110,8 @@ export class FlightViz {
   private screenMat: ShaderMaterial;
   private shown: Predictor | null = null;
   private shownCount = -1;
+  /** radians per CSS pixel of the view (set every frame by the game; 0: size by `pixelAngle` as before) */
+  cssPixel = 0;
 
   constructor() {
     this.group.name = 'flight-path';
@@ -203,17 +220,20 @@ export class FlightViz {
       const t = this.tags[k++];
       const [title, sub, color] = describe(e, groundR);
       t.set(title, sub, color);
-      // place it along the true direction, 30 m out, with a fixed apparent size
+      // place it along the true direction, 300 m out (beyond the ship and the cockpit's frame, which
+      // hide it), with a fixed size on the screen
       const world = _w.copy(e.pos).add(rel);
       const dist = world.length();
       if (dist <= 0) continue;
-      const D = 30;
+      const D = 300;
       t.mesh.position.copy(world).multiplyScalar(D / dist);
-      const size = Math.max(pixelAngle * 150, 0.004) * D;
+      const size = (this.cssPixel > 0 ? this.cssPixel * TAG_CSS_WIDTH : Math.max(pixelAngle * 150, 0.004)) * D;
       t.mesh.scale.setScalar(size);
       t.mesh.quaternion.copy(viewQuat);
       // shift so the diamond (not the centre) sits on the point
-      t.mesh.position.addScaledVector(_x.set(1, 0, 0).applyQuaternion(viewQuat), size * 0.44);
+      t.mesh.position.addScaledVector(_x.set(1, 0, 0).applyQuaternion(viewQuat), size * 0.456);
+      // (the diamond sits above the quad's middle: the quad goes down by as much)
+      t.mesh.position.addScaledVector(_x.set(0, 1, 0).applyQuaternion(viewQuat), size * (192 / 512) * (68 / 192 - 0.5));
       t.mesh.visible = true;
     }
   }

@@ -585,7 +585,8 @@ export class App {
     switch (action) {
       case 'go': if (this.selection) this.goTo(this.selection); break;
       case 'centre': if (this.selection) this.center(this.selection); break;
-      case 'ship': this.game.setMode(this.game.active ? 'off' : 'cockpit'); break;
+      // (on a phone the ship opens in the chase view: HANDOFF, "The ship's looks")
+      case 'ship': this.game.setMode(this.game.active ? 'off' : this.input.touch ? 'chase' : 'cockpit'); break;
       // the place chip: look at where the camera is; in open space, choose somewhere to go
       case 'home': if (this.rig.target) this.center(this.rig.target); else this.hud.openExplore(); break;
       case 'deselect': this.select(null); break;
