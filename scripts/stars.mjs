@@ -45,13 +45,9 @@ async function open(target, dist) {
   await settle(page, 25);
   return page;
 }
-/**
- * `n` frames of the app. (Each at least 105 ms after the one before it began, App.lastTime: App.frame
- * clamps its step to 0.1 s, so every frame is a tenth of a second of its time, as before, without a
- * further 105 ms after whatever came between.)
- */
+/** `n` frames of the app. */
 const settle = (page, n) => page.evaluate(async (n) => {
-  for (let i = 0; i < n; i++) { await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now()))))); window.app.frame(); }
+  for (let i = 0; i < n; i++) { await new Promise((res) => setTimeout(res, 105)); window.app.frame(); }
 }, n);
 
 /**
@@ -188,7 +184,7 @@ const rgb = (p) => `(${p.join(', ')})`;
     const g = c.getContext('2d', { willReadFrequently: true });
     for (let k = 0; k <= 16; k++) {
       a.placeNear(sun, 4 * (1.5 / 4) ** (k / 16) * sun.radius, 0, 0);
-      for (let i = 0; i < 2; i++) { await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now()))))); a.frame(); }
+      for (let i = 0; i < 2; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
       // (the view holds what it is aimed at a little above the middle of an upright screen)
       g.drawImage(gl, (gl.width - S) / 2, 0.42 * gl.height - S / 2, S, S, 0, 0, S, S);
       const d = g.getImageData(0, 0, S, S).data, L = new Float32Array(S * S);
@@ -234,7 +230,7 @@ const rgb = (p) => `(${p.join(', ')})`;
   const turning = (page) => page.evaluate(async () => {
     const a = window.app, b = a.bodies, star = b.sunLooks.get(a.system.sun);
     const t0 = b.time, s0 = star.turned;
-    for (let i = 0; i < 10; i++) { await new Promise((res) => setTimeout(res, Math.max(0, 105 - (performance.now() - (window.app.lastTime ?? performance.now()))))); a.frame(); }
+    for (let i = 0; i < 10; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
     return (star.turned - s0) / (b.time - t0);
   });
   const far = await turning(page);
