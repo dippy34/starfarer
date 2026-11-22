@@ -10,3 +10,4 @@ __pycache__/
 .vite/
 dist-game/
 dist-dev/
+/out/
