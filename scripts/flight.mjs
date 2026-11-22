@@ -545,6 +545,7 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the 
   const ctx = await phoneContext(browser);
   const phone = await ctx.newPage();
   collectErrors(phone, errors);
+  await phone.addInitScript(() => { const o = Element.prototype.scrollIntoView; Element.prototype.scrollIntoView = function (arg) { if (this.classList?.contains('help-title')) return; return o.call(this, arg); }; }); // DIAG (throwaway): the bug put back
   await phone.goto(`${base}?target=Earth`, { waitUntil: 'load' });
   await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
   const f = await fingers(phone);

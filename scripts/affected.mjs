@@ -25,7 +25,7 @@ export const FULL = ['start', 'touch', 'interact', 'verify', 'exposure', 'stars'
  */
 export const PARTS = {
   walk: [{ part: 'touch', args: 'touch' }, { part: 'desktop', args: 'desktop' }, { part: 'vr', args: 'vr' }],
-  flight: [{ part: 'desk', env: { FLIGHT_ONLY: 'desk' } }, { part: 'phone', env: { FLIGHT_ONLY: 'phone' } }],
+  flight: [{ part: 'phone', env: { FLIGHT_ONLY: 'phone' } }],
 };
 
 /** One job per suite, or per part of a split suite: { name, suite, args, env } (env: KEY=value words). */
