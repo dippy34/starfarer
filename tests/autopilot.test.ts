@@ -1,7 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { UPos } from '../src/core/upos';
-import { autopilotRate, inTheWay, placeSlot, type Situation, steer, type Steering } from '../src/game/Autopilot';
+import { autopilotRate, brake, inTheWay, placeSlot, type Situation, steer, type Steering } from '../src/game/Autopilot';
 import { C, GravityField, makeSource, type GravitySource } from '../src/sim/Gravity';
 import { flipAndBurn } from '../src/sim/Relativity';
 import { FlightCore, G0, SHIP_SPEC } from '../src/sim/ShipPhysics';
@@ -201,5 +201,94 @@ describe('the autopilot', () => {
     // at a million g, a tenth of the rapidity a frame: 3 s aboard
     st.tauGo = 1e6;
     expect(autopilotRate(1e5, st, 0.1, 1e6 * G0)).toBeCloseTo((0.1 * C) / (1e6 * G0) / 0.1, 9);
+  });
+});
+
+/**
+ * Stop, flown as Flight flies it: the situation is the ship's own place in the frame of `world`,
+ * the wheels turn the nose at 0.5 rad/s of real time, the warp held back by autopilotRate; with
+ * `stopAtRest`, done at rest (where nothing pulls Flight lets go there).
+ */
+function flyStop(core: FlightCore, world: GravitySource, rate: number, realDt: number, maxFrames: number, stopAtRest: boolean, onFrame?: (st: Steering) => void) {
+  const ship = core.ship;
+  const sit: Situation = { rel: new Vector3(), w: new Vector3(), slotAccel: new Vector3(), gravity: new Vector3(), nose: new Vector3(), drive: ship.driveAccel, rcs: SHIP_SPEC.rcsThrust / ship.mass, dt: 0, radius: 0, orbit: 0 };
+  const st: Steering = { aim: NOSE.clone().applyQuaternion(ship.quat), throttle: 0, rcs: new Vector3(), turning: false, tauGo: Infinity, tGo: Infinity, phase: 'turning', arrived: false };
+  let frames = 0, proper = 0;
+  for (; frames < maxFrames; frames++) {
+    core.chooseFrame();
+    placeSlot(sit, new Vector3(), ship.properVelocity(), world.vel, 0, 0, null);
+    core.field.gravityAt(ship.upos, sit.gravity).sub(core.field.gravityAt(world.upos, new Vector3()));
+    sit.nose.copy(NOSE).applyQuaternion(ship.quat);
+    brake(sit, st);
+    onFrame?.(st);
+    if (st.arrived && stopAtRest) break;
+    ship.throttle = st.throttle;
+    ship.rcs.copy(st.rcs).applyQuaternion(ship.quat.clone().invert()).divideScalar(sit.rcs).clampScalar(-1, 1);
+    const nose = sit.nose, ang = nose.angleTo(st.aim);
+    if (ang > 1e-9) {
+      const axis = nose.clone().cross(st.aim);
+      if (axis.lengthSq() < 1e-18) axis.set(0, 1, 0);
+      ship.quat.premultiply(new Quaternion().setFromAxisAngle(axis.normalize(), Math.min(ang, 0.5 * realDt)));
+    }
+    const tau = realDt * autopilotRate(rate, st, realDt, ship.driveAccel);
+    const dt = core.universeTimeFor(tau);
+    sit.dt = dt;
+    core.step(dt);
+    world.upos.addVec(world.vel, dt);
+    core.place();
+    proper += tau;
+    if (core.event) break;
+  }
+  return { st, frames, proper, event: core.event };
+}
+
+describe('Stop', () => {
+  it('brakes a ship at γ = 10 to rest, in about the proper time it said, never faster than light', () => {
+    const field = new GravityField();
+    const star = makeSource({ name: 'Star', gm: 1.3e20, radius: 7e8, upos: UPos.from(0, 0, 0) });
+    field.sources = [star];
+    const core = new FlightCore(field);
+    core.ship.upos.copy(UPos.from(3e15, 1e15, 0));
+    core.ship.drive = 'reactionless';
+    core.ship.driveAccel = 100 * G0;
+    // γ = 10 along +x, nose pointing the way it goes (it has to turn round to brake)
+    core.ship.setProperVelocity(new Vector3(Math.sqrt(99) * C, 0, 0));
+    core.ship.quat.setFromUnitVectors(NOSE, new Vector3(1, 0, 0));
+    core.syncRel();
+    let said = NaN, fastest = 0;
+    const r = flyStop(core, star, 1e5, 0.05, 200000, true, (st) => {
+      if (Number.isNaN(said) && st.phase === 'braking') said = st.tauGo;
+      fastest = Math.max(fastest, core.ship.vel.length());
+    });
+    expect(r.event).toBeNull();
+    expect(r.st.arrived).toBe(true);
+    expect(core.ship.properVelocity().length()).toBeLessThan(0.5);
+    expect(fastest).toBeLessThan(C);
+    // (c/a) asinh(γβ) at 100 g: 10.6 days aboard; the turn round and the gentle end add a little
+    expect(said / ((C / (100 * G0)) * Math.asinh(Math.sqrt(99)))).toBeCloseTo(1, 2);
+    expect(r.proper / said).toBeGreaterThan(0.99);
+    expect(r.proper / said).toBeLessThan(1.1);
+  });
+
+  it('from a low orbit, comes to rest over the world and holds there against its pull', () => {
+    const field = new GravityField();
+    const earth = makeSource({ name: 'Earth', gm: 3.986004418e14, radius: 6.371e6, upos: UPos.from(1.5e11, 0, 0) });
+    field.sources = [earth];
+    const core = new FlightCore(field);
+    core.groundR = earth.radius;
+    core.setCircularOrbit(earth, earth.radius + 400e3, new Vector3(1, 0, 0), new Vector3(0, 0, 1));
+    core.ship.drive = 'reactionless';
+    core.ship.driveAccel = 5 * G0;
+    const r = flyStop(core, earth, 1, 0.05, 6000, false);
+    expect(r.event).toBeNull();
+    const rel = core.ship.upos.sub(earth.upos, new Vector3());
+    const v = core.ship.vel.clone().sub(earth.vel).length();
+    expect(r.st.phase).toBe('holding');
+    expect(v).toBeLessThan(0.5);
+    // it fell a little while it braked (7.7 km/s at 4 g net), then held: still far above the ground
+    expect(rel.length() - earth.radius).toBeGreaterThan(300e3);
+    // holding: the drive pushes up against the Earth's 8.7 m/s² (a little more than a third of 5 g)
+    expect(r.st.throttle).toBeGreaterThan(0.15);
+    expect(r.st.throttle).toBeLessThan(0.2);
   });
 });

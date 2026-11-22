@@ -11,7 +11,7 @@ import { type Atmosphere, type Drive, FlightCore, type FlightEvent, G0, SHIP_SPE
 import { Body, type SpaceObject } from '../universe/Body';
 import { ExoPlanet, starProps } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
-import { autopilotRate, inTheWay, placeSlot, type Situation, steer, type Steering } from './Autopilot';
+import { autopilotRate, brake, inTheWay, placeSlot, type Situation, steer, type Steering } from './Autopilot';
 import { Station } from './Station';
 
 export type SasMode = 'off' | 'stability' | 'prograde' | 'retrograde' | 'normal' | 'antinormal' | 'radial-out' | 'radial-in' | 'target' | 'anti-target';
@@ -95,6 +95,9 @@ export interface FlightReadout {
   /** the autopilot, if flying: where to and what it is doing; what it is doing alone ('' when not flying) */
   autopilot: string;
   apState: string;
+  /** Stop, if under way: what it does ('turning', 'braking', 'holding') and beside what, '' otherwise; its time to go aboard (s) */
+  stop: string;
+  stopTau: number;
   /** looking ahead: half the sky crowds into this angle (rad); light ahead is this many times bluer */
   halfSky: number;
   doppler: number;
@@ -133,11 +136,16 @@ export class Flight {
     frame: '', altitude: 0, vertSpeed: 0, orbitSpeed: 0, surfSpeed: 0, conic: null, tImpact: NaN, tAp: NaN, tPe: NaN, ap: NaN, pe: NaN,
     escape: false, encounter: '', gForce: 0, tidal: 0, throttle: 0, fuel: 1, dv: 0, sas: 'stability', rails: false, rate: 1, limited: false,
     dilation: 1, shipTime: 0, universeTime: 0, heat: 0, hullTemp: 290, drive: 'torch', driveG: 1, atLimit: false, properSpeed: 0, gamma: 1,
-    target: '', targetDist: NaN, etaShip: NaN, etaUniverse: NaN, arrival: NaN, etaBy: '', autopilot: '', apState: '', halfSky: Math.PI / 2, doppler: 1,
+    target: '', targetDist: NaN, etaShip: NaN, etaUniverse: NaN, arrival: NaN, etaBy: '', autopilot: '', apState: '', stop: '', stopTau: NaN, halfSky: Math.PI / 2, doppler: 1,
     landed: '', refusal: '', warning: '', warnLevel: 0, pace: 1, paceUniverse: 1, asked: 1, why: '',
   };
   /** the autopilot's flight in progress (null: the pilot flies) */
   autopilot: Autopilot | null = null;
+  /**
+   * Stop (a touch screen's Stop button): braking to rest beside the nearest world (the frame body),
+   * then holding there against its pull; null when not under way. Any control takes over from it.
+   */
+  stopping: { steering: Steering; at: string } | null = null;
   /** end of the flight in progress (crash, horizon...): seconds left, then respawn */
   ending: { ev: FlightEvent; t: number; total: number; title: string; text: string } | null = null;
   /** seconds since the end sequence started (for the effects) */
@@ -153,6 +161,8 @@ export class Flight {
   private lastThrottle = 0;
   private predictedFrom: GravitySource | null = null;
   private mouseRot = new Vector3();
+  /** a finger's turn command (ship axes, -1..1), smoothed over the touch events' uneven timing */
+  private touchRot = new Vector3();
   private warnedReverse = false;
   private lastJd = 0;
   private tmp = new Vector3();
@@ -302,6 +312,7 @@ export class Flight {
     ship.hullTemp = 290;
     this.ending = null;
     this.autopilot = null;
+    this.stopping = null;
     this.universeTime = 0;
     ship.shipTime = 0;
     this.paceShipTime = 0;
@@ -320,6 +331,7 @@ export class Flight {
     this.on = false;
     this.ending = null;
     this.autopilot = null;
+    this.stopping = null;
     this.app.rig.stop();
   }
 
@@ -422,6 +434,11 @@ export class Flight {
     if (!this.on) return '';
     const core = this.core, D = core.frame, atm = core.atmosphere;
     if (D && atm && this.ship.upos.sub(D.upos, this.tmp).length() < atm.R0 + atm.top) return `In the air of ${D.name}: climb above ${fmtDist(atm.top)} first.`;
+    return this.driveTooWeak();
+  }
+
+  /** Why the drive at its setting cannot steer against gravity here ('' when it can). */
+  private driveTooWeak(): string {
     const g = gravity.gravityAt(this.ship.upos, this.tmp).length();
     if (g <= HOLD * this.ship.driveAccel) return '';
     const need = DRIVE_STEPS.find((x) => x * G0 * HOLD >= g) ?? DRIVE_STEPS[DRIVE_STEPS.length - 1];
@@ -448,6 +465,7 @@ export class Flight {
       return false;
     }
     ship.drive = 'reactionless';
+    this.stopping = null;
     this.autopilot = {
       target, radius: this.arrivalRadius(target), vel: new Vector3(), prev: target.upos.clone(), prevJd: app.clock.jdTdb,
       steering: { aim: new Vector3(0, 0, -1).applyQuaternion(ship.quat), throttle: 0, rcs: new Vector3(), turning: false, tauGo: Infinity, tGo: Infinity, phase: 'turning', arrived: false }, detour: '',
@@ -460,12 +478,72 @@ export class Flight {
   }
 
   cancelAutopilot(say: string): void {
-    if (!this.autopilot) return;
+    if (!this.autopilot && !this.stopping) return;
+    if (!this.autopilot) say = say.replace('Autopilot off', 'Stop off');
     this.autopilot = null;
+    this.stopping = null;
     this.ship.throttle = 0;
     this.ship.rcs.set(0, 0, 0);
     this.app.hud.toast(say, 2.5);
     if (this.app.vr.active) this.app.vr.flash(say);
+  }
+
+  /**
+   * Stop: brake to rest beside the nearest world (or star) on the reactionless drive at its
+   * setting, turning the ship as it must, then hold there against what pull is left (Autopilot.ts,
+   * brake). Refused where the drive is too weak to steer against gravity, as the autopilot is.
+   */
+  stop(): boolean {
+    const app = this.app, ship = this.ship, core = this.core;
+    if (!this.on || this.ending) return false;
+    if (core.landed) { app.hud.toast(`Landed on ${core.landed.src.name}: at rest already`); return false; }
+    const no = this.driveTooWeak();
+    if (no) { app.hud.toast(no, 4); return false; }
+    this.autopilot = null;
+    ship.drive = 'reactionless';
+    const at = core.frame?.name ?? 'where you are';
+    this.stopping = {
+      at, steering: { aim: new Vector3(0, 0, -1).applyQuaternion(ship.quat), throttle: 0, rcs: new Vector3(), turning: false, tauGo: Infinity, tGo: Infinity, phase: 'turning', arrived: false },
+    };
+    app.hud.toast(`Stopping: braking to rest beside ${at} at ${fmtG(ship.driveAccel / G0)} (reactionless drive)`, 3);
+    return true;
+  }
+
+  /** Stop, every frame: brake in the frame body's frame, then hold, or let go where nothing pulls. */
+  private guideStop(): void {
+    const st = this.stopping!, ship = this.ship, D = this.core.frame, sit = this.situation;
+    sit.radius = 0;
+    placeSlot(sit, _g1.set(0, 0, 0), ship.properVelocity(), D ? D.vel : _zero, 0, 0, null);
+    gravity.gravityAt(ship.upos, sit.gravity);
+    if (D) sit.gravity.sub(gravity.gravityAt(D.upos, _g2));
+    sit.nose.set(0, 0, -1).applyQuaternion(ship.quat);
+    sit.drive = ship.driveAccel;
+    sit.rcs = SHIP_SPEC.rcsThrust / ship.mass;
+    sit.dt = this.simDt;
+    const s = brake(sit, st.steering);
+    ship.throttle = s.throttle;
+    ship.rcs.copy(s.rcs).applyQuaternion(_q.copy(ship.quat).invert()).divideScalar(sit.rcs).clampScalar(-1, 1);
+    st.at = D?.name ?? 'where you are';
+    if (!s.arrived || s.phase !== 'holding') return;
+    // at rest: where something still pulls the drive holds the ship there; otherwise the stop is done
+    if (sit.gravity.length() > 1e-3) {
+      if (!this.held) { this.held = true; this.app.hud.toast(`At rest over ${st.at}: the drive holds the ship against its pull. Touch a control to let go`, 4); }
+      return;
+    }
+    this.stopping = null;
+    ship.throttle = 0;
+    ship.rcs.set(0, 0, 0);
+    this.sas = 'stability';
+    this.app.hud.toast(`Stopped: at rest beside ${st.at}`, 3);
+    this.app.game.audio.chime();
+  }
+  private held = false;
+
+  /** The throttle from a touch screen's lever (0..1): the pilot takes the controls. */
+  setThrottle(x: number): void {
+    if (!this.on || this.ending) return;
+    this.cancelAutopilot('Autopilot off: you have the controls');
+    this.ship.throttle = Math.max(0, Math.min(1, x));
   }
 
   /** Where the autopilot stops: clear of the target's air, heat and tides. */
@@ -570,6 +648,7 @@ export class Flight {
     if (this.external) {
       // the docking computer carries the ship (and takes over from the autopilot): physics resumes after it
       this.autopilot = null;
+      this.stopping = null;
       this.simDt = clock.paused ? 0 : Math.max(0, Math.min(rawDt, 1) * clock.rate);
       app.rig.updateExternal();
       return this.simDt;
@@ -600,12 +679,12 @@ export class Flight {
     rate = Math.min(rate, MAX_RATE);
     // (while the autopilot turns the ship, time keeps step with the wheels, which turn by the
     // clamped control step: on a slow machine a turn would otherwise take longer than it does)
-    const ap = this.autopilot;
-    const real = ap?.steering.turning ? dt : Math.min(rawDt, 1);
-    if (ap) {
-      const r0 = rate;
-      rate = autopilotRate(rate, ap.steering, real, ship.driveAccel);
-      if (rate < r0) this.why = ap.steering.turning ? 'the autopilot holds it at ×1 while the ship turns' : 'the autopilot holds it there, to steer in time';
+    const steering = (this.autopilot ?? this.stopping)?.steering;
+    const real = steering?.turning ? dt : Math.min(rawDt, 1);
+    if (steering) {
+      const r0 = rate, who = this.autopilot ? 'the autopilot' : 'Stop';
+      rate = autopilotRate(rate, steering, real, ship.driveAccel);
+      if (rate < r0) this.why = steering.turning ? `${who} holds it at ×1 while the ship turns` : `${who} holds it there, to steer in time`;
     }
     // the warp is the ship's clock's; the universe's runs faster as the ship's runs slow (speed, gravity)
     let want = core.universeTimeFor(real * rate);
@@ -710,8 +789,9 @@ export class Flight {
 
   /**
    * The warp as it is: the ship's clock's and the universe's seconds per real second, summed over
-   * at least 0.4 s of real time (a fresh start when the rate asked for changes). Measured from the
-   * clocks themselves, so whatever held the warp back (the autopilot, the computing per frame, live
+   * at least a second of real time (steady enough to read where the computing holds it back and
+   * frames come unevenly; a fresh start when the rate asked for changes). Measured from the clocks
+   * themselves, so whatever held the warp back (the autopilot, the computing per frame, live
    * physics) is in it.
    */
   private measurePace(): void {
@@ -727,7 +807,7 @@ export class Flight {
     s.real += this.frameReal;
     s.ship += Math.max(0, dShip);
     s.universe += Math.max(0, this.simDt);
-    if (s.real < 0.4) return;
+    if (s.real < 1) return;
     r.pace = s.ship / s.real;
     r.paceUniverse = s.universe / s.real;
     s.real = s.ship = s.universe = 0;
@@ -753,14 +833,29 @@ export class Flight {
   private controls(dt: number): void {
     const app = this.app, k = app.input.keys, ship = this.ship, rig = app.rig;
     const shift = k.has('ShiftLeft') || k.has('ShiftRight');
-    if (this.autopilot) {
-      // the autopilot flies until the pilot touches a control
-      const look = app.input.consume().look;
-      if (MANUAL.some((c) => k.has(c)) || look.dx || look.dy || rig.ext.throttle > 0.05 || rig.ext.rot.lengthSq() > 1e-4) {
+    const drag = app.input.consume();
+    // fingers on the view (a touch screen): one drags the sky, so the ship turns the way it goes, as
+    // fast as the finger up to what the wheels can do (two travelling together do the same); a
+    // twist rolls it; a pinch zooms. Smoothed over a few hundredths of a second: touch events come
+    // unevenly between frames
+    const fx = drag.touch.dx + drag.pan.dx, fy = drag.touch.dy + drag.pan.dy;
+    const fingers = fx !== 0 || fy !== 0 || drag.twist !== 0;
+    {
+      const per = rig.pixelAngle / Math.max(dt, 1e-3) / (SHIP_SPEC.maxRate * 0.6), a = 1 - Math.exp(-dt / 0.06);
+      this.touchRot.x += (fy * per - this.touchRot.x) * a;
+      this.touchRot.y += (fx * per - this.touchRot.y) * a;
+      this.touchRot.z += ((drag.twist / Math.max(dt, 1e-3)) / (SHIP_SPEC.maxRate * 0.6) - this.touchRot.z) * a;
+      if (this.touchRot.lengthSq() < 1e-6) this.touchRot.set(0, 0, 0);
+      if (drag.pinch && app.game.mode === 'cockpit') rig.fov = Math.max(20, Math.min(100, rig.fov * Math.exp(drag.pinch)));
+    }
+    if (this.autopilot || this.stopping) {
+      // the autopilot (or Stop) flies until the pilot touches a control (a zoom is not one)
+      if (MANUAL.some((c) => k.has(c)) || drag.look.dx || drag.look.dy || fingers || rig.ext.throttle > 0.05 || rig.ext.rot.lengthSq() > 1e-4) {
         this.cancelAutopilot('Autopilot off: you have the controls');
       } else {
-        this.guide();
-        if (this.autopilot) this.attitude(dt, new Vector3());
+        if (this.autopilot) this.guide();
+        else this.guideStop();
+        if (this.autopilot || this.stopping) this.attitude(dt, new Vector3());
         return;
       }
     }
@@ -791,11 +886,10 @@ export class Flight {
       (k.has('ArrowLeft') ? 1 : 0) - (k.has('ArrowRight') ? 1 : 0),
       (k.has('KeyQ') ? 1 : 0) - (k.has('KeyE') ? 1 : 0),
     );
-    const drag = app.input.consume();
     // mouse: drag to turn (a rate command that decays when the mouse stops)
     this.mouseRot.x = this.mouseRot.x * Math.exp(-dt * 10) - drag.look.dy * 0.04;
     this.mouseRot.y = this.mouseRot.y * Math.exp(-dt * 10) - drag.look.dx * 0.04;
-    cmd.add(this.mouseRot).add(ext.rot);
+    cmd.add(this.mouseRot).add(this.touchRot).add(ext.rot);
     cmd.clampScalar(-1, 1);
     // zoom out/in the chase camera / field of view is the wheel's job; nothing else consumes input here
     if (drag.wheel && app.game.mode === 'cockpit') rig.fov = Math.max(20, Math.min(100, rig.fov * Math.pow(1.08, drag.wheel)));
@@ -833,7 +927,7 @@ export class Flight {
     let want: Vector3 | null = null; // wanted body rates
     if (manual) {
       want = cmd.clone().multiplyScalar(spec.maxRate * 0.6);
-    } else if (this.sas !== 'off' || this.autopilot) {
+    } else if (this.sas !== 'off' || this.autopilot || this.stopping) {
       want = new Vector3();
       const dir = this.sasDirection();
       if (dir) {
@@ -865,10 +959,11 @@ export class Flight {
     }
   }
 
-  /** World direction the SAS holds (the autopilot's aim while it flies), or null (stability: just kill rotation). */
+  /** World direction the SAS holds (the autopilot's or Stop's aim while they fly), or null (stability: just kill rotation). */
   private sasDirection(): Vector3 | null {
     const D = this.core.frame, ship = this.ship;
-    if (this.autopilot) return this.autopilot.steering.aim;
+    const flying = (this.autopilot ?? this.stopping)?.steering;
+    if (flying) return flying.aim;
     const mode = this.sas;
     if (mode === 'stability' || mode === 'off') return null;
     if (mode === 'target' || mode === 'anti-target') {
@@ -901,6 +996,7 @@ export class Flight {
   private handleEvent(ev: FlightEvent): void {
     const app = this.app;
     if (ev.kind !== 'land') this.autopilot = null;
+    this.stopping = null;
     const name = ev.src?.name ?? 'the ground';
     const spd = fmtSpeed(ev.speed);
     if (ev.kind === 'land') {
@@ -1095,6 +1191,10 @@ export class Flight {
     const r = this.readout, ship = this.ship, ap = this.autopilot;
     const sel = ap?.target ?? this.app.selection;
     r.apState = ap ? (ap.detour ? `round ${ap.detour}` : ap.steering.phase) : '';
+    const stop = this.stopping;
+    r.stop = stop ? `${stop.steering.phase} beside ${stop.at}` : '';
+    r.stopTau = stop ? stop.steering.tauGo : NaN;
+    if (!stop) this.held = false;
     r.autopilot = ap ? `${ap.target.name} · ${r.apState}` : '';
     r.target = sel?.name ?? '';
     r.targetDist = r.etaShip = r.etaUniverse = r.arrival = NaN;

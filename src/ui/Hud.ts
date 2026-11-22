@@ -111,6 +111,7 @@ const TOUCH_HELP: [string, string][] = [
   ['Twist', 'Roll the view'],
   ['Tap', 'Select what you tapped (its name works too)'],
   ['Double-tap', 'Fly there; on the world you are at, come closer'],
+  ['In the ship', 'Drag to turn it (a twist rolls it, a pinch zooms) · the lever is the thrust · Stop brakes to rest · Chase / Cockpit switches the view · tap the instruments for all of them'],
 ];
 
 const KEY_HELP: [string, string][] = [
@@ -366,6 +367,27 @@ export class Hud {
   get open(): Sheet | null {
     return this.sheet;
   }
+
+  /**
+   * The parts of the interface that stand over the view (the chips, the tab bar, the open card or
+   * sheet, the round buttons, and whatever else is marked `data-cover`, as the ship's instruments
+   * are): no name of the sky is to be drawn under them (src/render/Labels.ts). Measured at most five
+   * times a second; none in photo mode.
+   */
+  covers(): readonly { l: number; t: number; r: number; b: number }[] {
+    const now = performance.now();
+    if (now - this.coversAt < 200) return this.coverBoxes;
+    this.coversAt = now;
+    if (this.el.classList.contains('ui-off')) return (this.coverBoxes = []);
+    const sel = '.hud-top .chip, .hud-tabs, .hud-slot > .on, .hud-flight:not([hidden]), .live-mark:not([hidden]), .hud-fabs > *, [data-cover]';
+    const root = this.el.getBoundingClientRect();
+    this.coverBoxes = [...this.el.querySelectorAll<HTMLElement>(sel)].map((e) => e.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => ({ l: r.left - root.left, t: r.top - root.top, r: r.right - root.left, b: r.bottom - root.top }));
+    return this.coverBoxes;
+  }
+  private coversAt = -1e9;
+  private coverBoxes: readonly { l: number; t: number; r: number; b: number }[] = [];
 
   /** where the ship's full read-out goes on a touch screen (src/game/FlightHud.ts fills it) */
   get flightBody(): HTMLElement {

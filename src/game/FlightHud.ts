@@ -35,12 +35,12 @@ const CSS = `
 /* a touch screen: the instruments at a glance under the clock (a tap opens the full read-out), and the drive */
 .fl-top { position: absolute; right: calc(var(--safe-r, 0px) + 10px); top: calc(var(--safe-t, 0px) + 62px); width: 360px; box-sizing: border-box;
   display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
-#hud .fl-glance { pointer-events: auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 6px; width: 100%; box-sizing: border-box;
-  padding: 6px 8px 7px 12px; border-radius: 14px; background: rgba(6, 11, 22, 0.9); border: 1px solid rgba(120, 220, 255, 0.35);
+#hud .fl-glance { pointer-events: auto; position: relative; display: flex; flex-direction: column; align-items: stretch; width: 100%; box-sizing: border-box;
+  padding: 6px 34px 7px 12px; border-radius: 14px; background: rgba(6, 11, 22, 0.9); border: 1px solid rgba(120, 220, 255, 0.35);
   -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); text-align: left; color: #cfe8ff; font: 12.5px/1.4 system-ui, sans-serif; }
 #hud .fl-glance:active { background: rgba(14, 24, 40, 0.95); }
-.fl-glance > span { grid-column: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fl-glance > .icon { grid-column: 2; grid-row: 1 / span 4; width: 20px; height: 20px; color: #7fd4ff; transform: rotate(90deg); transition: transform 0.15s; }
+.fl-glance > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-glance > .icon { position: absolute; right: 8px; top: 50%; width: 20px; height: 20px; margin-top: -10px; color: #7fd4ff; transform: rotate(90deg); transition: transform 0.15s; }
 .fl-glance[aria-expanded='true'] > .icon { transform: rotate(-90deg); }
 .fl-glance .fl-l1 { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 10px; white-space: normal;
   font: 700 14px/1.35 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: #fff; font-variant-numeric: tabular-nums; }
@@ -49,6 +49,9 @@ const CSS = `
 .fl-glance .fl-l3 { color: #fff; }
 .fl-glance .fl-l4 { color: #9fb6cf; font-variant-numeric: tabular-nums; white-space: normal; }
 .fl-touch { display: flex; align-items: stretch; gap: 6px; height: 40px; font: 13px/1 system-ui, sans-serif; color: #cfe8ff; pointer-events: none; }
+/* (every piece over the view is as opaque as the card, and blurs what is behind it: no sky label
+   reads through the instruments or the controls) */
+#hud :is(.fl-glance, .fl-touch button, .fl-touch span, .fl-lever, .fl-stop, .fl-view) { -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
 #hud .fl-touch button { pointer-events: auto; min-width: 46px; border-radius: 12px; border: 1px solid rgba(120, 220, 255, 0.45); background: rgba(6, 11, 22, 0.9);
   color: #fff; font: 600 18px/1 system-ui, sans-serif; touch-action: manipulation; }
 #hud .fl-touch .fl-which { flex: 1; min-width: 0; padding: 0 10px; text-align: left; font: 600 13px/1.1 system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -57,16 +60,63 @@ const CSS = `
 .fl-touch span { min-width: 84px; display: flex; align-items: center; justify-content: center; padding: 0 6px; border-radius: 12px; background: rgba(6, 11, 22, 0.9);
   font: 600 13px/1 ui-monospace, 'SF Mono', Menlo, monospace; white-space: nowrap; }
 #hud.touch .fl-desk { display: none; }
+/* flying by hand on a touch screen: the throttle lever and Stop, at the right edge under the right
+   thumb (upright, under the instruments; on its side, in the corner) */
+.fl-stick { align-self: flex-end; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 64px; margin-top: 4px; pointer-events: none; }
+#hud .fl-lever { pointer-events: auto; position: relative; height: 136px; border-radius: 18px; overflow: hidden; touch-action: none; cursor: ns-resize;
+  background: rgba(6, 11, 22, 0.9); border: 1px solid rgba(120, 220, 255, 0.45); }
+.fl-lever i { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--v, 0) * 100%); background: linear-gradient(rgba(127, 212, 255, 0.85), rgba(127, 212, 255, 0.45)); }
+.fl-lever b, .fl-lever small { position: absolute; left: 0; right: 0; text-align: center; color: #fff; text-shadow: 0 0 4px #000; pointer-events: none; }
+.fl-lever b { top: 8px; font: 700 14px/1 ui-monospace, 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
+.fl-lever small { bottom: 7px; font: 600 10px/1 system-ui, sans-serif; letter-spacing: 0.04em; color: #cfe8ff; }
+#hud .fl-lever[data-dragging] { border-color: #7fd4ff; }
+#hud .fl-stop { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 52px; border-radius: 16px;
+  border: 1px solid rgba(255, 140, 120, 0.6); background: rgba(40, 10, 8, 0.9); color: #ffb3a6; font: 650 12px/1 system-ui, sans-serif; touch-action: manipulation; }
+#hud .fl-stop .icon { width: 18px; height: 18px; }
+#hud .fl-stop[aria-pressed='true'] { background: rgba(255, 140, 120, 0.9); color: #2a0a04; }
+#hud .fl-stop:active { filter: brightness(1.25); }
+#hud .fl-view { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 52px; border-radius: 16px;
+  border: 1px solid rgba(120, 220, 255, 0.45); background: rgba(6, 11, 22, 0.9); color: #cfe8ff; font: 650 12px/1 system-ui, sans-serif; touch-action: manipulation; }
+#hud .fl-view .icon { width: 18px; height: 18px; color: #7fd4ff; }
+.fl-view small { font-size: 10px; font-weight: 500; color: #7f9bb8; }
+#hud .fl-view:active { filter: brightness(1.25); }
 @media (max-width: 520px) {
   .fl-desk { left: 8px; right: 8px; width: auto; top: 64px; font-size: 11px; line-height: 1.3; }
   .fl-top { left: calc(var(--safe-l, 0px) + 8px); right: calc(var(--safe-r, 0px) + 8px); width: auto; }
   #hud[data-live] .fl-top { top: calc(var(--safe-t, 0px) + 122px); }
-  /* (the search and the settings take the whole screen: the instruments step aside for them) */
+  /* (the search and the settings take the whole screen: the instruments step aside for them; the
+     time sheet reaches up to where the lever is) */
   #hud:is([data-sheet='explore'], [data-sheet='more']) :is(.fl-desk, .fl-top) { display: none; }
+  #hud[data-sheet='time'] .fl-stick { display: none; }
   .fl-warn { font-size: 15px; top: auto; bottom: 40%; }
   .fl-end h1 { font-size: 34px; }
 }
 @media (max-width: 520px), (pointer: coarse) { .fl-keys { display: none; } }
+/* a wide view (a phone on its side, a tablet): the panels of the interface stand at the left (the
+   ship asks a little less width of them); the instruments take the room to their right, no more,
+   and the lever lies along the foot of that room, Stop beside it */
+@media (min-width: 760px), (orientation: landscape) {
+  #hud.touch[data-mode='ship'] .hud-slot { width: min(340px, 40vw); }
+  .fl-top { width: min(400px, calc(100vw - var(--safe-l, 0px) - var(--safe-r, 0px) - 124px - min(340px, 40vw))); }
+  .fl-stick { position: fixed; right: calc(var(--safe-r, 0px) + 10px); bottom: calc(var(--safe-b, 0px) + 10px); margin: 0;
+    width: min(400px, calc(100vw - var(--safe-l, 0px) - var(--safe-r, 0px) - 124px - min(340px, 40vw))); height: 52px; flex-direction: row; }
+  #hud .fl-lever { flex: 1; height: auto; cursor: ew-resize; }
+  .fl-lever i { top: 0; right: auto; width: calc(var(--v, 0) * 100%); height: auto; background: linear-gradient(90deg, rgba(127, 212, 255, 0.45), rgba(127, 212, 255, 0.85)); }
+  .fl-lever b, .fl-lever small { top: 50%; bottom: auto; transform: translateY(-50%); text-align: left; padding: 0 12px; }
+  .fl-lever small { text-align: right; }
+  #hud .fl-stop { flex: none; width: 76px; height: auto; flex-direction: row; gap: 5px; font-size: 13px; }
+  #hud .fl-view { flex: none; width: 64px; height: auto; }
+  /* ("Stopping" fills the button lying down: its square steps aside for it) */
+  #hud .fl-stop[aria-pressed='true'] .icon { display: none; }
+  #hud .fl-touch button { min-width: 40px; }
+  .fl-touch span { min-width: 64px; }
+}
+/* where there is not room for everything (a short view, the browser's bars shown): the instruments
+   give up their lower lines, then the drive (the full read-out keeps it all); upright the lever
+   shortens, then steps aside (FlightHud.fit) */
+#hud .fl-top.fl-tight :is(.fl-l3, .fl-l4) { display: none; }
+#hud .fl-top.fl-tighter :is(.fl-l2, .fl-touch) { display: none; }
+#hud .fl-stick.fl-away { display: none; }
 `;
 
 /** What the touch controls ask of the ship. */
@@ -75,6 +125,12 @@ export interface FlightControls {
   stepDrive(up: boolean): void;
   /** the fusion torch or the reactionless drive */
   toggleDrive(): void;
+  /** the throttle (0..1), from the lever */
+  setThrottle(x: number): void;
+  /** brake to rest beside the nearest world, and hold there */
+  stop(): void;
+  /** from the cockpit, or from behind the ship (the chase view) */
+  toggleView(): void;
 }
 
 /** Where the full read-out goes on a touch screen: a sheet of the app's interface (src/ui/Hud.ts). */
@@ -102,6 +158,13 @@ export class FlightHud {
   private driveRow: HTMLElement;
   private drive: HTMLElement;
   private which: HTMLElement;
+  private lever: HTMLElement;
+  private stopBtn: HTMLElement;
+  private viewBtn: HTMLElement;
+  /** the view the ship is seen in now */
+  private view: 'cockpit' | 'chase' = 'cockpit';
+  /** the lever is under a finger: it shows the finger's setting */
+  private leverHeld = false;
   private timer = 0;
   private lastWarn = '';
 
@@ -114,12 +177,17 @@ export class FlightHud {
     }
     this.el = document.createElement('div');
     this.el.className = 'flight-hud';
-    this.el.innerHTML = `<div class="fl-panel fl-desk"></div><div class="fl-warn"></div><div class="fl-end"><h1></h1><p></p></div>
+    this.el.innerHTML = `<div class="fl-panel fl-desk" data-cover></div><div class="fl-warn"></div><div class="fl-end"><h1></h1><p></p></div>
       <div class="fl-top touch-only">
-        <button class="fl-glance" type="button" aria-expanded="false" aria-label="The ship's instruments: tap for the full read-out">
+        <button class="fl-glance" type="button" data-cover aria-expanded="false" aria-label="The ship's instruments: tap for the full read-out">
           <span class="fl-l1"><b></b><i></i></span><span class="fl-l2"></span><span class="fl-l3"></span><span class="fl-l4"></span>${ICON.chevron}
         </button>
-        <div class="fl-touch"><button class="fl-which" type="button" data-drive aria-label="Change the drive"></button><button type="button" data-step="down" aria-label="Weaker">−</button><span></span><button type="button" data-step="up" aria-label="Stronger">+</button></div>
+        <div class="fl-touch" data-cover><button class="fl-which" type="button" data-drive aria-label="Change the drive"></button><button type="button" data-step="down" aria-label="Weaker">−</button><span></span><button type="button" data-step="up" aria-label="Stronger">+</button></div>
+        <div class="fl-stick" data-cover>
+          <div class="fl-lever" role="slider" aria-label="Throttle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i><b>0%</b><small>THRUST</small></div>
+          <button class="fl-stop" type="button" aria-pressed="false" aria-label="Stop: brake to rest beside the nearest world">${ICON.stop}<span>Stop</span></button>
+          <button class="fl-view" type="button" aria-label="Switch the view: from the cockpit, or from behind the ship">${ICON.look}<b></b><small>view</small></button>
+        </div>
       </div>
       <div class="fl-keys"><b>W/S</b> throttle · <b>Z/X</b> full/cut · <b>arrows/drag</b> pitch-yaw · <b>Q/E</b> roll<br>
       <b>A/D R/F Shift+W/S</b> RCS · <b>Y</b> SAS mode · <b>I</b> drive · <b>= -</b> its setting · <b>[ ]</b> time warp · <b>J</b> autopilot</div>`;
@@ -134,12 +202,58 @@ export class FlightHud {
     this.which = this.el.querySelector('.fl-which')!;
     for (const b of this.el.querySelectorAll<HTMLButtonElement>('.fl-touch [data-step]')) b.addEventListener('click', () => controls.stepDrive(b.dataset.step === 'up'));
     this.which.addEventListener('click', () => controls.toggleDrive());
+    this.lever = this.el.querySelector('.fl-lever')!;
+    this.stopBtn = this.el.querySelector('.fl-stop')!;
+    this.stopBtn.addEventListener('click', () => controls.stop());
+    this.viewBtn = this.el.querySelector('.fl-view')!;
+    this.viewBtn.addEventListener('click', () => { controls.toggleView(); this.timer = 0; });
+    this.holdLever(controls);
     this.glanceEl.addEventListener('click', () => {
       if (sheet.open === 'flight') sheet.closeSheet();
       else sheet.openSheet('flight');
       this.timer = 0;
     });
     this.setVisible(false);
+  }
+
+  /**
+   * The throttle lever: a finger put on it sets the thrust where it is (the foot is off, the top full,
+   * the ends snap), and the setting follows it until it lifts.
+   */
+  private holdLever(controls: FlightControls): void {
+    const lever = this.lever;
+    let id = -1;
+    const at = (e: PointerEvent) => {
+      // (upright it stands, the top full; on its side it lies, the right end full)
+      const b = lever.getBoundingClientRect();
+      const x = b.width > b.height ? (e.clientX - b.left - 10) / Math.max(1, b.width - 20) : 1 - (e.clientY - b.top - 10) / Math.max(1, b.height - 20);
+      const v = x < 0.04 ? 0 : x > 0.96 ? 1 : x;
+      this.showLever(v);
+      controls.setThrottle(v);
+    };
+    lever.addEventListener('pointerdown', (e) => {
+      id = e.pointerId;
+      try { lever.setPointerCapture(id); } catch { /* gone already */ }
+      this.leverHeld = true;
+      lever.toggleAttribute('data-dragging', true);
+      at(e);
+    });
+    lever.addEventListener('pointermove', (e) => { if (e.pointerId === id) at(e); });
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      id = -1;
+      this.leverHeld = false;
+      lever.toggleAttribute('data-dragging', false);
+    };
+    lever.addEventListener('pointerup', end);
+    lever.addEventListener('pointercancel', end);
+  }
+
+  private showLever(v: number): void {
+    const pct = Math.round(v * 100);
+    this.lever.style.setProperty('--v', String(pct / 100));
+    setText(this.lever.querySelector('b')!, `${pct}%`);
+    this.lever.setAttribute('aria-valuenow', String(pct));
   }
 
   setVisible(v: boolean): void {
@@ -156,7 +270,8 @@ export class FlightHud {
     this.end.style.transition = opacity > 0 ? 'opacity 0.6s' : 'none';
   }
 
-  update(dt: number, r: FlightReadout, showKeys: boolean): void {
+  update(dt: number, r: FlightReadout, showKeys: boolean, view: 'cockpit' | 'chase' = 'cockpit'): void {
+    this.view = view;
     this.keys.style.display = showKeys ? '' : 'none';
     if (r.warning !== this.lastWarn) {
       this.lastWarn = r.warning;
@@ -169,11 +284,46 @@ export class FlightHud {
     this.timer = 0.1;
     const touch = this.root.classList.contains('touch');
     const open = this.sheet.open === 'flight';
+    if (touch) this.fit();
     this.glanceEl.setAttribute('aria-expanded', String(open));
     if (touch) this.renderGlance(r);
     // the full read-out: the panel at the right with a mouse, the sheet on a touch screen (when open)
     if (!touch) this.desk.innerHTML = readout(r);
     else if (open) this.sheet.flightBody.innerHTML = `<div class="fl-panel">${readout(r)}</div>`;
+  }
+
+  /**
+   * Nothing of the ship's over the view may cover the interface's own (the chips, the tab bar, the
+   * card or sheet that is open), on any screen, however much of it the browser's bars take. The
+   * CSS lays it out for the usual sizes; here what is laid out is measured, and where it still
+   * meets something the instruments give up their lower lines, then the drive (the full read-out
+   * has it all), and upright the lever shortens to the room left, or steps aside.
+   */
+  private fit(): void {
+    const top = this.el.querySelector<HTMLElement>('.fl-top')!, stick = this.el.querySelector<HTMLElement>('.fl-stick')!;
+    if (top.offsetParent === null && getComputedStyle(top).display === 'none') return;
+    top.classList.remove('fl-tight', 'fl-tighter');
+    stick.classList.remove('fl-away');
+    this.lever.style.height = '';
+    const others = [...this.root.querySelectorAll<HTMLElement>('.hud-top .chip, .hud-tabs, .hud-slot > .on, .hud-flight:not([hidden]), .live-mark:not([hidden])')]
+      .map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+    const lying = getComputedStyle(stick).position === 'fixed';
+    const mine = () => [...top.querySelectorAll<HTMLElement>('.fl-glance, .fl-touch')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
+    const blocked = () => {
+      const against = lying ? [...others, stick.getBoundingClientRect()] : others;
+      return mine().some((m) => against.some((o) => meets(m, o, 2)));
+    };
+    if (blocked()) top.classList.add('fl-tight');
+    if (blocked()) top.classList.add('fl-tighter');
+    if (lying) return;
+    // upright the lever and Stop stand under the instruments: shorten the lever to what is left above the panel below
+    const s = stick.getBoundingClientRect(), lever = this.lever.getBoundingClientRect();
+    const below = others.filter((o) => o.left < s.right && o.right > s.left && o.top >= s.top - 1).reduce((y, o) => Math.min(y, o.top), window.innerHeight);
+    const spare = below - 8 - s.bottom;
+    if (spare >= 0) return;
+    const h = lever.height + spare;
+    if (h >= 72) this.lever.style.height = `${h}px`;
+    else stick.classList.add('fl-away');
   }
 
   private renderGlance(r: FlightReadout): void {
@@ -197,6 +347,12 @@ export class FlightHud {
     }
     setText(this.which.querySelector('small')!, torch ? `fuel ${Math.round(r.fuel * 100)} % · tap to change` : 'tap to change');
     setText(this.drive, fmtG(r.driveG));
+    // the lever shows the throttle as it is (the autopilot's, Stop's) unless a finger is on it
+    if (!this.leverHeld) this.showLever(r.throttle);
+    this.stopBtn.setAttribute('aria-pressed', String(!!r.stop));
+    setText(this.stopBtn.querySelector('span')!, r.stop ? 'Stopping' : 'Stop');
+    // (the switch names the view it goes to)
+    setText(this.viewBtn.querySelector('b')!, this.view === 'chase' ? 'Cockpit' : 'Chase');
   }
 }
 
@@ -213,6 +369,7 @@ export function glance(r: FlightReadout): { speed: string; side: string; state: 
   let state: string, stateClass = '';
   const c = r.conic;
   if (r.autopilot) { state = `Autopilot: ${r.apState}`; stateClass = 'ok'; }
+  else if (r.stop) { state = `Stop: ${r.stop}${Number.isFinite(r.stopTau) && r.stopTau > 1 ? ` · ${fmtTime(r.stopTau)} aboard` : ''}`; stateClass = 'ok'; }
   else if (r.landed) state = `Landed on ${r.landed}`;
   else if (r.throttle > 0) state = `Thrust ${Math.round(r.throttle * 100)} % · ${r.drive === 'torch' ? 'fusion torch' : `${fmtG(r.driveG * r.throttle)} reactionless`}`;
   else if (c && c.e < 1 && r.properSpeed < 0.1 * C && Number.isFinite(r.pe) && Number.isFinite(r.ap)) state = `Orbit ${fmtDist(r.pe)} × ${fmtDist(r.ap)} over ${r.frame}`;
@@ -300,6 +457,11 @@ function fmtFactor(x: number): string {
 
 function esc(t: string): string {
   return t.replace(/[&<>]/g, (ch) => (ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : '&gt;'));
+}
+
+/** two boxes come within `gap` px of each other */
+function meets(a: DOMRect, b: DOMRect, gap: number): boolean {
+  return a.left < b.right + gap && b.left < a.right + gap && a.top < b.bottom + gap && b.top < a.bottom + gap;
 }
 
 function setText(el: Element, text: string): void {

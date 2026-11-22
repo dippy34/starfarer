@@ -9,7 +9,7 @@ function readout(over: Partial<FlightReadout>): FlightReadout {
     frame: 'Sun', altitude: 1e20, vertSpeed: 0, orbitSpeed: 0, surfSpeed: 0, conic: null, tImpact: NaN, tAp: NaN, tPe: NaN, ap: NaN, pe: NaN,
     escape: false, encounter: '', gForce: 0, tidal: 0, throttle: 0, fuel: 1, dv: 0, sas: 'stability', rails: false, rate: 1, limited: false,
     dilation: 1, shipTime: 0, universeTime: 0, heat: 0, hullTemp: 290, drive: 'reactionless', driveG: 1000, atLimit: false, properSpeed: 0, gamma: 1,
-    target: '', targetDist: NaN, etaShip: NaN, etaUniverse: NaN, arrival: NaN, etaBy: '', autopilot: '', apState: '', halfSky: Math.PI / 2, doppler: 1,
+    target: '', targetDist: NaN, etaShip: NaN, etaUniverse: NaN, arrival: NaN, etaBy: '', autopilot: '', apState: '', stop: '', stopTau: NaN, halfSky: Math.PI / 2, doppler: 1,
     landed: '', refusal: '', warning: '', warnLevel: 0, pace: 1, paceUniverse: 1, asked: 1, why: '',
     ...over,
   };
@@ -40,6 +40,14 @@ describe('the instruments at a glance (a touch screen)', () => {
     expect(g.speed).toBe('7.67 km/s');
     expect(g.side).toBe('393 km up');
     expect(g.state).toBe('Orbit 391 km × 395 km over Earth');
+  });
+});
+
+describe('Stop at a glance', () => {
+  it('says what it does and the time to go aboard', () => {
+    const g = glance(readout({ stop: 'braking beside Sun', stopTau: 3 * 3600 + 120 }));
+    expect(g.state).toBe('Stop: braking beside Sun · 3 h 2 min aboard');
+    expect(g.stateClass).toBe('ok');
   });
 });
 

@@ -1,7 +1,9 @@
 // Real-physics ship flight in headless Chromium: orbit HUD and predicted path, a burn that changes
 // the orbit, on-rails time warp, the autopilot's refusal deep in a well, a crash and respawn, a landing, a stellar black hole's
 // tides and a supermassive one's horizon; the reactionless drive near light speed (never at it) and
-// the autopilot to another star; on a phone, boarding, the drive's setting and Go there by touch. Usage: node scripts/flight.mjs [baseUrl] [outDir]
+// the autopilot to another star; on a phone, boarding, the drive's setting and Go there by touch, the
+// instruments at a glance and the full read-out, the Time chip's rate in the ship, and flying by hand
+// (steering by a finger, the throttle lever, Stop), upright and on its side. Usage: node scripts/flight.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
@@ -26,6 +28,18 @@ const state = () => page.evaluate(() => {
     ending: f.ending?.title ?? null, landed: r.landed, fuel: r.fuel, g: r.gForce, sas: r.sas, throttle: r.throttle,
   };
 });
+/**
+ * (in the page) every piece of the ship's instruments and controls over the view on a touch screen:
+ * how opaque its background is and whether it blurs what is behind it. A sky label under a piece
+ * that is less than either reads through it (it did, under the drive's setting, on a phone on its side).
+ */
+function opacity() {
+  return [...document.querySelectorAll('.fl-glance, .fl-touch > *, .fl-lever, .fl-stop, .fl-view')].map((e) => {
+    const cs = getComputedStyle(e), m = cs.backgroundColor.match(/rgba?\(([^)]+)\)/);
+    return { what: `${e.tagName.toLowerCase()}.${e.className}`, alpha: Number(m?.[1].split(',')[3] ?? '1'), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || '') };
+  });
+}
+const seeThrough = (list) => list.filter((p) => !(p.alpha >= 0.88 && p.blur));
 const waitFor = (fn, arg, timeout = 240000) => page.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
 
 // 1. boarding in low Earth orbit: physics on, a circular orbit, the predicted path and its apsides
@@ -251,12 +265,15 @@ await shot('f14-alpha-cen.png');
   // the instruments at a glance: under the clock, in the top quarter of the screen, opaque (no sky
   // label reads through them), the speed and its target as the full read-out has them
   st = await phone.evaluate(() => {
-    const top = document.querySelector('.fl-top').getBoundingClientRect(), chip = document.querySelector('.chip.clock').getBoundingClientRect();
+    // (the instruments: the card and the drive under it; the lever below them is the controls')
+    const top = { top: document.querySelector('.fl-glance').getBoundingClientRect().top, ...(({ bottom, left, right }) => ({ bottom, left, right }))(document.querySelector('.fl-touch').getBoundingClientRect()) }, chip = document.querySelector('.chip.clock').getBoundingClientRect();
     const g = document.querySelector('.fl-glance'), bg = getComputedStyle(g).backgroundColor;
     const alpha = Number((bg.match(/rgba?\(([^)]+)\)/)?.[1].split(',')[3] ?? '1'));
     return { top: top.top, bottom: top.bottom, left: top.left, right: top.right, chip: chip.bottom, alpha, desk: getComputedStyle(document.querySelector('.fl-desk')).display, speed: g.querySelector('.fl-l1 b').textContent, text: [...g.children].map((e) => e.textContent.trim()).filter(Boolean).join(' | ') };
   });
   check('on a phone the instruments are a card under the clock, in the top quarter, opaque', st.top >= st.chip && st.bottom <= 0.25 * 844 && st.left >= 0 && st.right <= 390 && st.alpha >= 0.85 && st.desk === 'none', JSON.stringify(st));
+  const pieces = await phone.evaluate(opacity);
+  check('nothing of the instruments or the controls is see-through (as opaque as the card, and blurred)', pieces.length === 8 && seeThrough(pieces).length === 0, JSON.stringify(seeThrough(pieces).length ? seeThrough(pieces) : pieces.map((p) => p.what)));
   check('at a glance: the speed, what the autopilot does, the target', /^\d[\d., ]* (m\/s|km\/s|c)$/.test(st.speed) && !/^1\.0+ c/.test(st.speed) && /Autopilot: /.test(st.text) && /Moon · /.test(st.text), st.text);
   // the full read-out is a tap away, as a sheet; a tap on the card again folds it
   await f.tap(await at('.fl-glance'));
@@ -291,6 +308,76 @@ await shot('f14-alpha-cen.png');
   check('Faster steps the ship\'s warp x10, x100 ... x100,000, and stops there', JSON.stringify(steps) === JSON.stringify([10, 100, 1000, 10000, 100000, 100000]), JSON.stringify(steps));
   check('the Time chip says the warp the ship\'s clock runs at', st.chip === st.sheet && shown > 0 && Math.abs(shown / st.measured - 1) < 0.25 && /Aboard\s*×/.test(st.rows) && /In the universe/.test(st.rows), JSON.stringify({ chip: st.chip, measured: Math.round(st.measured), rows: st.rows.slice(0, 120) }));
   await phone.screenshot({ path: path.join(outDir, 'f17-phone-time.png'), timeout: 180000 });
+
+  // Now, in the ship: back to real time, the date kept (the worlds would jump from under it)
+  const jdNow0 = await phone.evaluate(() => window.app.clock.jdTdb);
+  await f.tap(await at('.transport [data-act="now"]'));
+  await f.frames(2);
+  st = await phone.evaluate((jd0) => ({ rate: window.app.clock.rate, dDays: window.app.clock.jdTdb - jd0 }), jdNow0);
+  check('Now in the ship: real time aboard, the date kept', st.rate === 1 && Math.abs(st.dDays) < 50, JSON.stringify(st));
+  await f.tap(await at('.hud-tabs [data-tab="time"]')); // (closes the sheet: the lever shows again)
+  await f.frames(2);
+
+  // flying by hand. The drive: its name is a switch (the torch, or the reactionless drive)
+  // (+ chose the reactionless drive above: a tap on its name gives the torch, another brings it back)
+  const driveNow = () => phone.evaluate(() => ({ drive: window.app.game.flight.ship.drive, label: document.querySelector('.fl-which').textContent }));
+  const d0 = await driveNow();
+  await f.tap(await at('.fl-which'));
+  await f.frames(3);
+  const d1 = await driveNow();
+  await f.tap(await at('.fl-which'));
+  await f.frames(3);
+  st = await driveNow();
+  check('on a phone: the drive\'s name switches the torch and the reactionless drive', d0.drive === 'reactionless' && d1.drive === 'torch' && /^Fusion torch/.test(d1.label) && st.drive === 'reactionless' && /^Reactionless/.test(st.label), JSON.stringify({ d0, d1, d2: st }));
+
+  // steering: a finger dragged to the right across the sky turns the ship to the left (the sky goes
+  // with the finger), then the ship holds its new attitude
+  // (the nose is the ship's -z axis, its left its -x axis, from the attitude quaternion)
+  const nose = () => phone.evaluate(() => { const e = window.app.game.flight.ship.quat; const x = 2 * (e.x * e.z + e.w * e.y), y = 2 * (e.y * e.z - e.w * e.x), z = 1 - 2 * (e.x * e.x + e.y * e.y); const lx = 1 - 2 * (e.y * e.y + e.z * e.z), ly = 2 * (e.x * e.y + e.w * e.z), lz = 2 * (e.x * e.z - e.w * e.y); return { n: [-x, -y, -z], left: [-lx, -ly, -lz] }; });
+  const n0 = await nose();
+  await f.drag({ x: 110, y: 520 }, { x: 250, y: 520 }, { steps: 12, rest: 0.3 });
+  await f.frames(30);
+  const n1 = await nose();
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const turned = Math.acos(Math.min(1, dot(n0.n, n1.n))) * 57.2958;
+  const leftward = dot([n1.n[0] - n0.n[0], n1.n[1] - n0.n[1], n1.n[2] - n0.n[2]], n0.left);
+  st = await phone.evaluate(() => window.app.game.flight.ship.angVel.length());
+  check('on a phone: dragging the sky to the right turns the ship to the left, then it holds still', turned > 3 && leftward > 0 && st < 0.02, `turned ${turned.toFixed(1)}°, spin left ${st.toFixed(4)} rad/s`);
+
+  // a burn: the lever pushed to the top is full thrust, and stays so when the finger lifts
+  const lever = await phone.evaluate(() => { const b = document.querySelector('.fl-lever').getBoundingClientRect(); return { x: b.left + b.width / 2, top: b.top + 6, bottom: b.bottom - 6 }; });
+  const w0 = await phone.evaluate(() => window.app.game.flight.readout.properSpeed);
+  await f.drag({ x: lever.x, y: lever.bottom }, { x: lever.x, y: lever.top }, { steps: 8, rest: 0.1 });
+  await f.frames(15);
+  st = await phone.evaluate(() => ({ throttle: window.app.game.flight.ship.throttle, w: window.app.game.flight.readout.properSpeed, shown: document.querySelector('.fl-lever b').textContent, state: document.querySelector('.fl-l2').textContent }));
+  check('on a phone: the lever at the top is full thrust, and the ship speeds up', st.throttle === 1 && st.w > w0 + 5 && st.shown === '100%' && /^Thrust 100 %/.test(st.state), JSON.stringify({ w0, ...st }));
+  await phone.screenshot({ path: path.join(outDir, 'f19-phone-burn.png'), timeout: 180000 });
+  await f.drag({ x: lever.x, y: lever.top }, { x: lever.x, y: lever.bottom }, { steps: 8, rest: 0.1 });
+  await f.frames(3);
+  const cut = await phone.evaluate(() => window.app.game.flight.ship.throttle);
+
+  // Stop: the ship turns round, brakes on the drive and comes to rest beside the Sun (out here
+  // nothing pulls to speak of: it lets go, at rest)
+  const w1 = await phone.evaluate(() => window.app.game.flight.readout.properSpeed);
+  await f.tap(await at('.fl-stop'));
+  await f.frames(3);
+  const began = await phone.evaluate(() => ({ on: !!window.app.game.flight.stopping, pressed: document.querySelector('.fl-stop').getAttribute('aria-pressed'), state: document.querySelector('.fl-l2').textContent }));
+  await phone.screenshot({ path: path.join(outDir, 'f20-phone-stopping.png'), timeout: 180000 });
+  const stopped = await phone.waitForFunction(() => !window.app.game.flight.stopping, null, { timeout: 600000 }).then(() => true).catch(() => false);
+  st = await phone.evaluate(() => ({ w: window.app.game.flight.readout.properSpeed, throttle: window.app.game.flight.ship.throttle, frame: window.app.game.flight.readout.frame }));
+  // the view: a switch between the chase view (where a phone boards) and the cockpit, both ways, a thumb's size
+  const viewAt = await at('.fl-view');
+  const vsize = await phone.evaluate(() => { const b = document.querySelector('.fl-view').getBoundingClientRect(); return { w: b.width, h: b.height, label: document.querySelector('.fl-view b').textContent, mode: window.app.game.mode }; });
+  const other = (m) => (m === 'chase' ? 'cockpit' : 'chase'), named = (m) => (m === 'chase' ? 'Chase' : 'Cockpit');
+  await f.tap(viewAt);
+  await f.frames(4);
+  const v1 = await phone.evaluate(() => ({ mode: window.app.game.mode, on: window.app.game.flight.on, label: document.querySelector('.fl-view b').textContent }));
+  await phone.screenshot({ path: path.join(outDir, 'f22-phone-view.png'), timeout: 180000 });
+  await f.tap(await at('.fl-view'));
+  await f.frames(4);
+  const v2 = await phone.evaluate(() => ({ mode: window.app.game.mode, on: window.app.game.flight.on }));
+  check('on a phone: the view switch goes between the chase view and the cockpit, both ways, the flight going on', vsize.w >= 44 && vsize.h >= 44 && vsize.label === named(other(vsize.mode)) && v1.mode === other(vsize.mode) && v1.on && v1.label === named(vsize.mode) && v2.mode === vsize.mode && v2.on, JSON.stringify({ vsize, v1, v2 }));
+  check('on a phone: the lever at its foot cuts the thrust; Stop brakes the ship to rest', cut === 0 && began.on && began.pressed === 'true' && /^Stop: /.test(began.state) && stopped && st.w < 0.5 && st.throttle === 0 && w1 > 5, JSON.stringify({ cut, w1, began, after: st }));
   await ctx.close();
 }
 
@@ -310,11 +397,70 @@ await shot('f14-alpha-cen.png');
   await f.frames(4);
   st = await phone.evaluate(() => {
     const r = (q) => { const b = document.querySelector(q).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
-    return { top: r('.fl-top'), chip: r('.chip.clock'), sheet: r('.sheet.flight'), tabs: r('.hud-tabs'), open: document.querySelector('#hud').dataset.sheet };
+    return { top: r('.fl-top'), chip: r('.chip.clock'), sheet: r('.sheet.flight'), tabs: r('.hud-tabs'), stick: r('.fl-stick'), open: document.querySelector('#hud').dataset.sheet };
   });
   const apart = (a, b) => a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t;
   check('on its side: the instruments under the clock, the read-out beside the tabs, apart', st.open === 'flight' && st.top.t >= st.chip.b && st.top.r <= 844 && st.top.b <= 0.6 * 390 && apart(st.top, st.sheet) && apart(st.top, st.tabs), JSON.stringify(st));
+  const side = await phone.evaluate(opacity);
+  check('on its side too, no sky label can read through the instruments or the controls', side.length === 8 && seeThrough(side).length === 0, JSON.stringify(seeThrough(side)));
+  check('on its side: the lever and Stop along the foot at the right, under the thumb, clear of the instruments and the read-out', st.stick.r <= 844 && st.stick.b <= 390 && st.stick.r >= 844 - 60 && st.stick.b >= 390 - 60 && apart(st.stick, st.top) && apart(st.stick, st.sheet), JSON.stringify(st.stick));
   await phone.screenshot({ path: path.join(outDir, 'f18-phone-side.png'), timeout: 180000 });
+  await ctx.close();
+}
+
+// 15. every phone size, upright and on its side, with the browser's bars taking some of it (the
+// owner's iPhone on its side: 844 x 280 left of them, 47 px of notch either side): with a star's
+// card open, and with the Time sheet, nothing of the ship's covers the chips, the tab bar or the
+// open panel, all of it is on the screen, and the card's close button is uncovered
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=4&az=40&el=5&ship=cockpit&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10 && window.app.game.flight.on, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) {
+    await f.tap(await phone.evaluate(() => { const b = document.querySelector('.hud-coach [data-coach]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }));
+  }
+  await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Sirius')); });
+  const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
+  const bad = [];
+  let named = 0;
+  for (const sheet of ['card', 'time']) {
+    for (const [w, h, inset] of sizes) {
+      await phone.setViewportSize({ width: w, height: h });
+      await phone.evaluate(({ inset, sheet }) => {
+        const r = document.documentElement.style;
+        r.setProperty('--safe-l', `${inset}px`);
+        r.setProperty('--safe-r', `${inset}px`);
+        if (sheet === 'time') window.app.hud.openSheet('time'); else window.app.hud.closeSheet();
+      }, { inset, sheet });
+      await f.frames(3);
+      await phone.waitForTimeout(400);
+      await f.frames(2);
+      const got = await phone.evaluate(() => {
+        const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width }; };
+        const shown = (e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden';
+        const mine = [...document.querySelectorAll('.fl-glance, .fl-touch, .fl-stick')].filter(shown).map((e) => ({ what: e.className.split(' ')[0], ...box(e) }));
+        const theirs = [...document.querySelectorAll('#hud .hud-top .chip, #hud .hud-tabs, #hud .hud-slot > .on')].filter(shown).map((e) => ({ what: e.className.split(' ').slice(0, 2).join('.'), ...box(e) }));
+        const x = document.querySelector('.sheet.card.on [data-act="deselect"]');
+        let closeOk = true;
+        if (x) { const b = x.getBoundingClientRect(); closeOk = !!document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.closest('[data-act="deselect"]'); }
+        // the names of the sky drawn now: none of them under any of it
+        const names = [...document.querySelectorAll('#labels .label')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => ({ what: e.textContent, ...box(e) }));
+        return { mine, theirs, names, closeOk, W: innerWidth, H: innerHeight };
+      });
+      const meet = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+      const hits = got.mine.flatMap((m) => got.theirs.filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
+      const off = got.mine.filter((m) => m.l < 0 || m.t < 0 || m.r > got.W + 0.5 || m.b > got.H + 0.5).map((m) => `${m.what} off screen`);
+      const glance = got.mine.some((m) => m.what === 'fl-glance');
+      const under = got.names.filter((n) => [...got.mine, ...got.theirs].some((o) => meet(n, o))).map((n) => n.what);
+      named += got.names.length;
+      if (hits.length || off.length || !got.closeOk || !glance || under.length) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, sheet, hits, off, close: got.closeOk, glance, under });
+      if (sheet === 'card' && w === 844 && h === 280) await phone.screenshot({ path: path.join(outDir, 'f21-phone-side-bars.png'), timeout: 180000 });
+    }
+  }
+  check('on every phone size, upright and on its side, bars or not, the ship\'s instruments and controls cover nothing of the interface (the card\'s close button stays free), and no name of the sky is under any of it', bad.length === 0 && named > 50, `${named} names looked at; ${JSON.stringify(bad).slice(0, 600)}`);
   await ctx.close();
 }
 

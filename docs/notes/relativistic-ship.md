@@ -153,6 +153,15 @@ warp in the deployed build in headless Chromium).
    setting (1, 2, 5 from 0.001 g to a million g). The search and settings sheets hide the
    instruments while open. Not on touch yet: flying by hand (throttle, attitude, RCS, SAS), the
    chase view, the drive switch (the autopilot switches to the reactionless drive itself).
+   *Since* (the ship on a phone, its second round): the instruments are a card under the clock
+   (speed with its nines, γ, what the ship is doing, the target and the time to it in both clocks),
+   the full read-out a tap away as a sheet; the Time chip shows the ship's warp measured from its
+   clock and the sheet why it differs from what was asked; flying by hand: a drag turns the ship (a
+   rate command at the finger's angular speed, so the sky follows the finger as far as the wheels
+   allow), a twist rolls, a pinch zooms, a throttle lever, the drive's name switches the drive, and
+   Stop brakes to rest in the frame body's frame (the autopilot's guidance with nothing to fly to,
+   `Autopilot.brake`; time to go (c/a) asinh(w/c) aboard) and holds there against its pull. RCS and
+   the SAS's modes remain keyboard and headset only.
 
 13. **The sky turned white on the way to Andromeda** (found after the first publication, on the
    owner's own trip: 1,000 g, 100,000x). Not the ship's physics, nor the exposure (it stayed

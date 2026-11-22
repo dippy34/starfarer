@@ -47,7 +47,7 @@ export interface Steering {
   /** proper time and universe time to go (s), by flip-and-burn from here */
   tauGo: number;
   tGo: number;
-  phase: 'turning' | 'accelerating' | 'braking' | 'arriving';
+  phase: 'turning' | 'accelerating' | 'braking' | 'arriving' | 'holding';
   arrived: boolean;
 }
 
@@ -113,6 +113,24 @@ export function steer(s: Situation, out: Steering): Steering {
   out.tGo = fb.t;
   out.phase = out.turning ? 'turning' : d < s.radius * 0.05 + 1e3 ? 'arriving' : cmd.dot(toward) >= 0 ? 'accelerating' : 'braking';
   out.arrived = d < Math.max(0.01 * s.radius, 30) && s.w.length() < Math.max(0.01 * s.orbit, 0.5);
+  return out;
+}
+
+/**
+ * Stop: brake to rest in the frame of `s` (the nearest world's, or a star's) and hold there against
+ * the pull that is left, on the drive along the nose. The situation is the ship's own place (rel 0,
+ * slot at rest in that frame, its gravity less the world's): the autopilot's guidance with nothing
+ * to fly to, so it only kills the velocity, never faster than the ship can turn, then holds. The time
+ * to go is the braking's at the full drive: (c/a) asinh(w/c) aboard, w/a in that frame (dw/dt = a
+ * along a straight line); `phase` says turning, braking or holding (arrived: at rest).
+ */
+export function brake(s: Situation, out: Steering): Steering {
+  s.rel.set(0, 0, 0);
+  steer(s, out);
+  const w = s.w.length();
+  out.tauGo = (C / s.drive) * Math.asinh(w / C);
+  out.tGo = w / s.drive;
+  out.phase = out.turning ? 'turning' : out.arrived ? 'holding' : 'braking';
   return out;
 }
 

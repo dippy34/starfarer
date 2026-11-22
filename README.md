@@ -118,6 +118,21 @@ Add it to the home screen to open it without the browser around it.
 | Double-tap | Fly there; on the world you are already at, come six times closer to the spot you tapped |
 | **Orbit / Look** button | What one finger does: turn round the world, or look around |
 
+In the ship (More → Spaceship):
+
+| Touch | Action |
+|---|---|
+| Drag | Turn the ship: the sky goes with your finger, as fast as the ship's reaction wheels allow; let go and it holds its attitude |
+| Twist · Pinch | Roll the ship · zoom the view |
+| The thrust lever (at the right; on its side, along the foot) | Slide up (on its side: right) for more thrust, to the end for none; it stays where you leave it |
+| **Stop** | Turn round and brake to rest beside the nearest world or star (where it pulls, the drive then holds you there) |
+| **Chase / Cockpit** | See the ship from behind, or from its cockpit |
+| The drive's name · − · + | Fusion torch or reactionless drive · the reactionless drive's setting, from 0.001 g to 1,000,000 g |
+| The instruments (under the clock) | Tap for the full read-out |
+| Tap · Double-tap · **Go there** | Select · the autopilot flies there, never faster than light |
+
+Any control (a drag, the lever) takes the ship back from the autopilot or from Stop.
+
 The card of what you selected has **Go there**, **Look at** and **Details**; nothing moves the
 camera until you go. A flight in progress shows a **Stop** button. Under them, for a world of the
 Solar System, is what you can do to it: **Mass**, **Move**, **Add**, **Remove** (gravity for real,
@@ -145,10 +160,9 @@ above); the first use switches live physics on, and **Back to reality** at the t
 | T | Tour: Saturn's rings, Olympus Mons, the Apollo 11 site, an eclipse, a comet, a black hole … |
 | U | Photo mode: hide the interface and names (P saves a PNG) |
 
-Flying freely, walking and flying the ship by hand still need the keyboard (or a headset); their
-touch controls come next. On a phone the ship can be boarded (More → Spaceship), its drive chosen
-and set (tap its name; − and +) and flown by its autopilot (Search, then Go there). Its instruments
-stand under the clock: the speed with its nines, the Lorentz factor, what the ship is doing and the
+Flying freely and walking still need the keyboard (or a headset); their touch controls come next.
+On a phone the ship is flown by hand (the table above) or by its autopilot (Search, then Go there).
+Its instruments stand under the clock: the speed with its nines, the Lorentz factor, what the ship is doing and the
 time to the target in both clocks; a tap on them opens the full read-out. In the ship the Time
 chip shows the ship's own time warp (×1 to ×100,000, Time → Faster), as it actually runs, and the
 Time sheet how fast the universe's clock runs with it.

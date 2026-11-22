@@ -2449,6 +2449,8 @@ export class App {
       this.labels.update([], this.cssW, this.cssH);
       this.vr.updateOverlays(this.labelCandidates(), dt);
     } else {
+      // (no name under the interface's cards and chips, nor the ship's instruments)
+      this.labels.keepOut = this.hud.covers();
       this.labels.update(this.labelCandidates(), this.view.width, this.view.height);
     }
     HITCH.lap('labels');

@@ -316,7 +316,22 @@ measurements in `docs/notes/relativistic-ship.md`):
   warp as measured from its clock (`Flight.timeReport`, `readout.pace`), the universe's rate with
   it, and why it is not what was asked (the autopilot, the computing per frame, the ×100,000 top);
   Faster and Slower step it ×1 … ×100,000; Now goes back to ×1 without moving the date; Reverse is
-  refused aboard. Flying by hand by touch is part 7 below.
+  refused aboard. Flying by hand by touch: one finger drags the sky and the ship turns with it
+  (`Flight.controls`, `touchRot`: the finger's angular speed as a rate command, up to what the
+  wheels do; let go and SAS holds the attitude); a twist rolls, a pinch zooms; a throttle lever at
+  the right edge (under the instruments upright, in the corner on its side); **Stop**
+  (`Flight.stop`, `Autopilot.brake`): turn round and brake to rest in the nearest world's frame,
+  then hold there against its pull, or let go where nothing pulls. Any control takes over.
+  Layout: upright the card spans the top and the lever stands under it at the right; on a wide
+  view (on its side, a tablet) the card takes the room right of the interface's panels (which are
+  a little narrower in the ship) and the lever lies along the foot of that room. Whatever the
+  size, `FlightHud.fit` measures and, where something of the ship's would still meet a chip, the
+  tab bar or the open panel (the browser's bars can take a quarter of a phone on its side), drops
+  the card's lower lines, then the drive row, and upright shortens the lever or hides it. Every
+  piece is 90 % opaque and blurs what is behind it (a sky label read through the drive's setting),
+  and no name of the sky is placed under any part of the interface over the view (`Hud.covers`,
+  the chips, tabs, open card or sheet and whatever is marked `data-cover`, handed to
+  `layoutLabels` as `keepOut`). A view switch (Chase / Cockpit) stands with the lever and Stop.
 - *Not done*: the view at speed (aberration, Doppler, the headlight effect): drawn as at rest; a
   precise specification is in the notes (the star shaders were other agents' work in progress).
   With the live N-body physics coming, the notes list what the ship reads live and what assumes
@@ -1186,8 +1201,11 @@ above is validated against JPL Horizons and stays as it is unless something is w
        the GPU's memory; 4 MB in a headset). `tests/galaxyglow.test.ts` runs the updates against a
        stand-in renderer and fails on the code of before (a map of two places).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
-   walking, then flying the ship by hand (boarding, the drive's setting and its autopilot are on
-   touch already), missions and the benchmark as screens of the app.
+   walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
+   instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
+   own warp, and flying it by hand: drag to steer, a throttle lever, Stop; see "The relativistic
+   ship"). Not on touch yet in the ship: the chase view, the SAS's modes (prograde and the rest),
+   the RCS.
 8. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.
