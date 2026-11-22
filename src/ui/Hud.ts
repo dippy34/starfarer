@@ -23,6 +23,8 @@ export type HudAction =
   | 'ship' | 'ship-go'
   // back to today's date; back to the title screen
   | 'today' | 'menu'
+  // night at a place: on to its sunrise; land and walk here (src/app/Walk.ts)
+  | 'sunrise' | 'walk'
   // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
@@ -39,7 +41,7 @@ export interface HudHost {
   /** the places of a section of the Explore sheet */
   browse(category: Category): Destination[];
   /** a place was chosen from a list */
-  pickDestination(id: string): void;
+  pickDestination(id: string, from?: Category): void;
   /** the mass slider of the selected world was put at `slider` (src/app/Powers.ts: massFactor) */
   setMass(slider: number): void;
   /** a finger (or the pointer) came down on the mass slider, or lifted (or the slider was left): all between is one change */
@@ -113,6 +115,8 @@ export interface HudState {
   missions?: { done: number; total: number; items: { title: string; detail: string; done: boolean }[] } | null;
   /** the date shown is far from today's: the words of the way back ('' when it is today, or cannot go back) */
   today?: string;
+  /** there is ground below to land and walk on (a touch screen shows a Walk button) */
+  canWalk?: boolean;
   /** small print: frame rate, stars, the data in use */
   status: string;
 }
@@ -188,8 +192,10 @@ const TEMPLATE = `
     <div class="hud-fabs">
       <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What dragging one finger does now: turn round the world, or look around. Tap to change">${ICON.orbit}${ICON.look}<span></span></button>
       <button class="fab ship-fab" type="button" data-act="ship-go">${ICON.ship}<span>Your ship</span></button>
+      <button class="fab walk-fab touch-only" type="button" data-act="walk" hidden>${ICON.walk}<span>Land and walk</span></button>
     </div>
     <div class="hud-slot">
+      <div class="hud-notice" role="status" hidden><span></span><button class="notice-act" type="button"></button><button class="icon-btn" type="button" data-notice-close aria-label="Close">${ICON.close}</button></div>
       <div class="hud-flight" hidden><span></span><button type="button" data-act="stop">${ICON.stop}Stop</button></div>
       <div class="hud-watch" role="status" hidden>
         <span class="watch-text"></span>
@@ -630,11 +636,29 @@ export class Hud {
     today.hidden = !s.today;
     if (s.today) setText(today.querySelector('span')!, s.today);
     this.renderMissions(s.missions ?? null);
+    this.$('.walk-fab').hidden = !s.canWalk;
     setText(this.$('.status'), s.status);
     this.renderLive(s);
     this.renderWatch(s);
     this.renderCard(s);
     this.showSlot();
+  }
+
+  /**
+   * A notice over the panels that stays until it is closed or another takes its place (night at a
+   * place, and the way on to its sunrise): its words, and the action its button asks for (null: none).
+   */
+  notice(text: string, action: HudAction | null = null, label = ''): void {
+    const el = this.$('.hud-notice');
+    setText(el.querySelector('span')!, text);
+    const b = el.querySelector<HTMLElement>('.notice-act')!;
+    b.hidden = !action;
+    if (action) { b.dataset.act = action; setText(b, label); }
+    el.hidden = false;
+  }
+
+  clearNotice(): void {
+    this.$('.hud-notice').hidden = true;
   }
 
   /** The missions in the More sheet: how many are done, and the list (rebuilt only when it changes). */
@@ -838,7 +862,8 @@ export class Hud {
 
   private pick(id: string): void {
     this.closeSheet();
-    this.host.pickDestination(id);
+    // (where it was picked from: a section of places, or what was typed)
+    this.host.pickDestination(id, this.input.value.trim() ? undefined : this.category);
   }
 
   // ------------------------------------------------------------------ input
@@ -855,12 +880,14 @@ export class Hud {
     else if ('close' in d) this.closeSheet();
     else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
     else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
+    else if ('noticeClose' in d) this.clearNotice();
     else if ('help' in d) this.$('.more .help-title').scrollIntoView({ block: 'start', behavior: 'smooth' });
     else if ('massReal' in d) { this.slider.value = '0'; this.host.massHeld(true); this.host.setMass(0); this.host.massHeld(false); }
     else if ('live' in d) { if (this.state?.live) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); } }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
     else if (d.act) {
+      if (b.classList.contains('notice-act')) this.clearNotice();
       // (nothing is left open behind the picture, or the cockpit; a picture saved shows the view it saved)
       if (d.act === 'photo' || d.act === 'ship' || d.act === 'screenshot') this.closeSheet();
       this.host.act(d.act as HudAction);

@@ -41,6 +41,8 @@ export const ICON = {
   ship: svg('<path d="M12 2.8c2 2.2 3 4.9 3 8.2v5.2l3.6 2.6v1.7l-3.9-1.3-1.3 2H10.6l-1.3-2-3.9 1.3v-1.7L9 16.2V11c0-3.3 1-6 3-8.2z"/><circle cx="12" cy="9.5" r="1.4"/>'),
   flag: svg('<path d="M5.5 21V3.5"/><path d="M5.5 4.2c3.8-1.8 6.3 1.8 10.5 0v8.3c-4.2 1.8-6.7-1.8-10.5 0"/>'),
   menu: svg('<path d="m3.5 11 8.5-7 8.5 7"/><path d="M6 9.4V20h12V9.4"/><path d="M10 20v-5.5h4V20"/>'),
+  // walking (a figure in its stride)
+  walk: svg('<circle cx="13" cy="4.3" r="1.8"/><path d="m9.5 21 2.3-6.2 2.7 2.4V21M8 11.6l2.4-3.4 3.6-.5 2 3.4 2.5 1.2M11.8 14.8l.8-3.6"/>'),
   // a step back (the last change undone); a turn round and play (a change watched again)
   undo: svg('<path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M5 4.5V8.4h3.9"/>'),
   replay: svg('<path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M19 4.5V8.4h-3.9"/><path d="M10.4 9.3v5.4l4.3-2.7z" fill="currentColor"/>'),

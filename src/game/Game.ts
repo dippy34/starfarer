@@ -102,6 +102,7 @@ export class Game {
 
   setMode(m: ViewMode): void {
     if (m === 'chase' && this.app.vr.active) m = 'off';
+    const was = this.mode;
     // desktop cockpit: a wider view, so the dashboard and canopy frame the scene
     if (m === 'cockpit' && this.mode !== 'cockpit') { this.fovBefore = this.app.rig.fov; this.app.rig.fov = Math.max(this.app.rig.fov, 72); }
     if (m !== 'cockpit' && this.mode === 'cockpit') this.app.rig.fov = this.fovBefore;
@@ -131,12 +132,14 @@ export class Game {
       this.audio.start();
     }
     // (on a touch screen, in the words of its controls)
-    const touch = this.app.input.touch;
+    // (on a touch screen, in the words of its controls; a switch of view says only which view)
+    const touch = this.app.input.touch, viewOnly = m !== 'off' && was !== 'off';
     const say = m === 'off' ? (toReal ? 'Ship mode off: time back to real time' : 'Ship mode off')
+      : touch && viewOnly ? (m === 'chase' ? 'Chase view' : 'Cockpit view')
       : touch ? 'In the ship: drag to turn it, the lever is the thrust, Stop brakes; choose a place and Go there flies it'
       : m === 'cockpit' ? 'In the ship: real physics. W/S throttle, arrows or drag to turn, Y SAS mode, I reactionless drive, J autopilot, V view'
       : 'Chase view (V: switch)';
-    this.app.hud.toast(say, m === 'cockpit' ? 4 : 2.2);
+    this.app.hud.toast(say, m === 'cockpit' && !(touch && viewOnly) ? 4 : 2.2);
     if (this.app.vr.active) this.app.vr.flash(m === 'off' ? 'Ship mode off' : 'Real physics: left grip throttle, right stick steer, left stick RCS, stick click SAS');
   }
 

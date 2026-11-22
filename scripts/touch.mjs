@@ -327,7 +327,8 @@ const centreOf = async (page, sel) => {
   await tapOn('.hud-tabs [data-tab="explore"]');
   let rows = await page.evaluate(() => [...document.querySelectorAll('.explore .row b')].map((b) => b.textContent));
   st = await state(page);
-  check('Explore opens the tour', st.sheet === 'explore' && rows.includes('Olympus Mons') && !rows.some((r) => /Walk/.test(r)), rows.slice(0, 4).join(', '));
+  // (walking works by touch now: the tour offers the walk at Apollo 17 on a phone too)
+  check('Explore opens the tour, with the walk on the Moon', st.sheet === 'explore' && rows.includes('Olympus Mons') && rows.includes('Walk on the Moon at Apollo 17'), rows.slice(0, 4).join(', '));
   await page.screenshot({ path: path.join(outDir, 'touch-7-explore.png'), timeout: 300000 });
   await tapOn('.cats [data-cat="solar"]');
   rows = await page.evaluate(() => [...document.querySelectorAll('.explore .row')].map((b) => ({ name: b.querySelector('b').textContent, photo: b.querySelector('.thumb').classList.contains('photo') })));

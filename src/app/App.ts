@@ -53,7 +53,8 @@ import { Catalog } from '../universe/Catalog';
 import { normKey } from '../universe/CatalogSearch';
 import { CameraRig, sunlitSide } from './CameraRig';
 import { Game } from '../game/Game';
-import { fmtLight, MAX_RATE, WARP_STEPS } from '../game/Flight';
+import { fmtLight, fmtTime, MAX_RATE, spinOf, WARP_STEPS } from '../game/Flight';
+import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
@@ -653,6 +654,8 @@ export class App {
       case 'reverse': this.timeReverse(); break;
       case 'now': case 'today': this.realTime(); break;
       case 'ship-go': this.shipThere(); break;
+      case 'sunrise': this.skipToSunrise(); break;
+      case 'walk': this.walk.start(); break;
       case 'menu': if (this.openMenu) { this.hud.closeSheet(); this.openMenu(); } break;
       case 'labels': this.labels.enabled = !this.labels.enabled; this.hud.toast(`Names ${this.labels.enabled ? 'on' : 'off'}`); break;
       case 'orbits': this.orbits.enabled = !this.orbits.enabled; this.hud.toast(`Orbits ${this.orbits.enabled ? 'on' : 'off'}`); break;
@@ -696,9 +699,11 @@ export class App {
   private offered = new Map<string, SpaceObject>();
 
   /** A place was chosen from a list: select it and go. */
-  pickDestination(id: string): void {
+  pickDestination(id: string, from?: string): void {
     if (id.startsWith('tour:')) { this.tourAction(id.slice(5)); return; }
     const obj = this.resolveSearchId(id);
+    // (a place to look at, picked from the tour: arrived at in daylight)
+    if (from === 'tour' && obj instanceof Landmark) this.toDaylight(obj);
     if (obj) { this.select(obj); this.goTo(obj); }
   }
 
@@ -773,6 +778,52 @@ export class App {
     this.rateIndex = 0;
     while (this.rateIndex + 1 < RATE_STEPS.length && RATE_STEPS[this.rateIndex + 1] <= next) this.rateIndex++;
   }
+  /** a flight to a place on a surface under way: on arrival, night there is told */
+  private arrival: Landmark | null = null;
+  /** the place whose sunrise the notice offers */
+  private nightAt: Landmark | null = null;
+
+  /**
+   * Night at a place on a world: the Sun's disc below its horizon. The words for it (with the
+   * time to sunrise, or that the Sun does not rise there for now) and the seconds to the Sun
+   * standing `height` over the horizon (null: not soon).
+   */
+  night(place: Landmark, height = -0.0145): { text: string; t: number | null } | null {
+    const w = place.world, sun = this.system.sunAt(w.pos);
+    if (!sun || sun === w) return null;
+    const sunDir = sun.upos.sub(w.upos, new Vector3()).normalize(), up = place.up();
+    if (sunHeight(up, sunDir) > -0.0145) return null;
+    const spin = spinOf(w, new Vector3()), drift = orbitDrift(w.upos.sub(sun.upos, new Vector3()), w.vel.clone().sub(sun.vel));
+    const rise = sunriseIn(up, sunDir, spin, drift, -0.0145);
+    const t = height === -0.0145 ? rise : sunriseIn(up, sunDir, spin, drift, height);
+    const text = rise === null ? `Night at ${place.name}: the Sun does not rise here for now` : `Night at ${place.name}: sunrise in ${fmtTime(rise)}`;
+    return { text, t };
+  }
+
+  /** Arrived at a place on a surface: if it is night there, a notice says so (and offers its sunrise). */
+  private checkArrival(): void {
+    const place = this.arrival;
+    if (!place || this.rig.autopilot) return;
+    this.arrival = null;
+    if (this.rig.target !== place) return;
+    const n = this.night(place);
+    if (!n) return;
+    this.nightAt = place;
+    // (the date is the explorer's to move: not in live physics, nor aboard the ship)
+    const can = n.t !== null && !this.physics.on && !this.game.flight.on;
+    this.hud.notice(n.text, can ? 'sunrise' : null, 'Skip to sunrise');
+  }
+
+  /** On to the morning at the place it is night at: the clock moves to the Sun 6° over its horizon. */
+  skipToSunrise(place = this.nightAt): boolean {
+    if (!place || this.physics.on || this.game.flight.on) return false;
+    const n = this.night(place, (6 * Math.PI) / 180);
+    if (!n || n.t === null) return false;
+    this.clock.jdTdb += n.t / 86400;
+    this.hud.toast(`Morning at ${place.name} (${fmtTime(n.t)} on)`, 3);
+    return true;
+  }
+
   /** the title screen, opened again (src/main.ts sets it: the menu belongs to the page) */
   openMenu: (() => void) | null = null;
 
@@ -823,7 +874,7 @@ export class App {
       { label: 'Olympus Mons', detail: 'Mars · the tallest volcano known (real elevation data)', id: `lm:${lm('Olympus Mons')}` },
       { label: 'Valles Marineris', detail: 'Mars · a canyon 4,000 km long', id: `lm:${lm('Valles Marineris')}` },
       { label: 'Apollo 11 landing site', detail: 'the Moon · where people first landed', id: `lm:${lm('Apollo 11 landing site')}` },
-      { label: 'Walk on the Moon at Apollo 17', detail: 'land in the Taurus-Littrow valley and walk (B: walk / fly)', id: 'tour:walk17' },
+      { label: 'Walk on the Moon at Apollo 17', detail: this.input.touch ? 'land in the Taurus-Littrow valley and walk (the stick walks, Fly takes off)' : 'land in the Taurus-Littrow valley and walk (B: walk / fly)', id: 'tour:walk17' },
       { label: 'Shackleton crater', detail: 'the Moon\'s south pole · long shadows', id: `lm:${lm('Shackleton (lunar south pole)')}` },
       { label: 'A moon\'s shadow on Jupiter', detail: 'jumps to the next shadow transit', id: 'tour:shadow' },
       { label: 'Total lunar eclipse', detail: '3 March 2026 · the Moon in Earth\'s shadow', id: 'tour:eclipse' },
@@ -837,13 +888,27 @@ export class App {
       { label: 'Andromeda Galaxy', detail: '2.5 million light years', id: `gx:${this.galaxies.galaxies.findIndex((g) => g.name.startsWith('Andromeda'))}` },
       { label: 'The Milky Way from outside', detail: 'our galaxy, 100,000 light years across', id: 'mw:0' },
     ];
-    // (walking needs keys for now: it is not offered where there are none)
-    return items.filter((i) => !/:-1$/.test(i.id) && !(i.id === 'tour:walk17' && this.input.touch));
+    return items.filter((i) => !/:-1$/.test(i.id));
+  }
+
+  /** A tour to a place to see: if it is night there, the clock moves on to its morning first (said so). */
+  private toDaylight(place: Landmark): void {
+    if (this.physics.on || this.game.flight.on) return;
+    const n = this.night(place, (6 * Math.PI) / 180);
+    if (!n || n.t === null) return;
+    this.clock.jdTdb += n.t / 86400;
+    this.hud.toast(`It was night at ${place.name}: on to the morning there (${fmtTime(n.t)} later)`, 3.5);
   }
 
   /** Tour destinations that need more than a fly-to (a time jump, a search): desktop flies there. */
   private tourAction(what: string): void {
-    if (what === 'walk17') { this.walk.walkAt(this.landmarks.find((l) => l.name === 'Apollo 17 landing site')!); return; }
+    if (what === 'walk17') {
+      const site = this.landmarks.find((l) => l.name === 'Apollo 17 landing site')!;
+      this.toDaylight(site);
+      this.walk.walkAt(site);
+      return;
+    }
+
     const o = this.prepareTour(what);
     if (o) { this.select(o); this.goTo(o); }
   }
@@ -1290,6 +1355,9 @@ export class App {
       this.rig.flyTo(obj, 60, undefined, true, obj.approachDir());
       return;
     } else if (obj instanceof Landmark) {
+      // (on arrival: if it is night there, say so, with the way on to its sunrise)
+      this.arrival = obj;
+      this.hud.clearNotice();
       // (with time running fast the ground would turn the place away under the flight: it would seem
       // to fly backwards. The flight is made in real time)
       if (!this.clock.paused && Math.abs(this.clock.rate) > 1 && !this.physics.on) {
@@ -2770,6 +2838,7 @@ export class App {
 
   private updateHud(): void {
     const c = this.clock, rig = this.rig;
+    this.checkArrival();
     let selection: HudState['selection'] = null;
     if (this.selection) {
       const sel = this.selection;
@@ -2817,6 +2886,12 @@ export class App {
     const flight = this.game.flight;
     const speed = flight.on ? fmtLight(flight.readout.properSpeed) : formatSpeed(rig.speed);
     if (rig.speed > 0) placeDetail = t ? `${placeDetail} · ${speed}` : speed;
+    // (on foot the chip says where you stand, not where you last flew to)
+    if (this.walk.walking) {
+      const w = this.walk.worldName();
+      place = `On ${w}`;
+      placeDetail = 'walking';
+    }
     const drawn = this.starFields.reduce((a, f) => a + f.drawnStars, 0) + this.procStars.drawnStars;
     const loaded = this.catalogs.reduce((a, cat) => a + cat.loadedStars, 0);
     const total = this.catalogs.reduce((a, cat) => a + cat.totalStars, 0);
@@ -2846,6 +2921,7 @@ export class App {
       ship: flight.on ? flight.timeReport() : null,
       missions: { done: this.game.missions.doneCount, total: this.game.missions.total, items: this.game.missions.list },
       // (a day or more from today, and the date is the explorer's to set: not in live physics)
+      canWalk: this.input.touch && !this.game.active && this.walk.canStartHere(),
       today: !this.physics.on && Math.abs(c.jdTdb - (Date.now() / 86_400_000 + 2_440_587.5)) > 1 ? 'Back to today' : '',
       status: [
         `${this.fps.toFixed(0)} fps`,

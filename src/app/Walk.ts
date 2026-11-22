@@ -523,6 +523,9 @@ export class Walk {
   /** VR controller inputs for the next update */
   private vr = { x: 0, y: 0, run: false, turn: 0 };
   private hudEl: HTMLDivElement | null = null;
+  /** a touch screen: the move stick under the left thumb (x right, y down, -1..1), Jump and Fly under the right */
+  private pad = { x: 0, y: 0 };
+  private padEl: HTMLDivElement | null = null;
   private hudTimer = 0;
   /** short status for the HUD and the VR wrist */
   status = '';
@@ -544,9 +547,54 @@ export class Walk {
         + 'white-space:nowrap;pointer-events:none;display:none;text-align:center;';
       app.hud.root.appendChild(el);
       this.hudEl = el;
+      this.buildPad(app.hud.root);
     }
     this.marks.group.visible = false;
     app.renderer?.scene.add(this.marks.group);
+  }
+
+  /**
+   * The controls for walking by touch: a stick under the left thumb (push it to walk, all the way
+   * to run), Jump and Fly under the right; one finger dragged on the view looks around.
+   */
+  private buildPad(root: HTMLElement): void {
+    const pad = document.createElement('div');
+    pad.className = 'walk-pad touch-only';
+    pad.hidden = true;
+    pad.innerHTML = '<div class="walk-stick" role="slider" aria-label="Walk: push the way to go"><i></i></div>'
+      + '<div class="walk-buttons"><button class="walk-jump" type="button">Jump</button><button class="walk-fly" type="button">Fly</button></div>';
+    root.appendChild(pad);
+    this.padEl = pad;
+    const stick = pad.querySelector<HTMLElement>('.walk-stick')!, knob = stick.querySelector<HTMLElement>('i')!;
+    let id = -1;
+    const at = (e: PointerEvent) => {
+      const b = stick.getBoundingClientRect(), R = b.width / 2;
+      let x = (e.clientX - (b.left + R)) / R, y = (e.clientY - (b.top + R)) / R;
+      const m = Math.hypot(x, y);
+      if (m > 1) { x /= m; y /= m; }
+      this.pad.x = x;
+      this.pad.y = y;
+      knob.style.transform = `translate(${(x * R * 0.6).toFixed(1)}px, ${(y * R * 0.6).toFixed(1)}px)`;
+    };
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      id = -1;
+      this.pad.x = this.pad.y = 0;
+      knob.style.transform = '';
+    };
+    stick.addEventListener('pointerdown', (e) => { id = e.pointerId; try { stick.setPointerCapture(id); } catch { /* gone */ } at(e); });
+    stick.addEventListener('pointermove', (e) => { if (e.pointerId === id) at(e); });
+    stick.addEventListener('pointerup', end);
+    stick.addEventListener('pointercancel', end);
+    pad.querySelector('.walk-jump')!.addEventListener('click', () => this.jump());
+    pad.querySelector('.walk-fly')!.addEventListener('click', () => this.exit());
+  }
+
+  /** There is ground below to land and walk on (with nothing in the way of it: water, gas, a star). */
+  canStartHere(): boolean {
+    if (this.active) return false;
+    const app = this.app, below = app.terrain.below(app.rig.upos), owner = app.terrain.owner as SpaceObject | null;
+    return !!below && !!owner && !cannotWalkReason(owner) && !this.isWater(below.dir);
   }
 
   /** walking or about to (flying down to land) */
@@ -633,6 +681,8 @@ export class Walk {
     this.marks.group.visible = false;
     if (this.orbitsBefore !== null) { app.orbits.enabled = this.orbitsBefore; this.orbitsBefore = null; }
     if (this.hudEl) this.hudEl.style.display = 'none';
+    if (this.padEl) this.padEl.hidden = true;
+    this.pad.x = this.pad.y = 0;
     if (typeof document !== 'undefined' && document.pointerLockElement) document.exitPointerLock?.();
     if (was === 'walk' || was === 'descend') {
       app.rig.stop();
@@ -920,6 +970,13 @@ export class Walk {
       this.turn(-dx * k);
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * k));
     }
+    // a finger (or two) on the view: the sky goes with it
+    const tx = consumed.touch.dx + consumed.pan.dx, ty = consumed.touch.dy + consumed.pan.dy;
+    if (!vrOn && (tx || ty)) {
+      const px = app.rig.pixelAngle;
+      this.turn(tx * px);
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch + ty * px));
+    }
     right.crossVectors(this.fwd, up).normalize();
 
     // movement wish in body-fixed axes
@@ -943,6 +1000,13 @@ export class Walk {
       wish.copy(hf).multiplyScalar(-this.vr.y).addScaledVector(hr, this.vr.x);
       if (wish.lengthSq() > 0) wish.setLength(mag * mag);
       run = run || this.vr.run;
+    }
+    // the stick (a touch screen): the way it is pushed, as far as it is pushed; all the way runs
+    if (!vrOn && (this.pad.x || this.pad.y)) {
+      const mag = Math.min(1, Math.hypot(this.pad.x, this.pad.y));
+      wish.copy(this.fwd).multiplyScalar(-this.pad.y).addScaledVector(right, this.pad.x);
+      if (wish.lengthSq() > 0) wish.setLength(mag);
+      run = run || mag > 0.95;
     }
     this.vr.x = this.vr.y = 0;
     const vrRunning = this.vr.run;
@@ -1078,8 +1142,10 @@ export class Walk {
     if (!this.hudEl) return;
     const vr = this.app.vr.active;
     this.hudEl.style.display = this.state === 'walk' && !vr && !this.app.photoMode ? 'block' : 'none';
+    if (this.padEl) this.padEl.hidden = !(this.state === 'walk' && !vr && !this.app.photoMode);
+    const how = this.app.input.touch ? 'the stick walks (all the way: run) · drag to look · Jump · Fly to take off' : 'W A S D move · mouse look · Shift run · Space jump · C/Ctrl crouch · B fly';
     this.hudEl.innerHTML = `<b>Walking on ${escapeHtml(this.worldName())}</b>, gravity ${g.toFixed(2)} m/s² (${(g / 9.80665).toFixed(2)} g) · ${motion}`
-      + `<br><span style="opacity:.65">W A S D move · mouse look · Shift run · Space jump · C/Ctrl crouch · B fly</span>`;
+      + `<br><span style="opacity:.65">${how}</span>`;
   }
 
   /** For tests and the console. */

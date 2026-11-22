@@ -86,6 +86,9 @@ const CSS = `
   .fl-desk { left: 8px; right: 8px; width: auto; top: 64px; font-size: 11px; line-height: 1.3; }
   .fl-top { left: calc(var(--safe-l, 0px) + 8px); right: calc(var(--safe-r, 0px) + 8px); width: auto; }
   #hud[data-live] .fl-top { top: calc(var(--safe-t, 0px) + 122px); }
+  /* (upright the lever and Stop stand at the right under the instruments: a message keeps left of them) */
+  #hud.touch[data-mode='ship'] .hud-toast { left: calc(var(--safe-l, 0px) + 8px); max-width: calc(100vw - 96px); transform: translate(0, -6px); }
+  #hud.touch[data-mode='ship'] .hud-toast.show { transform: none; }
   /* (the search and the settings take the whole screen: the instruments step aside for them; the
      time sheet reaches up to where the lever is) */
   #hud:is([data-sheet='explore'], [data-sheet='more']) :is(.fl-desk, .fl-top) { display: none; }

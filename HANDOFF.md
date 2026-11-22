@@ -1402,6 +1402,14 @@ above is validated against JPL Horizons and stays as it is unless something is w
    and the chip says "held"; messages show under the instruments; the orbit's tags are drawn at
    the names' size across the view and, like the target's brackets, never under the interface.
    The cockpit, the ship and their art: the ship-look work (HANDOFF "The ship's looks").
+   Part C2: walking on touch (`Walk.ts`: a Land and walk button over walkable ground, then a stick
+   under the left thumb, look by drag, Jump and Fly; the Apollo 17 walk on the tour on touch too);
+   night at a place on arrival (`Daylight.ts`: the Sun's height and the next sunrise from the
+   world's spin and its drift round its sun; a notice with Skip to sunrise, which moves the clock
+   to the Sun 6° up; not in live physics nor in the ship) and the tour's places arrived at in
+   daylight (`App.toDaylight`). Still keyboard only: free flight on touch. Upright, the dock stops
+   below the chips (and the live mark), the round buttons step aside while a card's details are
+   read, and flight.mjs checks the explorer's parts never lie on each other on ten phone sizes.
 8. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in
    which the server went away mid-flight: a star tile that fails to download, or arrives truncated,
    throws an uncaught error; whether it is ever retried needs checking.

@@ -174,7 +174,13 @@ turns the watching off.
 | T | Tour: Saturn's rings, Olympus Mons, the Apollo 11 site, an eclipse, a comet, a black hole … |
 | U | Photo mode: hide the interface and names (P saves a PNG) |
 
-Flying freely and walking still need the keyboard (or a headset); their touch controls come next.
+**Walking on a phone:** over solid ground a **Land and walk** button comes down to stand on it (or
+take the tour's walk at Apollo 17). Then the stick under your left thumb walks the way you push it
+(all the way: run), a finger dragged on the view looks around, **Jump** jumps (1.9 m on the Moon)
+and **Fly** takes off again. Arriving at a place where it is night, a notice says so with the time
+to sunrise and offers **Skip to sunrise**; the tour's places are arrived at in daylight.
+
+Flying freely still needs the keyboard (or a headset); its touch controls come next.
 On a phone the ship is flown by hand (the table above) or by its autopilot (Search, then Go there).
 Its instruments stand under the clock: the speed with its nines, the Lorentz factor, what the ship is doing and the
 time to the target in both clocks; a tap on them opens the full read-out. In the ship the Time
