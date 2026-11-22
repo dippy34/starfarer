@@ -21,8 +21,8 @@ export type HudAction =
   | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot'
   // board the ship (src/game/Game.ts) or leave it
   | 'ship'
-  // what if (src/app/WhatIf.ts): give the selected world a moon; take away one that was made
-  | 'add-moon' | 'unmake'
+  // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
+  | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
   // begin or end moving it with a finger, and what it is to do where it is left
   | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle';
@@ -53,9 +53,8 @@ export interface HudState {
     key: string; name: string; detail: string; rows: [string, string][]; picture: Picture; here: boolean;
     /** what follows from those facts by the textbook, each with its working (src/app/Worked.ts) */
     worked: { label: string; text: string; math: string }[];
-    /** what can be done to it (src/app/WhatIf.ts): given a moon; taken away again, if the explorer made it */
-    canAddMoon: boolean;
-    made: boolean;
+    /** what can be added to it (src/app/WhatIf.ts); nothing: an empty list */
+    add: readonly ('moon' | 'earth' | 'jupiter' | 'sun')[];
     /**
      * Its mass, where it has a known one to change: where the slider stands, the mass and its factor
      * in words, and what the textbook predicts of a body of that mass ('' where it says nothing).
@@ -103,7 +102,7 @@ export interface ThumbSheet { url: string; cols: number; rows: number; bodies: R
 type Sheet = 'explore' | 'time' | 'more' | 'flight';
 
 /** the height the selection's card takes above the tab bar, with its gap (px): its three buttons, and the powers under them */
-const CARD_ROOM = 188;
+const CARD_ROOM = 196;
 
 const TOUCH_HELP: [string, string][] = [
   ['Drag', 'Turn round the world you are at'],
@@ -176,6 +175,7 @@ const TEMPLATE = `
         <div class="card-powers" hidden>
           <button class="power" type="button" data-power="mass" aria-expanded="false">${ICON.mass}<span>Mass</span></button>
           <button class="power" type="button" data-act="move" aria-expanded="false">${ICON.move}<span>Move</span></button>
+          <button class="power" type="button" data-power="add" aria-expanded="false">${ICON.add}<span>Add</span></button>
           <button class="power" type="button" data-act="remove">${ICON.unmake}<span>Remove</span></button>
         </div>
         <div class="power-panel" data-panel="mass" hidden>
@@ -192,14 +192,16 @@ const TEMPLATE = `
           </div>
           <p class="power-now"></p>
         </div>
+        <div class="power-panel" data-panel="add" hidden>
+          <button class="row" type="button" data-act="add-moon">${ICON.moon}<span class="row-text"><b>A moon</b><small>A new one, on a circle round it, between you and it</small></span></button>
+          <button class="row" type="button" data-act="add-earth">${ICON.rocky}<span class="row-text"><b>A planet like Earth</b><small>Its size and mass, on a circle round this star</small></span></button>
+          <button class="row" type="button" data-act="add-jupiter">${ICON.giant}<span class="row-text"><b>A planet like Jupiter</b><small>318 Earths: heavy enough to throw worlds out</small></span></button>
+          <button class="row" type="button" data-act="add-sun">${ICON.sun}<span class="row-text"><b>A second sun</b><small>A star like the Sun: they go round each other</small></span></button>
+          <p class="power-hint">It starts between you and this world, and can be moved, made heavier and removed like any other.</p>
+        </div>
         <div class="facts" hidden>
           <dl></dl>
           <div class="worked" hidden><h3>Worked out <small>tap a line to see how</small></h3><div class="worked-rows"></div></div>
-          <div class="whatif" hidden>
-            <h3>What if</h3>
-            <button class="row" type="button" data-act="add-moon">${ICON.moon}<span class="row-text"><b>Give it a moon</b><small>A new one, on a circular orbit between you and it</small></span></button>
-            <button class="row" type="button" data-act="unmake">${ICON.unmake}<span class="row-text"><b>Take it away</b><small>You made this moon: this unmakes it</small></span></button>
-          </div>
         </div>
       </section>
       <section class="sheet explore" data-sheet="explore" aria-label="Search and places to go">
@@ -289,7 +291,7 @@ export class Hud {
   /** the selection has changed by itself: the open sheet is not to give way to its card (see `selectionMoved`) */
   private moved = false;
   /** the power whose panel is open on the card */
-  private power: 'mass' | null = null;
+  private power: 'mass' | 'add' | null = null;
   /** a finger is on the mass slider: where it stands is the finger's business */
   private sliding = false;
   private logKey = '';
@@ -575,15 +577,21 @@ export class Hud {
     powers.hidden = !sel.mass && !sel.removable;
     const massButton = powers.querySelector<HTMLElement>('[data-power="mass"]')!;
     massButton.hidden = !sel.mass;
+    const addButton = powers.querySelector<HTMLElement>('[data-power="add"]')!;
+    addButton.hidden = sel.add.length === 0;
     powers.querySelector<HTMLElement>('[data-act="remove"]')!.hidden = !sel.removable;
     const moving = sel.move?.on ?? false;
     const moveButton = powers.querySelector<HTMLElement>('[data-act="move"]')!;
     moveButton.hidden = !sel.move;
     moveButton.setAttribute('aria-expanded', String(moving));
-    // (one panel at a time: moving it takes the place of its mass and of its details)
-    if (!sel.mass || moving) this.power = null;
+    // (one panel at a time: moving it takes the place of its mass, of what can be added and of its details)
+    if (moving || (this.power === 'mass' && !sel.mass) || (this.power === 'add' && !sel.add.length)) this.power = null;
     if (moving) this.details = false;
     massButton.setAttribute('aria-expanded', String(this.power === 'mass'));
+    addButton.setAttribute('aria-expanded', String(this.power === 'add'));
+    const addPanel = card.querySelector<HTMLElement>('[data-panel="add"]')!;
+    addPanel.hidden = this.power !== 'add';
+    if (this.power === 'add') for (const kind of ['moon', 'earth', 'jupiter', 'sun'] as const) addPanel.querySelector<HTMLElement>(`[data-act="add-${kind}"]`)!.hidden = !sel.add.includes(kind);
     const movePanel = card.querySelector<HTMLElement>('[data-panel="move"]')!;
     movePanel.hidden = !moving;
     if (sel.move && moving) {
@@ -626,11 +634,6 @@ export class Hud {
       this.workedValues = [...rows.querySelectorAll<HTMLElement>('details')].map((d) => [d.querySelector('b')!, d.querySelector('code')!]);
     }
     sel.worked.forEach((w, i) => { setText(this.workedValues[i][0], w.text); setText(this.workedValues[i][1], w.math); });
-    // what can be done to it
-    const whatif = facts.querySelector<HTMLElement>('.whatif')!;
-    whatif.hidden = !sel.canAddMoon && !sel.made;
-    whatif.querySelector<HTMLElement>('[data-act="add-moon"]')!.hidden = !sel.canAddMoon;
-    whatif.querySelector<HTMLElement>('[data-act="unmake"]')!.hidden = !sel.made;
   }
 
   /** One panel at a time: the open sheet, else the card of the selection. */
@@ -690,7 +693,7 @@ export class Hud {
     else if (d.tab) this.tab(d.tab);
     else if ('close' in d) this.closeSheet();
     else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
-    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : 'mass'; this.details = false; if (this.state) this.renderCard(this.state); }
+    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
     else if ('massReal' in d) { this.slider.value = '0'; this.host.setMass(0); }
     else if ('live' in d) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }

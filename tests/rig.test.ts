@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { CameraRig } from '../src/app/CameraRig';
+import { CameraRig, sunlitSide } from '../src/app/CameraRig';
 import { emptyFrame, type Input } from '../src/app/Input';
 import { UPos } from '../src/core/upos';
 import type { SpaceObject } from '../src/universe/Body';
@@ -93,5 +93,33 @@ describe('autopilot arrival direction', () => {
     const end = rig.upos.toVector3();
     expect(end.length()).toBeCloseTo(R * 2.6, -18);
     expect(end.normalize().angleTo(arrive)).toBeLessThan(1e-3);
+  });
+});
+
+describe('the side a world is arrived at', () => {
+  const sun = new Vector3(1.5e11, 0, 0);
+  const lit = (from: Vector3) => {
+    const side = sunlitSide(from, sun);
+    return side ? (side.angleTo(sun) * 180) / Math.PI : null;
+  };
+
+  it('is the one the flight comes in from while that shows enough of its lit face', () => {
+    expect(sunlitSide(new Vector3(1, 0, 0), sun)).toBeUndefined();          // from the sun's side: all of it lit
+    expect(sunlitSide(new Vector3(0, 3e9, 1e9), sun)).toBeUndefined();      // from the side: half of it
+    expect(sunlitSide(new Vector3(-1, 8, 0), sun)).toBeUndefined();         // a little behind: 97 degrees round
+  });
+
+  it('is round towards the sun, on the eye\'s own side, where the straight way in ends over its night', () => {
+    // from 120 degrees round: to 60 degrees, three quarters of the disc lit, without crossing to the other side
+    const from = new Vector3(-1, Math.sqrt(3), 0).multiplyScalar(4e9), side = sunlitSide(from, sun)!;
+    expect(side.length()).toBeCloseTo(1, 12);
+    expect(lit(from)).toBeCloseTo(60, 9);
+    expect(side.y).toBeGreaterThan(0);
+    expect(side.z).toBeCloseTo(0, 12);
+    // out of the plane just the same
+    expect(sunlitSide(new Vector3(-5, 0, -1), sun)!.z).toBeLessThan(0);
+    // from straight behind it: any side, still 60 degrees from the sun
+    expect(lit(new Vector3(-7e11, 0, 0))).toBeCloseTo(60, 9);
+    expect(lit(new Vector3(0, 0, -2))).toBeNull();
   });
 });

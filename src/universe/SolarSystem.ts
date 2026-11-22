@@ -22,15 +22,18 @@ interface SpkEphem { kind: 'spk'; chain: [number, number][]; barycenter?: number
 /** Piecewise osculating elements from JPL Horizons: [jd, q_km, e, i, node, peri, tp_jd, n_deg_day] (ICRF, planet-centred). */
 interface OsculatingTable { rows: number[][]; rmsDeg: number; source: string }
 interface SatEphem { kind: 'satellite'; orbit: SatOrbit; osculating?: OsculatingTable }
+/** No path of its own: put where it is by whoever made it, and moved by the simulation from then on (src/app/LivePhysics.ts). */
+interface PlacedEphem { kind: 'placed' }
 
 interface BodyJson {
   id: number; name: string; fullName?: string; type: BodyType; parent: number | null;
-  ephem: SpkEphem | SatEphem | KeplerEphem;
+  ephem: SpkEphem | SatEphem | KeplerEphem | PlacedEphem;
   radii?: number[]; radiusSource?: string; gm?: number; systemGm?: number; rot?: RotationModel;
   albedo?: number; V10?: number; H?: number; texture?: string; color?: number[]; teff?: number; absMag?: number;
   spectralType?: string; rotPeriodDays?: number; rotPeriodHours?: number; orbitClass?: string;
-  /** not from any catalogue: made by the explorer (src/app/WhatIf.ts) */
+  /** not from any catalogue: made by the explorer (src/app/WhatIf.ts), and if as a copy of a body of the catalogue, of which */
   made?: boolean;
+  twinOf?: number;
 }
 
 export type { BodyJson };
@@ -131,6 +134,7 @@ export class SolarSystem {
   private link(bj: BodyJson): void {
     const b = this.byId.get(bj.id)!;
     const p = bj.parent === null ? null : this.byId.get(bj.parent) ?? null;
+    b.twinOf = bj.twinOf === undefined ? null : this.byId.get(bj.twinOf) ?? null;
     this.home.set(b, p);
     if (!p) return;
     b.parent = p;
@@ -237,9 +241,9 @@ export class SolarSystem {
   }
 
   /**
-   * A body that is not in the catalogue joins the system (a moon the explorer has made:
-   * src/app/WhatIf.ts): described like the others, and from the next update on it moves, is
-   * drawn, has an orbit line and pulls on a ship like any of them.
+   * A body that is not in the catalogue joins the system (one the explorer has made:
+   * src/app/WhatIf.ts): described like the others, and from then on it is drawn, has an orbit
+   * line and pulls on a ship like any of them. Where it is and how it moves is its maker's to say.
    */
   add(bj: BodyJson): Body {
     if (this.byId.has(bj.id)) throw new Error(`a body ${bj.id} is there already`);
@@ -248,22 +252,6 @@ export class SolarSystem {
     this.prepare(b);
     this.listSuns();
     return b;
-  }
-
-  /**
-   * Turn a satellite's orbit in its own plane so that at `jd` it stands in the direction `dir`
-   * from its parent (ICRF), as nearly as the plane allows: for a moon that has just been made,
-   * to be where its maker is looking.
-   */
-  place(b: Body, dir: Vector3, jd: number): void {
-    const e = this.ephemOf.get(b), frame = this.satFrames.get(b);
-    if (!e || e.kind !== 'satellite' || !frame) return;
-    const m = frame.elements; // (columns: the plane's x and y axes in ICRF)
-    const x = dir.x * m[0] + dir.y * m[1] + dir.z * m[2], y = dir.x * m[3] + dir.y * m[4] + dir.z * m[5];
-    const o = e.orbit;
-    o.M = (Math.atan2(y, x) * 180) / Math.PI - o.node - o.w;
-    o.epochJd = jd;
-    this.rel.delete(b);
   }
 
   /** Take a body out again (one that `add` put in: the catalogue's stay). */

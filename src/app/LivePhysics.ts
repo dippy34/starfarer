@@ -3,7 +3,7 @@ import { AU, DAY } from '../core/units';
 import { LEFT_OUT, type SimEvent } from '../sim/NBody';
 import { apply, capture, type Live, liveDate, release, riders } from '../sim/SystemSim';
 import type { Body } from '../universe/Body';
-import type { SolarSystem } from '../universe/SolarSystem';
+import type { BodyJson, SolarSystem } from '../universe/SolarSystem';
 import { dayWords, listed, type Orbit, orbitOf, reachWords, shapeWords, speedWords, the } from './Powers';
 
 /**
@@ -43,6 +43,8 @@ const ALSO_LEFT_OUT: readonly string[] = [
   'A world keeps its size and its look whatever mass you give it. What theory says it would turn into is told, not shown.',
   'The 75,000 small asteroids of the belt and the comets cannot be simulated one by one: they keep their real paths while the Sun is as it was, and are left out once you change it or take it away. The real spacecraft are left out too: they flew their paths in the real Solar System.',
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
+  'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the size, mass, spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up.',
+  'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
 ];
 /** an unbound body this far from what it left has left for good */
 const EDGE = 2000 * AU;
@@ -173,12 +175,22 @@ export class LivePhysics {
     return best;
   }
 
-  /** A body that has just been made joins the simulation, if there is one. */
-  join(b: Body): void {
-    const live = this.live;
-    if (!live) return;
-    release(live, this.system, b);
+  /**
+   * Make a body, described as the catalogue describes one (src/app/WhatIf.ts), for `about`: at
+   * `pos` from it, moving at `vel` against it (m, m/s). It is simulated from the start: making
+   * something is a change like any other. `told`: what to say of it.
+   */
+  make(json: BodyJson, about: Body, pos: ArrayLike<number>, vel: ArrayLike<number>, jd: number, told: string): Body {
+    const live = this.start(jd);
+    const b = this.system.add(json);
+    live.sim.add({
+      id: b.id, gm: b.gm, radius: b.radius, stepped: b.kind === 'star',
+      pos: [about.pos.x + pos[0], about.pos.y + pos[1], about.pos.z + pos[2]],
+      vel: [about.vel.x + vel[0], about.vel.y + vel[1], about.vel.z + vel[2]],
+    });
+    this.tell(liveDate(live), told);
     this.settle(live);
+    return b;
   }
 
   /** Take a body away: everything else carries on without it. */
@@ -304,7 +316,11 @@ export class LivePhysics {
     }
     const rows: [string, string][] = [['Live physics', `simulated since ${dayWords(live.jd0)}`]];
     const o = this.orbit(b);
-    if (!b.parent) rows.push(['Goes round', 'nothing: it flies free']);
+    // (a body and one at least as heavy that the simulation has go round it, or the other way about: they go round
+    // each other, and which of the two goes round which is decided by what else is near each; see `hear`)
+    const pair = !(b.gm > 0) ? undefined : b.parent && b.parent.gm <= b.gm ? b.parent : b.children.find((c) => c.valid && c.gm >= b.gm);
+    if (pair) rows.push(['Goes round', `each other, with ${the(pair.name)}`]);
+    else if (!b.parent) rows.push(['Goes round', 'nothing: it flies free']);
     else rows.push(['Goes round', the(b.parent.name)]);
     if (o) rows.push(["Its orbit's shape", shapeWords(o)], ['Nearest to farthest · once round', reachWords(o)]);
     return rows;
@@ -403,7 +419,11 @@ export class LivePhysics {
       .sort((x, y) => body(y.id)!.gm - body(x.id)!.gm);
     for (const e of moved.slice(0, 3)) {
       const b = body(e.id)!, p = body(e.around)!, w = e.was >= 0 ? body(e.was) : undefined;
-      this.tell(when(e), w && !system.isGone(w) ? `${capital(the(b.name))} goes round ${the(p.name)} now, no longer round ${the(w.name)}.` : `${capital(the(b.name))} goes round ${the(p.name)} now.`);
+      // (one at least as heavy as what the simulation has it go round: two of one mass, such as a second sun and the
+      // first, go round each other, and which of them is said to go round the other is decided by what else is near
+      // each: the lighter side of the pair goes round the heavier)
+      if (p.gm > 0 && b.gm >= p.gm) this.tell(when(e), `${capital(the(b.name))} and ${the(p.name)} go round each other now.`);
+      else this.tell(when(e), w && !system.isGone(w) ? `${capital(the(b.name))} goes round ${the(p.name)} now, no longer round ${the(w.name)}.` : `${capital(the(b.name))} goes round ${the(p.name)} now.`);
     }
     if (moved.length > 3) this.tell(when(moved[3]), `${moved.length - 3} more worlds have changed what they go round.`);
   }

@@ -336,6 +336,28 @@ describe('changes at any moment', () => {
     expect(sim.takeEvents()).toContainEqual(expect.objectContaining({ kind: 'escape', primary: 2, ids: [2, 3] }));
   });
 
+  it('of two of one mass the second goes round the first, and what goes round what never runs in a ring', () => {
+    // two suns of exactly one mass, on a circle round each other, and a planet far out round the pair
+    const sim = new NBody();
+    const v = Math.sqrt((2 * GM_SUN) / AU) / 2;
+    sim.add({ id: 1, gm: GM_SUN, radius: 6.96e8, pos: [-AU / 2, 0, 0], vel: [0, -v, 0] });
+    sim.add({ id: 2, gm: GM_SUN, radius: 6.96e8, pos: [AU / 2, 0, 0], vel: [0, v, 0] });
+    sim.add({ id: 3, gm: GM_EARTH, radius: 6.37e6, pos: [20 * AU, 0, 0], vel: [0, Math.sqrt((2 * GM_SUN) / (20 * AU)), 0] });
+    sim.advance(DAY);
+    const around = [...sim.primaries];
+    expect(around[sim.indexOf(2)]).toBe(1);
+    expect(around[sim.indexOf(1)]).toBe(-1);
+    expect([1, 2]).toContain(around[sim.indexOf(3)]);
+    // the same two the other way about in the list: still one of them goes round the other, not each round each
+    const other = new NBody();
+    other.add({ id: 2, gm: GM_SUN, radius: 6.96e8, pos: [AU / 2, 0, 0], vel: [0, v, 0] });
+    other.add({ id: 1, gm: GM_SUN, radius: 6.96e8, pos: [-AU / 2, 0, 0], vel: [0, -v, 0] });
+    other.advance(DAY);
+    const pair = [...other.primaries].sort();
+    expect(pair[0]).toBe(-1);
+    expect([1, 2]).toContain(pair[1]);
+  });
+
   it('a body without mass goes where one of almost none would', () => {
     // an asteroid at 2.8 AU, disturbed by a Jupiter: a light body takes plain steps of its own, without the
     // corrector, and wobbles about the true path by the disturbance times (2π / steps)²: a thousandth of it here

@@ -56,6 +56,8 @@ export class Body implements SpaceObject {
   valid = true;
   /** raw description from system.json (for the info panel) */
   meta: Record<string, unknown> = {};
+  /** for a copy the explorer has made of a body of the catalogue (src/app/WhatIf.ts): that body */
+  twinOf: Body | null = null;
 
   constructor(readonly id: number, readonly name: string, kind: BodyType) {
     this.kind = kind;
@@ -66,12 +68,20 @@ export class Body implements SpaceObject {
     return this.parent;
   }
 
+  /**
+   * The name its nature goes by, where the code knows a world by its name (a gas giant, a world
+   * with air, the look of its ground): its own, or for a copy the name of what it is a copy of.
+   */
+  get nature(): string {
+    return this.twinOf?.name ?? this.name;
+  }
+
   get isAirless(): boolean {
-    return !['Earth', 'Venus', 'Mars', 'Titan', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Sun'].includes(this.name);
+    return !['Earth', 'Venus', 'Mars', 'Titan', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Sun'].includes(this.nature);
   }
 
   get isGasGiant(): boolean {
-    return ['Jupiter', 'Saturn', 'Uranus', 'Neptune'].includes(this.name);
+    return ['Jupiter', 'Saturn', 'Uranus', 'Neptune'].includes(this.nature);
   }
 
   /** Sphere of influence radius (Laplace), used to decide which body the camera co-moves with. */

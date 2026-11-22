@@ -41,6 +41,18 @@ navigation screens (sit inside it in VR), a chase view, fictional traffic and a 
 station orbiting the world you are near (fly up to its docking port and the docking computer takes
 over), landing on solid worlds, missions and a discovery log.
 
+**Gravity for real (tap a world: Mass, Move, Add, Remove):** the Solar System is the real one,
+where the ephemeris has it, until you change something in it. From that moment it is simulated:
+everything in it pulls on everything else, and one button, **Back to reality**, undoes it all. Make
+Jupiter twenty times heavier and its moons fall onto new orbits, some of them into it. Take the Sun
+away and the planets leave on straight lines, in the dark. Drag the Moon out to twice its distance
+and within four months the Sun has taken it from the Earth. Add a second Jupiter near the Earth's
+orbit, or a second sun. Time runs from real time up to a thousand years a second (as fast as the
+simulation manages, and it says how fast that is); what collides becomes one; what happens is told
+in words and kept in a log. What theory predicts of a body of the mass you gave it is labelled as
+a prediction, and what the simulation leaves out is listed in the app, two taps from the mark that
+says physics is live.
+
 ### ▶ Live: **https://dippy34.github.io/starfarer/**
 
 On a **phone or tablet** it is laid out as an app: it opens on a loading screen that follows the
@@ -63,7 +75,7 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 
 <img src="docs/img/stars-up-close.jpg" width="640" alt="Stars up close: the Sun (its face a map of the real one), Sirius, Betelgeuse and Proxima Centauri, each with the face of its kind"> <img src="docs/img/loading.jpg" width="640" alt="The loading screen: what has arrived, what it brought, how much was downloaded">
 
-<img src="docs/img/whatif.jpg" width="640" alt="What if: the Earth given a second moon, and the new moon's details, with what is worked out for it and the button that takes it away again">
+<img src="docs/img/live-physics.jpg" width="640" alt="Live physics on a phone: Jupiter made twice as heavy with the mass slider, the Moon dragged to twice its distance and left on a circle, and a second sun beside the first"> <img src="docs/img/whatif.jpg" width="640" alt="What if: the Earth given a second moon with Add, told as it is made, and the new moon's card: simulated since it was made, its orbit, and the powers that change or remove it">
 
 *Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
 verification run, not hand-picked renders.*
@@ -107,7 +119,9 @@ Add it to the home screen to open it without the browser around it.
 | **Orbit / Look** button | What one finger does: turn round the world, or look around |
 
 The card of what you selected has **Go there**, **Look at** and **Details**; nothing moves the
-camera until you go. A flight in progress shows a **Stop** button.
+camera until you go. A flight in progress shows a **Stop** button. Under them, for a world of the
+Solar System, is what you can do to it: **Mass**, **Move**, **Add**, **Remove** (gravity for real,
+above); the first use switches live physics on, and **Back to reality** at the top undoes it.
 
 **With a mouse and keyboard** the same interface stands at the left edge, and every key still works:
 
@@ -210,7 +224,10 @@ src/
   universe/  Solar System (planets, 459 moons, minor bodies), streaming star catalogue, named stars
   render/    HDR renderer (bloom + ACES), star field, Milky Way, bodies (planets, rings, Sun, relief,
              glint), atmospheres, orbits, GPU asteroids, comets (Web Worker), near stars, labels
-  app/       main loop, camera rig (free fly / orbit / autopilot), input, WebXR (VR.ts)
+  sim/       physics: the N-body engine of live physics (NBody.ts), the ship's relativity, the
+             textbook formulas behind the worked-out facts
+  app/       main loop, camera rig (free fly / orbit / autopilot), input, WebXR (VR.ts), live
+             physics and the powers (LivePhysics.ts, Powers.ts, Mover.ts, WhatIf.ts)
   vr/        in-headset UI: canvas panels with hit regions, the explorer menu
   workers/   comet propagation (double precision, off the main thread)
 pipeline/    Python: download → validate → convert raw catalogues into public/data/
@@ -231,6 +248,12 @@ whose integrated value equals the physical irradiance at the camera, so a planet
 dot keeps its brightness. Eye adaptation follows the brightest resolved disk in view; a perceptual
 power law is applied to point sources (as SpaceEngine/Celestia do).
 
+**Real until touched.** The Solar System is where the JPL ephemeris has it until a power is used
+on it. The first change hands the bodies that matter to an N-body simulation, started from where
+each is and how it moves at that date; from then on the simulation keeps the time and says what
+each body goes round, and "Back to reality" gives everything back to the ephemeris
+(`docs/notes/gravity-engine.md`).
+
 **Stars.** A brightest-first octree: each node holds the intrinsically brightest stars of its cube not
 taken by an ancestor, so "could any star in this subtree be visible from here?" is an exact test and
 tiles stream in without popping. Colours come from Planck spectra integrated against CIE colour
@@ -241,8 +264,8 @@ matching functions.
 ### What works (each verified before it went live)
 
 Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `start.mjs`,
-`touch.mjs`, `interact.mjs`, `exposure.mjs`, `stars.mjs`, `whatif.mjs`, `vr.mjs`, `game.mjs`,
-`walk.mjs`, `terrain.mjs`, `places.mjs`, `flight.mjs`; see HANDOFF.md):
+`touch.mjs`, `interact.mjs`, `exposure.mjs`, `stars.mjs`, `whatif.mjs`, `live.mjs`, `vr.mjs`,
+`game.mjs`, `walk.mjs`, `terrain.mjs`, `places.mjs`, `flight.mjs`; see HANDOFF.md):
 
 * **A star up close has a face**, drawn the way the space observatories show the Sun's (SDO,
   STEREO: the orange pictures of a star that everyone knows): glowing plasma, mottled and threaded
@@ -255,14 +278,39 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   in 2011, its real active regions with loops standing on them (`src/render/StarLook.ts`,
   `shaders/star.ts`, `pipeline/build_sun_map.py`, `scripts/stars.mjs`).
 
+* **Live physics: gravity for real** (`src/app/LivePhysics.ts` on `src/sim/NBody.ts`;
+  `scripts/live.mjs`, `docs/notes/gravity-engine.md`). The real Solar System stays real until a
+  power is used on it; someone who never touches one gets the same pictures and the same frame as
+  before. The powers are on a world's card, under its three buttons: **Mass** (a slider from a
+  thousandth to a thousand times its real mass: "2 Jupiters", "0.5 Suns"; the orbits answer while
+  the thumb is still down; what theory predicts of that mass is labelled a prediction), **Move**
+  (a finger on the world drags it in the plane of its orbit while time waits; where it is left it
+  keeps its velocity or is put on a circle), **Add** (a moon for a planet; for a star a planet like
+  the Earth, one like Jupiter, a second sun: bodies like any other from then on, which say they
+  were made) and **Remove** (any world, the Sun included). The first change starts an N-body
+  simulation from where everything is at that date (Wisdom and Holman's symplectic mapping on a
+  hierarchy of pairs that is found, not given; exact two-body motion for every pair; collisions
+  that merge; changes of what goes round what): the Sun, the planets, Pluto, Ceres, the weighed
+  asteroids and the twenty moons heavy enough to matter, and any other world once it or its planet
+  is touched. A mark says physics is live, with **Back to reality** beside it; the Time sheet has
+  the log of what happened (which two collided and how fast, who was thrown out, who was captured)
+  and the list of what the simulation leaves out. Orbit lines are drawn from where each body is
+  and how it moves now, with a trail of where it has been. A system with no sun, or with two, is
+  lit accordingly. Time: up to a year a second in full with every planet there, about a hundred
+  years a second when more is asked, a thousand with the Sun gone (one core, a quarter of each
+  frame). Checked by tests against the textbook (a moon's period after its planet's mass is
+  doubled, the straight lines after the Sun is gone, the speed of a fall at contact) and through
+  the interface on a phone-sized screen with fingers. Not in the headset's menus yet.
+
 * **What if** (the beginning of it): a world's details show what follows from its facts by the
   textbook (its gravity, its escape velocity, how long its orbit takes, a black hole's horizon),
   and every line opens to its working: the formula, the numbers put in, the result. A planet can be
-  given a moon: sized to it, on a circular orbit between you and the planet, with the period
-  Kepler's third law gives it; from then on it is a body like any other (drawn, named, listed,
-  flown to, pulling on a ship, casting its shadow), says that it was made, and can be taken away
-  again. No mode to switch on: each of these is a button where it belongs (`src/app/Worked.ts`,
-  `src/app/WhatIf.ts`, `scripts/whatif.mjs`).
+  given a moon (the card's **Add**): sized to it, on a circular orbit between you and the planet,
+  with the period Kepler's third law gives it; it is simulated from the moment it is made, and from
+  then on a body like any other (drawn, named, listed, flown to, pulling on a ship, casting its
+  shadow), which says that it was made and is removed like any world. No mode to switch on: each
+  of these is a button where it belongs (`src/app/Worked.ts`, `src/app/WhatIf.ts`,
+  `scripts/whatif.mjs`).
 
 * The eye adapts like one: it shuts down at once for something bright, opens over a moment in the
   dark, and holds its exposure for as long as any of a bright thing is in the frame, so looking
@@ -412,6 +460,11 @@ Known limitations (planned for later phases unless noted):
    stations and ship types.
 5. Full UI: search panel, bookmarks, settings and quality presets.
 6. Polish: lens flares, spinning (Kerr) black holes, performance tuning.
+7. Gravity for real, the owner's plan after its first step (live physics with Mass, Move, Add,
+   Remove: done): things that break and hit (the Roche limit, impacts, throwing a world), black
+   holes that pull and eat, stars that live and die, deep time, the rest of "God mode", a story
+   mode. Also: the stepping in a Web Worker for thousands of years a second, and the powers in
+   the headset.
 
 ## Data and credits
 

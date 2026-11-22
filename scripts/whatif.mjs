@@ -1,9 +1,11 @@
-// What if: the explorer's own changes to the worlds, and the working behind the facts
-// (src/app/WhatIf.ts, src/app/Worked.ts), on a phone and at a desk, in headless Chromium:
+// What if: a moon made for a world, and the working behind the facts (src/app/WhatIf.ts,
+// src/app/Worked.ts), on a phone and at a desk, in headless Chromium:
 //   - a world's details show what is worked out from its facts, each line opening to its working
-//   - a planet is offered a moon; taking the offer makes one: a body like any other, between the
-//     planet and the eye, moving as Kepler says, drawn, named and selected
-//   - the moon says it was made, and can be taken away again; the catalogue's cannot
+//   - a planet's card offers to add a moon; taking the offer makes one: a body like any other,
+//     between the planet and the eye, moving as Kepler says, drawn, named and selected, and
+//     simulated from the start (scripts/live.mjs has the planets and the suns that can be made)
+//   - the moon says it was made, and is taken away like any world; with the return to reality
+//     nothing of it is left
 // Usage: node scripts/whatif.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { phoneContext } from './lib/touch.mjs';
@@ -27,8 +29,9 @@ const card = (page) => page.evaluate(() => {
     facts: [...c.querySelectorAll('.facts dt')].map((d) => d.textContent),
     type: [...c.querySelectorAll('.facts dl div')].find((d) => d.querySelector('dt').textContent === 'Type')?.querySelector('dd').textContent ?? '',
     worked: [...c.querySelectorAll('.worked details')].map((d) => ({ label: d.querySelector('span').textContent, text: d.querySelector('b').textContent, math: d.querySelector('code').textContent, open: d.open })),
-    addMoon: shown(c.querySelector('[data-act="add-moon"]')),
-    unmake: shown(c.querySelector('[data-act="unmake"]')),
+    add: shown(c.querySelector('[data-power="add"]')),
+    offers: [...c.querySelectorAll('[data-panel="add"] .row')].filter(shown).map((r) => r.querySelector('b').textContent),
+    remove: shown(c.querySelector('[data-act="remove"]')),
     toast: document.querySelector('#hud .hud-toast').textContent,
   };
 });
@@ -61,8 +64,12 @@ for (const kind of ['phone', 'desk']) {
   check(on('its year comes out of where it is and how it moves'), !!year && /^36[45]\.\d d$/.test(year.text), year?.text);
 
   // --- a moon for the Earth
-  check(on('a planet is offered a moon'), c.addMoon && !c.unmake);
-  const before = await page.evaluate(() => ({ bodies: window.app.system.bodies.length, moons: window.app.findByName('Earth').children.length }));
+  check(on("a planet's card offers to add something"), c.add && c.remove && c.offers.length === 0);
+  await press(page, '#hud .card [data-power="add"]');
+  await frames(page, 2);
+  c = await card(page);
+  check(on('what can be added to a planet is a moon'), c.offers.join() === 'A moon', c.offers.join(', '));
+  const before = await page.evaluate(() => ({ bodies: window.app.system.bodies.length, moons: window.app.findByName('Earth').children.length, live: window.app.physics.on }));
   await press(page, '#hud .card [data-act="add-moon"]');
   await frames(page, 6);
   const made = await page.evaluate(() => {
@@ -73,6 +80,7 @@ for (const kind of ['phone', 'desk']) {
     const p = a.project(m.upos.sub(a.rig.upos, new V()));
     return {
       name: m.name, parent: m.parent?.name, bodies: a.system.bodies.length, moons: earth.children.length, made: a.made.length,
+      live: a.physics.on, simulated: a.physics.simulated(m),
       orbit: rel.length() / earth.radius, eye: eye.length() / earth.radius, towardsEye: rel.clone().normalize().dot(eye.normalize()),
       speed: m.vel.clone().sub(earth.vel).length(), circular: Math.sqrt((earth.gm + m.gm) / rel.length()),
       px: v?.pixelRadius ?? 0, resolved: !!v?.resolved, at: p, size: [innerWidth, innerHeight], radius: m.radius / earth.radius,
@@ -81,7 +89,8 @@ for (const kind of ['phone', 'desk']) {
   c = await card(page);
   check(on('taking the offer makes one: it is a body of the system, and selected'), made.bodies === before.bodies + 1 && made.moons === before.moons + 1 && made.made === 1 && made.name === "Earth's new moon" && c.title === made.name,
     `${made.name}; ${made.bodies} bodies (${before.bodies} before); the card: ${c.title}`);
-  check(on('it says what was made'), /new moon: .+ up, once round in .+ (hours|days)/.test(c.toast), c.toast);
+  check(on('making it is a change like any other: physics is live from then on, and the moon is simulated'), !before.live && made.live && made.simulated && /Live physics is on/.test(c.toast));
+  check(on('it says what was made'), /new moon is new: .+ up, once round in .+ (h|d)\./.test(c.toast), c.toast);
   check(on('it is between the Earth and the eye, on a circular orbit'), Math.abs(made.orbit - 0.55 * made.eye) < 0.02 && made.towardsEye > 0.9 && Math.abs(made.speed / made.circular - 1) < 1e-3,
     `${made.orbit.toFixed(2)} radii out (the eye at ${made.eye.toFixed(2)}), ${(Math.acos(Math.min(1, made.towardsEye)) * 57.3).toFixed(1)} deg from the eye's direction, ${(made.speed / 1000).toFixed(3)} km/s (circular: ${(made.circular / 1000).toFixed(3)})`);
   check(on('it is drawn, in the frame'), made.resolved && made.px > 4 && !!made.at && made.at.x > 0 && made.at.x < made.size[0] && made.at.y > 0 && made.at.y < made.size[1],
@@ -96,11 +105,12 @@ for (const kind of ['phone', 'desk']) {
     const a = window.app, m = a.selection, earth = a.findByName('Earth');
     const dir = () => m.pos.clone().sub(earth.pos).normalize();
     const d0 = dir();
-    const worked = a.debugState && null;
     const P = (2 * Math.PI * Math.sqrt(m.pos.distanceTo(earth.pos) ** 3 / (earth.gm + m.gm))) / 86400;
-    a.clock.jdTdb += P / 4;
+    const to = a.clock.jdTdb + P / 4, live = a.physics.live;
+    // (the clock is put there, and the simulation given the frames it needs to follow: to within ten seconds)
+    await new Promise((done) => { const t = setInterval(() => { if (Math.abs(live.jd0 + live.sim.time / 86400 - to) < 1e-4) { clearInterval(t); done(); } else a.clock.jdTdb = to; }, 30); });
     await new Promise((done) => { const f0 = a.frameCount; const t = setInterval(() => { if (a.frameCount >= f0 + 3) { clearInterval(t); done(); } }, 30); });
-    return { cos: d0.dot(dir()), periodDays: P, worked };
+    return { cos: d0.dot(dir()), periodDays: P };
   });
   check(on('a quarter of its period later it is a quarter of the way round'), Math.abs(turned.cos) < 0.02, `cosine of the angle turned through: ${turned.cos.toFixed(4)} (period ${(turned.periodDays * 24).toFixed(1)} h)`);
 
@@ -109,20 +119,29 @@ for (const kind of ['phone', 'desk']) {
   c = await card(page);
   const round = c.worked.find((w) => w.label === 'Once round Earth');
   check(on('its details say it was made, and work out its orbit like any moon\'s'), c.type === 'Moon (made by you)' && !!round && c.worked.some((w) => w.label === 'Surface gravity'), `${c.type}; ${round?.label} ${round?.text}`);
-  check(on('it can be taken away, and is not offered a moon of its own'), c.unmake && !c.addMoon);
+  check(on('it can be removed like any world, and is not offered a moon of its own'), c.remove && !c.add);
   await page.screenshot({ path: path.join(outDir, `whatif-${kind}-details.png`) });
-  await press(page, '#hud .card [data-act="unmake"]');
+  await press(page, '#hud .card [data-act="remove"]');
   await frames(page, 6);
-  const after = await page.evaluate(() => ({ bodies: window.app.system.bodies.length, moons: window.app.findByName('Earth').children.length, made: window.app.made.length, selection: window.app.selection?.name, target: window.app.rig.target?.name, toast: document.querySelector('#hud .hud-toast').textContent }));
-  check(on('taken away, everything is as it was, and the Earth is selected again'), after.bodies === before.bodies && after.moons === before.moons && after.made === 0 && after.selection === 'Earth' && after.target === 'Earth' && /is gone/.test(after.toast),
-    `${after.bodies} bodies, selection ${after.selection}, "${after.toast}"`);
+  const after = await page.evaluate(() => {
+    const a = window.app, m = a.made[0];
+    return { gone: a.system.isGone(m), drawn: a.bodies.views.has(m), found: a.searchItems('new moon').length, selection: a.selection?.name, target: a.rig.target?.name, toast: document.querySelector('#hud .hud-toast').textContent };
+  });
+  check(on('taken away, it is gone: not drawn, not found by name, and the Earth is selected again'), after.gone && !after.drawn && after.found === 0 && after.selection === 'Earth' && after.target === 'Earth' && /is gone/.test(after.toast),
+    `selection ${after.selection}, "${after.toast}"`);
 
-  // --- what is not offered: a moon for a moon, taking away the Moon
+  // --- back to reality: nothing of it is left
+  await press(page, '#hud .live-back');
+  await frames(page, 6);
+  const real = await page.evaluate(() => ({ bodies: window.app.system.bodies.length, moons: window.app.findByName('Earth').children.length, made: window.app.made.length, live: window.app.physics.on }));
+  check(on('back to reality, nothing of it is left'), real.bodies === before.bodies && real.moons === before.moons && real.made === 0 && !real.live, `${real.bodies} bodies, ${real.moons} moon of the Earth's`);
+
+  // --- what is not offered: a moon for a moon
   await page.evaluate(() => window.app.select(window.app.findByName('Moon')));
   await frames(page, 3);
   await details(page);
   c = await card(page);
-  check(on("the catalogue's Moon is offered neither"), c.title === 'Moon' && !c.addMoon && !c.unmake && c.worked.length >= 4, `${c.title}: ${c.worked.length} lines worked out`);
+  check(on("the Moon is not offered a moon of its own"), c.title === 'Moon' && !c.add && c.remove && c.worked.length >= 4, `${c.title}: ${c.worked.length} lines worked out`);
   await ctx.close();
 }
 

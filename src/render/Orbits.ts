@@ -32,6 +32,7 @@ const REFINE = 14; // geometric refinement steps on each side of the body
 const MAX_VERTS = BASE_SAMPLES + 2 * REFINE + 2;
 
 export const COLORS: Record<string, [number, number, number]> = {
+  star: [1.0, 0.72, 0.5],
   planet: [0.35, 0.55, 1.0],
   dwarf: [1.0, 0.65, 0.3],
   moon: [0.45, 0.85, 0.6],
@@ -128,7 +129,7 @@ export class OrbitsLayer {
     const sun = this.system.sun;
     const camToSun = sun.upos.sub(cam, new Vector3()).length();
     for (const b of this.system.bodies) {
-      if (!b.valid || !b.parent || b.kind === 'star') continue;
+      if (!b.valid || !b.parent) continue;
       const isSel = b === this.selected;
       if (!isSel && (b.kind === 'asteroid' || b.kind === 'tno') && !this.showMinor) continue;
       // Small irregular moons (no measured size) only on request

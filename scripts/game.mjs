@@ -137,7 +137,8 @@ st = await page.evaluate(() => ({ landed: window.app.game.flight.readout.landed 
 check('the ship touches down on the Moon', st.landed === 'Moon' && st.alt < 15, JSON.stringify(st));
 await page.screenshot({ path: path.join(outDir, 'g5-landed.png'), timeout: 180000 });
 
-// a target that goes: the autopilot flying to a moon made for the Earth lets go when it is taken away
+// a target that goes: the autopilot flying to a moon made for the Earth lets go when it is taken away (with the
+// card's Remove, as any world is: what is made is a body like any other, and removed like one)
 st = await page.evaluate(() => {
   const a = window.app;
   a.select(a.findByName('Earth'));
@@ -145,12 +146,12 @@ st = await page.evaluate(() => {
   const made = a.selection;
   a.goTo(made);
   const flying = window.app.game.flight.autopilot?.target === made;
-  a.unmake(made);
-  return { made: made.name, flying };
+  a.act('remove');
+  return { made: made.name, flying, gone: a.system.isGone(made) };
 });
 await frames(3);
 st.after = await page.evaluate(() => !!window.app.game.flight.autopilot);
-check('the autopilot lets go of a target that is taken away', st.flying && !st.after, JSON.stringify(st));
+check('the autopilot lets go of a target that is taken away', st.flying && st.gone && !st.after, JSON.stringify(st));
 
 // 9. V: off, classic flight back
 await page.keyboard.press('KeyV');

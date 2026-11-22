@@ -1,59 +1,88 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import type { Ephemeris } from '../src/astro/ephemeris';
-import { canHaveMoon, MADE_FIRST_ID, MADE_MOST, newMoon } from '../src/app/WhatIf';
+import { LivePhysics } from '../src/app/LivePhysics';
+import { canAdd, MADE_FIRST_ID, MADE_MOST, newMoon, newTwin, type Plan } from '../src/app/WhatIf';
 import { workedOut } from '../src/app/Worked';
-import { AU, J2000_JD } from '../src/core/units';
+import { OBLIQUITY_J2000 } from '../src/core/frames';
+import { SimClock } from '../src/core/time';
+import { AU } from '../src/core/units';
 import { G } from '../src/sim/physics';
-import { SolarSystem, type SystemJson } from '../src/universe/SolarSystem';
+import type { Body } from '../src/universe/Body';
+import { SolarSystem } from '../src/universe/SolarSystem';
 
-/** The Sun, the Earth and the Moon as the catalogue has them, the planets on their mean orbits (no ephemeris files). */
-function system(): SolarSystem {
-  const all = JSON.parse(readFileSync('public/data/solar/system.json', 'utf8')) as SystemJson;
-  const data: SystemJson = { ...all, bodies: all.bodies.filter((b) => [10, 399, 301, 599].includes(b.id)) };
-  const eph = {
-    request: () => null,
-    isLoaded: () => false,
-    approxHeliocentric: (name: string, jd: number, out: Vector3) => {
-      // a circle is all these tests need: a year long for the Earth, twelve for Jupiter
-      const [a, years] = name === 'EMB' ? [1, 1] : [5.2, 11.86];
-      const th = (2 * Math.PI * (jd - J2000_JD)) / (365.25 * years);
-      return out.set(a * AU * Math.cos(th), a * AU * Math.sin(th), 0);
-    },
-  } as unknown as Ephemeris;
-  const s = new SolarSystem(data, eph);
-  s.update(J2000_JD);
-  return s;
+// The Solar System as the app has it: its catalogue and the JPL ephemeris, read from public/ as the browser fetches them.
+const PUBLIC = join(fileURLToPath(new URL('..', import.meta.url)), 'public');
+globalThis.fetch = (async (url: string | URL) => new Response(readFileSync(join(PUBLIC, String(url).replace(/^\//, ''))))) as typeof fetch;
+
+const DAY = 86_400;
+const JD = 2461300.5; // 2026-09-17 (TDB)
+
+async function setup() {
+  const sys = await SolarSystem.load('/data');
+  await sys.ephemeris.request(JD);
+  sys.update(JD);
+  const physics = new LivePhysics(sys, { left: () => undefined });
+  const clock = new SimClock(JD);
+  const named = (name: string) => sys.bodies.find((b) => b.name === name)!;
+  /** run the clock on by `days` as the app's frames do */
+  const run = (days: number, step = 0.02) => {
+    const to = clock.jdTdb + days;
+    for (let n = 0; to - clock.jdTdb > 1e-9 && n < 1e6; n++) {
+      clock.jdTdb = Math.min(to, clock.jdTdb + step);
+      physics.follow(clock, 1);
+      sys.update(clock.jdTdb);
+      physics.place(clock.jdTdb);
+    }
+  };
+  const make = (plan: Plan, about: Body) => physics.make(plan.json, about, plan.pos, plan.vel, clock.jdTdb, `${plan.json.name} is new.`);
+  return { sys, physics, clock, named, run, make };
 }
 
-describe('a moon made for a world', () => {
-  const jd = J2000_JD;
+const from = (b: Body, a: Body) => b.pos.clone().sub(a.pos);
+/** the way a body turns about another: the direction of its angular momentum about it */
+const turning = (b: Body, a: Body) => from(b, a).cross(b.vel.clone().sub(a.vel)).normalize();
+const ECLIPTIC_NORTH = new Vector3(0, -Math.sin(OBLIQUITY_J2000), Math.cos(OBLIQUITY_J2000));
 
-  it('is sized to its planet, of rock near the Sun and of ice far out, and goes round as Kepler says', () => {
-    const s = system();
-    const earth = s.byId.get(399)!, jupiter = s.byId.get(599)!;
-    const m = newMoon(earth, 5 * earth.radius, AU, jd, 0, MADE_FIRST_ID);
+describe('what can be added to a world', () => {
+  it('a moon to a planet or a dwarf planet; a planet or another sun to a star; nothing to a moon, and nothing where there is no room', async () => {
+    const { named } = await setup();
+    expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
+    expect(canAdd(named('Pluto'), 0)).toEqual(['moon']);
+    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun']);
+    expect(canAdd(named('Moon'), 0)).toEqual([]);   // a moon of a moon: not yet
+    expect(canAdd(named('Earth'), MADE_MOST)).toEqual([]);
+    expect(canAdd(named('Sun'), MADE_MOST)).toEqual([]);
+  });
+});
+
+describe('a moon made for a world', () => {
+  it('is sized to its planet, of rock near the Sun and of ice far out, and goes round as Kepler says', async () => {
+    const { named } = await setup();
+    const earth = named('Earth'), jupiter = named('Jupiter');
+    const m = newMoon(earth, [5 * earth.radius, 0, 0], AU, 0, MADE_FIRST_ID);
+    const radius = m.json.radii![0] * 1e3;
     expect(m.json.name).toBe("Earth's new moon");
-    expect(m.radius).toBeCloseTo(0.12 * earth.radius, 0);
+    expect(radius).toBeCloseTo(0.12 * earth.radius, 0);
     // rock: 3 g/cm³
-    expect((m.json.gm! * 1e9) / G / ((4 / 3) * Math.PI * m.radius ** 3)).toBeCloseTo(3000, 6);
+    expect((m.json.gm! * 1e9) / G / ((4 / 3) * Math.PI * radius ** 3)).toBeCloseTo(3000, 6);
     expect(m.json.albedo).toBeLessThan(0.2);
     // Kepler's third law with the planet's mass and its own
-    expect(m.periodDays * 86400).toBeCloseTo(2 * Math.PI * Math.sqrt(m.orbit ** 3 / (earth.gm + m.json.gm! * 1e9)), 6);
+    expect(m.periodDays * DAY).toBeCloseTo(2 * Math.PI * Math.sqrt(m.orbit ** 3 / (earth.gm + m.json.gm! * 1e9)), 6);
     // the second for the same planet has a name of its own
-    expect(newMoon(earth, 5 * earth.radius, AU, jd, 1, MADE_FIRST_ID + 1).json.name).toBe("Earth's new moon 2");
+    expect(newMoon(earth, [5 * earth.radius, 0, 0], AU, 1, MADE_FIRST_ID + 1).json.name).toBe("Earth's new moon 2");
     // Jupiter's: no bigger than our Moon, and of ice
-    const j = newMoon(jupiter, 10 * jupiter.radius, 5.2 * AU, jd, 0, MADE_FIRST_ID + 2);
-    expect(j.radius).toBe(1.8e6);
+    const j = newMoon(jupiter, [10 * jupiter.radius, 0, 0], 5.2 * AU, 0, MADE_FIRST_ID + 2);
+    expect(j.json.radii![0]).toBe(1800);
     expect(j.json.albedo).toBeGreaterThan(0.4);
   });
 
-  it('is put between the planet and the eye where there is room: never inside the Roche limit, never out of reach', () => {
-    const s = system();
-    const earth = s.byId.get(399)!;
-    const R = earth.radius;
-    const at = (eye: number) => newMoon(earth, eye * R, AU, jd, 0, MADE_FIRST_ID).orbit / R;
+  it('is put between the planet and the eye where there is room: never inside the Roche limit, never out of reach', async () => {
+    const { named } = await setup();
+    const earth = named('Earth'), R = earth.radius;
+    const at = (eye: number) => newMoon(earth, [0, eye * R, 0], AU, 0, MADE_FIRST_ID).orbit / R;
     expect(at(10)).toBeCloseTo(5.5, 6);
     // from close by: clear of the Roche limit of a rocky moon about the Earth (2.44 R (5.51 / 3)^(1/3) = 2.99 R)
     expect(at(1.2)).toBeGreaterThan(3);
@@ -62,62 +91,184 @@ describe('a moon made for a world', () => {
     expect(at(5000)).toBeCloseTo(60, 9);
   });
 
-  it('joins the system: it stands where the eye looks, in the plane of the equator, and moves on', () => {
-    const s = system();
-    const earth = s.byId.get(399)!;
-    const before = s.bodies.length;
-    const plan = newMoon(earth, 8 * earth.radius, AU, jd, 0, MADE_FIRST_ID);
-    const moon = s.add(plan.json);
-    // the eye: over the Earth's equator, in some direction of the sky (the Earth's pole from its rotation model)
-    const rot = earth.rotation!;
-    const ra = (rot.ra[0] * Math.PI) / 180, dec = (rot.dec[0] * Math.PI) / 180;
-    const pole = new Vector3(Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec));
-    const dir = new Vector3(1, 0.3, 0).cross(pole).normalize();
-    s.place(moon, dir, jd);
-    s.update(jd);
-    expect(s.bodies.length).toBe(before + 1);
+  it('joins the system simulated: where the eye looks, in the plane of the equator, on a circle the way the planet turns', async () => {
+    const { sys, physics, named, run, make } = await setup();
+    const earth = named('Earth');
+    const before = sys.bodies.length;
+    expect(physics.on).toBe(false);
+    // the eye: 8 radii out, well off the equator
+    const o = earth.orientation.elements, pole = new Vector3(o[8], o[9], o[10]);
+    const eye = new Vector3(1, 0.3, 0).cross(pole).normalize().addScaledVector(pole, 0.5).multiplyScalar(8 * earth.radius);
+    const plan = newMoon(earth, eye.toArray(), AU, 0, MADE_FIRST_ID);
+    const moon = make(plan, earth);
+    // making something is a change: physics is live from now, and the new moon is in it
+    expect(physics.on).toBe(true);
+    expect(physics.simulated(moon)).toBe(true);
+    expect(sys.bodies.length).toBe(before + 1);
     expect(moon.parent).toBe(earth);
-    expect(earth.children).toContain(moon);
-    const rel = moon.pos.clone().sub(earth.pos);
+    const rel = from(moon, earth);
     expect(rel.length() / plan.orbit).toBeCloseTo(1, 9);
-    expect(rel.clone().normalize().dot(dir)).toBeCloseTo(1, 9);
     expect(Math.abs(rel.clone().normalize().dot(pole))).toBeLessThan(1e-9);
-    // a quarter of its period later it is a quarter of the way round, still in that plane
-    s.update(jd + plan.periodDays / 4);
-    const later = moon.pos.clone().sub(earth.pos);
-    expect(later.length() / plan.orbit).toBeCloseTo(1, 9);
-    expect(later.clone().normalize().dot(dir)).toBeCloseTo(0, 6);
-    expect(Math.abs(later.clone().normalize().dot(pole))).toBeLessThan(1e-9);
-    // its speed is that of a circular orbit there
+    // (on the eye's side: the eye's direction, less what of it is along the pole)
+    expect(rel.clone().normalize().dot(eye.clone().addScaledVector(pole, -eye.dot(pole)).normalize())).toBeCloseTo(1, 9);
     expect(moon.vel.clone().sub(earth.vel).length()).toBeCloseTo(Math.sqrt((earth.gm + moon.gm) / plan.orbit), 3);
-    // and what is worked out for it is worked out as for any moon
+    expect(turning(moon, earth).dot(pole)).toBeCloseTo(1, 9);
+    // what is worked out for it is worked out as for any moon, and it says it was made
     const year = workedOut(moon).find((w) => w.label === 'Once round Earth')!;
     expect(year.math).toContain('P = 2π√(a³ / G(M + m))');
     expect(moon.info()[0]).toEqual(['Type', 'Moon (made by you)']);
+    expect(physics.log.map((e) => e.text)).toContain("Earth's new moon is new.");
+    // a quarter of its period later it is a quarter of the way round, still near that plane
+    const d0 = rel.clone().normalize();
+    run(plan.periodDays / 4, plan.periodDays / 400);
+    const later = from(moon, earth);
+    expect(later.length() / plan.orbit).toBeCloseTo(1, 2);
+    expect(Math.abs(later.clone().normalize().dot(d0))).toBeLessThan(0.02);
+    expect(Math.abs(later.clone().normalize().dot(pole))).toBeLessThan(0.01);
   });
 
-  it('can be taken away again, and the catalogue cannot', () => {
-    const s = system();
-    const earth = s.byId.get(399)!, theMoon = s.byId.get(301)!;
-    const before = s.bodies.length;
-    const moon = s.add(newMoon(earth, 8 * earth.radius, AU, jd, 0, MADE_FIRST_ID).json);
-    s.update(jd);
-    s.remove(moon);
-    expect(s.bodies.length).toBe(before);
-    expect(s.byId.has(MADE_FIRST_ID)).toBe(false);
-    expect(earth.children).toEqual([theMoon]);
-    expect(moon.valid).toBe(false);
-    s.update(jd + 1);   // (and nothing trips over its absence)
+  it('goes round a planet that turns backwards the way that planet turns: with the moons it has', async () => {
+    const { named, make } = await setup();
+    const uranus = named('Uranus'), titania = named('Titania');
+    const moon = make(newMoon(uranus, [10 * uranus.radius, 0, 0], 19 * AU, 0, MADE_FIRST_ID), uranus);
+    expect(turning(moon, uranus).dot(turning(titania, uranus))).toBeGreaterThan(0.99);
+  });
+});
+
+describe('a planet or a sun made for a star', () => {
+  it('is the catalogue\'s Jupiter over again, on a circle in the plane of the planets, the way they go', async () => {
+    const { named } = await setup();
+    const sun = named('Sun'), jupiter = named('Jupiter'), earth = named('Earth');
+    // (whatever has been done to the real one's mass since: the copy is the catalogue's)
+    const real = jupiter.gm;
+    jupiter.gm *= 3;
+    const p = newTwin(jupiter, 'jupiter', sun, [3 * AU, 4 * AU, 1 * AU], 0, MADE_FIRST_ID);
+    jupiter.gm = real;
+    expect(p.json).toMatchObject({ name: 'Jupiter 2', type: 'planet', parent: 10, made: true, twinOf: 599, texture: 'jupiter', ephem: { kind: 'placed' } });
+    expect(p.json.gm! * 1e9).toBe(real);
+    expect(p.json.radii).toEqual([71492, 71492, 66854]);
+    expect(p.json.systemGm).toBeUndefined();
+    expect(newTwin(jupiter, 'jupiter', sun, [AU, 0, 0], 1, MADE_FIRST_ID + 1).json.name).toBe('Jupiter 3');
+    // 0.55 of the way to the eye, in the plane of the planets, on the eye's side
+    const eye = new Vector3(3 * AU, 4 * AU, 1 * AU), pos = new Vector3(...p.pos), vel = new Vector3(...p.vel);
+    expect(p.orbit).toBeCloseTo(0.55 * eye.length(), 0);
+    expect(pos.length()).toBeCloseTo(p.orbit, 0);
+    expect(Math.abs(pos.clone().normalize().dot(ECLIPTIC_NORTH))).toBeLessThan(1e-12);
+    expect(pos.clone().normalize().dot(eye.clone().addScaledVector(ECLIPTIC_NORTH, -eye.dot(ECLIPTIC_NORTH)).normalize())).toBeCloseTo(1, 12);
+    // a circle: the speed Kepler gives it there, across the line to the star, turning as the Earth does
+    expect(vel.length()).toBeCloseTo(Math.sqrt((sun.gm + real) / p.orbit), 6);
+    expect(Math.abs(vel.dot(pos)) / (vel.length() * pos.length())).toBeLessThan(1e-12);
+    expect(pos.clone().cross(vel).normalize().dot(turning(earth, sun))).toBeGreaterThan(0.999);
+    expect(p.periodDays * DAY).toBeCloseTo(2 * Math.PI * Math.sqrt(p.orbit ** 3 / (sun.gm + real)), 3);
+  });
+
+  it('keeps its distance from the star: a planet no nearer than a tenth of the Earth\'s, a sun than three tenths, nothing beyond the planets', async () => {
+    const { named } = await setup();
+    const sun = named('Sun'), at = (like: string, eye: number) => newTwin(named(like), null, sun, [0, eye * AU, 0], 0, MADE_FIRST_ID).orbit / AU;
+    expect(at('Earth', 0.03)).toBeCloseTo(0.1, 9);
+    expect(at('Sun', 0.03)).toBeCloseTo(0.3, 9);
+    expect(at('Earth', 2)).toBeCloseTo(1.1, 9);
+    expect(at('Jupiter', 1000)).toBeCloseTo(60, 9);
+    // an eye straight over the star's pole is on no side of it: the planet is put somewhere on its circle all the same
+    const over = newTwin(named('Earth'), null, sun, ECLIPTIC_NORTH.clone().multiplyScalar(4 * AU).toArray(), 0, MADE_FIRST_ID);
+    expect(Math.hypot(...over.pos) / AU).toBeCloseTo(2.2, 9);
+    expect(Math.abs(new Vector3(...over.pos).dot(ECLIPTIC_NORTH)) / AU).toBeLessThan(1e-9);
+  });
+
+  it('a second Jupiter is a giant planet like the first, goes round the Sun where it was put, and can be given a moon', async () => {
+    const { sys, physics, named, run, make } = await setup();
+    const sun = named('Sun'), jupiter = named('Jupiter');
+    const plan = newTwin(jupiter, 'jupiter', sun, [0, 5 * AU, 0], 0, MADE_FIRST_ID);
+    const twin = make(plan, sun);
+    expect(twin.name).toBe('Jupiter 2');
+    expect([twin.kind, twin.twinOf, twin.nature, twin.isGasGiant, twin.isAirless]).toEqual(['planet', jupiter, 'Jupiter', true, false]);
+    expect([twin.gm, twin.radius, twin.texture]).toEqual([jupiter.gm, jupiter.radius, 'jupiter']);
+    expect(twin.info()[0]).toEqual(['Type', 'Planet (made by you)']);
+    expect(physics.simulated(twin)).toBe(true);
+    expect(twin.parent).toBe(sun);
+    expect(canAdd(twin, 1)).toEqual(['moon']);
+    const d0 = from(twin, sun).normalize();
+    // half its period later it is on the other side of the Sun, at the distance it was put at
+    run(plan.periodDays / 2, plan.periodDays / 200);
+    expect(from(twin, sun).length() / plan.orbit).toBeCloseTo(1, 1);
+    expect(from(twin, sun).normalize().dot(d0)).toBeLessThan(-0.99);
+    // (it turns on its axis like the first: its orientation follows the catalogue's rotation model)
+    expect(twin.orientation.elements[10]).toBeCloseTo(jupiter.orientation.elements[10], 12);
+    expect(sys.byId.get(MADE_FIRST_ID)).toBe(twin);
+  });
+
+  it('a second sun shines, lights what is nearer it, and the two go round each other with no ring in what goes round what', async () => {
+    const { sys, physics, clock, named, run, make } = await setup();
+    const sun = named('Sun'), neptune = named('Neptune');
+    // put on the far side of Neptune from the Sun: 40 AU out
+    const out = from(neptune, sun).normalize().multiplyScalar(40 * AU / 0.55);
+    const plan = newTwin(sun, 'sun', sun, out.toArray(), 0, MADE_FIRST_ID);
+    const twin = make(plan, sun);
+    expect([twin.name, twin.kind, twin.teff, twin.absMag]).toEqual(['Sun 2', 'star', sun.teff, sun.absMag]);
+    expect(twin.info()[0]).toEqual(['Type', 'Star (made by you)']);
+    expect(sys.suns).toEqual([sun, twin]);
+    expect(sys.brightness(twin)).toBe(1);
+    // Neptune, 30 AU from the Sun and about 10 from the new one, is lit by the new one; the Earth by the old
+    expect(sys.sunAt(neptune.pos)).toBe(twin);
+    expect(sys.sunAt(named('Earth').pos)).toBe(sun);
+    // (the lighter side of a pair goes round the heavier: here the Sun's side has the giant planets with it, and the
+    // new one is said to go round it; each says that the two go round each other)
+    expect(twin.parent).toBe(sun);
+    expect(sun.parent).toBeNull();
+    expect([physics.rows(twin)[1], physics.rows(sun)[1]]).toEqual([['Goes round', 'each other, with the Sun'], ['Goes round', 'each other, with Sun 2']]);
+    run(30, 0.5);
+    for (const b of sys.bodies) {
+      let steps = 0;
+      for (let p = b.parent; p; p = p.parent) expect(++steps).toBeLessThan(10);
+    }
+    // the pair is bound: the relative speed is that of a circle for both masses together
+    expect(twin.vel.clone().sub(sun.vel).length() / Math.sqrt((2 * sun.gm) / from(twin, sun).length())).toBeCloseTo(1, 2);
+    // taken away again, it no longer shines
+    physics.remove(twin, clock.jdTdb);
+    expect(sys.suns).toEqual([sun]);
+    expect(sys.sunAt(neptune.pos)).toBe(sun);
+  });
+
+  it('a second sun near Mercury and Venus takes them, and then the Sun is the one said to go round: it is told that the two go round each other', async () => {
+    const { physics, named, make } = await setup();
+    const sun = named('Sun');
+    // 0.3 AU from the Sun towards Mercury (the eye put so that 0.55 of the way to it is there)
+    const plan = newTwin(sun, 'sun', sun, from(named('Mercury'), sun).normalize().multiplyScalar((0.3 * AU) / 0.55).toArray(), 0, MADE_FIRST_ID);
+    const twin = make(plan, sun);
+    // the new one's side of the pair has Mercury and Venus with it, and is the heavier
+    expect([named('Mercury').parent, named('Venus').parent]).toEqual([twin, twin]);
+    expect(sun.parent).toBe(twin);
+    expect(twin.parent).toBeNull();
+    // what was made is told first; then that the two go round each other, not that the Sun goes round the new one
+    const news = physics.takeNews();
+    expect(news[0]).toBe('Sun 2 is new.');
+    expect(news[1]).toBe('The Sun and Sun 2 go round each other now.');
+    expect(news).toContain('Venus goes round Sun 2 now, no longer round the Sun.');
+    expect([physics.rows(twin)[1], physics.rows(sun)[1]]).toEqual([['Goes round', 'each other, with the Sun'], ['Goes round', 'each other, with Sun 2']]);
+  });
+
+  it('what was made goes with the return to reality, a moon before the planet it was made for, and the system is the catalogue\'s again', async () => {
+    const { sys, physics, clock, named, make } = await setup();
+    const before = sys.bodies.length;
+    const sun = named('Sun');
+    const planet = make(newTwin(named('Earth'), 'earth_day', sun, [0, 2 * AU, 0], 0, MADE_FIRST_ID), sun);
+    const moon = make(newMoon(planet, [8 * planet.radius, 0, 0], 1.1 * AU, 0, MADE_FIRST_ID + 1), planet);
+    expect(moon.name).toBe("Earth 2's new moon");
+    expect(moon.parent).toBe(planet);
+    // the planet taken away: its moon flies on, still there
+    physics.remove(planet, JD);
+    expect(planet.valid).toBe(false);
+    expect(moon.valid).toBe(true);
+    expect(physics.simulated(moon)).toBe(true);
+    physics.backToReality(clock);
+    for (const b of [moon, planet]) sys.remove(b);
+    expect(sys.bodies.length).toBe(before);
+    expect(sys.bodies.every((b) => !b.meta.made)).toBe(true);
+    expect(sun.children).not.toContain(planet);
+    sys.update(JD + 1);   // (and nothing trips over their absence)
     // the same number twice is a mistake in the code
-    s.add(newMoon(earth, 8 * earth.radius, AU, jd, 0, MADE_FIRST_ID).json);
-    expect(() => s.add(newMoon(earth, 8 * earth.radius, AU, jd, 1, MADE_FIRST_ID).json)).toThrow('there already');
-  });
-
-  it('is offered to planets and dwarf planets, while there is room for more', () => {
-    const s = system();
-    expect(canHaveMoon(s.byId.get(399)!, 0)).toBe(true);
-    expect(canHaveMoon(s.byId.get(399)!, MADE_MOST)).toBe(false);
-    expect(canHaveMoon(s.byId.get(301)!, 0)).toBe(false);   // a moon of a moon: not yet
-    expect(canHaveMoon(s.sun, 0)).toBe(false);
+    const again = newTwin(named('Earth'), 'earth_day', sun, [0, 2 * AU, 0], 0, MADE_FIRST_ID);
+    sys.add(again.json);
+    expect(() => sys.add(again.json)).toThrow('there already');
   });
 });

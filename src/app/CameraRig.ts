@@ -484,6 +484,26 @@ export class CameraRig {
 
 const AXIS_X = new Vector3(1, 0, 0);
 const AXIS_Z = new Vector3(0, 0, 1);
+
+/** a flight that would end with the eye further round a world's night side than this (the angle at the world between its sun and the eye, rad)... */
+const NIGHT_FROM = (100 * Math.PI) / 180;
+/** ...arrives this far from the line to its sun instead: three quarters of the disc lit */
+const SUNLIT = Math.PI / 3;
+
+/**
+ * The side to arrive at a world from (`flyTo`'s `arriveDir`), for a flight that would otherwise
+ * end over its night side with next to nothing of it to see. `from`: the way the flight comes in,
+ * from the world to the eye; `sun`: where its sun is from it. Round towards the sun on the side
+ * the eye is already on; undefined where the straight way in shows enough of it.
+ */
+export function sunlitSide(from: Vector3, sun: Vector3): Vector3 | undefined {
+  const u = from.clone().normalize(), s = sun.clone().normalize();
+  if (u.angleTo(s) < NIGHT_FROM) return undefined;
+  // (straight behind the world the eye is on no side of the line to the sun: any will do)
+  const side = u.addScaledVector(s, -u.dot(s));
+  if (side.lengthSq() < 1e-12) side.crossVectors(s, Math.abs(s.z) < 0.9 ? AXIS_Z : AXIS_X);
+  return s.multiplyScalar(Math.cos(SUNLIT)).addScaledVector(side.normalize(), Math.sin(SUNLIT));
+}
 const IDENTITY = new Quaternion();
 /** looking round near the ground stops this far (rad) above and below the horizon */
 const LOOK_LIMIT = 1.55;

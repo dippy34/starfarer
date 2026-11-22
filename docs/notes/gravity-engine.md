@@ -179,8 +179,8 @@ stays real until you touch it; then it is simulated, and one button goes back to
 Nothing of it runs until a power is used: a user who never touches one has the ephemeris, the same
 pictures and the same frame as before.
 
-* **The first change** (a mass, a body moved or taken away) starts a simulation from where every body is at
-  that date and how it moves (`capture`). Simulated from the start: the Sun, the planets, Pluto,
+* **The first change** (a mass, a body moved, made or taken away) starts a simulation from where
+  every body is at that date and how it moves (`capture`). Simulated from the start: the Sun, the planets, Pluto,
   Ceres and the seven asteroids that have been weighed, and the twenty moons with GM of 1 km³/s²
   or more (Mimas and up): 38 bodies. Every other body rides on what it goes round in the
   catalogue, on its catalogued path, until that body or it is changed or taken away; then it is
@@ -202,6 +202,30 @@ pictures and the same frame as before.
   that distance (72.7 days) and keeps to it for a fortnight; half way to the edge of the Earth's
   reach the Sun pulls hard, in ten weeks the Moon swings between half and one and a half times
   that distance, and after four months it goes round the Sun.
+* **Add** (`src/app/WhatIf.ts`, `LivePhysics.make`). A planet or a dwarf planet can be given a
+  moon; a star a planet like the Earth, one like Jupiter, or a second sun. A plan says what the
+  new body is, as the catalogue would describe one, and where it starts: on a circle, 0.55 of the
+  way from what it is given to towards the eye (a moon no nearer than 3 radii or 1.1 Roche limits
+  and no farther than 60 radii; a planet from 0.1 to 60 AU out, a sun from 0.3), a moon in the
+  plane of its planet's equator the way the planet turns, a planet or a sun in the plane the
+  planets move in, the way they go. `make` starts live physics if this is the first change, adds
+  the body to the system (`SolarSystem.add`; its ephemeris is `placed`: no path of its own) and to
+  the simulation at that place. Nothing else is touched at that moment, so a second sun arrives
+  with a momentum of its own, and the pair, with all that is bound to it, drifts against the old
+  centre from then on; what is too slow to follow is left behind, and told as flying free (a
+  second sun made 0.3 AU from the Sun towards where Mars was on 17 September 2026 leaves Saturn,
+  Neptune and two others behind at once). A copy has the size, mass, spin and face of the
+  catalogue's body (whatever has been done to the original since), and its nature where the code
+  knows a world by its name (`Body.nature`: a copy of a gas giant is one); not its air, clouds,
+  rings, lights or measured ground. What was made stays in `App.made` until the return to reality
+  (what was removed again too: gone like any removed world), at most 24. Two bodies of exactly one
+  mass are possible now. The lighter side of a pair goes round the heavier, and of two sides of
+  exactly one mass the second goes round the first (`NBody.primaries`), so that `Body.parent`
+  never runs in a ring. Which of two suns of one mass is said to go round the other is therefore
+  decided by what else is near each: made towards Mercury, the new one has Mercury and Venus on
+  its side and the Sun is the one that goes round. Either way it is told that the two go round
+  each other, not that one goes round the other (`hear`: a body at least as heavy as what it is
+  said to go round), and each one's details say so (`rows`).
 * **Each frame**: `follow` takes the simulation to the clock's date, or as near as a quarter of
   the frame allows (between 3 and 12 ms), and sets the clock to where it got: in live physics the
   simulation keeps the time, and a rate that cannot be kept shows as "getting…". Then
@@ -219,13 +243,17 @@ pictures and the same frame as before.
 * **What happens is told** (`hear`): a collision (the absorbed body leaves the scene with whatever
   rode on it; the survivor has the mass and the volume of both; the camera and the selection go to
   it), a world set free or gone for good, a change of what a world goes round. Worlds by name,
-  asteroids only counted. Each is logged for the moment it happened.
+  asteroids only counted. Each is logged for the moment it happened. On the screen three lines
+  at most (`App.tellNews`): after the explorer's own act its line first ("Sun 2 is new", "Ceres
+  is gone"), then what follows from it, the weightiest first; the rest is in the log.
 * **Back to reality** puts back every mass, size and parent, takes away what was made, and gives
   the bodies to the ephemeris again at the date reached, or, if that is outside 1849 to 2150, at
   the date it began. `tests/livephysics.test.ts` compares every body with a system that was never
   touched: the same to the last bit.
 * **Light.** A system may have no sun, or more than one: `SolarSystem.suns` and `sunAt` (the one
-  brightest at a place), and each body's `BodyView.sun`. With none: no sunlight on anything, no
+  brightest at a place), and each body's `BodyView.sun`. A world is lit by one sun at a time;
+  each sun has a face of its own, and the one corona and the one glare there are go to the sun
+  that looks largest (`Bodies.chief`). With none: no sunlight on anything, no
   glare, no shadows, no air glow; the Earth's cities are what is left to see of it, and the eye
   adapts to them (`Bodies.ownLight`: held at about the radiance of its lit lands from afar, a
   three-hundredth of what its night side is exposed for in sunlight, so the continents show by
@@ -235,8 +263,15 @@ pictures and the same frame as before.
 
 Also left out, and said so in the app's list (`ALSO_LEFT_OUT`): a world keeps its size and look
 whatever its mass; the belt's 75,000 small asteroids and the comets, which are drawn from their
-orbits and cannot be stepped one by one, are left out once the Sun is changed or gone; the real
-spacecraft are left out as soon as physics is live.
+orbits and cannot be stepped one by one, are left out once the Sun is changed or gone (a second
+sun, or a second Jupiter in the belt, leaves them on their real paths); the real spacecraft are
+left out as soon as physics is live; a made copy is plain; with two suns a world is lit by one.
+
+Not done, for whoever comes next: the powers in the headset's menus (`src/vr/`); a line of the
+path ahead for a world that goes round nothing (it has its trail, and the card says so); the
+stepping in a Web Worker; the ship's prediction line and its rails, which assume two-body orbits
+(`docs/notes/relativistic-ship.md`), and a check of the ship flown while physics is live; landing
+on a made world (its ground is made up, and was not tried).
 
 What it manages (`tests/livephysics.test.ts`, "speed": frames of a sixtieth of a second, a
 quarter of each for the stepping, on the machine above; a phone has not been measured):

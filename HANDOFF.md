@@ -322,7 +322,79 @@ measurements in `docs/notes/relativistic-ship.md`):
   With the live N-body physics coming, the notes list what the ship reads live and what assumes
   two-body orbits (the prediction line, the rails).
 - Tests: `tests/relativity.test.ts`, `tests/autopilot.test.ts`, `tests/flight.test.ts`;
-  `scripts/flight.mjs` (28 checks), `scripts/game.mjs` (21).
+  `scripts/flight.mjs` (34 checks), `scripts/game.mjs` (21).
+
+## Gravity for real: live physics and the first powers (physics worker)
+
+The owner: "it feels like you can't really interact with any of the planets or stars or black
+holes ... all you do is click on them, look at them", and the plan agreed with them: the real
+universe stays real until you touch it; the moment you change something, that system switches to
+live physics, with a "Back to reality" button; one part at a time. This is step 1 of that plan
+("Gravity for real"): everything in the Solar System pulls on everything else, time can be asked
+to run up to a thousand years a second (it runs as fast as the stepping allows), things collide
+and merge, and the first powers: Mass, Move, Add, Remove. The engine and every decision behind
+it: `docs/notes/gravity-engine.md`.
+
+- *The powers* (the selected world's card, under its three buttons: no mode, nothing hidden in the
+  details). **Mass**: a slider from a thousandth to a thousand times its real mass, read as "2
+  Jupiters", "0.5 Suns", with what theory predicts of such a body labelled as a prediction; the
+  orbits answer while the thumb is down. **Move**: a finger on the world drags it, in the plane of
+  its orbit (across the view when the eye is in that plane); time waits while it is held; left
+  where it is with the velocity it had, or on a circle round whatever holds sway there. **Add**: a
+  moon for a planet or a dwarf planet; for a star a planet like the Earth, one like Jupiter, or a
+  second sun: on a circle, between that world and the eye; made bodies are bodies like any other
+  (named, listed, found, moved, made heavier, removed) and say they were made. **Remove**: any
+  world, the Sun included. (`src/app/Powers.ts`, `Mover.ts`, `WhatIf.ts`; `src/ui/Hud.ts` draws
+  them and asks the app.)
+- *Live physics* (`src/app/LivePhysics.ts`). Nothing runs until a power is used. The first change
+  starts a simulation (`src/sim/NBody.ts` through `src/sim/SystemSim.ts`) from where every body is
+  at that date: the Sun, the planets, Pluto, Ceres, the seven weighed asteroids and the twenty
+  moons heavy enough to matter; a lighter moon, or a world nobody has weighed, rides on its
+  catalogued path until its planet or it is touched, then is simulated too. From then on the
+  simulation keeps the time (a quarter of each frame is its budget; a rate it cannot keep shows
+  as what it is getting), the bodies are put where it has them, `Body.parent` is what each goes
+  round now (`SolarSystem.homeOf` keeps the catalogue's), and what it tells of is put into words
+  (a collision, a world thrown out, a capture) and kept in a log in the Time sheet. A mark at the
+  top says physics is live; one tap shows the log, a second what the simulation leaves out.
+  "Back to reality" puts every mass, body and parent back, takes away what was made, and gives
+  the bodies to the ephemeris again at the date reached (1849 to 2150), else at the date it began.
+- *A system with no sun, or two.* `SolarSystem.suns`, `sunAt` (the brightest at a place) and each
+  drawn body's `BodyView.sun`: the light on a world, its shadows, its air and the exposure follow
+  its own sun, or none (then the eye adapts to the Earth's cities). One corona and one glare, for
+  the sun that looks largest. A world is lit by one sun at a time.
+- *Drawn*: orbit lines from where each simulated body is and how it moves about what it goes
+  round now; a fading trail behind each of where it has been (`src/render/Trails.ts`).
+- *How fast* (measured in `tests/livephysics.test.ts` on a shared 2.1 GHz core, a quarter of a
+  60 Hz frame for the stepping): a day, a month, a year a second in full; with every planet
+  there about two thirds of a hundred years a second and 90 to 130 years a second when a
+  thousand is asked (Mercury's 88 days set the step); all of a thousand with the Sun gone.
+  Families of moons go on rails by stages as the rate asks (the Time sheet says which).
+  Thousands of years a second with the planets there needs the stepping off the main thread
+  (the engine is written for a Web Worker; the app does not use one). A phone was not measured.
+- *Left out, and said so in the app* (`LEFT_OUT` in NBody.ts, `ALSO_LEFT_OUT` in LivePhysics.ts):
+  tides and spin, relativity but for a black hole's pull, what a collision throws off (two bodies
+  become one), the shapes of worlds but for the six planets' bulges; a world keeps its size and
+  look whatever its mass; the belt's 75,000 asteroids and the comets keep their real paths and
+  are left out once the Sun is changed; the real spacecraft are left out; a made copy of the
+  Earth, Jupiter or the Sun has its size, mass, spin and face but no air, clouds, rings or lights.
+- *Two suns of one mass* go round each other. The engine has the lighter side of a pair go round
+  the heavier, so which of the two it says goes round the other depends on what else is near
+  each when the second is made (towards Mercury, the new one takes Mercury and Venus and the Sun
+  is the one that goes round); the app says "go round each other" either way, in the news and in
+  both suns' details. A second sun arrives moving, on a circle round the Sun, and nothing else is
+  touched: the pair drifts off and what cannot follow is left behind, told as flying free.
+- *Not done*: the powers in the headset's menus; time at thousands of years a second with every
+  planet there (the stepping has to move to a Web Worker); a line of the path ahead for a world
+  that goes round nothing (it has its trail and the card's words); landing on a made world was
+  not tried; the ship's lamp and hull heating still take the Sun to be there
+  (`src/game/Game.ts updateLight`, `Flight.ts frameEnv`), and its predicted path and its rails
+  assume two-body orbits (`docs/notes/relativistic-ship.md`); the pairing of the ship's clock
+  with the simulation has no check of its own. Steps 2 to 7 of the plan (breaking and hitting,
+  black holes, stars living and dying, deep time, the rest of God mode, story mode) are
+  untouched.
+- Tests: `tests/nbody.test.ts`, `keplerdrift.test.ts`, `systemsim.test.ts`, `livephysics.test.ts`,
+  `powers.test.ts`, `mover.test.ts`, `whatif.test.ts`; `scripts/live.mjs` (`npm run verify:live`:
+  every power through the interface, on a phone with fingers and at a desk) and `scripts/whatif.mjs`.
 
 ## Next
 
@@ -332,6 +404,9 @@ measurements in `docs/notes/relativistic-ship.md`):
    only the landmark patches have it), a real cloud layer for Earth; OpenNGC for more deep-sky objects, a sharper galaxy
    impostor from outside.
 3. Unity port planning (the data pipeline outputs are engine-agnostic JSON/JPEG).
+4. Gravity for real, the owner's plan after step 1 (above): things that break and hit, black holes
+   that pull and eat, stars that live and die, deep time, the rest of God mode, a story mode; and
+   for step 1 itself the stepping in a Web Worker and the powers in the headset.
 
 ## Checks before every deploy
 
@@ -342,9 +417,10 @@ running (a build, not the dev server: an edit reloads the page under a running s
 49), `interact` (mouse and keys; 14), `verify` (35 scenes), `exposure` (looking away from bright
 things and back, and coming up to five black holes and going away again; 77), `stars` (the faces
 of stars, measured from the frames; 18),
-`whatif` (the worked-out facts, a moon made and taken away; 29),
+`whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
+powers, each through the interface on a phone and at a desk; 75),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
-`terrain` (14), `flight` (28). At most three at a time on four cores (more
+`terrain` (14), `flight` (34). At most three at a time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
 Every script starts its browser through `scripts/lib/browser.mjs`; set `CHROMIUM_PATH` to use an

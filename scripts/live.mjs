@@ -14,6 +14,10 @@
 //   - the Moon dragged with a finger to twice its distance: time waits while it is held, it goes
 //     where the finger goes in the plane of its orbit, and left on a circle there its month is
 //     the one Kepler's law gives
+//   - a second Jupiter made for the Sun: on the circle promised, between the Sun and the eye, a
+//     body like any other (found by name, listed, with a mass to change), and a quarter of its
+//     year later a quarter of the way round; a second sun, which shines and lights what is nearer
+//     it; taken away again, and nothing of either left after "Back to reality"
 // Usage: node scripts/live.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
@@ -152,7 +156,7 @@ for (const kind of ['phone', 'desk']) {
       return { mass: box('#hud .card [data-power="mass"]'), remove: box('#hud .card [data-act="remove"]'), tabs: box('#hud .hud-tabs'), facts: document.querySelector('#hud .card .facts').hidden, H: innerHeight, W: innerWidth };
     });
     check(on("Jupiter's card offers its powers where they are seen at once: Mass and Remove, a thumb high, the details shut"),
-      lay.facts && lay.mass.h >= 44 && lay.remove.h >= 44 && lay.mass.w > 80 && lay.mass.b <= lay.H && (kind === 'desk' || lay.mass.b < lay.tabs.t),
+      lay.facts && lay.mass.h >= 44 && lay.remove.h >= 44 && lay.mass.w >= 60 && lay.mass.b <= lay.H && (kind === 'desk' || lay.mass.b < lay.tabs.t),
       `buttons ${lay.mass.w.toFixed(0)} x ${lay.mass.h.toFixed(0)} px, down to ${lay.mass.b.toFixed(0)} of ${lay.H}`);
     check(on('nothing is live until a power is used: no mark, no way back to offer'), !(await shown(page, '#hud .live-mark')) && !(await about(page, 'Io', 'Jupiter')).on);
 
@@ -446,6 +450,135 @@ for (const kind of ['phone', 'desk']) {
     }, circle);
     check(on('about a tenth of that month later it is as far round the Earth as Kepler has it go'), asked === '6 h/s' && went.days < 0.2 * circle.period / 86400 && Math.abs(went.turned - 1) < 0.03 && went.parent === 'Earth',
       `${went.days.toFixed(1)} days on: ${(went.turned * 100).toFixed(1)} % of the way Kepler has it go`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ a second Jupiter, and a second sun
+  {
+    // (the eye 2.2 AU from the Sun, 40 degrees up: 473 of the Sun's radii)
+    const { ctx, page } = await open(kind, 'target=Sun&dist=473&el=40');
+    const lay = await page.evaluate(() => [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => { const r = b.getBoundingClientRect(); return { label: b.textContent, w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth }; }));
+    check(on("the Sun's card offers Add with the other powers, each a thumb high and all in sight"),
+      lay.map((b) => b.label).join() === 'Mass,Move,Add,Remove' && lay.every((b) => b.h >= 44 && b.w >= 60 && b.in), lay.map((b) => `${b.label} ${b.w.toFixed(0)} x ${b.h.toFixed(0)}`).join(', '));
+    await press(page, '#hud .card [data-power="add"]');
+    await frames(page, 2);
+    const offers = await page.evaluate(() => [...document.querySelectorAll('#hud .card [data-panel="add"] .row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => r.querySelector('b').textContent));
+    check(on('what can be added to a star: a planet like Earth, one like Jupiter, a second sun'), offers.join() === 'A planet like Earth,A planet like Jupiter,A second sun', offers.join(', '));
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-add.png`) });
+    const eye = await page.evaluate(() => { const a = window.app; return a.rig.upos.sub(a.system.sun.upos, new (a.system.sun.pos.constructor)()).toArray(); });
+    await press(page, '#hud .card [data-act="add-jupiter"]');
+    await frames(page, 4);
+    const made = await page.evaluate((eye) => {
+      const a = window.app, m = a.selection, sun = a.system.sun, real = a.findByName('Jupiter'), earth = a.findByName('Earth');
+      const r = m.pos.clone().sub(sun.pos), v = m.vel.clone().sub(sun.vel), E = { x: eye[0], y: eye[1], z: eye[2] };
+      const north = earth.pos.clone().sub(sun.pos).cross(earth.vel.clone().sub(sun.vel)).normalize();
+      const o = a.physics.orbit(m);
+      return {
+        name: m.name, card: document.querySelector('#hud .card h2').textContent, kind: m.kind, on: a.physics.on, simulated: a.physics.simulated(m), made: a.made.length, parent: m.parent?.name,
+        gm: m.gm / real.gm, radius: m.radius / real.radius, far: r.length() / Math.hypot(...eye), au: r.length() / 1.495978707e11, side: r.clone().normalize().dot(E) / Math.hypot(...eye),
+        tilt: Math.abs(r.clone().normalize().dot(north)), speed: v.length() / Math.sqrt((sun.gm + m.gm) / r.length()), way: r.clone().cross(v).normalize().dot(north), e: o.e, period: o.period,
+        toast: document.querySelector('#hud .hud-toast').textContent, powers: [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => b.textContent).join(),
+        drawn: a.bodies.views.has(m), jd: a.clock.jdTdb, dir: r.clone().normalize().toArray(), pole: r.clone().cross(v).normalize().toArray(),
+      };
+    }, eye);
+    check(on('a tap makes a second Jupiter: a planet of the system with Jupiter\'s mass and size, simulated, selected, and physics is live'),
+      made.name === 'Jupiter 2' && made.card === 'Jupiter 2' && made.kind === 'planet' && made.on && made.simulated && made.made === 1 && made.parent === 'Sun' && made.gm === 1 && made.radius === 1 && made.drawn && /Live physics is on/.test(made.toast),
+      `${made.name}, ${made.gm} of Jupiter's mass, round ${made.parent}`);
+    check(on('it is on the orbit promised: a circle round the Sun in the plane of the planets, the way they go, 0.55 of the way to the eye, and that is said'),
+      Math.abs(made.far - 0.55) < 1e-6 && made.side > 0.7 && made.tilt < 0.03 && Math.abs(made.speed - 1) < 1e-6 && made.way > 0.999 && made.e < 1e-6 && new RegExp(`Jupiter 2 is new: ${Number(made.au.toPrecision(3))} AU from the Sun, once round in [\\d.]+ (d|yr)\\.`).test(made.toast),
+      `${made.au.toFixed(3)} AU out (${made.far.toFixed(6)} of the eye's distance), ${(Math.asin(made.tilt) * 57.3).toFixed(2)} deg from the Earth's plane, ${made.speed.toFixed(6)} of the circular speed; "${made.toast.split('\n').pop()}"`);
+    check(on('it can be changed like any world: its card has Mass, Move, Add and Remove'), made.powers === 'Mass,Move,Add,Remove', made.powers);
+    await press(page, '#hud .card [data-power="mass"]');
+    await frames(page, 2);
+    const mass = await text(page, '#hud .power-read b');
+    await press(page, '#hud .card [data-details]');
+    await frames(page, 2);
+    const facts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#hud .card .facts dl div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd').textContent])));
+    check(on('its mass reads 1 Jupiter, and its details say it was made, is simulated, and what it goes round'),
+      mass === '1 Jupiter' && facts.Type === 'Planet (made by you)' && facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'the Sun' && /^nearly a circle/.test(facts["Its orbit's shape"] ?? ''),
+      `${mass}; ${facts.Type}; ${facts['Live physics']}; round ${facts['Goes round']}; ${facts["Its orbit's shape"]}`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-jupiter2.png`) });
+    await press(page, '#hud .hud-tabs [data-tab="explore"]');
+    await press(page, '#hud .explore [data-cat="solar"]');
+    await frames(page, 2);
+    const listed = await page.evaluate(() => [...document.querySelectorAll('#hud .explore .list .row b')].map((b) => b.textContent));
+    await find(page, 'Jupiter 2');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    check(on('it is listed with the Solar System and found by name'), listed.includes('Jupiter 2') && listed.includes('Jupiter') && (await text(page, '#hud .card h2')) === 'Jupiter 2', listed.slice(-3).join(', '));
+
+    // A quarter of its year later, a quarter of the way round: looked at in the frame in which the date passes a
+    // quarter of its year (not after time has been stopped with the Time sheet's button, which on a loaded machine
+    // can come many seconds, and months of its year, later), as the angle it has turned through about the pole of
+    // its orbit, all the way round (the angle between two directions cannot tell 220 degrees from 140).
+    const asked = await rate(page, '7.0 d/s');
+    const went = await (await page.waitForFunction((made) => {
+      const a = window.app;
+      if (a.clock.jdTdb < made.jd + made.period / 86400 / 4) return null;
+      const m = a.findByName('Jupiter 2'), sun = a.system.sun, r = m.pos.clone().sub(sun.pos), d = r.clone().normalize();
+      const [x, y, z] = made.dir, [px, py, pz] = made.pole;
+      const cos = d.x * x + d.y * y + d.z * z, sin = px * (y * d.z - z * d.y) + py * (z * d.x - x * d.z) + pz * (x * d.y - y * d.x);
+      // (Kepler's angle for the time gone by, and the one measured, with as many whole turns as bring it nearest)
+      const year = ((a.clock.jdTdb - made.jd) * 86400) / made.period, kepler = 2 * Math.PI * year;
+      const angle = (Math.atan2(sin, cos) + 2 * Math.PI) % (2 * Math.PI), turned = angle + 2 * Math.PI * Math.round((kepler - angle) / (2 * Math.PI));
+      return { turned: turned / kepler, year, far: r.length() / 1.495978707e11 / made.au, parent: m.parent?.name };
+    }, made, { timeout: 240000 })).jsonValue();
+    await pause(page);
+    check(on('a quarter of its year later it is a quarter of the way round the Sun, at the distance it was put at'),
+      asked === '7.0 d/s' && Math.abs(went.turned - 1) < 0.03 && Math.abs(went.far - 1) < 0.03 && went.parent === 'Sun',
+      `${(went.year * 100).toFixed(1)} % of its year on: ${(went.turned * 100).toFixed(1)} % of the way Kepler has it go, at ${went.far.toFixed(3)} of its distance`);
+
+    // a second sun
+    await find(page, 'Sun');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    await press(page, '#hud .card [data-power="add"]');
+    await press(page, '#hud .card [data-act="add-sun"]');
+    await frames(page, 6);
+    const two = await page.evaluate(() => {
+      const a = window.app, sun = a.system.sun, twin = a.selection;
+      const lit = (b) => a.system.suns.reduce((best, s) => (1 / b.pos.distanceToSquared(s.pos) > 1 / b.pos.distanceToSquared(best.pos) ? s : best));
+      const worlds = a.system.bodies.filter((b) => b.valid && b.kind === 'planet');
+      let ring = false;
+      for (const b of a.system.bodies) { let n = 0; for (let p = b.parent; p; p = p.parent) if (++n > 20) { ring = true; break; } }
+      return {
+        name: twin.name, kind: twin.kind, suns: a.system.suns.map((s) => s.name).join(), far: twin.pos.distanceTo(sun.pos) / 1.495978707e11, parents: [twin.parent?.name ?? null, sun.parent?.name ?? null], ring,
+        light: worlds.every((b) => (a.bodies.views.get(b)?.sun ?? null) === lit(b)), byTwin: worlds.filter((b) => lit(b) === twin).map((b) => b.name),
+        shines: (a.bodies.views.get(twin)?.irradiance ?? 0) > 0, toast: document.querySelector('#hud .hud-toast').textContent, type: twin.info()[0][1],
+        told: a.physics.log.map((e) => e.text), rows: [a.physics.rows(twin), a.physics.rows(sun)].map((r) => r.find((x) => x[0] === 'Goes round')?.[1] ?? null),
+      };
+    });
+    // Two suns of one mass go round each other. The simulation has the lighter side of the pair go round the heavier,
+    // so which of the two it says goes round the other is decided by what else is near each at that moment (where
+    // Mercury and Venus are): either will do, if there is no ring, and if the Sun is the one, that is told.
+    const pair = (two.parents[0] === 'Sun' && two.parents[1] === null) || (two.parents[0] === null && two.parents[1] === 'Sun 2' && two.told.includes('The Sun and Sun 2 go round each other now.'));
+    check(on('a second sun is made the same way: a star of the system that shines; the two go round each other, with no ring in what goes round what'),
+      two.name === 'Sun 2' && two.kind === 'star' && two.suns === 'Sun,Sun 2' && two.far >= 0.3 - 1e-9 && pair && !two.ring && two.rows[0] === 'each other, with the Sun' && two.rows[1] === 'each other, with Sun 2'
+        && two.shines && two.type === 'Star (made by you)' && /^(Sun 2 is new: .+ AU from the Sun, once round in .+\.)$/m.test(two.toast),
+      `${two.name} at ${two.far.toFixed(2)} AU, ${two.parents[0] ? 'going round the Sun' : 'the Sun going round it'}; "${two.toast.split('\n').find((l) => /is new/.test(l))}"; goes round: ${two.rows.join(' / ')}`);
+    check(on('each world is lit by the sun that is brighter in its sky'), two.light, `by the new one: ${two.byTwin.join(', ') || 'none yet'}`);
+    await frames(page, 6);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-two-suns.png`) });
+
+    // taken away again, and back to reality
+    await find(page, 'Jupiter 2');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    await press(page, '#hud .card [data-act="remove"]');
+    await frames(page, 3);
+    const gone = await page.evaluate(() => { const a = window.app, m = a.made[0]; return { gone: a.system.isGone(m), drawn: a.bodies.views.has(m), found: a.searchItems('Jupiter 2').length, toast: document.querySelector('#hud .hud-toast').textContent }; });
+    check(on('what was made is removed like any world'), gone.gone && !gone.drawn && gone.found === 0 && /Jupiter 2 is gone\./.test(gone.toast), `"${gone.toast.split('\n')[0]}"`);
+    await press(page, '#hud .live-back');
+    await frames(page, 3);
+    const real = await page.evaluate(async () => {
+      const a = window.app, jd = a.clock.jdTdb;
+      const fresh = await a.system.constructor.load(new URL('data', document.baseURI).href.replace(/\/$/, ''));
+      await fresh.ephemeris.request(jd);
+      fresh.update(jd);
+      a.system.update(jd);
+      let off = 0;
+      a.system.bodies.forEach((b, k) => { const f = fresh.bodies[k]; if (!f || b.id !== f.id || b.pos.x !== f.pos.x || b.pos.y !== f.pos.y || b.pos.z !== f.pos.z || b.parent?.id !== f.parent?.id || b.children.length !== f.children.length) off++; });
+      return { on: a.physics.on, bodies: a.system.bodies.length, fresh: fresh.bodies.length, off, made: a.made.length, suns: a.system.suns.map((s) => s.name).join(), found: a.searchItems('Sun 2').length };
+    });
+    check(on('"Back to reality": nothing of what was made is left, and every body is where the ephemeris has it'),
+      !real.on && real.bodies === real.fresh && real.off === 0 && real.made === 0 && real.suns === 'Sun' && real.found === 0, `${real.bodies} bodies, ${real.off} out of place, the suns: ${real.suns}`);
     await ctx.close();
   }
 }

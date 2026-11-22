@@ -1698,10 +1698,10 @@ export class NBody {
       conic(s.pr, s.pv, 3 * p, s.ngm[host]);
       return oBound ? s.id[s.leaf[s.top[host]]] : -1;
     }
-    // (of two of one mass, each goes round the other)
+    // (of two of one mass the second goes round the first: what goes round what never runs in a ring)
     for (let from = sl, k = s.par[sl]; k >= 0; from = k, k = s.par[k]) {
       const other = from === s.cA[k] ? s.cB[k] : s.cA[k];
-      if (s.ngm[from] > s.ngm[other]) continue;
+      if (s.ngm[from] > s.ngm[other] || (s.ngm[from] === s.ngm[other] && from === s.cA[k])) continue;
       conic(s.jr, s.jv, 3 * k, s.ngm[k]);
       if (oBound) return s.id[s.leaf[s.top[other]]];
     }

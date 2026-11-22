@@ -124,10 +124,14 @@ export function shapeWords(o: Orbit): string {
   return `${o.e < 0.02 ? 'nearly a circle' : o.e < 0.2 ? 'a slightly stretched circle' : o.e < 0.6 ? 'an oval' : 'a long oval'} (${e})`;
 }
 
+/** A distance within the system in words: kilometres near a world, astronomical units between worlds. */
+export function farWords(m: number): string {
+  return m >= 0.01 * AU ? `${Number((m / AU).toPrecision(3))} AU` : formatDistance(m);
+}
+
 /** An orbit's nearest and farthest, and how long once round takes, in words. */
 export function reachWords(o: Orbit): string {
-  const far = (m: number) => (m >= 0.01 * AU ? `${Number((m / AU).toPrecision(3))} AU` : formatDistance(m));
-  return o.bound ? `${far(o.peri)} to ${far(o.apo)} · ${fmtDuration(o.period)}` : `passes at ${far(o.peri)}, then leaves`;
+  return o.bound ? `${farWords(o.peri)} to ${farWords(o.apo)} · ${fmtDuration(o.period)}` : `passes at ${farWords(o.peri)}, then leaves`;
 }
 
 // ---------------------------------------------------------------- a body moved by a finger

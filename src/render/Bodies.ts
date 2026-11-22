@@ -159,12 +159,16 @@ export class BodiesLayer {
   private loader = new TextureLoader();
   private hiTex = new Map<string, { tex: Texture | null; lastWanted: number }>();
   private glare: Mesh | null = null;
-  /** the Sun's corona and surface look */
   private sunCorona: StarCorona | null = null;
-  private sunLook: StarLook | null = null;
-  /** how long the Sun's surface has been turning, at its full rate (s: StarLook.turnShare) */
-  private sunTurned = 0;
+  /** each sun's surface look, and how long its surface has been turning at its full rate (s: StarLook.turnShare) */
+  private sunLooks = new Map<Body, { look: StarLook; turned: number }>();
   private sunTurn = new Quaternion();
+  /**
+   * The sun whose corona and glare are drawn (there is one of each): the Sun, or, once the
+   * explorer has made another or taken it away, whichever looks largest from the eye (the app
+   * says which, each frame).
+   */
+  chief: Body | null;
   /** camera-facing glare around the Sun (VR only: the desktop path has a bloom pass) */
   glareOn = false;
   /** presenting to a headset (no bloom pass: the glare is all there is) */
@@ -218,6 +222,7 @@ export class BodiesLayer {
   ) {
     this.group.name = 'bodies';
     this.terrainSource = new TerrainSource(texBase.replace(/\/textures$/, ''));
+    this.chief = system.sun;
     const sc = blackbodyRGB(system.sun.teff);
     const L = luminance(sc);
     this.sunColor = [sc[0] / L, sc[1] / L, sc[2] / L];
@@ -406,6 +411,9 @@ export class BodiesLayer {
     const texKey = this.textureKey(b);
     const mapInfo = texKey ? this.manifest.maps[texKey] : undefined;
     const isStar = b.kind === 'star';
+    // (a sun the explorer has made is the Sun over again, with a surface of its own)
+    const look = isStar ? starLook(b.name.toLowerCase(), b.teff, 1, 4.83, mapInfo?.regions ?? true) : null;
+    if (look) this.sunLooks.set(b, { look, turned: 0 });
     const mat = new ShaderMaterial({
       name: isStar ? 'sun-surface' : 'body',
       vertexShader: BODY_VERT,
@@ -440,7 +448,7 @@ export class BodiesLayer {
         uSunRel: { value: new Vector3() }, uSunR: { value: SUN_RADIUS },
         uHasRings: { value: 0 }, uRingTex: { value: null }, uRingRadii: { value: new Vector3() },
         uRadiance: { value: 1 }, uTime: { value: 0 },
-        ...(isStar ? { ...starLookUniforms(this.sunLook = starLook('sun', b.teff, 1, 4.83, mapInfo?.regions ?? true)), ...BLOOM, uPixelSA: this.psf.uPixelSA, uDpr: this.psf.uDpr } : {}),
+        ...(look ? { ...starLookUniforms(look), ...BLOOM, uPixelSA: this.psf.uPixelSA, uDpr: this.psf.uDpr } : {}),
         uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       side: FrontSide,
@@ -494,7 +502,7 @@ export class BodiesLayer {
         u.uHM.value = atmo.HM;
       }
     }
-    if (isStar) {
+    if (isStar && !this.sunCorona) {
       this.createGlare(b);
       this.sunCorona = new StarCorona();
       this.group.add(this.sunCorona.mesh);
@@ -511,12 +519,12 @@ export class BodiesLayer {
     const h = (k: string) => hashString(b.name + k);
     // ground materials up close (render/Materials.ts)
     const sel = u.uMatSel.value as Vector4;
-    if (b.name === 'Earth') { sel.set(MAT.drySoil, MAT.forest, MAT.cliff, MAT.snow); u.uMatMode.value = 1; }
-    else if (b.name === 'Mars') { sel.set(MAT.drySoil, MAT.sand, MAT.cliff, MAT.snow); u.uMatMode.value = 2; }
-    else if (b.name === 'Venus' || b.name === 'Io') { sel.set(MAT.rockGround, MAT.drySoil, MAT.cliff, MAT.snow); u.uMatMode.value = 0; }
+    if (b.nature === 'Earth') { sel.set(MAT.drySoil, MAT.forest, MAT.cliff, MAT.snow); u.uMatMode.value = 1; }
+    else if (b.nature === 'Mars') { sel.set(MAT.drySoil, MAT.sand, MAT.cliff, MAT.snow); u.uMatMode.value = 2; }
+    else if (b.nature === 'Venus' || b.nature === 'Io') { sel.set(MAT.rockGround, MAT.drySoil, MAT.cliff, MAT.snow); u.uMatMode.value = 0; }
     else if (b.albedo > 0.45 || (b.kind !== 'planet' && b.pos.length() > 4.5 * AU && b.meta.albedo === undefined)) { sel.set(MAT.snow, MAT.snow, MAT.cliff, MAT.snow); u.uMatMode.value = 3; }
     else { sel.set(MAT.regolith, MAT.regolithPocked, MAT.cliff, MAT.snow); u.uMatMode.value = 0; }
-    const solid = !b.isGasGiant && b.kind !== 'star' && !['Venus', 'Earth', 'Titan'].includes(b.name);
+    const solid = !b.isGasGiant && b.kind !== 'star' && !['Venus', 'Earth', 'Titan'].includes(b.nature);
     if (!solid) return;
     const R = b.radius;
     u.uLumpy.value = (R < 20e3 ? 0.22 : R < 80e3 ? 0.14 : R < 200e3 ? 0.07 : 0) * (texKey ? 0.4 : 1) * (0.7 + 0.6 * h('l'));
@@ -699,10 +707,11 @@ export class BodiesLayer {
         u.uBodyToWorld.value.copy(rot3);
         u.uBodyCenter.value.copy(view.rel);
         u.uTime.value = this.time;
-        if (b.kind === 'star' && this.sunLook) {
+        const star = this.sunLooks.get(b);
+        if (star) {
           u.uClipScale.value = Math.min(1, STAR_NEAR / Math.max(view.rel.length(), 1));
-          this.sunTurned += dt * turnShare(this.sunLook, b.radius, view.rel.length(), Math.sqrt(this.psf.uPixelSA.value));
-          applyStarLook(u, this.sunLook, this.time, this.sunTurned);
+          star.turned += dt * turnShare(star.look, b.radius, view.rel.length(), Math.sqrt(this.psf.uPixelSA.value));
+          applyStarLook(u, star.look, this.time, star.turned);
         }
         if (sunRel) {
           const toSun = tmp.copy(sunRel).sub(view.rel);
@@ -769,11 +778,13 @@ export class BodiesLayer {
     const m = this.meshes.get(gone);
     if (m) {
       this.group.remove(m);
+      this.faceRequested.delete((m.material as ShaderMaterial).uniforms);
       (m.material as ShaderMaterial).dispose();
       this.meshes.delete(gone);
     }
     this.views.delete(gone);
     this.sunlit.delete(gone);
+    this.sunLooks.delete(gone);
   }
 
   private occluders: Body[] | null = null;
@@ -949,36 +960,33 @@ export class BodiesLayer {
   }
   private reliefRequested = new Set<string>();
 
-  /** The Sun's own face, once: drawn (STAR_FRAG) from when its map is on the GPU; without it the face is the generated one. */
+  /** A sun's own face, once for each: drawn (STAR_FRAG) from when its map is on the GPU; without it the face is the generated one. */
   private requestFace(key: string, u: Record<string, { value: unknown }>): void {
-    if (this.faceRequested) return;
-    this.faceRequested = true;
+    if (this.faceRequested.has(u)) return;
+    this.faceRequested.add(u);
     this.texture(key).then(({ tex }) => {
       u.uMap.value = tex;
       u.uHasMap.value = 1;
     }).catch((err) => console.warn('the Sun\'s map failed', err));
   }
-  private faceRequested = false;
+  private faceRequested = new Set<Record<string, { value: unknown }>>();
 
-  /** VR: glare quad around the resolved Sun, facing the viewer; and the Sun's corona. */
+  /** VR: glare quad around the resolved Sun, facing the viewer; and the Sun's corona. (Of the suns, `chief`.) */
   private updateGlare(viewQuat?: Quaternion): void {
-    const sv = this.views.get(this.system.sun);
-    if (this.sunCorona && this.sunLook) {
-      if (sv && sv.resolved && sv.pixelRadius > 1.5 && viewQuat) {
-        const sun = this.system.sun;
-        this.sunCorona.update({ rel: sv.rel, radius: sun.radius, turn: this.sunTurn.setFromRotationMatrix(sun.orientation), look: this.sunLook },
-          viewQuat, Math.sqrt(this.psf.uPixelSA.value), this.lightExposure.value * (AU / SUN_RADIUS) ** 2, this.time, this.sunTurned);
+    const sun = this.chief, v = sun ? this.views.get(sun) : undefined, star = sun ? this.sunLooks.get(sun) : undefined;
+    if (this.sunCorona) {
+      if (sun && v && star && v.resolved && v.pixelRadius > 1.5 && viewQuat) {
+        this.sunCorona.update({ rel: v.rel, radius: sun.radius, turn: this.sunTurn.setFromRotationMatrix(sun.orientation), look: star.look },
+          viewQuat, Math.sqrt(this.psf.uPixelSA.value), this.lightExposure.value * (AU / SUN_RADIUS) ** 2, this.time, star.turned);
       } else this.sunCorona.hide();
     }
     const g = this.glare;
     if (!g) return;
-    const sun = this.system.sun;
-    const v = this.views.get(sun);
     // (also while the Sun is only a few pixels across: that is when glare matters most; up close,
     // with the disk filling much of the view, the eye looks at the surface and the glare fades)
     const fill = v ? this.glareFill : 1;
     g.visible = this.glareOn && !!v && !!viewQuat && v.pixelRadius > 0.3 && fill < 0.999 && this.glarePresence > 0;
-    if (!g.visible || !v || !viewQuat) return;
+    if (!g.visible || !sun || !v || !viewQuat) return;
     const angR = Math.asin(Math.min(1, sun.radius / Math.max(v.dist, sun.radius * 1.0001)));
     const halfAng = Math.min(1.2, Math.max(angR * 14, (10 * Math.PI) / 180));
     const half = Math.tan(halfAng) * v.dist;

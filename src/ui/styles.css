@@ -212,11 +212,11 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .btn.primary { flex: 1.25; background: var(--accent); color: var(--accent-ink); }
 #hud .btn[aria-expanded='true'] { background: rgba(127, 178, 255, 0.22); color: var(--accent); }
 #hud .btn:active { filter: brightness(1.25); }
-/* what can be done to it: the powers, and the panel of the one that is open */
+/* what can be done to it: the powers (up to four in a row on a phone: each its sign over its name), and the panel of the one that is open */
 .card-powers { display: flex; gap: 8px; }
 #hud .power {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 10px;
-  border-radius: 14px; background: var(--live-fill); color: var(--live); font-size: 14px; font-weight: 600; white-space: nowrap;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 52px; padding: 4px 2px;
+  border-radius: 14px; background: var(--live-fill); color: var(--live); font-size: 13px; font-weight: 600; white-space: nowrap;
 }
 #hud .power .icon { width: 20px; height: 20px; }
 #hud .power[aria-expanded='true'] { background: rgba(255, 176, 122, 0.3); }
@@ -263,9 +263,10 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .facts dt, .worked summary span { flex: none; color: var(--dim); }
 .facts dd, .worked summary b { margin: 0; text-align: right; font-variant-numeric: tabular-nums; -webkit-user-select: text; user-select: text; }
 /* what follows from the facts: each line opens to show its working */
-.worked h3, .whatif h3 { margin: 12px 2px 2px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
-.whatif { padding-bottom: 6px; }
-#hud .whatif .row { margin-top: 6px; background: var(--fill); }
+.worked h3 { margin: 12px 2px 2px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+#hud .power-panel .row { margin-bottom: 6px; background: var(--fill); }
+/* (a choice's line says what it does: on a phone it wraps rather than be cut off) */
+#hud .power-panel .row-text small { white-space: normal; }
 .worked h3 small { margin-left: 6px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--dim); }
 .worked summary { align-items: center; min-height: 44px; padding: 4px 2px; list-style: none; cursor: pointer; }
 .worked summary::-webkit-details-marker { display: none; }

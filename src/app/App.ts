@@ -6,6 +6,7 @@ import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
 import { formatUtc, SimClock, utcToTdb, dateToJdUtc } from '../core/time';
 import { AU, DAY, formatDistance, formatSpeed, PC, SUN_RADIUS } from '../core/units';
+import { fmtDuration } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { BodiesLayer } from '../render/Bodies';
@@ -50,16 +51,16 @@ import { StarCatalog } from '../universe/StarCatalog';
 import { CatalogStar, NamedStars } from '../universe/Stars';
 import { Catalog } from '../universe/Catalog';
 import { normKey } from '../universe/CatalogSearch';
-import { CameraRig } from './CameraRig';
+import { CameraRig, sunlitSide } from './CameraRig';
 import { Game } from '../game/Game';
 import { fmtLight, MAX_RATE, WARP_STEPS } from '../game/Flight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
-import { canHaveMoon, MADE_FIRST_ID, newMoon } from './WhatIf';
+import { canAdd, type Kind, MADE_FIRST_ID, newMoon, newTwin, TWIN_OF } from './WhatIf';
 import { LivePhysics } from './LivePhysics';
 import { Mover } from './Mover';
-import { massFactor, massOf, massSlider, massTheory, massWords, rateWords, timesWords } from './Powers';
+import { farWords, massFactor, massOf, massSlider, massTheory, massWords, rateWords, the, timesWords } from './Powers';
 import { type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
@@ -115,6 +116,8 @@ const DOUBLE_TAP_ZOOM = 6;
 const POINTER_REACH = 9;
 const FINGER_REACH = 22;
 const RATE_STEPS = [1, 10, 60, 600, 3600, 21600, DAY, 7 * DAY, 30.4375 * DAY, 365.25 * DAY, 3652.5 * DAY, 36525 * DAY];
+/** a flight to a world from farther than this many times the distance it ends at may choose the side it arrives on (CameraRig: sunlitSide) */
+const FAR_ARRIVAL = 30;
 /** in live physics time can be asked to run faster still: a thousand years a second (it runs as fast as the stepping allows) */
 const LIVE_RATE = 365250 * DAY;
 
@@ -586,8 +589,10 @@ export class App {
       // the place chip: look at where the camera is; in open space, choose somewhere to go
       case 'home': if (this.rig.target) this.center(this.rig.target); else this.hud.openExplore(); break;
       case 'deselect': this.select(null); break;
-      case 'add-moon': if (this.selection instanceof Body) this.addMoon(this.selection); break;
-      case 'unmake': if (this.selection instanceof Body) this.unmake(this.selection); break;
+      case 'add-moon': this.add('moon'); break;
+      case 'add-earth': this.add('earth'); break;
+      case 'add-jupiter': this.add('jupiter'); break;
+      case 'add-sun': this.add('sun'); break;
       case 'remove': if (this.selection instanceof Body) this.removeBody(this.selection); break;
       case 'move': this.mover.toggle(this.selection instanceof Body && this.selection.valid ? this.selection : null); break;
       case 'move-keep': this.mover.leave(false); break;
@@ -838,45 +843,36 @@ export class App {
   }
 
   // ------------------------------------------------------------------ what if (src/app/WhatIf.ts)
-  /** the bodies the explorer has made, and how many ever (their numbers are not used twice) */
+  /**
+   * The bodies the explorer has made since the system was last the real one (those taken away
+   * again among them: they are gone like any world taken away, until the return to reality), and
+   * how many ever: their numbers are not used twice.
+   */
   readonly made: Body[] = [];
   private madeEver = 0;
 
   /**
-   * Give a world a new moon, between it and the eye, and select it. It is a body like any other
-   * from here on. Null if the world cannot have one.
+   * Add something to a world (the selected one, unless told which): a moon to a planet; to a star
+   * a planet, or another sun. It starts between that world and the eye, is simulated from the
+   * start, and is selected. Null if that cannot be added there.
    */
-  addMoon(parent: Body): Body | null {
-    if (!canHaveMoon(parent, this.made.length)) return null;
-    const jd = this.clock.jdTdb;
-    const eye = this.rig.upos.sub(parent.upos, new Vector3());
-    const plan = newMoon(parent, eye.length(), parent.pos.distanceTo(this.system.sun.pos), jd,
-      this.made.filter((m) => m.parent === parent).length, MADE_FIRST_ID + this.madeEver++);
-    const moon = this.system.add(plan.json);
-    this.system.place(moon, eye.normalize(), jd);
-    // (where it is now, before anything asks: the whole system once, as after a jump in time)
-    this.system.update(jd);
-    this.made.push(moon);
-    // (with physics live it is a simulated body like any other from the start)
-    this.physics.join(moon);
+  add(kind: Kind, to: SpaceObject | null = this.selection): Body | null {
+    if (!(to instanceof Body) || !canAdd(to, this.made.length).includes(kind)) return null;
+    const eye = this.rig.upos.sub(to.upos, new Vector3()).toArray(), id = MADE_FIRST_ID + this.madeEver++;
+    const like = kind === 'moon' ? null : this.system.byId.get(TWIN_OF[kind])!;
+    const sun = this.system.sunAt(to.pos);
+    const plan = like
+      ? newTwin(like, this.bodies.textureKey(like), to, eye, this.made.filter((m) => m.twinOf === like).length, id)
+      : newMoon(to, eye, sun ? to.pos.distanceTo(sun.pos) : Infinity, this.made.filter((m) => this.system.homeOf(m) === to).length, id);
+    const where = to.kind === 'star' ? `${farWords(plan.orbit)} from ${the(to.name)}` : `${formatDistance(plan.orbit - to.radius)} up`;
+    const wasOn = this.physics.on;
+    const made = this.physics.make(plan.json, to, plan.pos, plan.vel, this.clock.jdTdb,
+      `${plan.json.name} is new: ${where}, once round in ${fmtDuration(plan.periodDays * DAY)}.`);
+    this.made.push(made);
     this.bodies.changed();
-    this.select(moon);
-    this.hud.toast(`${moon.name}: ${formatDistance(plan.orbit - parent.radius)} up, once round in ${plan.periodDays < 2 ? `${(plan.periodDays * 24).toFixed(1)} hours` : `${plan.periodDays.toFixed(1)} days`}`);
-    return moon;
-  }
-
-  /** Take away a body the explorer made: the view goes back to what it went round. */
-  unmake(b: Body): void {
-    const i = this.made.indexOf(b);
-    if (i < 0) return;
-    this.made.splice(i, 1);
-    // (out of the simulation too, if it is in one: that tells the scene)
-    if (this.physics.on) this.physics.remove(b, this.clock.jdTdb);
-    else this.bodyLeft(b, null);
-    this.system.remove(b);
-    this.bodies.changed(b);
-    this.physics.takeNews();
-    this.hud.toast(`${b.name} is gone`);
+    this.select(made);
+    this.tellNews(wasOn);
+    return made;
   }
 
   // ------------------------------------------------------------------ the powers (src/app/LivePhysics.ts)
@@ -900,9 +896,15 @@ export class App {
     this.bodies.changed();
   }
 
-  /** Tell what live physics has to tell (and, the first time, that it is on). */
+  /**
+   * Tell what live physics has to tell (and, the first time, that it is on): three lines at most,
+   * the first three. After the explorer's own act its line is the first ("Sun 2 is new", "Ceres is
+   * gone"), and what follows from it comes as the simulation tells it, the weightiest first
+   * (LivePhysics.hear): a second sun that takes Mercury and Venus must not push its own news out.
+   * The rest is in the log, in the Time sheet.
+   */
   tellNews(wasOn = true): void {
-    const news = this.physics.takeNews().slice(-3);
+    const news = this.physics.takeNews().slice(0, 3);
     if (!wasOn && this.physics.on) news.unshift('Live physics is on: from now on everything here pulls on everything else.');
     if (news.length) this.hud.toast(news.join('\n'), 3 + 1.5 * news.length);
   }
@@ -922,7 +924,6 @@ export class App {
   /** Take a world away: everything else carries on without it. */
   removeBody(b: Body): void {
     if (!b.valid || !this.system.bodies.includes(b)) return;
-    if (this.made.includes(b)) { this.unmake(b); return; }
     const wasOn = this.physics.on;
     this.physics.remove(b, this.clock.jdTdb);
     this.tellNews(wasOn);
@@ -933,7 +934,8 @@ export class App {
     if (!this.physics.on) return;
     this.mover.stop();
     const said = this.physics.backToReality(this.clock);
-    for (const b of this.made.splice(0)) {
+    // (what was made goes, the last made first: a moon before the planet it was made for)
+    for (const b of this.made.splice(0).reverse()) {
       this.bodyLeft(b, null);
       this.system.remove(b);
       this.bodies.changed(b);
@@ -1021,7 +1023,11 @@ export class App {
       return;
     }
     else d = Math.max(obj.radius * 4, 1e6);
-    this.rig.flyTo(obj, d * fit);
+    // a world reached from afar is arrived at where there is something of it to see: from its lit
+    // side, if the straight way there ends over its night (close by, the eye is where it was put)
+    const from = this.rig.upos.sub(obj.upos, new Vector3());
+    const sun = obj instanceof Body && obj.kind !== 'star' && from.length() > FAR_ARRIVAL * d * fit ? this.system.sunAt(obj.pos) : null;
+    this.rig.flyTo(obj, d * fit, undefined, true, sun ? sunlitSide(from, sun.upos.sub(obj.upos, new Vector3())) : undefined);
   }
 
   center(obj: SpaceObject): void {
@@ -2293,13 +2299,24 @@ export class App {
     // the Sun's glare (the desktop bloom alone leaves a resolved Sun a bare dot)
     this.bodies.glareOn = true;
     this.bodies.glareVr = this.vr.active;
-    const sunRel = this.system.sun.upos.sub(this.rig.upos, new Vector3());
-    const sunSeen = seen(sunRel, this.system.sun.radius, this.view, this.seenScratch, this.invQuat);
-    // (no glare from a Sun behind a world: as the worlds stood a frame ago)
-    this.bodies.glarePresence = sunSeen.presence * this.inSight(sunRel, this.system.sun.radius);
-    // (the glare is a far-off Sun's: once its disk takes a twelfth of the frame's half-width it fades, gone by a third)
-    const halfY = (this.view.fovY * Math.PI) / 360;
-    this.bodies.glareFill = smoothstep(0.08, 0.35, sunSeen.size / Math.min(halfY, Math.atan(Math.tan(halfY) * this.view.aspect)));
+    // (of the suns there are, the one that looks largest from here: the Sun, while it is the only one)
+    const sunRel = new Vector3();
+    let chief: Body | null = null, largest = 0;
+    for (const s of this.system.suns) {
+      const size = s.radius / Math.max(s.upos.sub(this.rig.upos, sunRel).length(), s.radius);
+      if (size > largest) { largest = size; chief = s; }
+    }
+    this.bodies.chief = chief;
+    this.bodies.glarePresence = 0;
+    if (chief) {
+      chief.upos.sub(this.rig.upos, sunRel);
+      const sunSeen = seen(sunRel, chief.radius, this.view, this.seenScratch, this.invQuat);
+      // (no glare from a Sun behind a world: as the worlds stood a frame ago)
+      this.bodies.glarePresence = sunSeen.presence * this.inSight(sunRel, chief.radius);
+      // (the glare is a far-off Sun's: once its disk takes a twelfth of the frame's half-width it fades, gone by a third)
+      const halfY = (this.view.fovY * Math.PI) / 360;
+      this.bodies.glareFill = smoothstep(0.08, 0.35, sunSeen.size / Math.min(halfY, Math.atan(Math.tan(halfY) * this.view.aspect)));
+    }
     this.bodies.allowHi = !this.vr.active && !this.lean;
     this.bodies.update(this.rig.upos, pixelAngle, dt, this.view.quat);
     HITCH.lap('bodies');
@@ -2480,11 +2497,10 @@ export class App {
       }
       selection = {
         key: sel.key, name: sel.name, detail: describe(this, sel), rows, worked, picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
-        canAddMoon: sel instanceof Body && canHaveMoon(sel, this.made.length), made: sel instanceof Body && this.made.includes(sel),
-        mass: null, removable: false, move: null,
+        mass: null, removable: false, move: null, add: sel instanceof Body ? canAdd(sel, this.made.length) : [],
       };
-      // the powers over a world of the Solar System (what the explorer made keeps its own button, in the details)
-      if (sel instanceof Body && sel.valid && !this.made.includes(sel)) {
+      // the powers over a world of the Solar System
+      if (sel instanceof Body && sel.valid) {
         selection.rows.splice(1, 0, ...this.physics.rows(sel));
         selection.removable = true;
         selection.move = this.mover.describe(sel);

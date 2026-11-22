@@ -409,6 +409,39 @@ A parametric model (parameters typed in, not downloaded data), after published v
 * Procedural stars are generated only where no catalogue has them: beyond 100 pc from the Sun and
   fainter than V = 11 as seen from the Sun, allowing for dust.
 
+## Live physics (`src/sim/NBody.ts`, `src/sim/KeplerDrift.ts`, `src/app/LivePhysics.ts`)
+
+No data: methods, and the textbook figures quoted as predictions. The code is this project's own.
+
+* The mapping: J. Wisdom & M. Holman, "Symplectic maps for the N-body problem", *The Astronomical
+  Journal* 102, 1528 (1991): each step is the exact two-body motion of every pair and a kick by
+  what the pairs leave out.
+* Its corrector: J. Wisdom, M. Holman & J. Touma, "Symplectic correctors", *Fields Institute
+  Communications* 10, 217 (1996).
+* The hierarchy of pairs (generalised Jacobi coordinates for systems within systems): H. Beust,
+  "Symplectic integration of hierarchical stellar systems", *Astronomy & Astrophysics* 400, 1129
+  (2003). Here the hierarchy is found from where the bodies are, by Laplace's measure of a sphere
+  of influence, and changes as they move.
+* Two-body motion in universal variables with the Stumpff functions: as in J. M. A. Danby,
+  *Fundamentals of Celestial Mechanics*, 2nd ed. (Willmann-Bell, 1988).
+* A black hole's pull: B. Paczyński & P. J. Wiita, "Thick accretion disks and supercritical
+  luminosities", *Astronomy & Astrophysics* 88, 23 (1980).
+* The planets' bulges (J₂, with the radius each is given at; `src/sim/SystemSim.ts`), from the
+  gravity fields fitted to spacecraft tracking: Earth, EGM2008 (N. K. Pavlis et al., *Journal of
+  Geophysical Research* 117, B04406, 2012); Mars, MRO120D (A. S. Konopliv et al., *Icarus* 274,
+  253, 2016); Jupiter, Juno (L. Iess et al., *Nature* 555, 220, 2018); Saturn, Cassini's Grand
+  Finale (L. Iess et al., *Science* 364, eaat2965, 2019); Uranus, R. A. Jacobson, *The
+  Astronomical Journal* 148, 76 (2014); Neptune, R. A. Jacobson, *The Astronomical Journal* 137,
+  4322 (2009).
+* What theory predicts of a body of a given mass (the Mass power; labelled as predictions in the
+  app): deuterium fusing above about 13 Jupiter masses after D. S. Spiegel, A. Burrows & J. A.
+  Milsom, *The Astrophysical Journal* 727, 57 (2011); hydrogen fusing above about 80 after A.
+  Burrows et al., *Reviews of Modern Physics* 73, 719 (2001); a star's brightness, temperature
+  and lifetime from the app's main-sequence relations (`src/sim/physics.ts`).
+* That a moon half way out to the edge of its planet's reach is not kept (the Moon moved to twice
+  its distance): the simulation's own result; the limit for such orbits is in D. P. Hamilton & J.
+  A. Burns, "Orbital stability zones about asteroids", *Icarus* 92, 118 (1991).
+
 ## Algorithms and code
 
 * [three.js](https://threejs.org/) (MIT), [Vite](https://vite.dev/) (MIT), [jplephem](https://github.com/brandon-rhodes/python-jplephem) (MIT, pipeline), NumPy, Pillow, Requests, rasterio/GDAL, OpenEXR, Astropy (pipeline).

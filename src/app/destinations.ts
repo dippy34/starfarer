@@ -18,6 +18,8 @@ import { the } from './Powers';
  * Places worth offering by name: the lists behind the Explore sheet (src/ui/Hud.ts) and the
  * headset's menu (src/vr/Menu.ts), and how one of them is described and pictured in a list.
  * Every name here is that of a real object in the app's data; nothing is made up for a list.
+ * (What the explorer has made is listed after them: a made planet or sun with the Solar System,
+ * a made moon with the moons.)
  */
 
 export const PLANETS = ['Sun', 'Mercury', 'Venus', 'Earth', 'Moon', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Ceres'];
@@ -71,7 +73,7 @@ export interface Destination {
 }
 
 export function pictureOf(o: SpaceObject): Picture {
-  if (o instanceof Body) return { shape: o.kind === 'star' ? 'star' : 'world', world: o.name, tint: o.kind === 'star' ? [1, 0.93, 0.8] : o.color };
+  if (o instanceof Body) return { shape: o.kind === 'star' ? 'star' : 'world', world: o.nature, tint: o.kind === 'star' ? [1, 0.93, 0.8] : o.color };
   if (o instanceof Landmark) return { shape: 'world', world: o.world.name, tint: o.world.color };
   if (o instanceof RingSpot) return { shape: 'world', world: 'Saturn', tint: [0.85, 0.78, 0.6] };
   if (o instanceof CatalogStar) return { shape: 'star', tint: starTint(o.teff) };
@@ -155,8 +157,8 @@ export type Category = (typeof CATEGORIES)[number][0];
 export function objectsOf(app: App, category: Category): SpaceObject[] {
   const named = (names: string[]) => names.map((n) => app.findByName(n)).filter(nonNull);
   switch (category) {
-    case 'solar': return named(PLANETS);
-    case 'moons': return MOON_PARENTS.flatMap((p) => measuredMoons(app, p).slice(0, 6));
+    case 'solar': return [...named(PLANETS), ...app.made.filter((b) => b.kind !== 'moon')];
+    case 'moons': return [...MOON_PARENTS.flatMap((p) => measuredMoons(app, p).slice(0, 6)), ...app.made.filter((b) => b.kind === 'moon')];
     case 'small': return [...smallWorlds(app), ...comets(app)];
     case 'stars': return named(STARS);
     case 'exo': return named(EXOPLANETS);

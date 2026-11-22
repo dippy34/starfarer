@@ -25,8 +25,12 @@ export const ICON = {
   help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.2 1-1.2 1.8"/><path d="M12 16.7v.2" stroke-width="2.4"/>'),
   fullscreen: svg('<path d="M4 9.5V4h5.5M20 9.5V4h-5.5M4 14.5V20h5.5M20 14.5V20h-5.5"/>'),
   chevron: svg('<path d="m9.5 6 6 6-6 6"/>'),
-  // a world with a new moon beside it (what if: src/app/WhatIf.ts)
+  // what can be added to a world (src/app/WhatIf.ts): the power itself; a world with a new moon beside it; a planet of rock, a banded giant, a sun
+  add: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/>'),
   moon: svg('<circle cx="9.5" cy="14.5" r="6"/><circle cx="18.2" cy="6" r="2.3"/><path d="M18.2 1.2v1.3M18.2 9.5v1.3M13.4 6h1.3M21.7 6H23"/>'),
+  rocky: svg('<circle cx="12" cy="12" r="7"/><path d="M8.2 9.2c1.6-.4 2.4.8 3.6.6M12.4 15.6c1.3-.9 2.6-.2 3.6-1"/>'),
+  giant: svg('<circle cx="12" cy="12" r="8.5"/><path d="M4.4 9h15.2M3.6 12.8h16.8M5.6 16.4h12.8"/>'),
+  sun: svg('<circle cx="12" cy="12" r="4.4"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>'),
   unmake: svg('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.6 3"/><path d="m9.3 9.3 5.4 5.4M14.7 9.3l-5.4 5.4"/>'),
   // the powers over a world, and live physics (src/app/LivePhysics.ts): a weight, arrows every way, a pulse, the way back
   mass: svg('<path d="M8.3 9h7.4l3 10.5H5.3z"/><circle cx="12" cy="6.2" r="2.6"/>'),
