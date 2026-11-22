@@ -1413,9 +1413,19 @@ above is validated against JPL Horizons and stays as it is unless something is w
      `tests/galstars.test.ts` drives the layer frame by frame with stand-in workers (M87's heart,
      beside M87* and M60's heart on both budgets; to M60 and back; flying through M87's heart;
      the Galactic centre), and fails with each part of the change taken out in turn.
-     Verification: 624 unit tests; the three places above in the page on both budgets (headless
-     Chromium, software WebGL, the production build); verify's 35 scenes were still running when
-     this was written (the first 12 without an error). Not tried on a real phone, nor in a headset.
+     The Milky Way's own heart had the same trouble: at Sagittarius A*
+     (`?target=Sagittarius A*&dist=20`, verify's scene 14, settled) the cut sat at 6 and the
+     nearest cell drawn was 138 pc off; now 214,000 stars within reach, cut 1.3 (on a phone's
+     budget 46,000, cut 3.45).
+     Verification (headless Chromium, software WebGL, a production build): 624 unit tests; the
+     three places above, Sagittarius A* and Cygnus X-1 in the page; verify 35/35, against the
+     build of before: 18 scenes the same picture to the pixel; 10 differ in what moves from one
+     run to the next (the black holes' disks, the generated planets, the cockpit, a star's
+     surface; a few pixels of Andromeda's and the Whirlpool's glow, with no procedural star in
+     either picture); in the other 7 (scenes 10, 14, 17 and 32 to 35) the procedural stars were
+     still coming in when the picture was taken (verify does not wait for them) and more of them
+     are there, the cells round the eye coming first (towards the Galactic core, 27,344 drawn
+     against 6). Not tried on a real phone, nor in a headset.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
