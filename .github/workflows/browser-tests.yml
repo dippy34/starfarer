@@ -8,10 +8,9 @@
 # unless the head commit's message has a trailer line `Suites: all` or `Suites: flight walk`.
 #
 # Ubuntu 24.04: Playwright 1.56 (pinned) cannot install its Chromium on ubuntu-latest (26.04).
-# The runner's Chromium is the one the pinned @playwright/test installs (141), its full browser in
-# new headless mode as in the agents' container (whose Chrome for Testing is 153), not the headless
-# shell. The suites measure within a run, never against stored pictures, so nothing here compares
-# with pixels taken elsewhere.
+# The runner's browser is the agents' container's (Chrome for Testing, CHROME_VERSION below), so a
+# result here means what it means there. The suites measure within a run, never against stored
+# pictures, so there are no pixel baselines to keep per machine.
 name: Browser tests
 
 on:
@@ -29,6 +28,8 @@ concurrency:
 
 env:
   BASE_BRANCH: claude/friendly-hypatia-up418z
+  # the agents' container: `/opt/pw-browsers/chromium --version`
+  CHROME_VERSION: 153.0.8010.12
 
 jobs:
   plan:
@@ -101,16 +102,23 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - id: pw
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      # The same browser as the agents' container: Chrome for Testing at the version installed there
+      # (/opt/pw-browsers/chromium), driven by the pinned @playwright/test. With Playwright's own
+      # Chromium 141 the touch and scrolling checks of walk and flight behaved differently.
+      - run: npx playwright install-deps chromium
       - uses: actions/cache@v4
+        id: chrome
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - run: npx playwright install --with-deps chromium
-      # the full Chromium (new headless), as in the agents' container, not the headless shell
-      - run: echo "CHROMIUM_PATH=$(node -e "import('@playwright/test').then((m) => console.log(m.chromium.executablePath()))")" >> "$GITHUB_ENV"
-      - run: $CHROMIUM_PATH --version; nproc; grep -m1 'model name' /proc/cpuinfo
+          path: ~/chrome-for-testing
+          key: chrome-for-testing-${{ env.CHROME_VERSION }}
+      - if: steps.chrome.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/chrome-for-testing && cd ~/chrome-for-testing
+          curl -sSfLo chrome.zip "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-linux64.zip"
+          unzip -q chrome.zip && rm chrome.zip
+      - run: |
+          echo "CHROMIUM_PATH=$HOME/chrome-for-testing/chrome-linux64/chrome" >> "$GITHUB_ENV"
+          "$HOME/chrome-for-testing/chrome-linux64/chrome" --version; nproc; grep -m1 'model name' /proc/cpuinfo
       - uses: actions/download-artifact@v4
         with:
           name: dist-${{ github.sha }}
