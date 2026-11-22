@@ -3,6 +3,7 @@
 // checked out here, and bring the results back: pass/fail per suite, the logs and the pictures.
 //
 //   node scripts/remote-test.mjs [--suites "flight walk" | --suites all] [--name you] [--out dir] [--delete]
+//   node scripts/remote-test.mjs --suites interact --old <rev>   today's scripts against the app as it was at <rev>
 //
 // 1. pushes HEAD (or, with --suites, a commit on top of it with the same files and a `Suites:`
 //    trailer; your branch does not move) to a throwaway branch claude/test-<name>-<sha>-<stamp>
@@ -10,6 +11,8 @@
 // 3. downloads every suite's artifact into <out>/<suite>/ (default out/remote-<sha>), prints a summary
 // 4. with --delete, deletes the branch. (Not by default: in the agents' container the git proxy
 //    refuses branch deletion with HTTP 403. The branch is printed; its artifacts expire in 3 days.)
+// --old <rev>: the files of <rev> with today's scripts/ and .github/ (and --suites needed): to show that
+// a new check fails on the app as it was before the fix it was written for.
 // Without --suites the workflow runs what scripts/affected.mjs picks for the change against
 // claude/friendly-hypatia-up418z (or what a `Suites:` trailer in HEAD's own message says).
 // Exit code 0 only when every suite that ran passed. Uncommitted changes are NOT tested.
@@ -44,7 +47,22 @@ const api = (p) => JSON.parse(curl(`${API}${p}`));
 
 if (git('status', '--porcelain', '--untracked-files=no')) say('note: uncommitted changes are not part of the test (only commits are pushed)');
 let sha = git('rev-parse', 'HEAD');
-if (suitesArg) {
+const old = opt('--old', null);
+if (old && !suitesArg) throw new Error('--old needs --suites');
+if (old) {
+  // a tree: <old> with scripts/ and .github/ as they are at HEAD
+  const idx = path.join(fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'remote-test-')), 'index');
+  const env = { ...process.env, GIT_INDEX_FILE: idx };
+  const g = (...a) => execFileSync('git', a, { encoding: 'utf8', env }).trim();
+  g('read-tree', old);
+  g('rm', '-r', '-q', '-f', '--cached', '--ignore-unmatch', 'scripts', '.github'); // (the index only)
+  g('read-tree', '--prefix=scripts/', 'HEAD:scripts');
+  g('read-tree', '--prefix=.github/', 'HEAD:.github');
+  const tree = g('write-tree');
+  const msg = `Remote test: today's checks (${sha.slice(0, 8)}) against the app at ${git('rev-parse', '--short', old)}\n\nSuites: ${suitesArg}\n`;
+  sha = execFileSync('git', ['commit-tree', tree, '-p', git('rev-parse', old), '-F', '-'], { input: msg, encoding: 'utf8' }).trim();
+  fs.rmSync(path.dirname(idx), { recursive: true });
+} else if (suitesArg) {
   const msg = `Remote test of ${sha.slice(0, 8)}\n\nSuites: ${suitesArg}\n`;
   sha = execFileSync('git', ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-F', '-'], { input: msg, encoding: 'utf8' }).trim();
 }
