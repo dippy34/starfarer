@@ -1078,7 +1078,8 @@ saves on this device and the link's preview.
   camera's anchor had to be let go before the date changed (`setAnchor` keeps the anchor's last
   place, and the camera was carried 0.8 AU with the Earth's move to the link's date).
 - *Share* (`App.share`, `src/platform/share.ts`). On the card of what is selected (a share icon
-  beside its Close) and first in More ("Share this view"), with a mouse as with a finger. On a
+  beside its Close) and at the top of More ("Share this view", under How to move, which the
+  flight suite keeps first), with a mouse as with a finger. On a
   phone (a touch screen, or a finger used) the system's share sheet (`navigator.share`, title
   "Starfarer", text "Moon, 2 October 2026, in Starfarer", the link); at a desk, or where there is
   no sheet, the link is copied (`navigator.clipboard`, else the older `execCommand('copy')`, else a

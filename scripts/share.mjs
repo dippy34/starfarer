@@ -161,7 +161,7 @@ for (const kind of kinds) {
     if (from === 'more') {
       await press(page, '#hud .hud-tabs [data-tab="more"]');
       await frames(page, 2);
-      check(on('Share is the first thing in More'), await page.evaluate(() => document.querySelector('#hud .sheet.more .list .row')?.dataset.act === 'share') && await reachable(page, '#hud .sheet.more [data-act="share"]'));
+      check(on('Share is at the top of More, under How to move, in sight'), await page.evaluate(() => [...document.querySelectorAll('#hud .sheet.more .list > .row')].slice(0, 2).some((r) => r.dataset.act === 'share')) && await reachable(page, '#hud .sheet.more [data-act="share"]'));
       await page.screenshot({ path: path.join(outDir, `share-${kind}-more.png`) });
       await press(page, '#hud .sheet.more [data-close]');
       await page.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); });

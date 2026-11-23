@@ -351,8 +351,8 @@ const TEMPLATE = `
         <div class="sheet-grab"></div>
         <div class="sheet-head"><h2>${PRODUCT_NAME}</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
         <div class="list">
-          <button class="row" type="button" data-act="share">${ICON.share}<span class="row-text"><b>Share this view</b><small class="touch-only">A link that opens it as it is now</small><small class="mouse-only">Copies a link that opens it as it is now</small></span></button>
           <button class="row" type="button" data-help>${ICON.help}<span class="row-text"><b>How to move</b><small class="touch-only">Every touch, in the ship too</small><small class="mouse-only">Every key and click</small></span>${ICON.chevron}</button>
+          <button class="row" type="button" data-act="share">${ICON.share}<span class="row-text"><b>Share this view</b><small class="touch-only">A link that opens it as it is now</small><small class="mouse-only">Copies a link that opens it as it is now</small></span></button>
           <details class="missions"><summary>${ICON.flag}<span class="row-text"><b>Missions</b><small></small></span>${ICON.chevron}</summary><ul></ul></details>
           <button class="row" type="button" data-act="menu">${ICON.menu}<span class="row-text"><b>Start menu</b><small>Back to the title screen</small></span>${ICON.chevron}</button>
           <h3>Show</h3>
