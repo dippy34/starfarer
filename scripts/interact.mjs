@@ -19,7 +19,9 @@ await page.waitForFunction(() => window.app && window.app.frameCount > 10, null,
 
 // 1. Autopilot to Mars
 await page.evaluate(() => { const a = window.app; const m = a.system.bodies.find((b) => b.name === 'Mars'); a.select(m); a.goTo(m); });
-await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 60000 });
+// (a flight is a number of frames, the camera's step being 0.1 s at most a frame: some 60 of them, a minute at a frame a second and
+// more where it is slower, so the wait is a bound and not a measure)
+await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 600000 });
 await page.waitForTimeout(1500);
 let st = await page.evaluate(() => {
   const a = window.app; const m = a.system.bodies.find((b) => b.name === 'Mars');
@@ -70,7 +72,9 @@ await page.screenshot({ path: path.join(outDir, 'i1-goto-mars.png') });
 // 2. Time acceleration: one day per second for ~2 s; the camera must stay with Mars
 const before = await page.evaluate(() => ({ jd: window.app.clock.jdTdb }));
 await page.evaluate(() => { window.app.clock.paused = false; window.app.clock.rate = 86400; });
-await page.waitForTimeout(2000);
+// (two days at a day a second: two seconds here. A frame is at most a second of the clock's, so on a runner at a frame a
+// second two seconds of wall time were one frame, "Δ=1.00 d": the wait is for the two days, not for two seconds)
+await page.waitForFunction((jd) => window.app.clock.jdTdb - jd >= 2, before.jd, { timeout: 600000 });
 st = await page.evaluate(() => {
   const a = window.app; a.clock.rate = 1; const m = a.system.bodies.find((b) => b.name === 'Mars');
   return { jd: a.clock.jdTdb, dist: m.upos.sub(a.rig.upos).length() / m.radius };
@@ -374,7 +378,7 @@ await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');
 await page.waitForTimeout(300);
 await page.keyboard.press('Enter');
-await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 60000 });
+await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 600000 });
 await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 });
 await page.waitForTimeout(2500);
 st = await page.evaluate(() => ({ near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }));
@@ -383,7 +387,7 @@ await page.screenshot({ path: path.join(outDir, 'i2-sirius.png') });
 
 // 5b. Beside the space station (400 km up, where the camera would otherwise start to turn with the Earth): it stays beside it
 await page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); a.select(s); a.goTo(s); });
-await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 120000 });
+await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 600000 });
 await page.waitForTimeout(1000);
 const iss = () => page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); return { d: s.upos.sub(a.rig.upos).length(), anchor: a.rig.anchor?.name, alt: a.rig.altitude }; });
 const i0 = await iss();
