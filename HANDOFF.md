@@ -1563,6 +1563,17 @@ above is validated against JPL Horizons and stays as it is unless something is w
        this machine, as SIMBAD does); and, a separate decision since it would move stars, Bailer-
        Jones's geometric distances (Gaia archive, `external.gaiaedr3_distance`) as a better
        estimate for the poor ones. `tests/distancegrade.test.ts`; `scripts/interact.mjs`.
+     - *The stars out at night in a valley* (interact's "walking at Apollo 17" failing on GitHub's
+       runners, the same numbers every run): at night at the Apollo 17 site, 2.6 km under the
+       Moon's mean radius, with the view turned to where the Sun is (7.9 degrees under the
+       horizon), the stars went out: a magnitude limit of -16 against 7.2 facing away. A world in
+       front of a sun is a ball of its mean radius (`Exposure.hidden`), and from an eye inside
+       that ball it was counted as hiding nothing, so the Sun was in sight through the ground;
+       which way the walker faced came from the checks before, towards the Sun on the runners.
+       From inside the ball the world now hides everything under the eye's level, as it does from
+       its surface. The same counts a world's night side as dark from a valley
+       (`App.updateExposure`'s `night`). `tests/exposure.test.ts`; `scripts/interact.mjs` turns
+       the walker to the Sun's bearing and away.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
