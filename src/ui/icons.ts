@@ -25,6 +25,7 @@ export const ICON = {
   help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.2 1-1.2 1.8"/><path d="M12 16.7v.2" stroke-width="2.4"/>'),
   fullscreen: svg('<path d="M4 9.5V4h5.5M20 9.5V4h-5.5M4 14.5V20h5.5M20 14.5V20h-5.5"/>'),
   share: svg('<path d="M12 14.5V3.5"/><path d="m8 7.3 4-3.8 4 3.8"/><path d="M8.8 10H6.5v10.5h11V10h-2.3"/>'),
+  save: svg('<path d="M7 3.5h10v17l-5-3.8-5 3.8z"/>'),
   chevron: svg('<path d="m9.5 6 6 6-6 6"/>'),
   // what can be added to a world (src/app/WhatIf.ts): the power itself; a world with a new moon beside it; a planet of rock, a banded giant, a sun
   add: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/>'),
