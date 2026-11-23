@@ -452,6 +452,19 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-18; not indented, to keep the 
     await f.tap(await phone.evaluate(() => { const b = document.querySelector('.hud-coach [data-coach]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }));
   }
   await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Sirius')); });
+  // (The eye is turned to Orion's belt. From a low orbit the view the ship starts with is mostly the Earth and the
+  // dark, one to six names a screen: 50 to 52 in all, 51 here, from one run to the next as the space station passes,
+  // against a floor of "more than 50": the floor is there to show that names were looked at, and sat on the edge of
+  // what there was to look at. Towards Orion a screen holds up to 14 names, 130 in all, and each is one more that has
+  // to stay out from under the controls: the check sees more, and the floor is as it was.)
+  await phone.evaluate(() => {
+    const a = window.app, d = a.findByName('Alnilam').upos.sub(a.rig.upos).normalize();
+    const fwd = new d.constructor(0, 0, -1).applyQuaternion(a.rig.quat);
+    const R = new a.rig.quat.constructor().setFromUnitVectors(fwd, d);
+    a.game.flight.ship.quat.premultiply(R);
+    a.rig.quat.premultiply(R);
+  });
+  await f.frames(6);
   const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
   const bad = [];
   let named = 0;
