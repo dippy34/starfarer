@@ -101,7 +101,7 @@ export function distanceTo(app: App, o: SpaceObject): number {
 export function describe(app: App, o: SpaceObject): string {
   const d = distanceTo(app, o);
   // (in the units the place chip uses: near a star "5.066 million km" or "11.40 AU", not "0.00 light years")
-  if (o instanceof CatalogStar) return `star · ${distanceText(d)}`;
+  if (o instanceof CatalogStar) return `star · ${distanceText(d)}${o.distanceUncertain ? ' (uncertain)' : ''}`;
   if (o instanceof MilkyWay) return 'our galaxy, from outside';
   if (o instanceof Landmark) return `on ${o.def.body} · ${o.def.about}`;
   if (o instanceof RingSpot) return 'among the ice of the B ring';
