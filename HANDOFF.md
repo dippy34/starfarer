@@ -332,6 +332,17 @@ measurements in `docs/notes/relativistic-ship.md`):
   and no name of the sky is placed under any part of the interface over the view (`Hud.covers`,
   the chips, tabs, open card or sheet and whatever is marked `data-cover`, handed to
   `layoutLabels` as `keepOut`). A view switch (Chase / Cockpit) stands with the lever and Stop.
+  The steering assist and the side thrusters by touch (the keys Y and A D R F Shift+W/S): two chips
+  (`.fl-chips`: *assist*, naming the mode, and *RCS*) stand down the left side upright, from just under
+  the instruments, and along the right above the lever on its side. The assist chip opens a list of
+  the ten modes (`Flight.setSas`: choosing one is the pilot's hand, so the autopilot lets go; the two
+  target modes need a selection and say so); the RCS chip opens a pad of six buttons (left, up, right,
+  back, down, forward) held to thrust (`Flight.touchRcs`: 6 kN on 40 t, 0.15 m/s²), shown only while
+  flying by hand (the autopilot or Stop at the controls puts it away and the chip says Auto).
+  `FlightHud.fit` counts them: where the pad would meet the instruments they give up lines, and with
+  the list or the pad open on a short screen they step aside (`fl-tightest`); every piece is
+  `data-cover`, so `Hud.clearPart` and the labels count them (flight.mjs 18 and 18b: ten phone sizes
+  in three states, a clear part of 112 x 96 left for the target's brackets).
 - *Not done*: the view at speed (aberration, Doppler, the headlight effect): drawn as at rest; a
   precise specification is in the notes (the star shaders were other agents' work in progress).
   With the live N-body physics coming, the notes list what the ship reads live and what assumes

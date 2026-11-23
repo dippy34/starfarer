@@ -978,7 +978,7 @@ export class Flight {
     }
     if (this.autopilot || this.stopping) {
       // the autopilot (or Stop) flies until the pilot touches a control (a zoom is not one)
-      if (MANUAL.some((c) => k.has(c)) || drag.look.dx || drag.look.dy || fingers || rig.ext.throttle > 0.05 || rig.ext.rot.lengthSq() > 1e-4) {
+      if (MANUAL.some((c) => k.has(c)) || this.touchRcs.lengthSq() > 0 || drag.look.dx || drag.look.dy || fingers || rig.ext.throttle > 0.05 || rig.ext.rot.lengthSq() > 1e-4) {
         this.cancelAutopilot('Autopilot off: you have the controls');
       } else {
         if (this.autopilot) this.guide();
@@ -999,7 +999,7 @@ export class Flight {
         (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0),
         (k.has('KeyR') ? 1 : 0) - (k.has('KeyF') ? 1 : 0),
         shift ? (k.has('KeyS') ? 1 : 0) - (k.has('KeyW') ? 1 : 0) : 0,
-      );
+      ).add(this.touchRcs).clampScalar(-1, 1);
     }
     // VR: left grip is the throttle, left stick RCS (in the ship's axes)
     const ext = rig.ext;
@@ -1023,6 +1023,21 @@ export class Flight {
     if (drag.wheel && app.game.mode === 'cockpit') rig.fov = Math.max(20, Math.min(100, rig.fov * Math.pow(1.08, drag.wheel)));
     this.attitude(dt, cmd);
   }
+
+  /**
+   * A mode chosen from the touch screen's list: the same as Y landing on it, and the pilot's own
+   * hand, so the autopilot (or Stop) lets go. The two target modes need something selected (false: refused).
+   */
+  setSas(mode: SasMode): boolean {
+    if ((mode === 'target' || mode === 'anti-target') && !this.app.selection) { this.app.hud.toast('Select a destination first'); return false; }
+    this.cancelAutopilot('Autopilot off: you have the controls');
+    this.sas = mode;
+    this.app.hud.toast(`SAS: ${SAS_LABEL[mode]}`);
+    return true;
+  }
+
+  /** The side thrusters from the touch screen's pad (ship axes: x right, y up, z aft; each -1..1), held while a finger is on a button. */
+  readonly touchRcs = new Vector3();
 
   cycleSas(back = false): void {
     const i = SAS_ORDER.indexOf(this.sas);

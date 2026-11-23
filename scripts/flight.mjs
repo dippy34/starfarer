@@ -4,7 +4,8 @@
 // the autopilot to another star; on a phone, boarding, the drive's setting and Go there by touch, the
 // instruments at a glance and the full read-out, the Time chip's rate in the ship, and flying by hand
 // (steering by a finger, the throttle lever, Stop), upright and on its side; Fly there in your ship from
-// the ground in a planet's air (it climbs out under its own drive, then goes on). Usage: node scripts/flight.mjs [baseUrl] [outDir]
+// the ground in a planet's air (it climbs out under its own drive, then goes on); the steering assist's
+// modes and the side thrusters by touch. Usage: node scripts/flight.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
@@ -35,7 +36,7 @@ const state = () => page.evaluate(() => {
  * that is less than either reads through it (it did, under the drive's setting, on a phone on its side).
  */
 function opacity() {
-  return [...document.querySelectorAll('.fl-glance, .fl-touch > *, .fl-lever, .fl-stop, .fl-view')].map((e) => {
+  return [...document.querySelectorAll('.fl-glance, .fl-touch > *, .fl-lever, .fl-stop, .fl-view, .fl-chips button, .fl-rcs, .fl-modes')].map((e) => {
     const cs = getComputedStyle(e), m = cs.backgroundColor.match(/rgba?\(([^)]+)\)/);
     return { what: `${e.tagName.toLowerCase()}.${e.className}`, alpha: Number(m?.[1].split(',')[3] ?? '1'), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || '') };
   });
@@ -44,7 +45,7 @@ const seeThrough = (list) => list.filter((p) => !(p.alpha >= 0.88 && p.blur));
 const waitFor = (fn, arg, timeout = 240000) => page.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
 
 // (Parts, for running the suite in two halves at once on two machines: together they are the whole suite.)
-// FLIGHT_ONLY=desk runs 1-12 (one page at a desk), FLIGHT_ONLY=phone 13-17 (each on a fresh phone); unset: both.
+// FLIGHT_ONLY=desk runs 1-12 (one page at a desk), FLIGHT_ONLY=phone 13-18 (each on a fresh phone); unset: both.
 const part = process.env.FLIGHT_ONLY ?? '';
 let st;
 if (part !== 'phone') { // (FLIGHT_ONLY: desk, 1-12; not indented, to keep the change small)
@@ -239,7 +240,7 @@ check('arrives at the star', !prev.ap && prev.d < prev.r * 12, JSON.stringify({ 
 await shot('f14-alpha-cen.png');
 } // (FLIGHT_ONLY: desk)
 
-if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the change small)
+if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-18; not indented, to keep the change small)
 // 13. on a phone, by touch alone: More, Spaceship boards the ship; the tabs stay (where to go, time,
 // the way out); + raises the drive's setting; Go there on a selected world starts the autopilot
 {
@@ -283,7 +284,7 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
   });
   check('on a phone the instruments are a card under the clock, in the top quarter, opaque', st.top >= st.chip && st.bottom <= 0.25 * 844 && st.left >= 0 && st.right <= 390 && st.alpha >= 0.85 && st.desk === 'none', JSON.stringify(st));
   const pieces = await phone.evaluate(opacity);
-  check('nothing of the instruments or the controls is see-through (as opaque as the card, and blurred)', pieces.length === 8 && seeThrough(pieces).length === 0, JSON.stringify(seeThrough(pieces).length ? seeThrough(pieces) : pieces.map((p) => p.what)));
+  check('nothing of the instruments or the controls is see-through (as opaque as the card, and blurred)', pieces.length === 12 && seeThrough(pieces).length === 0, JSON.stringify(seeThrough(pieces).length ? seeThrough(pieces) : pieces.map((p) => p.what)));
   check('at a glance: the speed, what the autopilot does, the target', /^\d[\d., ]* (m\/s|km\/s|c)$/.test(st.speed) && !/^1\.0+ c/.test(st.speed) && /Autopilot: /.test(st.text) && /Moon · /.test(st.text), st.text);
   // the full read-out is a tap away, as a sheet; a tap on the card again folds it
   await f.tap(await at('.fl-glance'));
@@ -430,7 +431,7 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
   const apart = (a, b) => a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t;
   check('on its side: the instruments under the clock, the read-out beside the tabs, apart', st.open === 'flight' && st.top.t >= st.chip.b && st.top.r <= 844 && st.top.b <= 0.6 * 390 && apart(st.top, st.sheet) && apart(st.top, st.tabs), JSON.stringify(st));
   const side = await phone.evaluate(opacity);
-  check('on its side too, no sky label can read through the instruments or the controls', side.length === 8 && seeThrough(side).length === 0, JSON.stringify(seeThrough(side)));
+  check('on its side too, no sky label can read through the instruments or the controls', side.length === 12 && seeThrough(side).length === 0, JSON.stringify(seeThrough(side)));
   check('on its side: the lever and Stop along the foot at the right, under the thumb, clear of the instruments and the read-out', st.stick.r <= 844 && st.stick.b <= 390 && st.stick.r >= 844 - 60 && st.stick.b >= 390 - 60 && apart(st.stick, st.top) && apart(st.stick, st.sheet), JSON.stringify(st.stick));
   await phone.screenshot({ path: path.join(outDir, 'f18-phone-side.png'), timeout: 180000 });
   await ctx.close();
@@ -469,7 +470,7 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
       const got = await phone.evaluate(() => {
         const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width }; };
         const shown = (e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden';
-        const mine = [...document.querySelectorAll('.fl-glance, .fl-touch, .fl-stick')].filter(shown).map((e) => ({ what: e.className.split(' ')[0], ...box(e) }));
+        const mine = [...document.querySelectorAll('.fl-glance, .fl-touch, .fl-stick, .fl-chips')].filter(shown).map((e) => ({ what: e.className.split(' ')[0], ...box(e) }));
         const theirs = [...document.querySelectorAll('#hud .hud-top .chip, #hud .hud-tabs, #hud .hud-slot > .on')].filter(shown).map((e) => ({ what: e.className.split(' ').slice(0, 2).join('.'), ...box(e) }));
         const x = document.querySelector('.sheet.card.on [data-act="deselect"]');
         let closeOk = true;
@@ -818,6 +819,183 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
   await f.frames(4);
   st = await phone.evaluate(() => { const fl = window.app.game.flight; return { ap: fl.autopilot?.target.name ?? null, g: fl.ship.driveAccel / 9.80665, refusal: fl.autopilotRefusal(), shown: !document.querySelector('.hud-notice').hidden }; });
   check('that button sets the stronger drive and the autopilot starts (the climb first)', st.ap === 'Moon' && st.g >= 5 && !st.refusal && !st.shown, JSON.stringify(st));
+  await ctx.close();
+}
+
+// 18. the steering assist and the side thrusters by touch (on a keyboard: Y, and A D R F Shift+W S),
+// upright and on its side: an assist chip that names the mode and opens a small list, a thrusters
+// chip that opens a pad of six buttons held to thrust (only while flying by hand: the autopilot or
+// Stop has the ship otherwise)
+for (const landscape of [false, true]) {
+  const ctx = await phoneContext(browser, { landscape });
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  const tag = landscape ? 'on its side' : 'upright';
+  await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=4&az=40&el=5&ship=chase&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10 && window.app.game.flight.on, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  const until = (fn, arg, timeout = 120000) => phone.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
+  const shown = (q) => phone.evaluate((sel) => { const e = document.querySelector(sel); return !!e && !e.hidden && e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none'; }, q);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  // (nothing selected to begin with)
+  await phone.evaluate(() => window.app.select(null));
+  await f.frames(4);
+  // (an app without the chips fails here, once, rather than in every check after)
+  if (!(await phone.evaluate(() => !!document.querySelector('.fl-assist') && !!document.querySelector('.fl-thrust')))) {
+    check(`${tag}: an assist chip and a thrusters chip stand on the screen`, false, 'no such chips');
+    await ctx.close();
+    continue;
+  }
+  // the two chips: on the screen, big enough for a thumb, opaque, the mode named
+  st = await phone.evaluate(() => {
+    const box = (q) => { const b = document.querySelector(q).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height }; };
+    const hit = (q) => { const b = document.querySelector(q).getBoundingClientRect(); return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.closest(q) !== null; };
+    return { assist: box('.fl-assist'), thrust: box('.fl-thrust'), name: document.querySelector('.fl-assist').textContent.replace(/\s+/g, ' ').trim(), hitA: hit('.fl-assist'), hitT: hit('.fl-thrust'), W: innerWidth, H: innerHeight, items: document.querySelectorAll('.fl-modes [data-sas]').length };
+  });
+  const chipsOk = [st.assist, st.thrust].every((b) => b.w >= 44 && b.h >= 40 && b.l >= 0 && b.t >= 0 && b.r <= st.W && b.b <= st.H);
+  check(`${tag}: an assist chip (naming the mode) and a thrusters chip stand on the screen, thumb-sized and uncovered`, chipsOk && st.hitA && st.hitT && /Hold/.test(st.name) && st.items === 10, JSON.stringify(st));
+  const piecesOpaque = await phone.evaluate(opacity);
+  check(`${tag}: the new pieces are as opaque as the rest (no sky label reads through them)`, seeThrough(piecesOpaque).length === 0 && piecesOpaque.some((p) => /fl-assist/.test(p.what)) && piecesOpaque.some((p) => /fl-modes/.test(p.what)), JSON.stringify(seeThrough(piecesOpaque)));
+  // the list: opens at the chip with the ten modes and the one in use marked; a mode touched is set and the list shuts
+  await f.tap(await at('.fl-assist'));
+  await f.frames(3);
+  st = await phone.evaluate(() => ({ open: !document.querySelector('.fl-modes').hidden, marked: document.querySelector('.fl-modes [aria-checked="true"] .lg')?.textContent ?? null, n: document.querySelectorAll('.fl-modes [data-sas]').length, expanded: document.querySelector('.fl-assist').getAttribute('aria-expanded') }));
+  await phone.screenshot({ path: path.join(outDir, `f28-phone-assist-list-${landscape ? 'side' : 'up'}.png`), timeout: 180000 });
+  check(`${tag}: the assist chip opens a list of the ten modes with the one in use marked`, st.open && st.n === 10 && st.marked === 'Hold' && st.expanded === 'true', JSON.stringify(st));
+  // (nothing selected: the target modes say so and change nothing)
+  await f.tap(await at('.fl-modes [data-sas="target"]'));
+  await f.frames(2);
+  st = await phone.evaluate(() => ({ sas: window.app.game.flight.sas, toast: document.querySelector('.hud-toast').textContent, open: !document.querySelector('.fl-modes').hidden }));
+  check(`${tag}: "To target" with nothing selected changes nothing and says to select a destination`, st.sas === 'stability' && /Select a destination/.test(st.toast), JSON.stringify(st));
+  await f.tap(await at('.fl-modes [data-sas="retrograde"]'));
+  await f.frames(3);
+  st = await phone.evaluate(() => ({ sas: window.app.game.flight.sas, chip: document.querySelector('.fl-assist').textContent.replace(/\s+/g, ' ').trim(), open: !document.querySelector('.fl-modes').hidden }));
+  // (and the ship does what the mode says: the nose comes round onto retrograde)
+  const turned = await until(() => { const fl = window.app.game.flight; const d = fl.sasDirection(); const n = new d.constructor(0, 0, -1).applyQuaternion(fl.ship.quat); return d.dot(n) > 0.98; }, null, 240000);
+  check(`${tag}: choosing Retrograde sets it, names it on the chip, shuts the list, and the ship turns its nose retrograde`, st.sas === 'retrograde' && /Retro/.test(st.chip) && !st.open && turned, JSON.stringify({ ...st, turned }));
+  // (a touch elsewhere puts an open list away)
+  await f.tap(await at('.fl-assist'));
+  await f.frames(2);
+  await f.tap({ x: landscape ? 560 : 195, y: landscape ? 250 : 520 });
+  await f.frames(2);
+  check(`${tag}: a touch elsewhere puts the list away`, await phone.evaluate(() => document.querySelector('.fl-modes').hidden), '');
+  // with a destination selected the target modes work
+  await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); });
+  await f.frames(3);
+  await f.tap(await at('.fl-assist'));
+  await f.frames(2);
+  await f.tap(await at('.fl-modes [data-sas="target"]'));
+  await f.frames(2);
+  st = await phone.evaluate(() => window.app.game.flight.sas);
+  check(`${tag}: with a destination selected, "To target" sets that mode`, st === 'target', st);
+  await f.tap(await at('.fl-assist'));
+  await f.frames(2);
+  await f.tap(await at('.fl-modes [data-sas="stability"]'));
+  await f.frames(2);
+
+  // the thrusters: closed to begin with; the chip opens a pad of six buttons; each held thrusts its way
+  check(`${tag}: the thrusters' pad is shut until its chip is touched`, !(await shown('.fl-rcs')), '');
+  await f.tap(await at('.fl-thrust'));
+  await f.frames(3);
+  st = await phone.evaluate(() => ({ open: !document.querySelector('.fl-rcs').hidden, n: document.querySelectorAll('.fl-rcs [data-rcs]').length, small: [...document.querySelectorAll('.fl-rcs [data-rcs]')].filter((b) => { const r = b.getBoundingClientRect(); return r.width < 40 || r.height < 40; }).length, pressed: document.querySelector('.fl-thrust').getAttribute('aria-pressed') }));
+  await phone.screenshot({ path: path.join(outDir, `f29-phone-thrusters-${landscape ? 'side' : 'up'}.png`), timeout: 180000 });
+  check(`${tag}: the thrusters chip opens a pad of six buttons, each thumb-sized`, st.open && st.n === 6 && st.small === 0 && st.pressed === 'true', JSON.stringify(st));
+  const axes = { 'x-': [-1, 0, 0], 'x+': [1, 0, 0], 'y+': [0, 1, 0], 'y-': [0, -1, 0], 'z-': [0, 0, -1], 'z+': [0, 0, 1] };
+  const got = {};
+  for (const [k, want] of Object.entries(axes)) {
+    await f.press(await at(`.fl-rcs [data-rcs="${k}"]`));
+    await f.frames(3);
+    got[k] = await phone.evaluate(() => { const fl = window.app.game.flight; return { rcs: fl.ship.rcs.toArray(), felt: fl.ship.properAccel.length() }; });
+    await f.lift();
+    await f.frames(2);
+    got[`${k} lifted`] = await phone.evaluate(() => window.app.game.flight.ship.rcs.toArray());
+  }
+  const same = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+  check(`${tag}: each pad button thrusts its own way (left, right, up, down, forward, back: the keys A D R F Shift+W Shift+S) while held, and lifting stops it`,
+    Object.entries(axes).every(([k, w]) => same(got[k].rcs, w) && same(got[`${k} lifted`], [0, 0, 0])), JSON.stringify(got));
+  // and the ship really is pushed: held to the right, the crew feels 0.15 m/s² (6 kN on 40 t) along the ship's right
+  await f.press(await at('.fl-rcs [data-rcs="x+"]'));
+  await f.frames(4);
+  st = await phone.evaluate(() => { const fl = window.app.game.flight, r = new fl.ship.quat.constructor().copy(fl.ship.quat), right = new fl.ship.properAccel.constructor(1, 0, 0).applyQuaternion(r); return { along: fl.ship.properAccel.dot(right), total: fl.ship.properAccel.length() }; });
+  await phone.screenshot({ path: path.join(outDir, `f30-phone-thrusters-held-${landscape ? 'side' : 'up'}.png`), timeout: 180000 });
+  await f.lift();
+  check(`${tag}: held, a button really pushes the ship (6 kN on its 40 t: 0.15 m/s² along its right)`, Math.abs(st.along - 0.15) < 0.03 && Math.abs(st.total - 0.15) < 0.05, JSON.stringify(st));
+  // the autopilot flying takes the ship: the pad is put away and the chip with it, the assist chip says Auto;
+  // a mode chosen then is the pilot's hand, and the autopilot lets go
+  await phone.evaluate(() => { const a = window.app, fl = a.game.flight; a.select(a.findByName('Moon')); fl.driveFor(a.findByName('Moon')); fl.autopilotTo(a.findByName('Moon')); });
+  await f.frames(8);
+  st = await phone.evaluate(() => ({ ap: !!window.app.game.flight.autopilot, chip: document.querySelector('.fl-assist').textContent.replace(/\s+/g, ' ').trim(), thrust: !document.querySelector('.fl-thrust').hidden && document.querySelector('.fl-thrust').getBoundingClientRect().width > 0, pad: !document.querySelector('.fl-rcs').hidden && document.querySelector('.fl-rcs').getBoundingClientRect().width > 0 }));
+  check(`${tag}: with the autopilot flying, the thrusters (chip and pad) are put away and the assist chip says Auto`, st.ap && /Auto/.test(st.chip) && !st.thrust && !st.pad, JSON.stringify(st));
+  await f.tap(await at('.fl-assist'));
+  await f.frames(2);
+  await f.tap(await at('.fl-modes [data-sas="prograde"]'));
+  await f.frames(3);
+  st = await phone.evaluate(() => ({ ap: !!window.app.game.flight.autopilot, sas: window.app.game.flight.sas, thrust: getComputedStyle(document.querySelector('.fl-thrust')).display !== 'none' && !document.querySelector('.fl-thrust').hidden }));
+  check(`${tag}: choosing a mode takes the controls from the autopilot, and the thrusters come back`, !st.ap && st.sas === 'prograde' && st.thrust, JSON.stringify(st));
+  await ctx.close();
+}
+
+// 18b. the new controls on every phone size, upright and on its side, bars or not: with the chips
+// alone, with the thrusters' pad open, and with the assist's list open, nothing of the ship's lies on
+// anything of the interface or on another piece of the ship's, all of it is on the screen, no name of
+// the sky is under it, and the interface still leaves a clear part of the view of at least 112 x 96
+// (room for the target's brackets, App's `centre` and Hud.clearPart count every piece of it)
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=4&az=40&el=5&ship=chase&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10 && window.app.game.flight.on, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) {
+    await f.tap(await phone.evaluate(() => { const b = document.querySelector('.hud-coach [data-coach]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }));
+  }
+  await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Sirius')); });
+  const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
+  const bad = [];
+  let looked = 0;
+  for (const state of ['chips', 'pad', 'list']) {
+    for (const [w, h, inset] of sizes) {
+      await phone.setViewportSize({ width: w, height: h });
+      await phone.evaluate(({ inset, state }) => {
+        const r = document.documentElement.style;
+        r.setProperty('--safe-l', `${inset}px`);
+        r.setProperty('--safe-r', `${inset}px`);
+        window.app.hud.closeSheet();
+        const click = (q, want) => { const e = document.querySelector(q); if (e && e.getAttribute(want[0]) !== want[1]) e.click(); };
+        click('.fl-thrust', ['aria-pressed', state === 'pad' ? 'true' : 'false']);
+        click('.fl-assist', ['aria-expanded', state === 'list' ? 'true' : 'false']);
+      }, { inset, state });
+      await f.frames(3);
+      await phone.waitForTimeout(400);
+      await f.frames(2);
+      const got = await phone.evaluate(() => {
+        const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width }; };
+        const shown = (e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden';
+        const mine = [...document.querySelectorAll('.fl-glance, .fl-touch, .fl-lever, .fl-stop, .fl-view, .fl-chips, .fl-rcs, .fl-modes')].filter(shown).map((e) => ({ what: e.className.split(' ')[0], ...box(e) }));
+        const theirs = [...document.querySelectorAll('#hud .hud-top .chip, #hud .hud-tabs, #hud .hud-slot > .on')].filter(shown).map((e) => ({ what: e.className.split(' ').slice(0, 2).join('.'), ...box(e) }));
+        const names = [...document.querySelectorAll('#labels .label')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => ({ what: e.textContent, ...box(e) }));
+        const part = window.app.hud.clearPart();
+        return { mine, theirs, names, part: part && { w: part.box.r - part.box.l, h: part.box.b - part.box.t }, W: innerWidth, H: innerHeight };
+      });
+      const meet = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+      const hits = got.mine.flatMap((m) => got.theirs.filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
+      const among = got.mine.flatMap((m, i) => got.mine.slice(i + 1).filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
+      const off = got.mine.filter((m) => m.l < 0 || m.t < 0 || m.r > got.W + 0.5 || m.b > got.H + 0.5).map((m) => `${m.what} off screen`);
+      const under = got.names.filter((n) => [...got.mine, ...got.theirs].some((o) => meet(n, o))).map((n) => n.what);
+      const wanted = { chips: ['fl-chips'], pad: ['fl-chips', 'fl-rcs'], list: ['fl-chips', 'fl-modes'] }[state];
+      const missing = wanted.filter((k) => !got.mine.some((m) => m.what === k));
+      looked += got.names.length;
+      // (a clear part of 112 x 96 at least, where the brackets of the target have room)
+      // (not with the list open: it is a menu for a moment, and says so by covering the view)
+      const room = state === 'list' || (!!got.part && got.part.w >= 112 && got.part.h >= 96);
+      if (hits.length || among.length || off.length || under.length || missing.length || !room) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, state, hits, among, off, under, missing, clear: got.part });
+      if (w === 844 && h === 280 && state === 'pad') await phone.screenshot({ path: path.join(outDir, 'f31-phone-side-bars-thrusters.png'), timeout: 180000 });
+      if (w === 360 && h === 640 && state === 'pad') await phone.screenshot({ path: path.join(outDir, 'f32-phone-small-thrusters.png'), timeout: 180000 });
+    }
+  }
+  check('on every phone size, upright and on its side: the chips, the thrusters\' pad and the assist\'s list, shown, lie on nothing of the interface or of the ship\'s own, are all on the screen, hide no name of the sky, and (the list aside, a menu for a moment) leave the view a clear part of 112 x 96 at least', bad.length === 0 && looked > 30, `${looked} names looked at; ${JSON.stringify(bad).slice(0, 900)}`);
   await ctx.close();
 }
 

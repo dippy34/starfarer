@@ -1,7 +1,7 @@
 import { C } from '../sim/Gravity';
 import { G0, SHIP_SPEC } from '../sim/ShipPhysics';
 import { ICON } from '../ui/icons';
-import { type FlightReadout, fmtClock, fmtDist, fmtG, fmtGamma, fmtLight, fmtSpeed, fmtPace, fmtTime, fmtWarp, sasLabel, WARP_STEPS } from './Flight';
+import { type FlightReadout, type SasMode, fmtClock, fmtDist, fmtG, fmtGamma, fmtLight, fmtSpeed, fmtPace, fmtTime, fmtWarp, sasLabel, WARP_STEPS } from './Flight';
 
 const CSS = `
 .fl-panel { font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: #cfe8ff; }
@@ -52,7 +52,7 @@ const CSS = `
 .fl-touch { display: flex; align-items: stretch; gap: 6px; height: 40px; font: 13px/1 system-ui, sans-serif; color: #cfe8ff; pointer-events: none; }
 /* (every piece over the view is as opaque as the card, and blurs what is behind it: no sky label
    reads through the instruments or the controls) */
-#hud :is(.fl-glance, .fl-touch button, .fl-touch span, .fl-lever, .fl-stop, .fl-view) { -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+#hud :is(.fl-glance, .fl-touch button, .fl-touch span, .fl-lever, .fl-stop, .fl-view, .fl-chips button, .fl-rcs, .fl-modes) { -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
 #hud .fl-touch button { pointer-events: auto; min-width: 46px; border-radius: 12px; border: 1px solid rgba(120, 220, 255, 0.45); background: rgba(6, 11, 22, 0.9);
   color: #fff; font: 600 18px/1 system-ui, sans-serif; touch-action: manipulation; }
 #hud .fl-touch .fl-which { flex: 1; min-width: 0; padding: 0 10px; text-align: left; font: 600 13px/1.1 system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -82,6 +82,38 @@ const CSS = `
 #hud .fl-view .icon { width: 18px; height: 18px; color: #7fd4ff; }
 .fl-view small { font-size: 10px; font-weight: 500; color: #7f9bb8; }
 #hud .fl-view:active { filter: brightness(1.25); }
+/* the steering assist and the side thrusters, by touch (the keys Y and A D R F Shift+W S): two chips
+   under the left thumb (upright: down the left side under the instruments, where the sky is clear;
+   on its side: along the right, above the lever), the thrusters' pad opening only while flying by
+   hand, the assist's modes in a small list that opens at its chip */
+.fl-aids { position: absolute; left: 0; top: var(--aids-top, 200px); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.fl-chips { display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+#hud .fl-chips button { pointer-events: auto; width: 64px; height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 14px;
+  border: 1px solid rgba(120, 220, 255, 0.45); background: rgba(6, 11, 22, 0.9); color: #cfe8ff; font: 650 11px/1.05 system-ui, sans-serif; touch-action: manipulation; overflow: hidden; }
+#hud .fl-chips button small { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #7f9bb8; }
+#hud .fl-chips button b { max-width: 100%; padding: 0 2px; box-sizing: border-box; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+#hud .fl-chips .icon { width: 16px; height: 16px; color: #7fd4ff; }
+#hud .fl-chips button[aria-pressed='true'], #hud .fl-chips button[aria-expanded='true'] { border-color: #7fd4ff; background: rgba(40, 90, 130, 0.92); }
+#hud .fl-chips button:active { filter: brightness(1.25); }
+.fl-aids.fl-beside { flex-direction: row; align-items: flex-start; }
+.fl-chips [hidden], .fl-aids[hidden], .fl-rcs[hidden], .fl-modes[hidden] { display: none !important; }
+.fl-rcs { display: grid; grid-template-columns: repeat(3, 42px); grid-auto-rows: 42px; gap: 6px; padding: 6px; border-radius: 18px; pointer-events: none;
+  background: rgba(6, 11, 22, 0.9); border: 1px solid rgba(120, 220, 255, 0.45); }
+#hud .fl-rcs button { pointer-events: auto; display: flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid rgba(120, 220, 255, 0.3);
+  background: rgba(30, 50, 80, 0.7); color: #fff; font: 650 11px/1 system-ui, sans-serif; touch-action: none; }
+#hud .fl-rcs button .icon { width: 22px; height: 22px; }
+#hud .fl-rcs button[data-held] { background: #7fd4ff; color: #04121e; }
+.fl-modes { position: fixed; z-index: 4; display: grid; grid-template-columns: repeat(2, 96px); gap: 4px; padding: 6px; border-radius: 16px; pointer-events: none;
+  background: rgba(6, 11, 22, 0.96); border: 1px solid rgba(120, 220, 255, 0.45); }
+#hud .fl-modes button { pointer-events: auto; height: 38px; padding: 0 6px; border-radius: 10px; border: 1px solid rgba(120, 220, 255, 0.2); background: rgba(30, 50, 80, 0.55); color: #e8f4ff;
+  font: 600 12px/1 system-ui, sans-serif; white-space: nowrap; touch-action: manipulation; }
+#hud .fl-modes button .sh { display: none; }
+.fl-modes.fl-short { padding: 6px; gap: 4px; }
+#hud .fl-modes.fl-short button { padding: 0 1px; font-size: 11px; }
+#hud .fl-modes.fl-short button .sh { display: inline; }
+#hud .fl-modes.fl-short button .lg { display: none; }
+#hud .fl-modes button[aria-checked='true'] { background: #7fd4ff; color: #04121e; border-color: #7fd4ff; }
+#hud .fl-modes button[aria-disabled='true'] { color: #6b8099; }
 @media (max-width: 520px) {
   .fl-desk { left: 8px; right: 8px; width: auto; top: 64px; font-size: 11px; line-height: 1.3; }
   .fl-top { left: calc(var(--safe-l, 0px) + 8px); right: calc(var(--safe-r, 0px) + 8px); width: auto; }
@@ -92,7 +124,7 @@ const CSS = `
   /* (the search and the settings take the whole screen: the instruments step aside for them; the
      time sheet reaches up to where the lever is) */
   #hud:is([data-sheet='explore'], [data-sheet='more']) :is(.fl-desk, .fl-top) { display: none; }
-  #hud[data-sheet='time'] .fl-stick { display: none; }
+  #hud[data-sheet='time'] :is(.fl-stick, .fl-aids, .fl-modes) { display: none; }
   .fl-warn { font-size: 15px; top: auto; bottom: 40%; }
   .fl-end h1 { font-size: 34px; }
 }
@@ -115,14 +147,39 @@ const CSS = `
   #hud .fl-stop[aria-pressed='true'] .icon { display: none; }
   #hud .fl-touch button { min-width: 40px; }
   .fl-touch span { min-width: 64px; }
+  /* (the chips along the right above the lever, the pad above them) */
+  .fl-aids { position: fixed; left: auto; top: auto; right: calc(var(--safe-r, 0px) + 10px); bottom: calc(var(--safe-b, 0px) + 68px); flex-direction: column-reverse; align-items: flex-end; }
+  .fl-aids.fl-beside { flex-direction: row-reverse; align-items: flex-end; }
+  .fl-chips { flex-direction: row; }
+  #hud .fl-chips button { width: auto; min-width: 84px; height: 40px; flex-direction: row; gap: 5px; padding: 0 10px; }
+  #hud .fl-chips button small { font-size: 11px; letter-spacing: 0; text-transform: none; }
+  .fl-modes { grid-template-columns: repeat(5, 74px); }
 }
 /* where there is not room for everything (a short view, the browser's bars shown): the instruments
    give up their lower lines, then the drive (the full read-out keeps it all); upright the lever
    shortens, then steps aside (FlightHud.fit) */
 #hud .fl-top.fl-tight :is(.fl-l3, .fl-l4) { display: none; }
 #hud .fl-top.fl-tighter :is(.fl-l2, .fl-touch) { display: none; }
+#hud .fl-top.fl-tightest :is(.fl-glance, .fl-touch) { display: none; }
 #hud .fl-stick.fl-away { display: none; }
+#hud .fl-aids.fl-away { display: none; }
 `;
+
+/** the assist's modes, as the list names them (the chip names the current one shorter) */
+const MODES: [SasMode, string][] = [
+  ['off', 'Off'], ['stability', 'Hold'], ['prograde', 'Prograde'], ['retrograde', 'Retrograde'], ['normal', 'Normal'],
+  ['antinormal', 'Anti-normal'], ['radial-out', 'Radial out'], ['radial-in', 'Radial in'], ['target', 'To target'], ['anti-target', 'From target'],
+];
+const CHIP: Record<SasMode, string> = {
+  off: 'Off', stability: 'Hold', prograde: 'Prograde', retrograde: 'Retro', normal: 'Normal', antinormal: 'Anti-norm', 'radial-out': 'Rad out', 'radial-in': 'Rad in', target: 'Target', 'anti-target': 'Away',
+};
+/** arrows for the thruster pad */
+const ARROW = {
+  up: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  down: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
+  left: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  right: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+};
 
 /** What the touch controls ask of the ship. */
 export interface FlightControls {
@@ -136,6 +193,10 @@ export interface FlightControls {
   stop(): void;
   /** from the cockpit, or from behind the ship (the chase view) */
   toggleView(): void;
+  /** a steering assist mode, from the list (false: refused, as with no target to point at) */
+  setSas(mode: SasMode): boolean;
+  /** the side thrusters held, ship axes (x right, y up, z aft), each -1..1 */
+  setRcs(x: number, y: number, z: number): void;
 }
 
 /** Where the full read-out goes on a touch screen: a sheet of the app's interface (src/ui/Hud.ts). */
@@ -166,6 +227,14 @@ export class FlightHud {
   private lever: HTMLElement;
   private stopBtn: HTMLElement;
   private viewBtn: HTMLElement;
+  private aids: HTMLElement;
+  private assistBtn: HTMLElement;
+  private thrustBtn: HTMLElement;
+  private pad: HTMLElement;
+  private modes: HTMLElement;
+  /** the thrusters' pad is open (it shows only while flying by hand) */
+  private padOpen = false;
+  private modesOpen = false;
   /** the view the ship is seen in now */
   private view: 'cockpit' | 'chase' = 'cockpit';
   /** the lever is under a finger: it shows the finger's setting */
@@ -193,6 +262,17 @@ export class FlightHud {
           <button class="fl-stop" type="button" aria-pressed="false" aria-label="Stop: brake to rest beside the nearest world">${ICON.stop}<span>Stop</span></button>
           <button class="fl-view" type="button" aria-label="Switch the view: from the cockpit, or from behind the ship">${ICON.look}<b></b><small>view</small></button>
         </div>
+        <div class="fl-aids">
+          <div class="fl-chips" data-cover>
+            <button class="fl-assist" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Steering assist: what the ship holds its nose to"><small>assist</small><b>Hold</b></button>
+            <button class="fl-thrust" type="button" aria-pressed="false" aria-label="Side thrusters">${ICON.move}<b>RCS</b></button>
+          </div>
+          <div class="fl-rcs" data-cover role="group" aria-label="Side thrusters" hidden>
+          <button type="button" data-rcs="x-" aria-label="Thrust left">${ARROW.left}</button><button type="button" data-rcs="y+" aria-label="Thrust up">${ARROW.up}</button><button type="button" data-rcs="x+" aria-label="Thrust right">${ARROW.right}</button>
+          <button type="button" data-rcs="z+" aria-label="Thrust backwards">Back</button><button type="button" data-rcs="y-" aria-label="Thrust down">${ARROW.down}</button><button type="button" data-rcs="z-" aria-label="Thrust forwards">Fwd</button>
+          </div>
+        </div>
+        <div class="fl-modes" role="menu" data-cover hidden>${MODES.map(([m, l]) => `<button type="button" role="menuitemradio" aria-checked="false" data-sas="${m}"><span class="lg">${l}</span><span class="sh">${CHIP[m]}</span></button>`).join('')}</div>
       </div>
       <div class="fl-keys"><b>W/S</b> throttle · <b>Z/X</b> full/cut · <b>arrows/drag</b> pitch-yaw · <b>Q/E</b> roll<br>
       <b>A/D R/F Shift+W/S</b> RCS · <b>Y</b> SAS mode · <b>I</b> drive · <b>= -</b> its setting · <b>[ ]</b> time warp · <b>J</b> autopilot</div>`;
@@ -213,6 +293,21 @@ export class FlightHud {
     this.viewBtn = this.el.querySelector('.fl-view')!;
     this.viewBtn.addEventListener('click', () => { controls.toggleView(); this.timer = 0; });
     this.holdLever(controls);
+    this.aids = this.el.querySelector('.fl-aids')!;
+    this.assistBtn = this.el.querySelector('.fl-assist')!;
+    this.thrustBtn = this.el.querySelector('.fl-thrust')!;
+    this.pad = this.el.querySelector('.fl-rcs')!;
+    this.modes = this.el.querySelector('.fl-modes')!;
+    this.assistBtn.addEventListener('click', () => this.showModes(!this.modesOpen));
+    this.thrustBtn.addEventListener('click', () => { this.showModes(false); this.showPad(!this.padOpen, controls); });
+    for (const b of this.modes.querySelectorAll<HTMLButtonElement>('[data-sas]')) {
+      b.addEventListener('click', () => { if (controls.setSas(b.dataset.sas as SasMode)) this.showModes(false); });
+    }
+    // (a touch anywhere else puts the list away)
+    document.addEventListener('pointerdown', (e) => {
+      if (this.modesOpen && !(e.target as Element | null)?.closest?.('.fl-modes, .fl-assist')) this.showModes(false);
+    }, true);
+    this.holdPad(controls);
     this.glanceEl.addEventListener('click', () => {
       if (sheet.open === 'flight') sheet.closeSheet();
       else sheet.openSheet('flight');
@@ -261,6 +356,89 @@ export class FlightHud {
     this.lever.setAttribute('aria-valuenow', String(pct));
   }
 
+  /** The thrusters' pad: a finger held on a button thrusts that way (two at once, along different axes, do both); lifting stops it. */
+  private holdPad(controls: FlightControls): void {
+    const held = new Map<number, string>();
+    const apply = () => {
+      const v = { x: 0, y: 0, z: 0 };
+      for (const k of held.values()) v[k[0] as 'x' | 'y' | 'z'] = k[1] === '+' ? 1 : -1;
+      controls.setRcs(v.x, v.y, v.z);
+      for (const b of this.pad.querySelectorAll<HTMLElement>('[data-rcs]')) b.toggleAttribute('data-held', [...held.values()].includes(b.dataset.rcs!));
+    };
+    this.releasePad = () => { held.clear(); apply(); };
+    for (const b of this.pad.querySelectorAll<HTMLElement>('[data-rcs]')) {
+      b.addEventListener('pointerdown', (e) => {
+        try { b.setPointerCapture(e.pointerId); } catch { /* gone already */ }
+        for (const [id, k] of held) if (k[0] === b.dataset.rcs![0]) held.delete(id);
+        held.set(e.pointerId, b.dataset.rcs!);
+        apply();
+      });
+      const end = (e: PointerEvent) => { if (held.delete(e.pointerId)) apply(); };
+      b.addEventListener('pointerup', end);
+      b.addEventListener('pointercancel', end);
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+  }
+  private releasePad: () => void = () => undefined;
+
+  /** The list of the assist's modes, open or shut (it opens beside its chip). */
+  private showModes(open: boolean): void {
+    this.modesOpen = open;
+    this.modes.hidden = !open;
+    this.assistBtn.setAttribute('aria-expanded', String(open));
+    if (open) this.placeModes();
+  }
+
+  private showPad(open: boolean, controls?: FlightControls): void {
+    this.padOpen = open;
+    if (!open) { this.releasePad(); void controls; }
+    this.thrustBtn.setAttribute('aria-pressed', String(open));
+    this.pad.hidden = !open;
+    this.timer = 0;
+  }
+
+  /**
+   * The list stands beside the assist chip: right of it upright (the left side is the chips'); on its
+   * side above the chips, its right edge at theirs, two rows of five, with the short names where the
+   * room between the card and the edge of the screen is less than the full names take.
+   */
+  private placeModes(): void {
+    const chip = this.assistBtn.getBoundingClientRect(), row = this.el.querySelector('.fl-chips')!.getBoundingClientRect(), m = this.modes;
+    const lying = getComputedStyle(this.el.querySelector('.fl-stick')!).position === 'fixed';
+    m.style.left = m.style.right = m.style.top = m.style.bottom = '';
+    m.style.gridTemplateColumns = '';
+    m.classList.remove('fl-short');
+    if (lying) {
+      // (what stands at the left: the tab bar and the card)
+      const left = Math.max(0, ...[...this.root.querySelectorAll<HTMLElement>('.hud-tabs, .hud-slot > .on')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.left < window.innerWidth / 2).map((r) => r.right));
+      const room = row.right - left - 8;
+      // (five columns of the full names; else five of the short ones; else four)
+      const full = room >= 5 * 74 + 4 * 4 + 14, five = room >= 5 * 54 + 4 * 4 + 14;
+      m.classList.toggle('fl-short', !full);
+      m.style.gridTemplateColumns = `repeat(${five ? 5 : 4}, ${full ? 74 : 54}px)`;
+      m.style.right = `${Math.round(window.innerWidth - row.right)}px`;
+      m.style.bottom = `${Math.round(window.innerHeight - row.top + 6)}px`;
+    } else {
+      m.style.left = `${Math.round(chip.right + 6)}px`;
+      m.style.top = `${Math.round(chip.top)}px`;
+    }
+  }
+
+  /** The chips and the pad: only while the pilot flies (the autopilot, Stop or a dock have the ship otherwise); the chip names the mode. */
+  private renderAids(r: FlightReadout): void {
+    const auto = !!r.autopilot || !!r.stop;
+    const mode = auto ? 'Auto' : CHIP[r.sas];
+    setText(this.assistBtn.querySelector('b')!, mode);
+    for (const b of this.modes.querySelectorAll<HTMLElement>('[data-sas]')) {
+      b.setAttribute('aria-checked', String(!auto && b.dataset.sas === r.sas));
+      b.setAttribute('aria-disabled', String((b.dataset.sas === 'target' || b.dataset.sas === 'anti-target') && !r.target));
+    }
+    // (the thrusters are for flying by hand: with the autopilot or Stop at the controls they are put away)
+    this.thrustBtn.hidden = auto;
+    if (auto && this.padOpen) this.showPad(false);
+    this.pad.hidden = !this.padOpen || auto;
+  }
+
   setVisible(v: boolean): void {
     this.el.style.display = v ? '' : 'none';
     // (out of the ship its read-out is not left open)
@@ -289,9 +467,10 @@ export class FlightHud {
     this.timer = 0.1;
     const touch = this.root.classList.contains('touch');
     const open = this.sheet.open === 'flight';
+    if (touch && this.modesOpen) this.placeModes();
     if (touch) this.fit();
     this.glanceEl.setAttribute('aria-expanded', String(open));
-    if (touch) this.renderGlance(r);
+    if (touch) { this.renderGlance(r); this.renderAids(r); }
     // the full read-out: the panel at the right with a mouse, the sheet on a touch screen (when open)
     if (!touch) this.desk.innerHTML = readout(r);
     else if (open) this.sheet.flightBody.innerHTML = `<div class="fl-panel">${readout(r, true)}</div>`;
@@ -307,19 +486,40 @@ export class FlightHud {
   private fit(): void {
     const top = this.el.querySelector<HTMLElement>('.fl-top')!, stick = this.el.querySelector<HTMLElement>('.fl-stick')!;
     if (top.offsetParent === null && getComputedStyle(top).display === 'none') return;
-    top.classList.remove('fl-tight', 'fl-tighter');
+    top.classList.remove('fl-tight', 'fl-tighter', 'fl-tightest');
+    this.aids.classList.remove('fl-beside');
     stick.classList.remove('fl-away');
     this.lever.style.height = '';
     const others = [...this.root.querySelectorAll<HTMLElement>('.hud-top .chip, .hud-tabs, .hud-slot > .on, .hud-flight:not([hidden]), .live-mark:not([hidden])')]
       .map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
     const lying = getComputedStyle(stick).position === 'fixed';
     const mine = () => [...top.querySelectorAll<HTMLElement>('.fl-glance, .fl-touch')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
+    // (the chips and the pad: what is shown of them)
+    const aidsBoxes = () => [...this.aids.querySelectorAll<HTMLElement>('.fl-chips, .fl-rcs')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+    const hitsOthers = (boxes: DOMRect[]) => boxes.some((a) => others.some((o) => meets(a, o, 2)));
     const blocked = () => {
-      const against = lying ? [...others, stick.getBoundingClientRect()] : others;
+      const list = this.modesOpen ? [this.modes.getBoundingClientRect()] : [];
+      const against = lying ? [...others, stick.getBoundingClientRect(), ...aidsBoxes(), ...list] : others;
       return mine().some((m) => against.some((o) => meets(m, o, 2)));
     };
     if (blocked()) top.classList.add('fl-tight');
     if (blocked()) top.classList.add('fl-tighter');
+    // on its side the pad stands over the chips; where that is still too tall for the instruments, beside them (if the card is not there)
+    if (lying && this.padOpen && blocked()) {
+      this.aids.classList.add('fl-beside');
+      if (hitsOthers(aidsBoxes())) this.aids.classList.remove('fl-beside');
+    }
+    // upright the chips stand down the left side from just under the instruments (the pad below them,
+    // or, where the card is too near, beside them)
+    if (!lying) {
+      const t = top.getBoundingClientRect(), bottom = Math.max(t.top, ...mine().map((m) => m.bottom));
+      top.style.setProperty('--aids-top', `${Math.round(bottom - t.top + 4)}px`);
+      if (hitsOthers(aidsBoxes())) this.aids.classList.add('fl-beside');
+      // an open list that would lie on the card instead goes up, to the foot of the clock
+      if (this.modesOpen && hitsOthers([this.modes.getBoundingClientRect()])) { this.modes.style.top = `${Math.round(t.top)}px`; top.classList.add('fl-tightest'); }
+    }
+    // (the pad or the list open on a short screen: the instruments give way for as long as it is open)
+    if ((this.modesOpen || this.padOpen) && blocked()) top.classList.add('fl-tightest');
     // (a message shows under the instruments, not behind them)
     this.root.style.setProperty('--fl-bottom', `${Math.round(Math.max(0, ...mine().map((m) => m.bottom)))}px`);
     if (lying) return;
