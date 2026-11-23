@@ -16,8 +16,12 @@
 //             itself fills the frame; a screen taller than 9:16 fills its height)
 //   view, scale  that shot's own CSS viewport and density (an iPhone's: 390 x 844)
 //   taps      [{ at: s, label: name in the sky | button: text | sel: CSS selector, fx, fy: where on
-//             it (shares of its size), to: { fx, fy }, dur: a drag there over dur s }]: real touch
-//             events at those times
+//             it (shares of its size), to: { fx, fy }, dur: a drag there over dur s, hold: the finger
+//             rests there this long, live: true: the end is found afresh each frame and the finger keeps its height (a slider) }]: real touch events at those times. Or where a function of the
+//             page finds it: pt: (T, a) => ({ x, y }) in CSS px (a world on the screen, a slider's
+//             knob), toPt: the same for where a drag ends; run: (T, a) => ... does something then, no
+//             finger
+//   setup     may be async (the page runs on while it waits: a view found for room, say)
 //   waitLoad  give streamed star tiles up to 2 s to arrive before each frame (long camera moves)
 
 /** CSS viewport: a small phone held upright. At device scale 3 the canvas is 1080x1920. */
@@ -29,7 +33,7 @@ export const SHOTS = [
     id: 'sun',
     url: '?menu=0&earthref=0&target=Sun&dist=2&paused=1&time=2026-11-21T12:00:00Z',
     date: { at: '2026-11-21T12:00:00Z', rate: 0 },
-    seconds: 5,
+    seconds: 3,
     preroll: 1,
     pose: (T, a, s) => {
       const sun = T.body('Sun');
@@ -52,28 +56,6 @@ export const SHOTS = [
       const d = T.around(S, p, 58 + s * 2.5, 20);
       T.put(S, d, S.radius * T.lerp(6.4, 5.7, T.ease(s / 3.5)), d.clone().negate(), p);
       T.turn(0, 0, 30);
-      a.rig.fov = 50;
-    },
-  },
-  {
-    // Titan in the orange of its haze, Saturn behind it with its rings open, the Milky Way beyond
-    // (Titan nearly full, 18 June 2017); a slow push in
-    id: 'titan',
-    url: '?menu=0&earthref=0&target=Titan&dist=10&paused=1&time=2017-06-18T00:00:00Z',
-    date: { at: '2017-06-18T00:00:00Z', rate: 0 },
-    seconds: 2,
-    preroll: 1,
-    pose: (T, a, s) => {
-      const S = T.body('Saturn'), Ti = T.body('Titan');
-      const u = Ti.upos.sub(S.upos, T.V()).normalize();
-      const p = T.pole(S);
-      const side = u.clone().cross(p).normalize();
-      const dir = u.clone().multiplyScalar(Math.cos(14 * T.DEG)).addScaledVector(side, Math.sin(14 * T.DEG)).addScaledVector(p, 0.3).normalize();
-      a.rig.upos.copy(Ti.upos).addVec(dir, Ti.radius * T.lerp(10, 8.6, T.ease(s / 2)));
-      const toS = S.upos.sub(a.rig.upos, T.V()).normalize(), toT = Ti.upos.sub(a.rig.upos, T.V()).normalize();
-      a.rig.lookAt(toS.clone().lerp(toT, 0.55).normalize(), p);
-      a.rig.target = Ti;
-      a.rig.setAnchor(Ti);
       a.rig.fov = 50;
     },
   },
@@ -166,112 +148,180 @@ export const SHOTS = [
       a.rig.fov = 50;
     },
   },
+  // god mode, filmed on the owner's phone's screen (an iPhone's 390 x 844), full frame: the app's own
+  // interface, every touch a real touch event (the rings the edit draws are where they were)
   {
-    // Cygnus X-1: its disk, and the blue supergiant it draws gas from
-    id: 'cygnus',
-    url: '?menu=0&earthref=0&target=Cygnus%20X-1&dist=95&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 1 },
-    seconds: 1.7,
-    preroll: 1,
-    pose: (T, a, s) => {
-      const h = T.body('Cygnus X-1'), n = h.diskNormal.clone();
-      const sun = T.sunward(h);
-      const flat = sun.clone().addScaledVector(n, -sun.dot(n)).normalize().applyAxisAngle(n, (40 + s * 6) * T.DEG);
-      const dir = flat.multiplyScalar(Math.cos(15 * T.DEG)).addScaledVector(n, Math.sin(15 * T.DEG)).normalize();
-      a.rig.upos.copy(h.upos).addVec(dir, h.radius * T.logLerp(95, 40, T.ease(Math.max(0, s) / 1.7)));
-      a.rig.lookAt(dir.clone().negate(), n);
-      a.rig.target = h;
-      a.rig.setAnchor(null);
-      a.rig.fov = 50;
-    },
-  },
-  // god mode, filmed on the owner's phone's screen (an iPhone's 390 x 844), full frame
-  {
-    // the Sun's card: Add, then "A second sun". Filmed from 42 AU over Neptune's side of the
-    // planets' plane: Add makes it 0.55 of the way to the eye, in that plane (23 AU out), and the
-    // app says what follows ("Neptune goes round Sun 2 now"); then the watch takes the camera out
-    id: 'sun2',
+    // The Moon thrown like a slingshot: its card, Move, Throw; a finger on the Moon, pulled back to the
+    // mark of escape (the arrow, the marks, the path ahead and the card's words are the app's); let go,
+    // and it flies. The view is found for room (as the suite does): over the Earth, the Moon in the open
+    // with room ahead of it for the arrow and behind it for the pull. Time is the app's from the release.
+    id: 'throw',
     ui: true,
     frame: 'full',
     view: { width: 390, height: 844 },
-    url: '?menu=0&earthref=0&target=Sun&dist=9000&paused=1&time=2026-11-21T12:00:00Z',
+    url: '?menu=0&earthref=0&target=Earth&dist=6&paused=1&time=2026-11-21T12:00:00Z',
     date: { at: '2026-11-21T12:00:00Z', rate: 0, free: true },
-    seconds: 4,
+    seconds: 7,
     preroll: 1,
-    taps: [{ at: 0.5, sel: '[data-power="add"]' }, { at: 1.3, sel: '[data-act="add-sun"]' }],
-    setup: (T, a) => {
-      const S = a.system.sun, N = T.body('Neptune');
-      a.select(S);
-      const ecl = T.V(0, -0.3978, 0.9175);
-      const n = N.upos.sub(S.upos, T.V()).normalize();
-      const flat = n.clone().addScaledVector(ecl, -n.dot(ecl)).normalize().applyAxisAngle(ecl, -25 * T.DEG);
-      const dir = ecl.clone().multiplyScalar(Math.sin(50 * T.DEG)).addScaledVector(flat, Math.cos(50 * T.DEG)).normalize();
-      a.rig.upos.copy(S.upos).addVec(dir, 42 * T.AU);
-      a.rig.lookAt(dir.clone().negate(), ecl);
-      a.rig.target = S;
-      a.rig.setAnchor(null);
-    },
-    pose: (T, a) => { if (a.physics.live) a.physics.live.sim.now = () => 0; },
-  },
-  {
-    // what a second sun does, from over the planets (as v2's live gravity shot): the worlds
-    // simulated from the first frame, each leaving its trail (orbit lines off, trails on). At 1 s
-    // the Sun's Add makes a second sun (App.add, as the card's button does; the watch is off, as
-    // More's "Show me what happens" allows, and the camera is the shot's): from 14 AU, 78 degrees
-    // over the plane and leaning away from Jupiter, it is made about 7.7 AU out on the side away
-    // from Jupiter. The camera keeps the two suns' middle in the middle, the pair upright in the
-    // frame. Half density, scaled up (two-pixel trails); the stepping held to the full step.
-    id: 'sunlive',
-    scale: 1.5,
-    url: '?menu=0&earthref=0&target=Sun&dist=3000&paused=1&time=2026-11-21T12:00:00Z',
-    date: { at: '2026-11-21T12:00:00Z', rate: 2.6e7, from: 0 },
-    seconds: 5.5,
-    preroll: 1,
-    setup: (T, a) => {
-      a.showMe = false;
-      a.orbits.enabled = true;
-      const up = a.orbits.update.bind(a.orbits);
-      a.orbits.update = (...x) => { up(...x); for (const o of a.orbits.objs.values()) o.line.visible = false; };
+    taps: [
+      { at: 0.4, sel: '#hud .card [data-act="move"]' },
+      { at: 0.9, sel: '#hud .card [data-act="move-throw"]' },
+      {
+        // pulled back 152 px, the mark of escape being at 1.414 x 107 px, and held while the path ahead is run
+        at: 1.5, dur: 0.8, hold: 1.0,
+        pt: (T, a) => T.moonAt(),
+        toPt: (T, a) => { const d = T.moonAt(), u = T.aheadDir; return { x: d.x - u.x * 152, y: d.y - u.y * 152 }; },
+      },
+    ],
+    setup: async (T, a) => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const earth = T.body('Earth'), moon = T.body('Moon'), V = moon.pos.constructor;
+      a.select(moon);
+      // (Move and Throw on for a moment, for the card's size then: the view is found with the room it leaves)
+      a.mover.toggle(moon);
+      a.mover.leave('throw');
+      await wait(1500);
+      const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab, #hud .hud-watch')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+      const open = (p) => !!p && p.x > 20 && p.x < innerWidth - 20 && p.y > 130 && p.y < innerHeight - 20 && walls.every((r) => p.x < r.left - 10 || p.x > r.right + 10 || p.y < r.top - 10 || p.y > r.bottom + 10);
+      const seen = (p) => p.x > 8 && p.x < innerWidth - 8 && p.y > 8 && p.y < innerHeight - 8;
+      let found = null;
+      for (const el of [75, 60]) for (const dist of [90, 120, 180, 260, 350]) for (let az = 0; az < 360; az += 15) {
+        if (found) break;
+        a.placeNear(earth, dist * earth.radius, az, el);
+        a.frame();
+        const r = moon.pos.clone().sub(earth.pos), ahead = r.clone().cross(moon.vel.clone().sub(earth.vel)).cross(r).normalize();
+        const dot = a.project(moon.upos.sub(a.rig.upos, new V())), tip = a.project(moon.upos.sub(a.rig.upos, new V()).addScaledVector(ahead, 1e5));
+        if (!dot || !tip) continue;
+        const l = Math.hypot(tip.x - dot.x, tip.y - dot.y), ux = (tip.x - dot.x) / l, uy = (tip.y - dot.y) / l;
+        if ([0, 60, 120, 175].every((d) => open({ x: dot.x + ux * d, y: dot.y + uy * d })) && [60, 120, 175].every((d) => seen({ x: dot.x - ux * d, y: dot.y - uy * d }))) found = { el, dist, az, ux, uy };
+      }
+      a.mover.stop();
+      T.moonAt = () => a.project(a.bodies.views.get(moon).rel);
+      T.aheadDir = { x: found?.ux ?? 1, y: found?.uy ?? 0 };
+      T.extra = () => ({ view: found });
+      await wait(800);
     },
     pose: (T, a, s) => {
-      const S = a.system.sun;
-      const ecl = T.V(0, -0.3978, 0.9175);
-      T.ref ??= T.body('Jupiter').upos.sub(S.upos, T.V()).normalize();
-      const flat = T.ref.clone().addScaledVector(ecl, -T.ref.dot(ecl)).normalize();
-      const dir = ecl.clone().multiplyScalar(Math.sin(78 * T.DEG)).addScaledVector(flat, -Math.cos(78 * T.DEG)).normalize();
-      const D = 14 * T.AU * (1 + 0.025 * Math.max(0, s));
-      // the middle: halfway to where the new sun will be, then halfway between the two suns
-      const guess = S.upos.clone().addVec(flat, -0.55 * 14.2 * T.AU / 2);
-      const c = T.sun2 && T.sun2.valid ? S.upos.clone().addVec(T.sun2.upos.sub(S.upos, T.V()), 0.5) : guess;
-      const w = T.ease((s - 1) / 1.2);
-      const mid = guess.sub(guess, T.V()).lerp(c.sub(guess, T.V()), w);
-      a.rig.upos.copy(guess).addVec(mid, 1).addVec(dir, D);
-      a.rig.lookAt(dir.clone().negate(), flat.clone().negate());
-      a.rig.target = S;
-      a.rig.setAnchor(null);
-      a.rig.fov = 50;
-      if (s >= 0 && !a.physics.on) a.physics.setMass(S, S.gm, a.clock.jdTdb);
-      if (s >= 1 && !T.did) { T.did = true; T.sun2 = a.add('sun', S); a.select(null); }
       if (a.physics.live) a.physics.live.sim.now = () => 0;
+      // (a toast of the first moments, "Discovered: Sun", is not this shot's)
+      if (s < 1.6) a.hud.toastEl.classList.remove('show');
     },
   },
   {
-    // Jupiter's card: Mass, a thumb slides it to twenty times (the slider's 1.30 of 3, as log10),
-    // rests there a moment, lifts, and the watch: the camera eases out, time at its pace, the chip; the inner moons fall
-    // in one by one, told as they do. Only the start and the moment Europa hits are kept.
-    id: 'europa',
+    // A world made: on the Sun's card, Add, "A planet like Earth": Earth 2 appears, time waits. The camera
+    // goes in to it for the mass (a slide to 5 Earths: its size is seen to grow, 1.71 times), back out for
+    // the drag (half as far again from the Sun, the finger resting a moment before it lifts); then Done,
+    // and the watch (the app's own). The move in and out is the shot's (the app's own camera, from where
+    // it was, to near the world and back); the rest is the app's.
+    id: 'place',
     ui: true,
     frame: 'full',
     view: { width: 390, height: 844 },
-    url: '?menu=0&earthref=0&target=Jupiter&dist=30&paused=1&time=2026-10-01T23:00:00Z',
-    date: { at: '2026-10-01T23:00:00Z', rate: 0, free: true },
-    seconds: 13.2,
-    keep: [[0, 3.9], [9.5, 13.2]],
+    url: '?menu=0&earthref=0&target=Sun&dist=473&el=40&paused=1&time=2026-11-21T12:00:00Z',
+    date: { at: '2026-11-21T12:00:00Z', rate: 0, free: true },
+    seconds: 9.5,
+    keep: [[0, 9.2]],
     preroll: 1,
-    taps: [{ at: 0.5, sel: '[data-power="mass"]' }, { at: 1.3, sel: '.card .slider', to: { fx: 0.698 }, dur: 0.5, hold: 0.4 }],
+    taps: [
+      { at: 0.3, sel: '#hud .card [data-power="add"]' },
+      { at: 0.8, sel: '#hud .card [data-act="add-earth"]' },
+      {
+        // its mass to 5 Earths
+        at: 2.9, dur: 0.8, hold: 0.3, live: true,
+        pt: (T, a) => { const s = document.querySelector('#hud .card .placing .slider'), r = s.getBoundingClientRect(); return { x: r.x + 15 + Number(s.value) * (r.width - 30), y: r.y + r.height / 2 }; },
+        toPt: (T, a) => { const s = document.querySelector('#hud .card .placing .slider'), r = s.getBoundingClientRect(); return { x: r.x + 15 + (Math.log(5 / 0.05) / Math.log(10 / 0.05)) * (r.width - 30), y: r.y + r.height / 2 }; },
+      },
+      {
+        // dragged out half as far again, the finger resting before it lifts
+        at: 5.0, dur: 0.8, hold: 0.25,
+        pt: (T, a) => { const m = a.selection; return a.project(m.upos.sub(a.rig.upos, new m.pos.constructor())); },
+        toPt: (T, a) => { const m = a.selection, sun = a.system.sun, V = m.pos.constructor, r = m.pos.clone().sub(sun.pos); return a.project(sun.upos.sub(a.rig.upos, new V()).add(r.multiplyScalar(1.3))); },
+      },
+      { at: 6.5, sel: '#hud .card .place-done' },
+    ],
     setup: (T, a) => {
-      a.select(T.body('Jupiter'));
-      T.extra = (a) => { const J = a.findByName('Jupiter'); return { times: +(J.gm / a.physics.realGm(J)).toFixed(2) }; };
+      a.select(a.system.sun);
+      T.extra = (a) => { const m = a.made[a.made.length - 1]; return m ? { earths: +(m.gm / 6.6743e-11 / 5.9722e24).toFixed(2), ratio: +(m.radius / 6.371e6).toFixed(3), au: +(m.pos.distanceTo(a.system.sun.pos) / 1.495978707e11).toFixed(3) } : {}; };
+    },
+    pose: (T, a, s) => {
+      if (a.physics.live) a.physics.live.sim.now = () => 0;
+      const m = a.made[a.made.length - 1];
+      if (!m || !m.valid || s < 1.9) return;
+      const V = m.pos.constructor;
+      // (where the camera was, when it has come to rest after the world was made; and near the world)
+      if (!T.W) {
+        const rel = a.rig.upos.sub(m.upos, new V());
+        T.W = { dist: rel.length(), dir: rel.clone().normalize(), quat: a.rig.quat.clone() };
+        a.placeNear(m, 17 * m.radius, 35, 15);
+        const n = a.rig.upos.sub(m.upos, new V());
+        T.N = { dist: n.length(), dir: n.clone().normalize(), quat: a.rig.quat.clone() };
+        a.rig.upos.copy(m.upos).addVec(T.W.dir, T.W.dist);
+        a.rig.quat.copy(T.W.quat);
+      }
+      const k = T.ease((s - 2.0) / 0.6) * (1 - T.ease((s - 4.4) / 0.6));
+      if (k <= 0) return;
+      a.glide = null;
+      const d = Math.exp(Math.log(T.W.dist) + (Math.log(T.N.dist) - Math.log(T.W.dist)) * k);
+      a.rig.upos.copy(m.upos).addVec(T.W.dir.clone().lerp(T.N.dir, k).normalize(), d);
+      a.rig.quat.copy(T.W.quat).slerp(T.N.quat, k);
+    },
+  },
+  {
+    // Mars thrown at the Earth: Mars's card, Move, Throw; a finger on Mars pulled back from the Earth: the
+    // card says "Now on a path into Earth: it hits it." and, with every pull counted, when; let go, and the
+    // fall is watched; as the two near, time slows (the chip says how much), the flash, and the card of what
+    // the hit was. Setup, as the suite's: Mars put 40 Earth radii from the Earth (no finger moves it there;
+    // from where it really is a throw takes months to arrive), moving with the Earth and 10 m/s sunwards.
+    id: 'hit',
+    ui: true,
+    frame: 'full',
+    view: { width: 390, height: 844 },
+    url: '?menu=0&earthref=0&target=Earth&dist=6&paused=1&time=2026-11-21T12:00:00Z',
+    date: { at: '2026-11-21T12:00:00Z', rate: 0, free: true },
+    seconds: 12.5,
+    keep: [[0, 4.2], [6.2, 11.3]],
+    preroll: 1,
+    taps: [
+      { at: 0.4, sel: '#hud .card [data-act="move"]' },
+      { at: 0.9, sel: '#hud .card [data-act="move-throw"]' },
+      {
+        at: 1.5, dur: 0.8, hold: 1.0,
+        pt: (T, a) => T.marsAt(),
+        toPt: (T, a) => { const d = T.marsAt(), u = T.toEarth; return { x: d.x - u.x * 66, y: d.y - u.y * 66 }; },
+      },
+    ],
+    setup: async (T, a) => {
+      T.s = 0;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const earth = T.body('Earth'), mars = T.body('Mars'), sun = a.system.sun, V = mars.pos.constructor;
+      const r = earth.pos.clone().sub(sun.pos), side = r.clone().cross(earth.vel.clone().sub(sun.vel)).cross(r).normalize();
+      const sunward = r.clone().normalize().negate();
+      a.physics.move(mars, earth.pos.clone().addScaledVector(side, 40 * earth.radius).toArray(), earth.vel.clone().addScaledVector(sunward, 10).toArray(), a.clock.jdTdb);
+      a.tellNews(false);
+      a.select(mars);
+      a.mover.toggle(mars);
+      a.mover.leave('throw');
+      await wait(1500);
+      const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab, #hud .hud-watch')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+      const clear = (p) => !!p && p.x > 20 && p.x < innerWidth - 20 && p.y > 130 && p.y < innerHeight - 20 && walls.every((r) => p.x < r.left - 10 || p.x > r.right + 10 || p.y < r.top - 10 || p.y > r.bottom + 10);
+      let found = null;
+      for (const el of [75, 60, 45]) for (const dist of [60, 80, 100, 130]) for (let az = 0; az < 360; az += 15) {
+        if (found) break;
+        a.placeNear(earth, dist * earth.radius, az, el);
+        a.frame();
+        const m = a.project(mars.upos.sub(a.rig.upos, new V())), e = a.project(earth.upos.sub(a.rig.upos, new V()));
+        if (!m || !e) continue;
+        const l = Math.hypot(e.x - m.x, e.y - m.y), ux = (e.x - m.x) / l, uy = (e.y - m.y) / l;
+        const flat = a.mover.describe(mars).plane === 'It moves in the plane of its orbit.';
+        if (flat && l > 80 && clear(m) && clear(e) && [40, 80].every((d) => clear({ x: m.x - ux * d, y: m.y - uy * d }))) found = { el, dist, az, ux, uy, l };
+      }
+      a.mover.stop();
+      T.marsAt = () => a.project(a.bodies.views.get(mars).rel);
+      T.toEarth = { x: found?.ux ?? 1, y: found?.uy ?? 0 };
+      T.extra = () => ({ view: found });
+      await wait(800);
+      // (the toast of the setup's own move, "Mars goes round Earth now", is not the shot's)
+      a.hud.toastEl.classList.remove('show');
     },
     pose: (T, a) => { if (a.physics.live) a.physics.live.sim.now = () => 0; },
   },
@@ -283,6 +333,7 @@ export const SHOTS = [
     url: '?menu=0&earthref=0&target=Earth&dist=3&paused=1&time=2026-11-21T23:00:00Z',
     date: { at: '2026-11-21T23:00:00Z', rate: 0 },
     seconds: 12.1,
+    keep: [[0, 4.95], [5.9, 12.1]],
     preroll: 1,
     waitLoad: true,
     setup: (T, a) => { a.orbits.enabled = true; },

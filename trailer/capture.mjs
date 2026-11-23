@@ -162,8 +162,13 @@ const VIRTUAL_TOASTS = () => {
   };
 };
 
-/** Where a tap lands: the middle of a name in the sky (`label`) or of a visible button (`button`). */
-const TAP_AT = ({ label, button, sel, fx = 0.5, fy = 0.5 }) => {
+/**
+ * Where a tap lands: the middle of a name in the sky (`label`) or of a visible button (`button`, or `sel`, a CSS selector),
+ * `fx`, `fy` of the way across it; or `pt`, a function of the page (T, app) that gives {x, y} in CSS px (a world on the
+ * screen, a slider's knob: found where it is at that moment).
+ */
+const TAP_AT = ({ label, button, sel, fx = 0.5, fy = 0.5, pt }) => {
+  if (pt) return eval(`(${pt})`)(window.__T, window.app);
   const el = label
     ? [...document.querySelectorAll('#labels *')].find((e) => e.textContent === label)
     : sel ? [...document.querySelectorAll(sel)].find((b) => b.offsetParent !== null)
@@ -172,6 +177,8 @@ const TAP_AT = ({ label, button, sel, fx = 0.5, fy = 0.5 }) => {
   const r = el.getBoundingClientRect();
   return { x: r.x + r.width * fx, y: r.y + r.height * fy };
 };
+/** a tap's functions, as source the page can run (`pt`: where it lands; `toPt`: where a drag ends; `run`: something the page does then) */
+const wire = (t) => ({ ...t, pt: t.pt?.toString(), toPt: t.toPt?.toString(), run: t.run?.toString() });
 
 async function shoot(browser, shot) {
   // (an interface shot may use a phone's own viewport and its own density: it is shown inside a phone)
@@ -254,21 +261,27 @@ async function shoot(browser, shot) {
   for (let i = 0; i < n; i++) {
     const s = i / fps;
     // a finger on the glass (real touch events, as a phone sends them), between two frames
-    for (const tap of (shot.taps ?? []).filter((t) => t.at >= s - 1e-9 && t.at < s + 1 / fps - 1e-9)) {
+    for (const tap0 of (shot.taps ?? []).filter((t) => t.at >= s - 1e-9 && t.at < s + 1 / fps - 1e-9)) {
+      const tap = wire(tap0);
+      // (something the page does at this time, no finger: a name typed, a view set up)
+      if (tap.run) { await page.evaluate(`(${tap.run})(window.__T, window.app)`); continue; }
       const p = await page.evaluate(TAP_AT, tap);
       if (!p) { console.log(`${shot.id}: nothing to tap for ${JSON.stringify(tap)}`); continue; }
       const point = [{ x: p.x, y: p.y, id: 0, radiusX: 9, radiusY: 9, force: 0.5 }];
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point, timestamp: (touchClock += 0.5) });
-      taps.push({ frame: i, x: p.x / view.width, y: p.y / view.height, what: tap.label ?? tap.button ?? tap.sel });
+      taps.push({ frame: i, x: p.x / view.width, y: p.y / view.height, what: tap.label ?? tap.button ?? tap.sel ?? 'point' });
       // a drag (tap.to: { fx, fy }, where the finger ends as shares of the element's size, over tap.dur s): the
       // finger stays down and moves a step each frame; else it lifts at once
-      if (tap.to !== undefined) drag = { tap, from: p, to: await page.evaluate(TAP_AT, { ...tap, ...tap.to }), i0: i, n: Math.max(1, Math.round(tap.dur * fps)), hold: Math.round((tap.hold ?? 0) * fps) };
+      if (tap.to !== undefined || tap.toPt) drag = { tap, from: p, to: tap.toPt ? await page.evaluate(TAP_AT, { pt: tap.toPt }) : await page.evaluate(TAP_AT, { ...tap, ...tap.to }), i0: i, n: Math.max(1, Math.round(tap.dur * fps)), hold: Math.round((tap.hold ?? 0) * fps) };
       else await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [], timestamp: (touchClock += 0.06) });
     }
     if (drag && i > drag.i0) {
       // (then the finger rests there for tap.hold s before it lifts)
       const k = Math.min(1, (i - drag.i0) / drag.n), e = k * k * (3 - 2 * k), done = i - drag.i0 >= drag.n + drag.hold;
-      const x = drag.from.x + (drag.to.x - drag.from.x) * e, y = drag.from.y + (drag.to.y - drag.from.y) * e;
+      // (tap.live: the end is found again each frame, and the finger keeps to its height: a slider moves on the page as
+      // the card round it changes, and the finger follows it up or down as a real one would)
+      if (drag.tap.live) drag.to = await page.evaluate(TAP_AT, { pt: drag.tap.toPt });
+      const x = drag.from.x + (drag.to.x - drag.from.x) * e, y = drag.tap.live ? drag.to.y : drag.from.y + (drag.to.y - drag.from.y) * e;
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 0, radiusX: 9, radiusY: 9, force: 0.5 }], timestamp: (touchClock += 0.033) });
       taps.push({ frame: i, x: x / view.width, y: y / view.height, what: 'drag', held: !done });
       if (done) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [], timestamp: (touchClock += 0.06) }); drag = null; }

@@ -14,7 +14,7 @@ import wave
 import numpy as np
 
 sys.path.insert(0, __file__.rsplit('/', 1)[0])
-from timeline import BAR, BEAT, FADE_OUT, LENGTH, SUN2_AT, TITLE_AT, TORCH  # noqa: E402
+from timeline import BAR, BEAT, FADE_OUT, HIT_AT, LENGTH, PLACE_AT, SLOW_AT, THROW_AT, TITLE_AT, TORCH, b as at_beat  # noqa: E402
 
 SR = 48000
 N = int(round(LENGTH * SR))
@@ -54,15 +54,15 @@ def smooth_env(n, attack, release):
 # ---------------------------------------------------------------------------- the harmony
 # (start bar, bass note, pad voicing) in MIDI notes. D major with a lydian colour on the IV.
 CHORDS = [
-    (0, 38, [50, 57, 64, 66, 69]),        # Dmaj9
-    (2, 35, [47, 54, 62, 64, 69]),        # Bm11
-    (4, 31, [43, 50, 59, 66, 73]),        # Gmaj7#11
-    (6.5, 40, [52, 59, 62, 66, 67]),      # Em9 (black holes)
-    (8.5, 38, [50, 57, 64, 66, 69]),      # Dmaj9 (a second sun)
-    (9.5, 35, [47, 54, 62, 64, 69]),      # Bm11 (gravity let loose)
-    (11, 31, [43, 50, 59, 66, 73]),       # Gmaj7#11 (Jupiter made heavy)
-    (13, 35, [47, 54, 62, 66, 69]),       # Bm7 (the pull-out)
-    (14, 33, [45, 52, 59, 64, 69]),       # Asus2 (the rise)
+    (at_beat(0) / BAR, 38, [50, 57, 64, 66, 69]),        # Dmaj9
+    (at_beat(7) / BAR, 35, [47, 54, 62, 64, 69]),        # Bm11
+    (at_beat(11) / BAR, 31, [43, 50, 59, 66, 73]),       # Gmaj7#11 (the ship)
+    (at_beat(20) / BAR, 40, [52, 59, 62, 66, 67]),       # Em9 (the black hole)
+    (at_beat(26) / BAR, 38, [50, 57, 64, 66, 69]),       # Dmaj9 (the Moon thrown)
+    (at_beat(35) / BAR, 35, [47, 54, 62, 64, 69]),       # Bm11 (a world added)
+    (at_beat(47) / BAR, 31, [43, 50, 59, 66, 73]),       # Gmaj7#11 (Mars thrown at the Earth)
+    (at_beat(58) / BAR, 35, [47, 54, 62, 66, 69]),       # Bm7 (the pull-out)
+    (at_beat(62) / BAR, 33, [45, 52, 59, 64, 69]),       # Asus2 (the rise)
     (TITLE_AT / BAR, 26, [50, 57, 62, 64, 66, 69, 73]),  # Dmaj9, wide (the title)
 ]
 
@@ -212,9 +212,9 @@ def main(out):
         (4, 0, 83, 0.8), (4, 2, 78, 0.6), (5, 1, 85, 0.6),
         (6, 0, 79, 0.7), (6, 2.5, 78, 0.6), (7, 2, 74, 0.6),
         (8, 0, 81, 0.8), (8, 3, 76, 0.5),
-        (9, 0, 83, 0.6), (SUN2_AT / BAR, 0, 85, 1.0), (10, 1, 83, 0.6), (10, 3, 79, 0.5),
-        (11, 0, 81, 0.7), (11, 2.5, 78, 0.6), (12, 1, 76, 0.6), (12, 3, 74, 0.5),
-        (13, 2, 81, 0.7),
+        (9, 0, 83, 0.6), (THROW_AT / BAR, 0, 85, 1.0), (10, 3, 79, 0.5),
+        (11, 0, 81, 0.7), (PLACE_AT / BAR, 0, 83, 0.8), (12, 3, 74, 0.5),
+        (13, 1.5, 78, 0.6), (14, 2, 81, 0.7),
     ]
     # after the title, counted from it
     t_bar = TITLE_AT / BAR
@@ -225,11 +225,11 @@ def main(out):
         place(dry, b * BAR + beat * BEAT, s, pan)
         place(send, b * BAR + beat * BEAT, s * 1.6, pan)
 
-    # the arpeggio: eighth notes from bar 4, growing, through the chords' upper notes; it stops
+    # the arpeggio: eighth notes from the ship (beat 11), growing, through the chords' upper notes; it stops
     # half a bar before the title so the hit lands in a breath of space
     arp_end = TITLE_AT - BAR / 2
     step = BEAT / 2
-    t0 = 4 * BAR
+    t0 = at_beat(11)
     k = 0
     while t0 + k * step < arp_end:
         t = t0 + k * step
@@ -266,6 +266,45 @@ def main(out):
     hit = (sub * 0.5 + body * 0.35 + puff * 0.35)
     place(dry, TITLE_AT, hit, 0)
     place(send, TITLE_AT, hit * 0.6, 0)
+
+    # the Moon let go: a rush of noise that climbs and dies away, and a high pluck on its way out
+    n = int(1.6 * SR)
+    x = np.linspace(0, 1, n)
+    lo, hi = 400 * 2 ** (3.0 * x), 1500 * 2 ** (3.2 * x)
+    for pan in (-0.6, 0.6):
+        rush = noise_band(n, lo, hi) * np.sin(np.pi * np.minimum(1, x * 1.15) ** 0.6) * np.exp(-x * 2.2) * 0.2
+        place(dry, THROW_AT - 0.05, rush, pan)
+        place(send, THROW_AT - 0.05, rush * 0.7, pan)
+    for k, m in enumerate((74, 81, 86)):
+        s = pluck(hz(m), 1.6) * 0.06
+        place(dry, THROW_AT + 0.10 * k, s, (-0.3, 0.3, 0.0)[k])
+        place(send, THROW_AT + 0.10 * k, s * 1.4, (-0.3, 0.3, 0.0)[k])
+
+    # a world made, Done tapped: two soft notes
+    for k, m in enumerate((74, 81)):
+        s = pluck(hz(m), 1.8) * 0.06
+        place(dry, PLACE_AT + 0.16 * k, s, (-0.35, 0.35)[k])
+        place(send, PLACE_AT + 0.16 * k, s * 1.5, (-0.35, 0.35)[k])
+
+    # time slows for the last of the fall: a low tone that falls in pitch, and the impact on the flash
+    # (a sub, a body a phone can play, a puff of noise, a long tail)
+    n = int((HIT_AT - SLOW_AT) * SR)
+    t = t_axis(n)
+    x = t / (n / SR)
+    f = 330 * 2 ** (-1.6 * x)
+    tone = np.sin(2 * np.pi * np.cumsum(f) / SR) * (x ** 1.5) * smooth_env(n, 0.3, 0.05) * 0.05
+    place(dry, SLOW_AT, tone, 0.2)
+    place(send, SLOW_AT, tone * 0.8, 0.2)
+    n = int(4.5 * SR)
+    t = t_axis(n)
+    f = 44 + 70 * np.exp(-t / 0.10)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    sub = (np.sin(ph) + 0.5 * np.sin(2 * ph) + 0.25 * np.sin(3 * ph)) * np.exp(-t / 1.0) * np.minimum(1, t / 0.003)
+    body = np.sin(2 * np.pi * 110 * t) * np.exp(-t / 0.4) * 0.5 + np.sin(2 * np.pi * 165 * t) * np.exp(-t / 0.3) * 0.25
+    puff = noise_band(n, np.full(n, 90.0), np.full(n, 3500.0)) * np.exp(-t / 0.25)
+    boom = sub * 0.5 + body * 0.35 + puff * 0.4
+    place(dry, HIT_AT, boom * 0.8, 0)
+    place(send, HIT_AT, boom * 0.7, 0)
 
     # the fusion torch: a low roar while it burns on screen (TORCH: from, to), a band of noise that
     # flutters, with enough above 150 Hz for a phone's speaker; a little of it to the reverb

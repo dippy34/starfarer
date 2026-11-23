@@ -1,6 +1,6 @@
 # The trailer
 
-A 49.5-second vertical trailer for Starfarer (version 3), for people who have never seen it and
+A 54-second vertical trailer for Starfarer (version 4), for people who have never seen it and
 are scrolling on a phone. Every picture in it is the app itself, built from this repository and
 filmed frame by frame in a headless browser; the edit adds only cuts, cross-fades, fades, text, the
 blurred sides of the phone-screen shots and a ring where a finger touches the screen. The music is
@@ -33,7 +33,7 @@ python3 trailer/sheet.py $OUT/contact.png --video $OUT/starfarer-trailer.mp4
 
 `--only sun,saturn` re-films some shots (each shot is its own folder, so one can be redone alone);
 `--stills 3` films only three frames of each (with the full pre-roll) for trying out a framing.
-`--shots other.mjs` takes another shot list (candidates). Another size: capture at another
+`--shots other.mjs` takes another shot list (candidates; a path from the repository's root or an absolute one). Another size: capture at another
 `--scale` on the same 360x640 viewport and pass the matching `--size` to the edit; a different
 shape (say 1:1 or 16:9) needs `VIEW` changed in `shots.mjs` and the framings looked at again.
 
@@ -69,6 +69,19 @@ real-time timer, which would end it between two frames). Every toast the app sho
 is noted with its time in `info.json`, so what the trailer says can be checked against what the
 app said.
 
+God mode's three moments (v4) are touched the way the suites touch the app (scripts/live.mjs: the
+`throw`, `place` and `hit` blocks), so a tap can also land where a function of the page finds it:
+`pt` (a world on the screen, a slider's knob) and `toPt` (where a drag ends), found at that moment;
+`live: true` finds the end of a drag afresh each frame and keeps the finger's height (a slider moves
+down the page as the card round it changes, and a finger follows it); `run` does something with no
+finger. A shot's `setup` may be async (the page runs on while it waits). A finger on a world is put
+down on the world's dot on the screen, and the slingshot is pulled back from it by 152 px (the mark
+of escape, 1.414 x 107 px) with the finger resting a moment before it lifts, so that the app's
+flick (a quick finger) does not take it. The throw and the hit shots find their view as the suite
+does: the eye is put over the Earth where the world has room ahead of it for the arrow and behind
+it for the pull, clear of the card (a setup, not a power). The simulation's own stepping is held to
+its full step (`sim.now`), and its run ahead (the dashed path) grows on the shot's clock.
+
 A shot with `date.free` leaves the clock to the app: the ship's flight (it runs time itself) and a
 change's watch (it sets the rate of time and moves the camera after a change) are the app's own,
 from the shot's date. A shot's `keep` saves only some stretches of a long run (all of it is run).
@@ -84,24 +97,36 @@ touch phone to the app (`isMobile`, `hasTouch`), so it gets what a phone gets: t
 - Vertical 9:16, 1080x1920, 30 fps, H.264 high profile, yuv420p, BT.709, AAC 48 kHz stereo,
   `+faststart`: plays on an iPhone and in social apps. Draft at 540x960 from the same CSS
   viewport (scale 1.5), so the layout does not change between draft and final.
-- 49.5 s (asked: about 45 to 50). Opens on the Sun's limb with no text for 1.5 s: the star faces
-  are the best-looking thing in the app and need no explaining.
-- The order: the places (the Sun, Saturn, Titan, the Orion Nebula, Andromeda), the ship, black
-  holes, god mode, the pull-out and the title.
+- 54 s (asked: under 60, to fit Shorts, Reels and TikTok). Opens on the Sun's limb with its first
+  words at 0.3 s ("The real universe."): the star faces are the best-looking thing in the app, and
+  the first two seconds are not spent on a title.
+- The order: the places (the Sun, Saturn, the Orion Nebula, Andromeda), the ship (from behind,
+  then flown on a phone), a black hole, god mode (the Moon thrown, a world added, Mars thrown at
+  the Earth), the pull-out and the title.
 - Text only between 12 % and 80 % of the height (social apps cover the rest). Inter Display, drawn
   with Pillow (it has full text shaping here), a soft shadow under it for legibility. Over a
   phone's screen the line sits on a dark plate in the sky the interface leaves clear. The address
   sits in an outlined pill: it is the call to action.
-- 80 beats a minute; cuts on bars and half bars (multiples of 45 frames; the two second-sun
-  shots meet on a beat), text on beats; the title lands on the score's hit.
+- 80 beats a minute; cuts and text on beats (0.75 s: 22.5 frames, so a cut lands on the nearer
+  frame); the title lands on the score's hit.
 - Every claim on screen is true of the app as built (checked against README.md, HANDOFF.md and
-  the code): real planet positions (the JPL ephemeris), the ship and its controls on a phone, black
-  holes with their disks, Add's "A second sun" (WhatIf.ts, App.add), live physics ("from now on
-  everything here pulls on everything else", the app's own words), Jupiter's Mass at 19.95 times
-  its real mass (read from the app after the drag: the slider's 1.30 of 3, as log10), the watch
-  and its chip, the collisions as the app tells them (each toast is in the shot's `info.json`),
-  free and in the browser.
+  the code): real planet positions (the JPL ephemeris), real data and real physics (the catalogues
+  the app is built on; live physics, "from now on everything here pulls on everything else", the
+  app's own words), the ship and its controls on a phone, a black hole with its disk, the Moon
+  thrown with the slingshot (Mover.ts) and where it goes (the card's and the toast's words),
+  Add's "A planet like Earth" (App.add) with its mass slid to 5 Earths ("Rock, 1.71 times the
+  Earth's size", read from the app: 5.00 Earths, 1.709 of its radius), Mars thrown at the Earth
+  (Foresight.ts, Impacts.ts, Powers.impactWords: the card says "Mars hit Earth at 9.4 km/s", the
+  energy as hours of the Sun's light and that Mars would break apart, and that breaking apart is
+  not simulated yet), the watch and its chip, free and in the browser. Every number on a card is
+  one the app showed; the words the trailer adds are only "Throw the Moon.", "Add a world." and
+  "Throw Mars at the Earth.", which say what the finger is doing.
 - Only what a phone user can reach today, filmed as a phone gets it (touch, the lean content).
+  The Mars shot has one setup a finger did not make (as the suite's): Mars is put 40 Earth radii
+  from the Earth, moving with it, so that the fall takes about two days of the app's time. From
+  where Mars really is a throw takes months to arrive, and aiming it at a moving Earth from
+  there is a puzzle, not a moment. It is why the app's "Live physics" bar is already up in that
+  shot, and the toast of that move ("Mars goes round Earth now") is hidden.
 - The interface is shown where it is the point: the ship flown by hand (the thrust lever, the
   view switch) and god mode (the card, Add, the mass slider, the watch's chip, the app's toasts).
   The ship's shot fills the 9:16 frame (the 360x640 viewport); god mode is filmed on an iPhone's
@@ -120,43 +145,56 @@ touch phone to the app (`isMobile`, `hasTouch`), so it gets what a phone gets: t
   its night lights too faint to show. Earth is seen only at the start of the pull-out, at an hour
   when the Pacific faces the camera (23:00 UTC) and not Africa or Australia, from 4 radii.
 - Saturn is filmed on 15 June 2017 (rings wide open; in 2026 they are nearly edge-on to the Sun).
-  Titan on 18 June 2017, nearly full, its haze's orange with Saturn behind it: from Titan the
-  rings are edge-on (Titan goes round in their plane), a bright line across the planet.
-- Black holes: M87* from 6,000 to 20 horizon radii, a little above its disk (from far off a
-  steady point on its jet, growing into the disk), then Cygnus X-1 with its blue supergiant. Not
-  Sagittarius A* (the frame is a flat beige of the galactic centre's stars), and Cygnus X-1 is
-  joined close in: farther out, as the camera comes in, the supergiant's limb shows a notch at
-  the edge of the hole's region (a known fault, HANDOFF.md).
-- A second sun, twice: first on the phone's screen, from 42 AU over Neptune's side of the planets'
-  plane (Add makes it 0.55 of the way to the eye, in that plane: 23.1 AU out, and the app says
-  "Neptune goes round Sun 2 now"), the watch easing the camera out; then from over the planets,
-  orbit lines off and the simulation's trails on (the orbit lines are drawn afresh from each
-  world's motion and jump about once the system is wild), the watch off (More's "Show me what
-  happens") so the camera is the shot's: from 14 AU, leaning away from Jupiter, Add makes it 8.6
-  AU out, and the two suns go round each other, the inner planets' trails coiling round the Sun.
-  Filmed at half density (scale 1.5) and scaled up, so the one-pixel trails are two pixels wide.
-  The capture holds still the clock the simulation budgets its steps by, so each frame's step is
-  made in full whatever the machine's load.
-- Jupiter twenty times heavier, on the phone's screen, 1 October 2026 at 23:00 (the date of the
-  app's own pictures of it): the watch at 26.3 minutes a second, the inner moons falling in one by
-  one (Metis and Adrastea, Amalthea, Thebe, then Io), and Europa about eight seconds after the
-  change ("Europa hit Jupiter at 253 km/s and is part of it now"). The cut keeps the start and,
-  after a cross-fade, the moment Europa hits: the date on the screen says how much time passed.
+- A black hole: M87* from 6,000 to 20 horizon radii, a little above its disk (from far off a
+  steady point on its jet, growing into the disk). Cygnus X-1 is out (v4's room), and Sagittarius A*
+  stays out (the frame is a flat beige of the galactic centre's stars).
+- The Moon thrown (Earth's date 21 November 2026, 12:00 UTC): the Moon's card on a phone's screen
+  (390x844), Move, Throw (the card says "Pull back from it and let go, like a slingshot, or flick
+  it."), a finger on the Moon pulled back to the mark of escape (the arrow, the "circle" and
+  "escape" marks, the dashed path ahead that the app runs with every pull counted, and the card's
+  "Now on an open path past Earth: it passes at 374,687 km, then leaves."), let go: the watch
+  (3.4 days a second) and the app's toast "The Moon goes round the Sun now, no longer round
+  Earth.". The eye is over the Earth, 260 Earth radii out, 75 degrees up.
+- A world added (21 November 2026): the Sun's card, Add, "A planet like Earth": "Earth 2" appears
+  1.21 AU out and time waits (the app's toast says so). The camera goes in to it (the shot's own
+  move, 17 radii out, from where the app had it and back) so that the mass slid up to 5 Earths
+  shows as it is: the card "5 Earths, Rock, 1.71 times the Earth's size" and the world grown by
+  that much. Then the finger drags it out half as far again (1.57 AU), Done, and the watch
+  (90.1 days a second) goes round the planets with Earth 2 among them. The footage goes on to
+  the watch's chaos (a 5-Earth planet at 1.57 AU is a heavy neighbour for Mars and Jupiter, and
+  the app slows time for the hits it finds): the cut ends before it.
+- Mars thrown at the Earth: Mars's card, Move, Throw, a finger on Mars pulled back from the Earth
+  66 px so that the arrow points at it: "Now on a path into Earth: it hits it." and, with every
+  pull counted, "it hits Earth in 1.6 days"; let go, and the watch (20.1 hours a second); as the
+  two near, time slows ("Slowed: 1.5 hours a second", for the last of the fall to take about
+  three seconds), the flash (a depiction: the app says its brightness is not worked out), and the
+  hit's card: "Mars hit Earth at 9.4 km/s", "Energy 2.5x10^31 J: as much as the Sun gives off in
+  18.4 hours. 5.2 times the energy that holds Mars together." and the prediction, labelled. The
+  cut crosses the dull middle of the fall with a dissolve (the date says so).
 - The pull-out has one cross-fade inside it, from the field of nearby stars to the moment the
   whole Milky Way is in view. The seam the galaxy's glow showed while being redrawn is gone
   (f073b73), but between about 1 and 15 kpc, close by and from inside, the glow is still a soft
   low-resolution beige wash with no stars (seen on stills of this build), so the cut still steps
   over that second.
 - Not in it: Achernar and Altair (they look odd), TRAPPIST-1 e (its generated surface glows), the
-  Moon's ground (dark hard-edged patches near the landing sites), Earth's day side. No Throw:
-  god mode part 2 had not landed.
+  Moon's ground (dark hard-edged patches near the landing sites), Earth's day side.
+- Dropped from v3 for v4's room, weakest first: Titan (a beat and a half of a moon, with
+  Saturn's shot already carrying the rings, and the Orion Nebula and Andromeda in the same run of
+  places), Cygnus X-1 (a beat and a half, too short for the eye to find the
+  star), the second sun twice (on the phone's screen, then from over the
+  planets, filmed at half density: Add is now shown with "A planet like Earth", the world itself
+  in view), Jupiter twenty times heavier (nine seconds of interface for one idea, the mass slider,
+  which "Add a world" now shows with the planet itself growing). Their definitions are in
+  the git history (version 3's shots.mjs).
 - Rings where a finger touches the screen (a tap: a ring that grows and fades; a drag: a ring
   that follows the finger): the one overlay on footage, marking real touches.
 - The music is a placeholder: warm pad (chords every two bars or so), a bass note with overtones
   (so a phone speaker, which plays nothing below about 150 Hz, still carries it), a sparse FM bell
-  motif (one high note as the second sun appears), an arpeggio that grows from the ship on, the
-  fusion torch's roar while it burns on screen (a band of fluttering noise), a rising noise into
-  the title, one low hit, one convolution reverb (decaying noise). It swells about 8 dB from the
+  motif (one high note as the Moon is let go, another when Done is tapped), an arpeggio that grows
+  from the ship on, the fusion torch's roar while it burns on screen (a band of fluttering noise),
+  a rush of noise that climbs as the Moon is let go, a low tone that falls while time slows for
+  Mars's last fall and a low boom on the flash, a rising noise into the title, one low hit, one
+  convolution reverb (decaying noise). It swells about 8 dB from the
   first bar to the title, peaks at -1 dBFS and is never clipped.
 
 ## Add a shot
@@ -170,6 +208,31 @@ touch phone to the app (`isMobile`, `hasTouch`), so it gets what a phone gets: t
    capture it alone with `--only`, re-render the score if the length changed, and edit again.
 
 ## As made
+
+Version 4 was filmed from commit 35fc045 (god mode with Throw, Add's planet, impacts you can see and
+the future drawn; the Milky Way's glow, Cygnus X-1's exposure and the ship's mask fixed since v3),
+production build, quality level 0, lean (phone) content. Every shot was filmed afresh; nothing is
+kept from version 3's frames.
+
+Changed from version 3: Titan, Cygnus X-1, both second-sun shots and Jupiter twenty times
+heavier are out; the Moon thrown, a world added and Mars thrown at the Earth
+are in (all on a phone's screen, whole-page screenshots with a ring where a finger touches). The
+opening text is at 0.3 s, the tagline says "Real data. Real physics.", the score is re-timed to
+the cut (beats, not bars, and new sounds for the throw, Done and the hit), and the title lands at
+49.5 s as before, in a trailer of 54 s.
+
+Measured on a shared four-core machine with software WebGL, other suites running beside it (the
+capture under `nice -n 10`):
+
+| | full size |
+|---|---|
+| a phone-screen frame (1170x2532 screenshot) | 1.5 to 1.6 s |
+| boot and settle, per shot | 20 to 145 s |
+| the three god-mode shots (all frames kept: about 220, 280 and 290) | 8 to 11 min each |
+| edit (numpy compositing + x264 slow) | about 8 min |
+| score | 15 s |
+
+Version 3 (49.5 s) is in the git history, as are its shots; its notes follow.
 
 Version 3 was filmed from commit 96ff6fc (the new ship and its controls on a phone, Add with a
 second sun, god mode's watch, Replay and Undo, Titan's haze, the Milky Way's glow without its

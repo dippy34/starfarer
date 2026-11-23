@@ -49,11 +49,13 @@ STYLES = {
     'low': ('Inter Display:weight=600', 74, -0.01, 1.18, 0.70),
     'top': ('Inter Display:weight=600', 66, -0.01, 1.18, 0.163),
     'title': ('Inter Display:weight=800', 132, 0.14, 1.0, 0.25),
-    'tagline': ('Inter Display:weight=500', 50, 0.0, 1.3, 0.335),
+    'tagline': ('Inter Display:weight=500', 50, 0.0, 1.3, 0.365),
     'url': ('Inter:weight=600', 62, 0.0, 1.0, 0.762),
     'name': ('Inter Display:weight=500', 50, 0.02, 1.0, 0.735),
     # over a phone's screen: on a dark plate, in the part of the sky its interface leaves clear
-    'plate': ('Inter Display:weight=600', 62, -0.01, 1.18, 0.285),
+    'plate': ('Inter Display:weight=600', 62, -0.01, 1.18, 0.335),
+    # (the same, higher: where the card of the shot grows up the screen to meet the first)
+    'plate_hi': ('Inter Display:weight=600', 62, -0.01, 1.18, 0.255),
 }
 
 
@@ -96,7 +98,7 @@ def render_card(style, lines):
         ImageDraw.Draw(pill).rounded_rectangle(box, (bottom - top) / 2, fill=(0, 0, 0, 120), outline=(255, 255, 255, 220), width=max(2, round(3 * K)))
         layer = Image.alpha_composite(pill, layer)
         return np.asarray(layer).astype(np.float32) / 255.0
-    if style == 'plate':
+    if style.startswith('plate'):
         w = max(text_width(l, fnt, sp) for l in lines)
         pad_x, pad_y = 40 * K, 26 * K
         box = ((W - w) / 2 - pad_x, y0 - pad_y + 0.1 * px * K, (W + w) / 2 + pad_x, y0 + block + desc * 0.5 + pad_y)
@@ -206,11 +208,13 @@ class Shot:
                     continue
                 yy, xx = np.ogrid[:H, :W]
                 dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
-                r = 30 * K
+                r = 44 * K
                 ring = np.clip(1 - np.abs(dist - r) / (4 * K), 0, 1) * 0.9
                 dot = np.clip((r * 0.75 - dist) / (2 * K), 0, 1) * 0.35
+                # (a dark edge beside the ring: over a white knob or a bright card it still shows)
+                halo = np.clip(1 - np.abs(dist - r) / (9 * K), 0, 1)[..., None] * 0.45
                 a = np.maximum(ring, dot)[..., None]
-                out = out * (1 - a) + a
+                out = out * (1 - halo) * (1 - a) + a
                 continue
             age = (i - tap['frame']) / FPS
             if not 0 <= age < 0.5:
@@ -220,8 +224,9 @@ class Shot:
             dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
             ring = np.clip(1 - np.abs(dist - r) / (4 * K), 0, 1) * (1 - age / 0.5) * 0.9
             dot = np.clip((r * 0.75 - dist) / (2 * K), 0, 1) * 0.35 * (1 - age / 0.5)
+            halo = np.clip(1 - np.abs(dist - r) / (9 * K), 0, 1)[..., None] * 0.45 * (1 - age / 0.5)
             a = np.maximum(ring, dot)[..., None]
-            out = out * (1 - a) + a
+            out = out * (1 - halo) * (1 - a) + a
         return out
 
 
