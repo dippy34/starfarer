@@ -11,7 +11,7 @@ import { type Atmosphere, type Drive, FlightCore, type FlightEvent, G0, SHIP_SPE
 import { Body, type SpaceObject } from '../universe/Body';
 import { ExoPlanet, starProps } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
-import { autopilotRate, brake, inTheWay, PLAN, placeSlot, type Situation, steer, type Steering } from './Autopilot';
+import { autopilotRate, brake, climb, type ClimbSituation, inTheWay, PLAN, placeSlot, type Situation, steer, type Steering } from './Autopilot';
 import { Station } from './Station';
 
 export type SasMode = 'off' | 'stability' | 'prograde' | 'retrograde' | 'normal' | 'antinormal' | 'radial-out' | 'radial-in' | 'target' | 'anti-target';
@@ -30,6 +30,8 @@ export const HOLD = 0.5;
 /** the reactionless drive's settings (g at full throttle): 1, 2, 5 from a thousandth of a g to a million */
 export const DRIVE_STEPS = [-3, -2, -1, 0, 1, 2, 3, 4, 5].flatMap((e) => [1, 2, 5].map((m) => m * 10 ** e)).concat(1e6);
 const L_SUN = 3.828e26;
+/** "Fly there" from the air picks a drive with at least this many g to spare over gravity for the climb */
+const CLIMB_SPARE = 2;
 
 /** The autopilot's flight: flip-and-burn to a target, arriving at rest beside it, or in orbit if it pulls. */
 interface Autopilot {
@@ -427,15 +429,19 @@ export class Flight {
   private anchorTrack: { obj: object; pos: UPos; jd: number; vel: Vector3; ok: boolean } | null = null;
 
   /**
-   * Why the autopilot will not fly from here ('' when it will): in the air (it would cross it at
-   * many km/s), or where the drive at its setting cannot hold the ship against gravity with enough
-   * to spare to steer. (Worlds in its way it flies round: Autopilot.ts, inTheWay.)
+   * Why the autopilot will not fly from here ('' when it will): where the drive at its setting
+   * cannot hold the ship against gravity with enough to spare to steer. (Worlds in its way it
+   * flies round: Autopilot.ts, inTheWay; the air of the world it is in it climbs out of first.)
    */
   autopilotRefusal(): string {
     if (!this.on) return '';
-    const core = this.core, D = core.frame, atm = core.atmosphere;
-    if (D && atm && this.ship.upos.sub(D.upos, this.tmp).length() < atm.R0 + atm.top) return `In the air of ${D.name}: climb above ${fmtDist(atm.top)} first.`;
     return this.driveTooWeak();
+  }
+
+  /** In the air of the frame body (below where its drag is ignored): the autopilot climbs out of it before it goes on. */
+  inTheAir(): boolean {
+    const core = this.core, D = core.frame, atm = core.atmosphere;
+    return !!D && !!atm && this.ship.upos.sub(D.upos, this.tmp).length() < atm.R0 + atm.top;
   }
 
   /** Why the drive at its setting cannot steer against gravity here ('' when it can). */
@@ -449,15 +455,17 @@ export class Flight {
   /**
    * J (or Go there, in the ship): the autopilot flies to `target` the way physics allows: the
    * reactionless drive at the pilot's setting, accelerating towards it, turning, braking, and
-   * arriving at rest beside it (in orbit about it if it pulls). Not in the air, nor where gravity
-   * is too strong for the drive's setting.
+   * arriving at rest beside it (in orbit about it if it pulls). In the air of a world it climbs
+   * out first (Autopilot.ts, climb); not where gravity is too strong for the drive's setting.
    */
   autopilotTo(target: SpaceObject): boolean {
     const app = this.app, ship = this.ship;
     if (!this.on || this.ending) return false;
     const no = this.autopilotRefusal();
     if (no) {
-      app.hud.toast(no, 4);
+      // (the next sensible thing, one touch away: the drive set as strong as the trip needs, and on)
+      if (app.selection === target && !app.vr.active) app.hud.notice(no, 'ship-go', 'Stronger drive, and go');
+      else app.hud.toast(no, 4);
       if (app.vr.active) app.vr.flash(no.split(':')[0]);
       return false;
     }
@@ -472,7 +480,8 @@ export class Flight {
       steering: { aim: new Vector3(0, 0, -1).applyQuaternion(ship.quat), throttle: 0, rcs: new Vector3(), turning: false, tauGo: Infinity, tGo: Infinity, phase: 'turning', arrived: false }, detour: '',
     };
     this.trackTarget();
-    const say = `Autopilot: flip-and-burn to ${target.name} at ${fmtG(ship.driveAccel / G0)} (reactionless drive)`;
+    const air = this.inTheAir() ? `climbing out of ${this.core.frame!.name}'s air first, then ` : '';
+    const say = `Autopilot: ${air}flip-and-burn to ${target.name} at ${fmtG(ship.driveAccel / G0)} (reactionless drive)`;
     app.hud.toast(say, 3);
     if (app.vr.active) app.vr.flash(`Autopilot: ${target.name}`);
     return true;
@@ -550,9 +559,11 @@ export class Flight {
     const d = Math.max(0, target.upos.sub(ship.upos, this.tmp).length() - this.arrivalRadius(target));
     const g = gravity.gravityAt(ship.upos, _g1).length();
     let pick = DRIVE_STEPS[DRIVE_STEPS.length - 1];
+    // (in the air the climb needs a few g to spare over gravity, or it is a long way up through it)
+    const climb = this.inTheAir() ? CLIMB_SPARE * G0 : 0;
     for (const x of DRIVE_STEPS) {
       const a = x * G0;
-      if (a < ship.driveAccel * (1 - 1e-9) || g > HOLD * a || flipAndBurn(d, PLAN * a, 0).tau > DAY) continue;
+      if (a < ship.driveAccel * (1 - 1e-9) || g > HOLD * a || PLAN * a < g + climb || flipAndBurn(d, PLAN * a, 0).tau > DAY) continue;
       pick = x;
       break;
     }
@@ -602,6 +613,9 @@ export class Flight {
     const holder = (tgt instanceof Station ? tgt.body : tgt) as { valid?: boolean };
     if (holder.valid === false) { this.cancelAutopilot(`${tgt.name} is gone: autopilot off`); return; }
     const src = tgt instanceof Station ? undefined : this.cache.get(tgt);
+    // in the air of the world it leaves: up and out of it first
+    ap.detour = '';
+    if (this.guideClimb(ap)) return;
     // a world in the way: towards a point round it instead, moving with it, until the target is in sight
     const w = inTheWay(ship.upos, ship.vel, tgt, gravity.sources, _g3);
     ap.detour = w ? w.name : '';
@@ -632,6 +646,44 @@ export class Flight {
       this.app.game.audio.chime();
     }
   }
+
+  /**
+   * The first part of any flight begun in the air: straight up and out of it (Autopilot.ts, climb)
+   * under the ship's own drive, with the air's drag and heat and the world's gravity as they are.
+   * True while the ship is still in the air (the rest of the flight waits for it).
+   */
+  private guideClimb(ap: Autopilot): boolean {
+    const core = this.core, D = core.frame, atm = core.atmosphere, ship = this.ship;
+    if (!D || !atm) return false;
+    const rel = ship.upos.sub(D.upos, _g1), r = rel.length();
+    if (r >= atm.R0 + atm.top) return false;
+    const c = this.climbing;
+    c.up.copy(rel).divideScalar(Math.max(r, 1));
+    c.air.copy(ship.vel).sub(D.vel).sub(_g2.crossVectors(core.spin, rel));
+    gravity.gravityAt(ship.upos, c.gravity).sub(gravity.gravityAt(D.upos, _g2));
+    c.nose.set(0, 0, -1).applyQuaternion(ship.quat);
+    c.height = r - atm.R0;
+    c.top = atm.top;
+    c.rho = atm.rho0 * Math.exp(-Math.max(c.height, -atm.H * 5) / atm.H);
+    c.cdA = SHIP_SPEC.cdA;
+    c.noseRadius = SHIP_SPEC.noseRadius;
+    c.mass = ship.mass;
+    c.drive = ship.driveAccel;
+    c.rcs = SHIP_SPEC.rcsThrust / ship.mass;
+    c.dt = this.simDt;
+    const st = climb(c, ap.steering);
+    // (the time to go shown: the climb, and the flight after it from the top of the air)
+    const to = ap.target.upos.sub(D.upos, _g2), d = Math.max(0, to.length() - ap.radius);
+    const fb = flipAndBurn(d, PLAN * ship.driveAccel, 0);
+    st.tauGo += fb.tau;
+    st.tGo += fb.t;
+    ship.throttle = st.throttle;
+    ship.rcs.copy(st.rcs).applyQuaternion(_q.copy(ship.quat).invert()).divideScalar(c.rcs).clampScalar(-1, 1);
+    return true;
+  }
+  private climbing: ClimbSituation = {
+    up: new Vector3(), air: new Vector3(), gravity: new Vector3(), nose: new Vector3(), height: 0, top: 0, rho: 0, cdA: 0, noseRadius: 0, mass: 0, drive: 0, rcs: 0, dt: 0,
+  };
   private situation: Situation = {
     rel: new Vector3(), w: new Vector3(), slotAccel: new Vector3(), gravity: new Vector3(), nose: new Vector3(), drive: 0, rcs: 0, dt: 0, radius: 0, orbit: 0,
   };
@@ -983,7 +1035,8 @@ export class Flight {
   /** Reaction wheels: the command sets an angular acceleration; SAS steers when the pilot does not. */
   private attitude(dt: number, cmd: Vector3): void {
     const ship = this.ship, spec = SHIP_SPEC, core = this.core;
-    if (core.landed) { ship.angVel.set(0, 0, 0); return; }
+    // (resting on the ground the wheels hold it, unless the autopilot is to lift it off: it turns the nose up first)
+    if (core.landed && !this.autopilot) { ship.angVel.set(0, 0, 0); return; }
     const inv = ship.quat.clone().invert();
     const wBody = ship.angVel.clone().applyQuaternion(inv);
     const manual = cmd.lengthSq() > 1e-4;

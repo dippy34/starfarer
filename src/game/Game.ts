@@ -456,7 +456,7 @@ export class Game {
         fuel: fr.drive === 'reactionless' ? 1 : fr.fuel,
         clocks: `ship ${fmtTime(fr.shipTime)} · univ ${fmtTime(fr.universeTime)}${fr.dilation < 0.9999 ? ` · ×${fr.dilation.toPrecision(3)}` : ''}`,
         warning: fr.warning,
-        lock: !fr.refusal ? '' : fr.refusal.startsWith('In the air') ? 'IN THE AIR' : 'DRIVE TOO WEAK',
+        lock: fr.refusal ? 'DRIVE TOO WEAK' : '',
       };
     } else r.flight = null;
   }

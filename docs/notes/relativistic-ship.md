@@ -184,8 +184,8 @@ Lorentz factor (1 + 3.3×10⁻¹⁰ in low orbit; 2.42×10⁹), past a tenth of 
 the view ahead (half the sky crowds into θ with tan θ = 1/(γβ); light ahead is e^η times bluer),
 the orbit, throttle, propellant or the drive's setting (and "at its limit"), the felt g, SAS, the
 target with its distance and the time to it **aboard and in the universe** (flip-and-burn at the
-drive's setting, or coasting at the present speed), the autopilot (ready / in the air / drive too
-weak here / what it is doing, or "round" the world it is going round), time warp, the ship's clock (with its rate against the universe's), the universe's.
+drive's setting, or coasting at the present speed), the autopilot (ready / drive too
+weak here / what it is doing, climbing out of the air first when it starts there, or "round" the world it is going round), time warp, the ship's clock (with its rate against the universe's), the universe's.
 The cockpit's screens (desk and headset) show the same in short: when fast, speed, γ and the time
 to go replace the orbit lines.
 
