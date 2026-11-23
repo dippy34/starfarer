@@ -10,10 +10,18 @@
 //     a short plain note of what it is; the real universe stays real (no live physics)
 //   - a link made on a phone opened at a desk: the same way of looking, on another screen
 //   - a broken link, one of a newer version, one naming what is not here: the app as usual, and a note that
-//     says so; never a crash or a blank screen
-// Usage: node scripts/share.mjs [baseUrl] [outDir]   (SHARE_ONLY=view,broken: those blocks alone; SHARE_KINDS=desk)
+//     says so; never a crash or a blank screen; a name with markup in a link is shown as text
+//   - a changed universe (live physics): Mars sent at the Earth (phone), a planet like the Earth added through the
+//     card (on its side), the Moon thrown out and twenty years and more run on at a hundred years a second (desk);
+//     shared and opened in a fresh browser: every simulated body where it was and moving as it was to the last bit,
+//     at the same moment, the same worlds made and taken away, the note; and the card's prediction (the simulation
+//     run ahead, with a finger held on the world in Move) reads the same on both
+//   - saved on this device (More): listed with a name and a date, opened again after the page is closed, deleted
+//     with two taps; with the storage full, and where the browser keeps nothing, it says so
+// Usage: node scripts/share.mjs [baseUrl] [outDir]
+//   (SHARE_ONLY=view,running,broken,live,saves: those blocks alone; SHARE_KINDS=phone,side,desk)
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
-import { phoneContext } from './lib/touch.mjs';
+import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -122,10 +130,16 @@ const note = (page) => page.evaluate(() => { const n = document.querySelector('#
 
 /** Share through the interface (the card's button, or More's row): the link it handed on, and the scene at that moment. */
 async function share(page, kind, from) {
-  if (from === 'more') {
-    await press(page, '#hud .hud-tabs [data-tab="more"]');
-    await press(page, '#hud .sheet.more [data-act="share"]');
-  } else await press(page, '#hud .card [data-act="share"]');
+  // (where there is no Share to press, nothing is shared: the checks that follow say so, one by one)
+  try {
+    if (from === 'more') {
+      await press(page, '#hud .hud-tabs [data-tab="more"]');
+      await page.locator('#hud .sheet.more [data-act="share"]').first().click({ timeout: 10000 });
+      await press(page, '#hud .sheet.more [data-close]');
+    } else await page.locator('#hud .card [data-act="share"]').first().click({ timeout: 10000 });
+  } catch {
+    return { url: '', before: await scene(page), toast: '', sheet: null };
+  }
   await frames(page, 3);
   const before = await scene(page);
   if (kind === 'desk') {
@@ -138,6 +152,53 @@ async function share(page, kind, from) {
   return { url: sheet?.url ?? '', before, toast: await text(page, '#hud .hud-toast'), sheet };
 }
 
+/** Time is stopped (the big button of the Time sheet). */
+async function pause(page) {
+  if (await page.evaluate(() => window.app.clock.paused)) return;
+  if (!(await shown(page, '#hud .sheet.time.on'))) await press(page, '#hud .hud-tabs [data-tab="time"]');
+  await press(page, '#hud .transport [data-act="pause"]');
+  await press(page, '#hud .sheet.time [data-close]');
+  await frames(page, 2);
+}
+
+/** Live physics as the page has it: every simulated body's place and motion (to the bit), the date, the worlds made and taken away, the log. */
+const liveState = (page) => page.evaluate(() => {
+  const a = window.app, sim = a.physics.live?.sim;
+  if (!sim) return { on: false, ids: [], pos: [], vel: [], jd: a.clock.jdTdb, made: [], gone: [], log: [] };
+  sim.read();
+  return {
+    on: true, ids: [...sim.ids], pos: [...sim.pos], vel: [...sim.vel], jd: a.clock.jdTdb,
+    made: a.physics.made.map((b) => b.name), gone: a.system.bodies.filter((b) => a.system.isGone(b)).map((b) => b.name), log: a.physics.log.map((e) => e.text),
+  };
+});
+
+/**
+ * The card's prediction for a world (the simulation run ahead with every pull counted: src/app/Foresight.ts), as the
+ * explorer gets it: Move on its card, a finger (or the mouse) put on the world and held still while the card says what
+ * ends its path, then lifted where it was (nothing changed). '' if it said nothing.
+ */
+async function foresee(page, name, kind) {
+  await page.evaluate((n) => { const a = window.app, b = a.findByName(n); a.select(b); }, name);
+  await page.waitForFunction((n) => document.querySelector('#hud .card h2')?.textContent === n, name, { timeout: 20000 });
+  if ((await page.locator('#hud .card [data-act="move"]').getAttribute('aria-expanded')) !== 'true') await press(page, '#hud .card [data-act="move"]');
+  await frames(page, 3);
+  const at = await page.evaluate((n) => { const a = window.app, b = a.findByName(n); a.frame(); return a.project(b.upos.sub(a.rig.upos, new b.pos.constructor())); }, name);
+  if (!at) return '';
+  const touch = kind === 'desk' ? null : await fingers(page);
+  if (touch) await touch.press(at);
+  else { await page.mouse.move(at.x, at.y); await page.mouse.down(); }
+  // (it grows a few milliseconds a frame: three of the Moon's turns round the Sun, every pull counted, take minutes at a
+  // runner's few frames a second)
+  await page.waitForFunction(() => window.app.mover.holding && window.app.ahead.done, null, { timeout: 900000, polling: 500 }).catch(() => undefined);
+  await frames(page, 3);
+  const said = await text(page, '#hud .card .power-ahead');
+  if (!said) console.log(`  (nothing said: ${JSON.stringify(await page.evaluate(() => ({ holding: window.app.mover.holding, done: window.app.ahead.done, count: window.app.ahead.count })))})`);
+  if (touch) await touch.lift();
+  else await page.mouse.up();
+  await frames(page, 2);
+  return said;
+}
+
 const only = process.env.SHARE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 const kinds = (process.env.SHARE_KINDS ?? 'phone,side,desk').split(',');
@@ -147,7 +208,7 @@ for (const kind of kinds) {
   const on = (name) => `${kind}: ${name}`;
 
   // ------------------------------------------------------------------ the real universe: a view shared and opened again
-  if (want('view')) {
+  if (want('view')) view: {
     const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=1&target=Earth&dist=6`);
     await setTime(page, '1 h/s', true);
     // (setup: the Moon selected while the camera stays at the Earth, as a tap on the Moon leaves it; and the camera
@@ -168,6 +229,7 @@ for (const kind of kinds) {
       await page.waitForFunction(() => document.querySelector('#hud').dataset.sheet === 'card', null, { timeout: 20000 });
     }
     const s = await share(page, kind, from);
+    if (!s.url) { check(on('Share hands on a link'), false, 'nothing was shared'); await ctx.close(); break view; }
     const fragment = s.url.split('#')[1] ?? '';
     if (kind === 'desk') check(on('at a desk the link is copied, and the toast says so'), s.toast === 'Link copied' && s.url.startsWith(base), `"${s.toast}" ${s.url.slice(0, 160)}`);
     else check(on('on a phone the system share sheet is opened with the link, a title and a line of text'), !!s.sheet && s.url.startsWith(base) && s.sheet.title === 'Starfarer' && /^Moon, \d+ \w+ 2026, in Starfarer$/.test(s.sheet.text), JSON.stringify(s.sheet)?.slice(0, 220));
@@ -193,12 +255,13 @@ for (const kind of kinds) {
   }
 
   // ------------------------------------------------------------------ time running: the link has the moment it was shared
-  if (want('running') && kind === 'phone') {
+  if (want('running') && kind === 'phone') running: {
     const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=0&target=Mars&dist=5`);
     await find(page, 'Mars');
     await setTime(page, '1 d/s', false);
     await frames(page, 10);
     const s = await share(page, kind, 'card');
+    if (!s.url) { check(on('Share hands on a link'), false, 'nothing was shared'); await ctx.close(); break running; }
     await ctx.close();
     const got = await open(kind, s.url);
     const after = await scene(got.page);
@@ -237,6 +300,142 @@ for (const kind of kinds) {
       if (what === 'a damaged link') await got.page.screenshot({ path: path.join(outDir, `share-${kind}-broken.png`) });
       await got.ctx.close();
     }
+  }
+  // ------------------------------------------------------------------ a changed universe (live physics): shared, and opened again
+  if (want('live')) live: {
+    // a change per kind: Mars sent at the Earth (phone), a planet like the Earth added through the card (on its side),
+    // the Moon thrown out and many years run on (desk)
+    const setup = { phone: 'target=Earth&dist=60', side: 'target=Sun&dist=4000', desk: 'target=Earth&dist=60' }[kind];
+    const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=1&${setup}`);
+    const subject = { phone: 'Mars', side: 'Earth 2', desk: 'Moon' }[kind];
+    if (kind === 'side') {
+      // Add, through the card of the Sun: a planet like the Earth, put in place where it starts, Done
+      await page.evaluate(() => { const a = window.app; a.select(a.findByName('Sun')); });
+      await page.waitForFunction(() => document.querySelector('#hud .card h2')?.textContent === 'Sun', null, { timeout: 20000 });
+      await press(page, '#hud .card [data-power="add"]');
+      await press(page, '#hud .card [data-act="add-earth"]');
+      await page.waitForFunction(() => window.app.selection?.name === 'Earth 2', null, { timeout: 20000 });
+      await press(page, '#hud .card [data-act="place-done"]');
+    } else {
+      // (setup, the change itself: as the powers make it, through LivePhysics, which the live suite drives with fingers)
+      await page.evaluate((kind) => {
+        const a = window.app, earth = a.findByName('Earth'), V = earth.pos.constructor;
+        if (kind === 'phone') {
+          const mars = a.findByName('Mars'), sun = a.findByName('Sun');
+          const r = earth.pos.clone().sub(sun.pos), side = r.clone().cross(earth.vel.clone().sub(sun.vel)).cross(r).normalize();
+          a.physics.move(mars, earth.pos.clone().addScaledVector(side, 40 * earth.radius).toArray(), earth.vel.clone().addScaledVector(side, -3000).toArray(), a.clock.jdTdb);
+        } else {
+          const moon = a.findByName('Moon'), r = moon.pos.clone().sub(earth.pos), w = moon.vel.clone().sub(earth.vel);
+          const n = r.clone().cross(w).normalize(), v = n.clone().cross(r).normalize().multiplyScalar(1.6 * Math.sqrt((earth.gm + moon.gm) / r.length()));
+          a.physics.move(moon, moon.pos.toArray(), earth.vel.clone().add(v).toArray(), a.clock.jdTdb);
+        }
+        a.tellNews(false);
+        void V;
+      }, kind);
+    }
+    await frames(page, 3);
+    if (kind === 'desk') {
+      // many years on: time at a hundred years a second for a few seconds of the screen
+      await setTime(page, '100 yr/s', false);
+      await page.waitForFunction((jd) => window.app.clock.jdTdb > jd + 20 * 365.25, await page.evaluate(() => window.app.clock.jdTdb), { timeout: 300000 }).catch(() => undefined);
+    }
+    await pause(page);
+    await page.evaluate((n) => { const a = window.app, b = a.findByName(n); a.placeNear(b, 9 * b.radius * a.rig.framing, 35, 12); a.select(b); }, subject);
+    await page.waitForFunction((n) => document.querySelector('#hud .card h2')?.textContent === n, subject, { timeout: 20000 });
+    const years = await page.evaluate(() => (window.app.clock.jdTdb - window.app.physics.live.jd0) / 365.25);
+    const s = await share(page, kind, kind === 'side' ? 'more' : 'card');
+    if (!s.url) { check(on('Share hands on a link'), false, 'nothing was shared'); await ctx.close(); break live; }
+    const fragment = s.url.split('#')[1] ?? '';
+    const sent = await liveState(page);
+    check(on(`the link of a changed universe (${subject}${kind === 'desk' ? `, ${years.toFixed(0)} years on` : ''}) holds it: readable as before, the changed universe after w=, ${s.url.length} characters`),
+      /^v=1&o=[^&]+&oi=\d+&c=[^&]+&q=[^&]+&t=[^&]+&r=[^&]+&p=1&w=[A-Za-z0-9_-]+$/.test(fragment) && sent.on && s.url.length < 16000, fragment.replace(/&w=.*/, '&w=…'));
+    const before = await foresee(page, subject, kind);
+    await ctx.close();
+
+    const got = await open(kind, s.url);
+    const after = await liveState(got.page);
+    const view = await scene(got.page);
+    const said = await note(got.page);
+    check(on('opened in a fresh browser: live physics on, the same worlds made and taken away, the same log'),
+      after.on && JSON.stringify(after.made) === JSON.stringify(sent.made) && JSON.stringify(after.gone) === JSON.stringify(sent.gone) && JSON.stringify(after.log.slice(-6)) === JSON.stringify(sent.log.slice(-6)) && await shown(got.page, '#hud .live-mark'),
+      `made ${JSON.stringify(after.made)}; gone ${JSON.stringify(after.gone)}; ${after.log.length} lines`);
+    check(on('every simulated body is where it was and moving as it was, to the last bit, at the same moment'),
+      after.ids.join() === sent.ids.join() && after.pos.every((x, i) => x === sent.pos[i]) && after.vel.every((x, i) => x === sent.vel[i]) && after.jd === sent.jd,
+      `${after.ids.length} bodies; date ${((after.jd - sent.jd) * 86_400_000).toFixed(3)} ms apart`);
+    const d = apart(s.before, view);
+    check(on('the same selection and camera, and time paused'), view.selected === subject && d.off < 1e-6 && d.look < 2e-5 && view.paused, `${view.selected}; ${(d.off * 1e6).toFixed(3)} millionths, ${(d.look * 57.3).toExponential(2)}°`);
+    check(on('a short plain note says it is a changed universe, and since when'), new RegExp(`^A shared scene: ${subject === 'Moon' ? 'the Moon' : subject}, \\d+ \\w+ \\d{4}, \\d\\d:\\d\\d UTC, time paused\\. Changed with live physics since 1 October 2026\\.$`).test(said), `"${said}"`);
+    const again = await foresee(got.page, subject, kind);
+    check(on('the card\'s prediction, the simulation run ahead with every pull counted, reads the same on both'), !!before && before === again && (kind !== 'phone' || /^With every pull counted, it hits Earth in [\d.]+ (hours|days)\.$/.test(again)), `"${before}" / "${again}"`);
+    await got.page.screenshot({ path: path.join(outDir, `share-${kind}-live-opened.png`) });
+    await got.ctx.close();
+  }
+
+  // ------------------------------------------------------------------ saved on this device: a list in More, opened again, deleted; full, and private
+  if (want('saves') && kind !== 'side') saves: {
+    const ctx = await context(kind);
+    const page = await ctx.newPage();
+    collectErrors(page, errors);
+    const go = async (url) => { await page.goto(url, { waitUntil: 'load' }); await page.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 }); };
+    await go(`${base}?menu=0&time=${START}&paused=1&target=Jupiter&dist=8`);
+    // a change (Jupiter twice as heavy), then saved
+    await page.evaluate(() => { const a = window.app, j = a.findByName('Jupiter'); a.physics.setMass(j, 2 * j.gm, a.clock.jdTdb); a.select(j); });
+    await press(page, '#hud .hud-tabs [data-tab="more"]');
+    if (!(await page.locator('#hud .sheet.more [data-act="save"]').count())) { check(on('Save this scene is in More'), false, 'no such row'); await ctx.close(); break saves; }
+    await press(page, '#hud .sheet.more [data-act="save"]');
+    await frames(page, 2);
+    const toastSaved = await text(page, '#hud .hud-toast');
+    const sent = await liveState(page);
+    const rows = await page.evaluate(() => [...document.querySelectorAll('#hud .more .saves .save-row')].map((r) => ({ name: r.querySelector('b').textContent, detail: r.querySelector('small').textContent })));
+    check(on('Save this scene keeps it on this device, and More lists it with a name and a date'), /^Saved: Jupiter, \d+ Oct 2026, changed$/.test(toastSaved) && rows.length === 1 && /^Jupiter, \d+ Oct 2026, changed$/.test(rows[0].name) && /^Saved \d+ \w{3} \d{4}, \d\d:\d\d UTC · live physics$/.test(rows[0].detail), `"${toastSaved}" ${JSON.stringify(rows)}`);
+    await page.screenshot({ path: path.join(outDir, `share-${kind}-saves.png`) });
+    // the page opened again, the real universe: the save opened from the list
+    await go(`${base}?menu=0&time=${START}&paused=1&target=Earth&dist=6`);
+    await press(page, '#hud .hud-tabs [data-tab="more"]');
+    await press(page, '#hud .more .saves [data-save-open]');
+    await page.waitForFunction(() => window.app.physics.on, null, { timeout: 60000 }).catch(() => undefined);
+    await frames(page, 2);
+    const back = await liveState(page);
+    check(on('a save opens again after the page is closed: the changed universe as it was, to the last bit, and a note'),
+      back.on && back.ids.join() === sent.ids.join() && back.pos.every((x, i) => x === sent.pos[i]) && back.jd === sent.jd && /^A saved scene: Jupiter, /.test(await note(page)), `"${await note(page)}"`);
+    // deleted: one tap asks, a second deletes
+    await press(page, '#hud .hud-tabs [data-tab="more"]');
+    await press(page, '#hud .more .saves [data-save-delete]');
+    const asked = await text(page, '#hud .more .saves [data-save-delete]');
+    await press(page, '#hud .more .saves [data-save-delete]');
+    const left = await page.evaluate(() => document.querySelectorAll('#hud .more .saves .save-row').length);
+    check(on('a save is deleted with two taps (the first asks)'), asked === 'Delete?' && left === 0, `"${asked}", ${left} left`);
+    // the browser's storage full: saying so, nothing lost
+    // (filled to the last few characters: large pieces while they go in, then ever smaller ones)
+    await page.evaluate(() => { let i = 0; for (let size = 1 << 18; size >= 1; size >>= 1) { try { for (;;) localStorage.setItem(`filler-${i++}`, 'x'.repeat(size)); } catch { /* full at this size */ } } });
+    await press(page, '#hud .sheet.more [data-act="save"]');
+    await frames(page, 2);
+    const full = await text(page, '#hud .hud-toast');
+    check(on('with the storage full it says so plainly'), /^Not saved: this browser's storage for the app is full/.test(full), `"${full}"`);
+    await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('filler-')) localStorage.removeItem(k); });
+    await ctx.close();
+    // private browsing as an older Safari has it: storage that keeps nothing
+    const priv = await context(kind);
+    await priv.addInitScript(() => { Storage.prototype.setItem = function () { throw new DOMException('quota', 'QuotaExceededError'); }; });
+    const pp = await priv.newPage();
+    collectErrors(pp, errors);
+    await pp.goto(`${base}?menu=0&time=${START}&paused=1&target=Earth&dist=6`, { waitUntil: 'load' });
+    await pp.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 });
+    await press(pp, '#hud .hud-tabs [data-tab="more"]');
+    await press(pp, '#hud .sheet.more [data-act="save"]');
+    await frames(pp, 2);
+    const none = await text(pp, '#hud .hud-toast');
+    check(on('where the browser keeps nothing (private browsing) it says so, and the app goes on'), /^Not saved: this browser keeps nothing for the app/.test(none) && await pp.evaluate(() => !window.appError), `"${none}"`);
+    await priv.close();
+  }
+
+  // ------------------------------------------------------------------ a link is written by a stranger: its text is text
+  if (want('broken') && kind === 'desk') {
+    const got = await open(kind, `${base}#v=1&o=${encodeURIComponent('<img src=x onerror="window.pwned=1">')}&a=-&c=1e12,0,0&q=0,0,0,1&t=2026-10-01T20:00:00.000Z&r=1&p=1`);
+    await frames(got.page, 5);
+    const r = await got.page.evaluate(() => ({ pwned: !!window.pwned, imgs: document.querySelectorAll('img[src="x"]').length, said: document.querySelector('#hud .hud-notice span').textContent }));
+    check(on('a name from a link is shown as text, never as markup'), !r.pwned && r.imgs === 0 && r.said.includes('"<img src=x onerror="window.pwned=1">" could not be found here.'), `"${r.said}"`);
+    await got.ctx.close();
   }
 }
 

@@ -61,7 +61,7 @@ import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, settleOn, TAU_STARS, type Frame } from './Exposure';
-import { canAdd, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
+import { canAdd, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
 import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, weighty } from './LivePhysics';
@@ -72,6 +72,9 @@ import { type ChangeKind, Glide, planChange, type RateState, sample, type Sample
 import { recall, remember } from '../platform/storage';
 import { forgetFragment, handOn, linkFragment, onFragmentChange, pageLink, reloadPage } from '../platform/share';
 import { decodeLink, encodeLink, isoOf, type Named, type SceneView } from './SceneLink';
+import { decodeWorld, encodeWorld, fromBase64Url, type LiveWorld, type MadeRecord, toBase64Url, WorldError } from './SceneWorld';
+import { deleteScene, savedFragment, savedScenes, saveScene, SAVES_MOST } from './Saves';
+import { liveDate } from '../sim/SystemSim';
 import { type Sunlit, temperatureOf, type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
@@ -146,6 +149,7 @@ const WATCH_MOST_TOUCH = 10 * 365.25 * DAY, WATCH_MOST = 100 * 365.25 * DAY;
 const REAL_AGAIN_MS = 20_000;
 /** two worlds about to hit, in the clear part of the view and at least this far apart on the screen (px), are seen coming together where they are */
 const SEEN_APART = 40;
+const bad = (why: string): never => { throw new WorldError(why); };
 /** a link naming an object only the catalogue of real objects has waits this long for it (ms) */
 const LINK_LOOKUP_WAIT = 8000;
 /** the look ahead starts again from a change at most this often (ms) */
@@ -471,6 +475,7 @@ export class App {
     await app.openFragment(linkFragment());
     // (another link opened into this tab while it is open changes only the '#': the page starts again with it)
     onFragmentChange((f) => { if (f) reloadPage(); });
+    app.showSaves();
     app.bindKeys();
     window.addEventListener('resize', () => app.resize());
     return app;
@@ -643,14 +648,27 @@ export class App {
     return this.rig.quat.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), this.rig.aim));
   }
 
-  /** The scene as it is now, for a link: what is selected, the camera from what it is at, the date and the rate of time. */
+  /**
+   * The scene as it is now, for a link or a save: what is selected, the camera from what it is at,
+   * the date and the rate of time, and once live physics is on the changed universe
+   * (src/app/SceneWorld.ts). Writing that down starts the simulation again from what was written
+   * (LivePhysics.rebase: as after any change, the next step is planned afresh), so the scene goes on
+   * here exactly as it will where the link is opened.
+   */
   sceneView(): SceneView {
+    let world: string | null = null;
+    const w = this.physics.world();
+    if (w) {
+      const bytes = encodeWorld(w);
+      this.physics.rebase(decodeWorld(bytes));
+      world = toBase64Url(bytes);
+    }
     const at = this.rig.target, q = this.pureTurn(), sel = this.selection;
     const cam = at ? this.rig.upos.sub(at.upos, new Vector3()) : new Vector3(this.rig.upos.xh + this.rig.upos.xl, this.rig.upos.yh + this.rig.upos.yl, this.rig.upos.zh + this.rig.upos.zl);
     return {
       selected: sel ? this.nameOf(sel) : null, at: at ? this.nameOf(at) : null,
       camera: [cam.x, cam.y, cam.z], turn: [q.x, q.y, q.z, q.w], fov: this.rig.fov,
-      jd: this.clock.jdTdb, rate: this.clock.rate, paused: this.clock.paused, world: null,
+      jd: this.clock.jdTdb, rate: this.clock.rate, paused: this.clock.paused, world,
     };
   }
 
@@ -659,14 +677,49 @@ export class App {
     return pageLink(encodeLink(this.sceneView()));
   }
 
+  /** What a scene is, in a few words, for the share sheet and the list of saves: "Moon, 2 Oct 2026". */
+  private sceneWords(short = false): string {
+    const sel = this.selection, day = dayWords(this.clock.jdTdb, short);
+    return sel ? `${sel.name}, ${day}` : day;
+  }
+
   /** Share: the link to the scene, by the system's share sheet on a phone, copied at a desk. */
   async share(): Promise<void> {
-    const sel = this.selection, url = this.sceneLink();
-    const what = sel ? `${sel.name}, ${dayWords(this.clock.jdTdb)}` : dayWords(this.clock.jdTdb);
-    const how = await handOn({ url, title: PRODUCT_NAME, text: `${what}, in ${PRODUCT_NAME}` }, this.input.touch || this.hud.touchFirst);
+    const url = this.sceneLink();
+    const how = await handOn({ url, title: PRODUCT_NAME, text: `${this.sceneWords()}, in ${PRODUCT_NAME}${this.physics.on ? ' (changed with live physics)' : ''}` }, this.input.touch || this.hud.touchFirst);
     if (how === 'copied') this.hud.toast('Link copied');
     else if (how === 'shared') this.hud.toast('Shared');
     else if (how === 'failed') this.hud.toast('The link could not be shared here');
+  }
+
+  /** More, Save this scene: kept on this device, in the list under it. */
+  saveScene(): void {
+    const name = `${this.sceneWords(true)}${this.physics.on ? ', changed' : ''}`;
+    const how = saveScene(name, encodeLink(this.sceneView()), this.physics.on);
+    if (how === 'kept') this.hud.toast(`Saved: ${name}`);
+    else if (how === 'too many') this.hud.toast(`${SAVES_MOST} scenes are saved already: delete one to save another`, 4);
+    else if (how === 'full') this.hud.toast("Not saved: this browser's storage for the app is full. Deleting a saved scene makes room", 5);
+    else this.hud.toast('Not saved: this browser keeps nothing for the app (private browsing?). Share the link instead', 5);
+    this.showSaves();
+  }
+
+  /** The list of saved scenes, as More shows it. */
+  showSaves(): void {
+    this.hud.setSaves(savedScenes().map((s) => ({ id: s.id, name: s.name, detail: `Saved ${dayWords(utcToTdb(dateToJdUtc(new Date(s.saved))), true)}, ${new Date(s.saved).toISOString().slice(11, 16)} UTC${s.live ? ' · live physics' : ''}` })));
+  }
+
+  /** A saved scene opened, in place of the scene as it is (a changed universe is let go first, as by Back to reality, unwatched and not to be undone). */
+  async openSave(id: string): Promise<void> {
+    const fragment = savedFragment(id);
+    if (fragment === null) { this.hud.toast('That scene is not kept any more'); this.showSaves(); return; }
+    this.hud.closeSheet();
+    await this.openScene(fragment, 'save');
+  }
+
+  /** A saved scene forgotten. */
+  deleteSave(id: string): void {
+    deleteScene(id);
+    this.showSaves();
   }
 
   /** Something a link names, found: a body by its number, else anything by its name (the catalogue of real objects last; null if nothing). */
@@ -682,26 +735,63 @@ export class App {
     return Promise.race([cat.lookup(n.name).catch(() => null), late]);
   }
 
-  /**
-   * Open the scene a link holds (the part of the address after the '#'; '' for none): the date,
-   * the rate of time, the camera and the selection, and a short note of what it is. A link that is
-   * not one, is damaged, or names what is not here opens the app as usual and says so. The real
-   * universe stays real: nothing here switches on live physics.
-   */
+  /** Open the scene a link holds (the part of the address after the '#'; '' for none), and take it off the address. */
   async openFragment(fragment: string): Promise<void> {
     if (!fragment) return;
     forgetFragment();
+    await this.openScene(fragment, 'link');
+  }
+
+  /**
+   * Open a scene (a link's part after the '#', from a link or a save): the date, the rate of time,
+   * the camera and the selection, the changed universe if it holds one, and a short note of what it
+   * is. One that is not a scene, is damaged, or holds what this app cannot make again opens nothing
+   * and says so (the app as usual). The real universe stays real: only a changed universe written
+   * down switches on live physics, and then exactly as it was written.
+   */
+  private async openScene(fragment: string, from: 'link' | 'save'): Promise<void> {
+    const word = from === 'link' ? { bad: 'This link could not be opened', view: 'A shared view', scene: 'A shared scene' } : { bad: 'This saved scene could not be opened', view: 'A saved view', scene: 'A saved scene' };
+    const refuse = (why: string) => this.hud.notice(`${word.bad}: ${why}. Here is ${PRODUCT_NAME} as ${from === 'link' ? 'usual' : 'it was'}.`);
     const d = decodeLink(fragment);
-    if (!d.ok) { this.hud.notice(`This link could not be opened: ${d.why}. Here is ${PRODUCT_NAME} as usual.`); return; }
+    if (!d.ok) { refuse(d.why); return; }
     const v = d.view;
-    if (v.world) { this.hud.notice(`This link holds a changed universe, which this version cannot open yet. Here is ${PRODUCT_NAME} as usual.`); return; }
+    let world: LiveWorld | null = null;
+    if (v.world) {
+      const bytes = fromBase64Url(v.world);
+      try {
+        world = decodeWorld(bytes ?? bad('its changed universe could not be read'));
+      } catch (e) {
+        refuse(e instanceof WorldError ? e.message : 'its changed universe could not be read');
+        return;
+      }
+      if (Math.abs(world.jd0 + world.sim.time / DAY - v.jd) * DAY > 1) { refuse('its date and its changed universe do not agree'); return; }
+      // (the ephemeris of both dates: where the changes began, and where what rides on the simulation is now)
+      await Promise.all([this.system.ephemeris.request(world.jd0), this.system.ephemeris.request(world.jd0 + world.sim.time / DAY)]);
+    }
+    if (this.physics.on) this.leaveChanges();
+    if (world) {
+      try {
+        this.physics.adoptWorld(world, (m) => this.madeJson(m));
+      } catch (e) {
+        refuse(e instanceof WorldError ? e.message : 'its changed universe could not be made again');
+        return;
+      }
+      for (const m of world.made) this.madeEver = Math.max(this.madeEver, m.id - MADE_FIRST_ID + 1);
+      // (Back to reality goes to where the changes began, at real time)
+      this.begun = { jd: world.jd0, rate: { index: 0, sign: 1, rate: 1, paused: false }, present: false };
+      this.trails.clear();
+      this.bodies.changed();
+    }
+    const jd = this.physics.live ? liveDate(this.physics.live) : v.jd;
     const [at, selected] = await Promise.all([v.at ? this.find(v.at) : null, v.selected ? this.find(v.selected) : null]);
     const missing = [v.at && !at ? v.at.name : null, v.selected && !selected && v.selected.name !== v.at?.name ? v.selected.name : null].filter((x): x is string => !!x);
-    this.clock.jdTdb = v.jd;
+    this.clock.jdTdb = jd;
     this.setRate(v.rate);
     this.clock.paused = v.paused;
-    this.system.update(this.clock.jdTdb);
+    this.system.update(jd);
+    this.physics.place(jd);
     // (let go of what the camera rode with until now: it has moved with the date, and the camera must not follow it there)
+    this.rig.cancelGoto();
     this.rig.setAnchor(null);
     if (v.at && !at) {
       // (what the camera was at is not here: the view of what was selected, or of the Earth, as a plain link has it)
@@ -716,11 +806,39 @@ export class App {
       this.rig.fov = v.fov;
     }
     this.select(selected);
-    const when = `${dayWords(v.jd)}, ${isoOf(v.jd).slice(11, 16)} UTC`;
+    const when = `${dayWords(jd)}, ${isoOf(jd).slice(11, 16)} UTC`;
     const time = v.paused ? 'time paused' : v.rate === 1 ? 'time running' : `time at ${rateWords(v.rate)}${v.rate < 0 ? ', backwards' : ''}`;
     const what = selected ? the(selected.name) : at ? the(at.name) : 'open space';
     const lost = missing.length ? ` ${listed(missing.map((m) => `"${m}"`))} could not be found here.` : '';
-    this.hud.notice(`A shared view: ${what}, ${when}, ${time}.${lost}`);
+    const changed = world ? ` Changed with live physics since ${dayWords(world.jd0)}.` : '';
+    this.hud.notice(`${world ? word.scene : word.view}: ${what}, ${when}, ${time}.${changed}${lost}`);
+  }
+
+  /** A made world described again from a link or a save (src/app/WhatIf.ts: madeAgain): its look from what it is a copy of. */
+  private madeJson(m: MadeRecord): BodyJson {
+    const like = m.kind === 'moon' ? null : this.system.byId.get(TWIN_OF[m.kind]) ?? null;
+    return madeAgain(m, this.system.byId.get(m.home)!, like, like ? this.bodies.textureKey(like) : null);
+  }
+
+  /**
+   * The changed universe let go, before a saved scene is opened in its place: as Back to reality,
+   * but not watched, not told, and not to be undone (the save is the way back to it).
+   */
+  private leaveChanges(): void {
+    this.mover.stop();
+    this.run.end();
+    this.pending = null;
+    this.placement = null;
+    this.watch.clear();
+    this.glide = null;
+    this.replayFrom = null;
+    this.history.clear();
+    this.physics.backToReality(this.clock);
+    this.trails.clear();
+    this.forgetHits();
+    this.bodies.changed();
+    this.begun = null;
+    this.realAgain = 0;
   }
 
   /** Time at `rate` (simulated seconds a second): the steps of Faster and Slower carry on from the one at or below it. */
@@ -849,6 +967,7 @@ export class App {
       case 'photo': this.togglePhoto(); break;
       case 'screenshot': this.screenshot(); break;
       case 'share': void this.share(); break;
+      case 'save': this.saveScene(); break;
     }
   }
 

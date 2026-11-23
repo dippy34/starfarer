@@ -1,10 +1,12 @@
 import type { SimClock } from '../core/time';
 import { AU, DAY } from '../core/units';
-import { LEFT_OUT, NBody, type NBodySnapshot, type SimEvent } from '../sim/NBody';
+import { LEFT_OUT, NBody, type NBodyBodies, type NBodySnapshot, type SimEvent } from '../sim/NBody';
 import { apply, capture, type Live, liveDate, release, riders } from '../sim/SystemSim';
 import type { Body } from '../universe/Body';
 import type { BodyJson, Family, SolarSystem } from '../universe/SolarSystem';
 import { dayWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
+import { type LiveWorld, type MadeRecord, WORLD_LIMITS, WorldError } from './SceneWorld';
+import { type Kind, MADE_FIRST_ID } from './WhatIf';
 
 /**
  * Live physics: the Solar System under its own gravity, from the moment the explorer changes
@@ -447,6 +449,144 @@ export class LivePhysics {
     this.place(cp.jd);
   }
 
+  // ------------------------------------------------------------------ written down: a link, a save (src/app/SceneWorld.ts)
+
+  /**
+   * Live physics as a link or a save keeps it (null while the universe is the real one): the
+   * simulation settled now (as by a change: the run of equal steps ends here), what each simulated
+   * body stands for, what was made and taken away, the masses and sizes that are not the
+   * catalogue's, and the last `lines` lines of the log.
+   */
+  world(lines: number = WORLD_LIMITS.log): LiveWorld | null {
+    const live = this.live;
+    if (!live) return null;
+    const system = this.system;
+    const made: MadeRecord[] = this.made.map((b) => {
+      const as = b.meta.madeAs as { kind: Kind; kg: number; icy: boolean }, r = this.real.get(b);
+      return {
+        id: b.id, kind: as.kind, name: b.name, home: system.homeOf(b)!.id, icy: !!as.icy, kg: as.kg, gm: r?.gm ?? b.gm, radius: r?.radius ?? b.radius,
+        teff: as.kind === 'sun' ? b.teff : 0, absMag: as.kind === 'sun' ? b.absMag : 0,
+      };
+    });
+    const sim = live.sim.bodies();
+    return {
+      jd0: live.jd0, sim,
+      asBody: sim.ids.map((id, i) => { const b = system.byId.get(id); return b ? (sim.gm[i] === b.gm ? 1 : 0) | (sim.radius[i] === b.radius ? 2 : 0) : 0; }),
+      // (the families of simulated bodies only: one absorbed by another keeps its entry here, with nothing left to carry)
+      carried: [...live.carried].filter(([id]) => sim.ids.includes(id)).map(([id, family]) => [id, family.filter((m) => !system.isGone(m)).map((m) => m.id)]),
+      made, gone: system.bodies.filter((b) => system.isGone(b)).map((b) => b.id),
+      changed: [...this.real].filter(([b, r]) => b.gm !== r.gm || b.radius !== r.radius).map(([b]) => [b.id, b.gm, b.radius]),
+      log: this.log.slice(-lines).map((e) => ({ ...e })),
+    };
+  }
+
+  /**
+   * The simulation starts again from `w` (what `world` gave, as written down and read back): from
+   * here it runs exactly as one made from the same on another device does (`adoptWorld`), nothing
+   * else changed. What it is planned with next is planned afresh, as after any change.
+   */
+  rebase(w: LiveWorld): void {
+    const live = this.live;
+    if (!live) return;
+    const byId = (id: number) => this.system.byId.get(id)!;
+    (live as { sim: NBody }).sim = NBody.fromBodies(filled(w, (id) => byId(id).gm, (id) => byId(id).radius));
+    live.index.clear();
+    live.layout = -1;
+  }
+
+  /**
+   * Live physics from a link or a save (src/app/SceneWorld.ts), on the real universe as it is at
+   * the start (nothing changed yet): the worlds made again (`json` describes each as the catalogue
+   * would), those taken away taken away, the masses and sizes as they were, the simulation where it
+   * was, and the bodies put there. Everything is checked against the catalogue first, and nothing is
+   * changed unless all of it is right: throws WorldError (in a few plain words) otherwise.
+   */
+  adoptWorld(w: LiveWorld, json: (m: MadeRecord) => BodyJson): void {
+    const system = this.system;
+    if (this.live || this.made.length) bad('the universe here has been changed already');
+    // what each number names: a body of the catalogue, or a world to be made
+    const made = new Map<number, MadeRecord>();
+    const kindOf = (id: number): string | null => {
+      const m = made.get(id);
+      if (m) return m.kind === 'moon' ? 'moon' : m.kind === 'sun' ? 'star' : 'planet';
+      return system.byId.get(id)?.kind ?? null;
+    };
+    for (const m of w.made) {
+      if (m.id < MADE_FIRST_ID || made.has(m.id) || system.byId.has(m.id)) bad('a world made in it is numbered twice');
+      const home = kindOf(m.home);
+      // (made for what it could be made for: a moon for a planet or a dwarf planet, the rest for a star)
+      const fits = m.kind === 'moon' ? home === 'planet' || home === 'dwarf' : home === 'star';
+      if (!fits) bad('a world made in it was made for something it cannot be made for');
+      made.set(m.id, m);
+    }
+    const exists = (id: number) => made.has(id) || system.byId.has(id);
+    const gone = new Set<number>();
+    for (const id of w.gone) {
+      if (!exists(id) || gone.has(id)) bad('it takes away a body that is not here');
+      gone.add(id);
+    }
+    const simulated = new Set(w.sim.ids);
+    for (const id of simulated) if (!exists(id) || gone.has(id)) bad('its simulation has a body that is not here');
+    for (const id of made.keys()) if (!gone.has(id) && !simulated.has(id)) bad('a world made in it is not in its simulation');
+    const carried = new Set<number>();
+    for (const [id, moons] of w.carried) {
+      if (!simulated.has(id) || system.byId.get(id) === undefined) bad('it has a family of moons for a body that is not simulated');
+      for (const mid of moons) {
+        const m = system.byId.get(mid);
+        if (!m || m.kind !== 'moon' || !(m.gm > 0) || system.homeOf(m)?.id !== id || simulated.has(mid) || gone.has(mid) || carried.has(mid)) bad('it has a moon in a family it is not of');
+        carried.add(mid);
+      }
+    }
+    const changed = new Set<number>();
+    for (const [id] of w.changed) {
+      if (!exists(id) || changed.has(id)) bad('it changes a body that is not here');
+      changed.add(id);
+    }
+    if (w.asBody.length !== w.sim.ids.length) bad('its simulation could not be read');
+    // the masses and sizes the simulation has as the bodies have them: the catalogue's, a made world's, or as changed
+    const gmOf = (id: number) => made.get(id)?.gm ?? system.byId.get(id)!.gm, radiusOf = (id: number) => made.get(id)?.radius ?? system.byId.get(id)!.radius;
+    const newly = new Map(w.changed.map(([id, gm, radius]) => [id, { gm, radius }]));
+    let sim: NBody;
+    try {
+      sim = NBody.fromBodies(filled(w, (id) => newly.get(id)?.gm ?? gmOf(id), (id) => newly.get(id)?.radius ?? radiusOf(id)));
+    } catch {
+      return bad('its simulation could not be read');
+    }
+    // all of it is right: the universe is changed as it says
+    for (const m of w.made) {
+      const b = system.add(json(m)), k = m.radius / b.radius;
+      b.gm = b.systemGm = m.gm;
+      b.radii = [k * b.radii[0], k * b.radii[1], k * b.radii[2]];
+      b.radius = m.radius;
+      if (m.kind === 'sun') { b.teff = m.teff; b.absMag = m.absMag; }
+      this.made.push(b);
+    }
+    for (const id of gone) system.setGone(system.byId.get(id)!, true);
+    for (const [id, gm, radius] of w.changed) {
+      const b = system.byId.get(id)!, k = radius / b.radius;
+      this.keep(b);
+      b.systemGm += gm - b.gm;
+      b.gm = gm;
+      b.radii = [k * b.radii[0], k * b.radii[1], k * b.radii[2]];
+      b.radius = radius;
+    }
+    const live: Live = {
+      sim, jd0: w.jd0, carried: new Map(w.carried.map(([id, moons]) => [id, moons.map((m) => system.byId.get(m)!)])),
+      index: new Map(), layout: -1, shift: new Float64Array(0),
+    };
+    this.live = live;
+    this.log.splice(0, this.log.length, ...w.log.map((e) => ({ ...e })));
+    this.news = [];
+    this.hits = [];
+    this.changes = Math.max(this.changes, 1);
+    this.share = 1;
+    this.rate = this.slowFor = this.stage = 0;
+    this.cross = sim.railsCross;
+    const jd = liveDate(live);
+    system.update(jd);
+    this.place(jd);
+  }
+
   // ------------------------------------------------------------------ telling
 
   /** What to show of the simulation as a whole. */
@@ -648,6 +788,16 @@ export class LivePhysics {
 }
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const bad = (why: string): never => { throw new WorldError(why); };
+/** The simulation's bodies of a world written down, with the masses and sizes it has as the bodies have them (LiveWorld.asBody) filled in from `gm` and `radius`. */
+function filled(w: LiveWorld, gm: (id: number) => number, radius: (id: number) => number): NBodyBodies {
+  const out = { ...w.sim, gm: [...w.sim.gm], radius: [...w.sim.radius] };
+  w.sim.ids.forEach((id, i) => {
+    if (w.asBody[i] & 1) out.gm[i] = gm(id);
+    if (w.asBody[i] & 2) out.radius[i] = radius(id);
+  });
+  return out;
+}
 /** Does `m` go round `b`, directly or as a moon of something that does? */
 export function goesRound(m: Body, b: Body): boolean {
   for (let p = m.parent; p; p = p.parent) if (p === b) return true;

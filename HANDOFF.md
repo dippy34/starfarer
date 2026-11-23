@@ -1097,6 +1097,116 @@ saves on this device and the link's preview.
   the rate and the pause, no live physics, the note, the address cleaned; time running at a day a
   second (the link holds the moment it was shared); a phone's link opened at a desk; a damaged
   link, a newer one, something that is not a link, one naming what is not here.
+  On GitHub's runners, the full set at 95884a2 (run 45206153137): share 45/45, start 34, touch 99,
+  whatif 35, stars 18, places 16, vr 32, terrain 15, game 21, verify (35 scenes), exposure 79,
+  walk 32 + 52 + 14; flight-phone failed "How to move first in More" (Share had been put first:
+  it is now second, 68982f7). The other failures there are the commit before's too, run on it
+  (runs 45211759470, 45216536036, 45230593811): ship's two sideways checks, flight's arrival at
+  the star and gentle drop, live's month of the Moon left on a circle (2.70 against about 2.8,
+  both kinds there), interact (fixed upstream since, 1c71b73), and flight-phone's "names looked
+  at" floor (50, needs more than 50: 50 on the commit before too). `--old df8abcf`: share fails
+  (run 45206153424).
+
+### Part 2: a changed universe, saves on this device, the link's preview (done)
+
+- *What a link holds of a changed universe* (`w=`, `src/app/SceneWorld.ts`; `LivePhysics.world` and
+  `adoptWorld`). Everything by number, never by reference: the simulation settled at that moment
+  (`NBody.bodies`: each simulated body's number, G×mass, radius, bulge and pole, whether it was told
+  leaving, what it was last told to go round, place and velocity, as float64, to the last bit;
+  the step's settings), the moons each simulated planet stands for, the worlds made (kind, name,
+  what for, mass and size as made, a sun's colour and light), the bodies taken away, the masses and
+  sizes that are not the catalogue's, the date the real universe was left (Back to reality goes
+  there, at real time) and the last 12 lines of the log. What rides on the simulation (light
+  moons, the belt) follows from the catalogue at the date, as it does on the sender's device.
+- Decided: the internal snapshot (`NBody.snapshot`, which Undo and the look ahead use) is not what
+  a link carries. It is the whole working state, hierarchy and indices included: 19 KB for 38
+  bodies, and a stranger's link could hand it indices that loop or point outside its arrays. A
+  link carries the bodies alone, and the plan of the steps is made again from them, as after any
+  change (`NBody.fromBodies`, which checks every list's length, every number's range, that no
+  number is used twice and that what a body goes round is there).
+- Decided: *sharing starts the sender's simulation again from what the link holds*
+  (`LivePhysics.rebase`, in `App.sceneView`; a save does the same). A settled simulation that goes
+  on keeps its old hierarchy and step; one made from the link plans afresh. Started again from the
+  same bodies, the two run the same numbers: on the same browser engine the scene goes on bit for
+  bit as on the sender's (`tests/sceneworld.test.ts`; `share.mjs` compares every simulated body to
+  the bit). It disturbs nothing the sender sees (a change does the same each time).
+- *"The same on their device"*, honestly. Arithmetic and `Math.sqrt` are exact in every browser
+  (IEEE 754); `Math.sin/cos/pow/cbrt/hypot/log2` are not specified to the last bit, and Safari's
+  JavaScriptCore and Chrome's V8 can differ there. The simulation uses `hypot`, `cbrt`, `pow` and
+  `log2` in choosing its step and hierarchy, the ephemeris of the moons on mean elements uses
+  `sin`/`cos`, and the look ahead's words round numbers. So: the link's numbers arrive exactly
+  (float64, not decimal); the card's prediction on another engine starts from the same bits; and
+  a difference in the last bit of a step's length or a moon's place grows with the run. For what
+  the card says ("it hits Earth in 1.6 days", "in 2031 it is Jupiter's") that is far below the
+  rounding of the words; over thousands of simulated years in a crowded system the details drift
+  apart, as two runs of a chaotic system do. One more, found by the unit test: run frame by frame,
+  what live physics carries on rails depends on each device's frame time (`LivePhysics.follow`),
+  so even on one engine two devices running at different speeds differ a little over a long run
+  (Mars still hits the Earth, told in the same words, the Earth within 1 km after 30 days). Not
+  done: a fixed rails schedule for shared scenes, which would make long runs agree too.
+- *Size, measured* (`tests/sceneworld.test.ts`, "measured"; the link with a 210-character view):
+
+  | scene | bodies | bytes | deflated | link |
+  |---|---|---|---|---|
+  | the Moon thrown | 38 | 2,429 | 2,265 | 3,413 |
+  | Earth 2 added | 39 | 2,482 | 2,314 | 3,484 |
+  | Mars sent at the Earth | 38 | 2,366 | 2,204 | 3,329 |
+  | 50 years after Jupiter ×10 (every moon of Jupiter simulated) | 142 | 8,367 | 6,995 | 11,330 |
+
+  What decided it: doubles of positions and velocities do not compress (deflate saves 7 % on a
+  typical scene, 16 % on the big one; storing the doubles byte plane by byte plane, which is kept,
+  is what gets deflate even that far: 3 % more than in place). The masses and radii that are the
+  catalogue's are not written (both ends have the same catalogue, the same bits): 2,997 → 2,429
+  bytes on the first scene, a fifth. Decided against compression: CompressionStream is async, and
+  an await between the tap and `navigator.share` risks Safari refusing the share sheet (it needs
+  the tap's activation); it also needs Safari 16.4 to open a link at all, and brings a
+  decompression bomb to guard against. Without it a link is at most 4/3 of 48 KB of bytes
+  (`LINK_MOST`), read in one linear pass. Decided against rounding the doubles: it would change the
+  sender's scene (by millimetres) and save at most a third. base64url (no padding): safe in a link
+  as it is. What fits: a typical changed scene, 3.3-3.5 KB, goes whole through iMessage,
+  WhatsApp, Signal, Telegram (4,096 characters a message), Slack and e-mail; not Discord's 2,000
+  without Nitro. The 50-year scene (11 KB) goes through iMessage, WhatsApp, Slack and e-mail, not
+  Telegram. No shortener or paste site (the site is static, and nothing leaves the device).
+- *Checked on the way in* (a link is written by a stranger): every count capped before anything
+  is made for it (1,024 bodies, 64 families of 256, 24 made, 12 lines of 400 characters, names of
+  40), every double finite and in range (G×mass up to 10⁴ Suns, sizes up to 70 AU, places within
+  10⁵ light years, speeds under light's, dates within 10⁸ years), names of made worlds plain text
+  (letters, digits, spaces, `' ’ . -`), lines of the log without control characters or `<>`,
+  nothing left over. Then against the catalogue (`adoptWorld`), before anything is changed: every
+  number names a body there or a world made in the link, made for what it can be made for (a moon
+  for a planet, the rest for a star), a moon carried only by its own planet, a made world either
+  simulated or taken away, the date of the view and of the simulation within a second. Any
+  failure: nothing changes, and the note says why. Names are shown as text everywhere they go
+  (the HUD uses `textContent` or escapes; the ship's read-out, which put a landed-on world's name
+  into its markup, now escapes it).
+- *Opening one* (`App.openScene`): the ephemeris of both dates fetched first, the universe made
+  again, then the view as in Part 1 (what it names is found after the made worlds exist), and the
+  note: "A shared scene: Mars, 1 October 2026, 20:00 UTC, time paused. Changed with live physics
+  since 1 October 2026." No Undo history comes with it; Back to reality goes to where the changes
+  began.
+- *Saves on this device* (`src/app/Saves.ts`; More: "Save this scene" under Share, and the list
+  under it, newest first, at most 20). A save is the link's fragment, kept under its own key with
+  an index of names and dates ("Jupiter, 1 Oct 2026, changed" / "Saved 23 Nov 2026, 15:40 UTC ·
+  live physics"), so it opens exactly as its link would; opened, the changed universe there is let
+  go first (as Back to reality, unwatched and not undoable). Delete asks once ("Delete?"). Full
+  storage: "Not saved: this browser's storage for the app is full. Deleting a saved scene makes
+  room"; storage that keeps nothing (an older Safari's private browsing, storage off): "Not saved:
+  this browser keeps nothing for the app (private browsing?). Share the link instead." Today's
+  Safari private browsing keeps saves until its tab closes: nothing to detect, and nothing lost
+  that the explorer did not choose to lose. `keep`/`forget` in `src/platform/storage.ts`.
+- *The link's preview* (index.html). Open Graph and X's card: title "Starfarer: the real
+  universe, to scale", a description, `og:url`, `og:image` (1200×630, `public/og-image.png`) with
+  its size, type and alt text, `twitter:card` summary_large_image. The picture is the app's own
+  view, captured from it by `scripts/og-image.mjs` (Saturn in June 2017, its rings open, in photo
+  mode with the orbit lines off), not drawn or generated. og:image and og:url must be absolute:
+  `%SITE_URL%` in index.html is put in by `vite.config.ts` (`SITE_URL`, default
+  https://dippy34.github.io/starfarer/; if the hosting moves, change it there or build with
+  `SITE_URL=` set). A preview is fetched without the fragment, so every shared scene shows this
+  one picture (a picture per scene needs a server).
+- Left for later: the ship and walking (a link opens the scene in explore mode: a link made in
+  the ship or on foot puts the camera where it was, not the ship or the walker); a link's own
+  preview picture; the long-run agreement above; compression in a later form of `w` if links must
+  get shorter (the byte planes are ready for it).
 
 ## Next
 
