@@ -1511,6 +1511,21 @@ above is validated against JPL Horizons and stays as it is unless something is w
        a phone) is all there is of it; farther out the galaxy is drawn per pixel. Finer faces
        would cost four times the drawing and the memory. `tests/galaxyglow.test.ts`;
        `scripts/exposure.mjs` (scene `glow-out`; 78 checks).
+     - *Walking on the Moon, star names stood on the ground* (Polaris and Scheat on the ground and
+       Alderamin on the horizon, at the Apollo 17 site, on a sideways phone). Not the mean sphere:
+       the ground's occluder already had the radius of the ground under the walker. Its test let a
+       world's limb off by a quarter of a percent of its radius (`radius² × 0.995`, so that names
+       just over a limb stay), which on the Moon is 4.3 km: names down to some 4 degrees under the
+       horizon stood. And the valley's walls, the massifs round Taurus-Littrow, hid nothing: the
+       sphere through the ground under the walker is flat country. Low over the landing terrain
+       (under 2 km), a name is now hidden where the ground really stands along its bearing
+       (`PlanetTerrain.horizonAt`: the ground followed out 48 steps from 2 m to past where the
+       horizon would be over ground 10 km lower, the water where there is water; kept by bearing,
+       a degree wide, until the walker has moved 5 m), with a tenth of a degree of leeway, and no
+       limb allowance for the ground (`App.occluded`). From a summit the land falls away, and the
+       names over it stay. `scripts/interact.mjs`: walking at the Apollo 17 site, in Valles
+       Marineris and on Everest, each star's line of sight followed over the ground: no name over
+       the ground, none lost over the sky, and at the Apollo 17 site names just over the massifs.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
