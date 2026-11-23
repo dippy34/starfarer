@@ -12,10 +12,13 @@ No SpaceEngine files, textures or data are used.
 | **HYG v4.4**, David Nash / astronexus — <https://codeberg.org/astronexus/hyg> | Hipparcos-based V magnitudes and B−V for AT-HYG stars whose Tycho photometry saturates | **CC BY-SA 4.0** | merged into `public/data/stars/` |
 | **Gaia DR3**, ESA/Gaia/DPAC — queried via the ESA Gaia Archive TAP service <https://gea.esac.esa.int/tap-server/tap> | 218,626 additional stars within 100 pc (parallax > 10 mas, parallax/error > 10, RUWE < 1.4) not in AT-HYG | **CC BY-NC 3.0 IGO** (non-commercial) — <https://www.cosmos.esa.int/web/gaia-users/license> | `public/data/stars-gaia/` (kept separate; disable with `?gaia=0`) |
 | **Gaia DR3 and DR2 parallaxes**, ESA/Gaia/DPAC — the ESA Gaia Archive TAP service (`gaiadr3.gaia_source`; for AT-HYG's DR2 distances `gaiadr2.gaia_source` through `gaiadr3.dr2_neighbourhood`), joined on the Gaia source ids AT-HYG gives; which parallax each distance came from: AT-HYG's `dist_src` | how far each AT-HYG star's distance can be trusted: its parallax over its error (good at 5 or more), and for the 20,860 poor ones the parallax and its error, shown on the star's card (`pipeline/fetch_distance_parallaxes.py`, `pipeline/build_distance_quality.py`) | **CC BY-NC 3.0 IGO** (non-commercial) | `public/data/stars-quality/` (kept separate; not used with `?gaia=0`) |
+| **Gaia DR3 hot-star temperatures** (ESP-HS), ESA/Gaia/DPAC — the ESA Gaia Archive TAP service (`gaiadr3.astrophysical_parameters`: `teff_esphs`, `spectraltype_esphs`, `flags_esphs`), joined on the Gaia source ids AT-HYG gives | the temperatures of 97,094 AT-HYG stars ESP-HS is sure are O or B (`flags_esphs` second digit 1 or 2) that have no spectral type of their own or one their colour does not bear out; compared with the spectral-type temperatures of 19,569 others (`pipeline/fetch_star_teff_gaia.py`, `pipeline/build_star_teff.py`) | **CC BY-NC 3.0 IGO** (non-commercial) | `public/data/stars-teff-gaia/` (kept separate; not used with `?gaia=0`) |
 
 The derived star tiles in `public/data/stars/` are an adaptation of AT-HYG/HYG and are shared under
-CC BY-SA 4.0. The tiles in `public/data/stars-gaia/` and the distance grades in
-`public/data/stars-quality/` are adaptations of Gaia DR3 (and DR2) and may only be used
+CC BY-SA 4.0 (their temperatures, and `public/data/stars/t/`, from AT-HYG's own types and colours
+and the published scales below: no Gaia numbers). The tiles in `public/data/stars-gaia/`, the
+distance grades in `public/data/stars-quality/` and the temperatures in
+`public/data/stars-teff-gaia/` are adaptations of Gaia DR3 (and DR2) and may only be used
 non-commercially.
 
 Required Gaia acknowledgement: *This work has made use of data from the European Space Agency (ESA)
@@ -203,6 +206,24 @@ measured directly (interferometry) are used where they exist:
 * Arcturus: Ramírez & Allende Prieto 2011, *ApJ* 743, 135
 * Aldebaran: Richichi & Roccatagliata 2005, *A&A* 433, 305
 * Betelgeuse: Joyce et al. 2020, *ApJ* 902, 63 (764 R☉, at their distance of 168 pc)
+
+**Star temperatures** (`pipeline/build_star_teff.py`, `pipeline/teff_scales.json`). A catalogue star's
+temperature is from its B−V colour (Ballesteros 2012, *EPL* 97, 34008) where the colour can tell it;
+for the O and B stars, whose colour hardly changes with temperature, and for stars reddened by dust,
+it is from the spectral type AT-HYG gives, on these published scales (copied, not fitted, into
+`pipeline/teff_scales.json` by `pipeline/build_teff_scales.py`; the downloads then deleted):
+
+* dwarfs (and stars with no luminosity class): E. Mamajek's online table "A Modern Mean Dwarf
+  Stellar Color and Effective Temperature Sequence", version 2022.04.16 (Pecaut & Mamajek 2013,
+  *ApJS* 208, 9) — temperature, M_V and B−V by type; its B−V also gives the type a colour stands for
+* O giants and supergiants: Martins, Schaerer & Hillier 2005, *A&A* 436, 1049, their observational
+  scale (tables for luminosity classes III and I), from the paper's source files on arXiv
+  (astro-ph/0503346)
+* early B supergiants (O9.7 to B3): Crowther, Lennon & Walborn 2006, *A&A* 446, 279, the mean of
+  their galactic temperature scale for B Ia and Iab supergiants, from the paper's source files on
+  arXiv (astro-ph/0509436)
+* the dust's extinction for a reddening, A_V = 3.1 E(B−V): Cardelli, Clayton & Mathis 1989, *ApJ*
+  345, 245
 
 ## Black holes (`public/data/blackholes.json`, `pipeline/build_blackholes.py`)
 

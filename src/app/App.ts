@@ -369,6 +369,15 @@ export class App {
     ]).then(([a, g]) => {
       // (how far each star's distance can be trusted: Gaia's parallaxes, so only with Gaia's data)
       if (useGaia) a.qualityBase = `${DATA}/stars-quality`;
+      // (where each star's temperature comes from: the catalogue's own)
+      a.teffBase = `${DATA}/stars`;
+      return [a, g] as const;
+    }).then(async ([a, g]) => {
+      // (Gaia's temperatures of hot stars the catalogue's colour and type cannot tell: only with Gaia's data)
+      if (useGaia) {
+        const idx = await without('Gaia temperatures', json<{ nodes: number[] }>(`${DATA}/stars-teff-gaia/index.json`), null);
+        if (idx) a.gaiaTeff = { base: `${DATA}/stars-teff-gaia`, nodes: new Set(idx.nodes) };
+      }
       return [a, g] as const;
     }), ([a, g]) => count(a.totalStars + (g?.totalStars ?? 0), 'star'));
     const names = progress.run('named', NamedStars.load(`${DATA}/stars`), (n) => n.list.length.toLocaleString('en-US'));
@@ -1184,7 +1193,7 @@ export class App {
     if (obj !== this.mover.body) this.mover.stop();
     this.selection = obj;
     this.orbits.selected = obj instanceof Body ? obj : null;
-    if (obj instanceof CatalogStar) { obj.resolve(this.named, () => undefined); obj.gradeDistance(() => undefined); }
+    if (obj instanceof CatalogStar) { obj.resolve(this.named, () => undefined); obj.gradeDistance(() => undefined); obj.describeTemperature(() => undefined); }
   }
 
   // ------------------------------------------------------------------ what if (src/app/WhatIf.ts)
@@ -2223,6 +2232,8 @@ export class App {
         cs = new CatalogStar(key, nm!.pos.clone(), nm!.absMag, nm!.teff, nm!.spect, nm!.names, ref);
       }
       if (!nm) cs.resolve(this.named, () => undefined);
+      // (its temperature's source, and Gaia's temperature where that is used: before it is seen close)
+      cs.describeTemperature(() => undefined);
       this.starCache.set(key, cs);
     } else if (!cs.exact && n.state === 'ready') {
       // the name list's position (rounded, and from a different reduction) can be hundreds of AU
