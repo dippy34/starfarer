@@ -112,6 +112,9 @@ export class CameraRig {
     return aspect >= 1 ? 1 : Math.tan((this.fov * Math.PI) / 360) / (Math.tan((this.fovY * Math.PI) / 360) * aspect);
   }
 
+  /** where the optical centre stands from the middle of the view (CSS px; x right, y down): the renderer's `centre`, set by the app */
+  readonly centre = { x: 0, y: 0 };
+
   /** the angle one CSS pixel spans at the middle of the view (rad) */
   get pixelAngle(): number {
     return (2 * Math.tan((this.fovY * Math.PI) / 360)) / this.viewport.height;
@@ -121,7 +124,9 @@ export class CameraRig {
   ray(x: number, y: number, out = new Vector3()): Vector3 {
     const { width, height } = this.viewport;
     const t = Math.tan((this.fovY * Math.PI) / 360);
-    return out.set(((2 * x) / width - 1) * t * (width / height), (1 - (2 * y) / height) * t, -1).normalize().applyQuaternion(this.quat);
+    // (counted from the optical centre, which is `centre` off the middle of the view)
+    const px = x - this.centre.x, py = y - this.centre.y;
+    return out.set(((2 * px) / width - 1) * t * (width / height), (1 - (2 * py) / height) * t, -1).normalize().applyQuaternion(this.quat);
   }
 
   get autopilot(): boolean {

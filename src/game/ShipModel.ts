@@ -226,10 +226,14 @@ export class ShipModel {
   /**
    * Frame the ship for the chase view: `aspect` and vertical field (degrees) of the view; the camera
    * is the group's parent's origin. `turn`: how fast the ship turns (rad/s about its own x, y and z,
-   * smoothed): it leads the camera a little into the turn and banks with it.
+   * smoothed): it leads the camera a little into the turn and banks with it. `clear`: when the
+   * view's optical centre is the middle of the part of it the interface leaves clear (App's
+   * `centre`), that part's width and height as shares of the view's: the ship is framed as in a view
+   * of that size, at its centre.
    */
-  frameChase(aspect: number, fovY: number, turn?: Vector3): void {
-    const t = Math.tan((fovY * Math.PI) / 360);
+  frameChase(aspect: number, fovY: number, turn?: Vector3, clear?: { w: number; h: number }): void {
+    const t = Math.tan((fovY * Math.PI) / 360) * (clear?.h ?? 1);
+    aspect *= (clear?.w ?? 1) / (clear?.h ?? 1);
     const halfW = Math.atan(t * aspect);
     // how wide: the radiators' span takes 66 % of an upright screen's width, a third of a wide one's
     const wide = Math.min(1, Math.max(0, (aspect - 0.6) / 1.2));

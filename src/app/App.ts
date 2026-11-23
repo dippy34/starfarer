@@ -57,7 +57,7 @@ import { fmtLight, fmtTime, MAX_RATE, spinOf, WARP_STEPS } from '../game/Flight'
 import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
-import { adapt, diskLimit, diskMiddle, diskSeen, hidden, middleLimit, released, seen, TAU_STARS } from './Exposure';
+import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, TAU_STARS, type Frame } from './Exposure';
 import { canAdd, type Kind, MADE_FIRST_ID, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
 import { type LiveCheckpoint, LivePhysics } from './LivePhysics';
 import { Mover } from './Mover';
@@ -177,8 +177,16 @@ export class App {
   private starCache = new Map<string, CatalogStar>();
   private camPc = new Vector3();
   private invQuat = new Quaternion();
+  /**
+   * `invQuat` turned to the middle of the screen's window rather than the optical axis, for the
+   * exposure's frame (a symmetric one about the direction it is aimed along: src/app/Exposure.ts)
+   */
+  private meterInv = new Quaternion();
+  private meterView: Frame = { quat: new Quaternion(), fovY: 50, aspect: 1 };
+  /** where the optical centre is from the view's middle, eased towards the middle of what the interface leaves clear (CSS px) */
+  private centre = { x: 0, y: 0 };
   /** geometry of the current view (desktop camera or the headset's left eye) */
-  view: ViewInfo = { quat: new Quaternion(), fovY: 50, aspect: 1, width: 1, height: 1, pixelAngle: 1e-3, pixelRatio: 1, far: Infinity, xr: false };
+  view: ViewInfo = { quat: new Quaternion(), fovY: 50, aspect: 1, width: 1, height: 1, pixelAngle: 1e-3, pixelRatio: 1, cx: 0, cy: 0, far: Infinity, xr: false };
   vr!: VRSupport;
   sky!: SkyLayer;
   atmospheres!: AtmospheresLayer;
@@ -1229,7 +1237,9 @@ export class App {
   private frameOn(centre: Body, radius: number): void {
     if (this.vr.active) return;
     this.hud.makeRoom();
-    const v = viewFrame(this.hud.freeArea(), this.cssW, this.cssH, this.rig.fovY);
+    // (the optical centre it will have by the time the card and the panel are drawn: its target)
+    const at = this.vr.active || this.walk.active ? null : this.hud.clearPart();
+    const v = viewFrame(this.hud.freeArea(), this.cssW, this.cssH, this.rig.fovY, at?.x ?? 0, at?.y ?? 0);
     const d = frameDistance(Math.max(radius, 1.2 * centre.radius), v.halfX, v.halfY);
     if (this.rig.autopilot) this.rig.cancelGoto();
     // (a world taken away is a point to look at, nothing to turn round)
@@ -1674,14 +1684,41 @@ export class App {
 
   // ------------------------------------------------------------------ per-frame helpers
   /** camera-relative vector -> CSS pixel coordinates; null if behind the camera */
-  project(rel: Vector3): { x: number; y: number } | null {
+  project(rel: Vector3, fixed = false): { x: number; y: number } | null {
     const v = rel.clone().applyQuaternion(this.invQuat);
     if (v.z >= 0) return null;
+    // (counted from the optical centre, which is (cx, cy) off the middle of the view; `fixed`: as a
+    // thing hung on the screen is drawn, the cockpit's frame, which stays where it is when the centre moves)
     const t = Math.tan((this.view.fovY * Math.PI) / 360);
     const aspect = this.view.aspect;
     const nx = v.x / -v.z / (t * aspect);
     const ny = v.y / -v.z / t;
-    return { x: (nx * 0.5 + 0.5) * this.view.width, y: (-ny * 0.5 + 0.5) * this.view.height };
+    return { x: (nx * 0.5 + 0.5) * this.view.width + (fixed ? 0 : this.view.cx), y: (-ny * 0.5 + 0.5) * this.view.height + (fixed ? 0 : this.view.cy) };
+  }
+
+  /**
+   * Ease the optical centre (what is straight ahead, and what the camera holds the selected world
+   * at) to the middle of the part of the view the interface leaves clear (Hud.clearPart): about
+   * 0.3 s to settle. Not in a headset, nor on foot; upright and with the interface put away it is
+   * the middle.
+   */
+  private updateCentre(dt: number): void {
+    const want = this.vr.active || this.walk.active ? null : this.hud.clearPart();
+    const wx = want?.x ?? 0, wy = want?.y ?? 0, k = 1 - Math.exp(-dt / 0.1);
+    const c = this.centre;
+    c.x += (wx - c.x) * k;
+    c.y += (wy - c.y) * k;
+    if (Math.abs(wx - c.x) < 0.05) c.x = wx;
+    if (Math.abs(wy - c.y) < 0.05) c.y = wy;
+    this.rig.centre.x = c.x;
+    this.rig.centre.y = c.y;
+  }
+
+  /** `meterInv` and `meterView`: the screen's window as the exposure meters it (src/app/Exposure.ts) */
+  private meterInverse(): void {
+    const v = this.view;
+    meterFrame({ fovY: v.fovY, aspect: v.aspect, height: v.height, cx: v.xr ? 0 : v.cx, cy: v.xr ? 0 : v.cy }, this.invQuat, this.meterInv, this.meterView);
+    this.meterView.quat.copy(this.view.quat);
   }
 
   private chooseAnchor(): void {
@@ -2040,7 +2077,7 @@ export class App {
     const pixSA = (this.view.pixelAngle * this.view.pixelRatio) ** 2; // per CSS pixel
     const xDark = (0.01 * pixSA) / magToIrradiance(this.starMagLimit);
     const open = Math.log(xDark);
-    const look = (rel: Vector3, radius: number) => seen(rel, radius, this.view, this.seenScratch, this.invQuat);
+    const look = (rel: Vector3, radius: number) => seen(rel, radius, this.meterView, this.seenScratch, this.meterInv);
     // what the eye settles on: the bright thing covering most of the frame, its radiance, and the
     // display level a frame-filling one is shown at
     let wBest = 0, lBest = 1, keyBest = 0.45;
@@ -2126,7 +2163,7 @@ export class App {
       // else: so its light is steady, and only ever falls as the eye moves off. (Held by the
       // scene's exposure alone it was a ball of light as soon as it was small in the frame, and
       // swelled and shrank behind every move as the eye caught up.)
-      const middle = diskMiddle(hv.rel, hv.bh.diskNormal, 2 * peak, this.view, pixSA, this.seenScratch, this.invQuat);
+      const middle = diskMiddle(hv.rel, hv.bh.diskNormal, 2 * peak, this.meterView, pixSA, this.seenScratch, this.meterInv);
       hv.middle.radius = middle.radius;
       hv.middle.exposure = Math.exp(Math.min(open, middleLimit(middle, shown, hv.bh.diskInner, this.holes.radianceAt(hv.bh, peak), DISK_KEY, pixSA, open)));
       // A disk is brightest at its inner edge and fades outwards, and its centre is often out of
@@ -2140,7 +2177,7 @@ export class App {
       // Away from the hole the disk is flat, and from within its own radius it lies all round
       // the eye: whichever part of it is in the frame holds the exposure, from any side, and
       // is shown as a glowing surface, under the display's white.
-      const flat = diskSeen(hv.rel, hv.bh.diskNormal, hv.bh.diskInner, hv.bh.diskOuter, this.view, this.invQuat);
+      const flat = diskSeen(hv.rel, hv.bh.diskNormal, hv.bh.diskInner, hv.bh.diskOuter, this.meterView, this.meterInv);
       surfaceLimit = Math.min(surfaceLimit, diskLimit(flat, shown, 0.9 * (1 + DISK_GLARE * glare), open));
       const L = this.holes.radianceAt(hv.bh, nearest);
       const bright = look(hv.rel, Math.min(4 * nearest, hv.bh.diskOuter));
@@ -2696,6 +2733,7 @@ export class App {
     this.rig.altitude = this.computeAltitude();
     this.describeSurroundings();
     HITCH.lap('altitude');
+    this.updateCentre(dt);
     if (this.vr.active) this.vr.updateInput(dt);
     this.rig.braking = this.input.keys.has('KeyX');
     // walking (src/app/Walk.ts) owns the camera while on foot; otherwise free flight
@@ -2720,13 +2758,15 @@ export class App {
     PERF.lap('cam');
     const cam = this.renderer.camera;
     cam.fov = this.rig.fovY;
+    this.renderer.setCentre(this.centre.x, this.centre.y);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld(true);
     this.view = this.renderer.viewInfo();
     this.invQuat.copy(this.view.quat).invert();
+    this.meterInverse();
     // culling cone for per-object layers: the frame's corners plus a margin (more in a headset:
     // the second eye and head motion until the next frame)
-    VIEW_CONE.set(this.view.quat, this.view.fovY, this.view.aspect, this.view.xr ? 0.35 : 0.12);
+    VIEW_CONE.set(this.view.quat, this.view.fovY, this.view.aspect, this.view.xr ? 0.35 : 0.12, (2 * Math.abs(this.view.cx)) / this.view.height, (2 * Math.abs(this.view.cy)) / this.view.height);
     // Headset runtimes may clamp the far plane: pull distant geometry inside it, and fit log depth to it.
     // (not with reversed-Z in the headset: Renderer.reverseXrProjections drops the runtime's far plane)
     const finiteFar = this.view.xr && Number.isFinite(this.view.far) && this.renderer.depthMode !== 'reversed-z';
@@ -2751,7 +2791,7 @@ export class App {
     this.bodies.glarePresence = 0;
     if (chief) {
       chief.upos.sub(this.rig.upos, sunRel);
-      const sunSeen = seen(sunRel, chief.radius, this.view, this.seenScratch, this.invQuat);
+      const sunSeen = seen(sunRel, chief.radius, this.meterView, this.seenScratch, this.meterInv);
       // (no glare from a Sun behind a world: as the worlds stood a frame ago)
       this.bodies.glarePresence = sunSeen.presence * this.inSight(sunRel, chief.radius);
       // (the glare is a far-off Sun's: once its disk takes a twelfth of the frame's half-width it fades, gone by a third)

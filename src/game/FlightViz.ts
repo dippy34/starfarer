@@ -182,11 +182,15 @@ export class FlightViz {
   }
 
   /** Fit the quad to the camera's view (desktop) or a wide square (VR). */
-  fitScreen(cam: PerspectiveCamera, xr: boolean): void {
+  fitScreen(cam: PerspectiveCamera, xr: boolean, cx = 0, cy = 0): void {
     const d = 0.12;
     const h = 2 * d * Math.tan((cam.fov * Math.PI) / 360) * (xr ? 2.2 : 1.02);
     const w = h * (xr ? 1.2 : cam.aspect) * 1.02;
     this.screen.scale.set(w / 2, h / 2, 1);
+    // (when the optical centre is off the middle of the view, the window is off the camera's axis, by -cx and +cy pixels: the quad stays on the window)
+    const k = xr || !cam.view?.enabled ? 0 : (2 * d * Math.tan((cam.fov * Math.PI) / 360)) / cam.view.fullHeight;
+    this.screen.position.x = -cx * k;
+    this.screen.position.y = cy * k;
   }
 
   setEffects(vig: number, red: number, plasma: number, fade: number, fadeColor: [number, number, number], time: number): void {

@@ -15,11 +15,15 @@ export class ViewCone {
   /** off: everything is seen (before the first frame, and for tests) */
   enabled = false;
 
-  /** `fovY` degrees, `aspect` width/height, `marginRad` added to the corner half-angle. */
-  set(quat: Quaternion, fovY: number, aspect: number, marginRad: number): void {
+  /**
+   * `fovY` degrees, `aspect` width/height, `marginRad` added to the corner half-angle. `shiftX` and
+   * `shiftY`: how far the optical centre is off the view's middle, in half-heights of the view (the
+   * frame reaches that much farther on the side it is shifted from: the corners are the far ones).
+   */
+  set(quat: Quaternion, fovY: number, aspect: number, marginRad: number, shiftX = 0, shiftY = 0): void {
     this.dir.set(0, 0, -1).applyQuaternion(quat);
     const t = Math.tan((fovY * Math.PI) / 360);
-    const half = Math.atan(t * Math.sqrt(1 + aspect * aspect)) + marginRad;
+    const half = Math.atan(t * Math.hypot(aspect + shiftX, 1 + shiftY)) + marginRad;
     this.half = half;
     this.enabled = half < Math.PI;
   }

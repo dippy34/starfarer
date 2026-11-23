@@ -34,6 +34,12 @@ export interface ViewInfo {
   height: number;
   pixelAngle: number; // radians per pixel
   pixelRatio: number;
+  /**
+   * Where the optical centre (what is straight ahead) stands from the middle of the view, CSS px,
+   * x to the right and y down: the camera's `setViewOffset`, with the same scale. 0 in a headset.
+   */
+  cx: number;
+  cy: number;
   /** far plane of the active projection (Infinity if none) */
   far: number;
   xr: boolean;
@@ -277,6 +283,29 @@ ${OUTPUT_FRAGMENT}
     });
   }
 
+  /** where the optical centre is from the view's middle (CSS px, x right, y down): see `ViewInfo.cx` */
+  readonly centre = { x: 0, y: 0 };
+
+  /**
+   * Hold what is straight ahead at (`x`, `y`) from the middle of the view instead of at the middle,
+   * the field's size and the pixels' scale as they were: the frustum slides sideways. The
+   * projection matrix carries it, so everything drawn through the camera follows it; whatever
+   * works from a screen position (CameraRig.ray, App.project, the exposure's frame, the culling
+   * cone) is told by `ViewInfo`. Never in a headset.
+   */
+  setCentre(x: number, y: number): void {
+    const cam = this.camera;
+    if (this.presenting || (Math.abs(x) < 0.01 && Math.abs(y) < 0.01)) {
+      this.centre.x = 0;
+      this.centre.y = 0;
+      if (cam.view?.enabled) cam.clearViewOffset();
+      return;
+    }
+    this.centre.x = x;
+    this.centre.y = y;
+    cam.setViewOffset(this.cssW, this.cssH, -x, -y, this.cssW, this.cssH);
+  }
+
   setSize(cssWidth: number, cssHeight: number, dpr: number): void {
     if (this.presenting) return; // the headset owns the framebuffer size
     this.pixelRatio = dpr;
@@ -346,13 +375,13 @@ ${OUTPUT_FRAGMENT}
       eye.matrix.decompose(this._p, this.viewQuat, this._s);
       this.viewQuat.premultiply(this.rig.quaternion);
       return { quat: this.viewQuat, fovY, aspect: width / height, width, height, pixelAngle: 2 / (P[5] * height),
-        pixelRatio: 1, far: far > 0 ? far : Infinity, xr: true };
+        cx: 0, cy: 0, pixelRatio: 1, far: far > 0 ? far : Infinity, xr: true };
     }
     this.camera.getWorldQuaternion(this.viewQuat);
     // (render pixels per CSS pixel: the device's ratio times the internal resolution scale)
     const ratio = this.pixelRatio * this.renderScale;
     return { quat: this.viewQuat, fovY: this.camera.fov, aspect: this.camera.aspect, width: this.width / ratio,
-      height: this.height / ratio, pixelAngle: this.pixelAngle(), pixelRatio: ratio, far: Infinity, xr: false };
+      height: this.height / ratio, pixelAngle: this.pixelAngle(), pixelRatio: ratio, cx: this.centre.x, cy: this.centre.y, far: Infinity, xr: false };
   }
   /**
    * Run `fn` (shader compilation ahead of time) with the scene's render target bound: three builds

@@ -1,4 +1,4 @@
-import { type Quaternion, Vector3 } from 'three';
+import { Quaternion, Vector3 } from 'three';
 import { discCovered } from '../core/discs';
 
 /**
@@ -38,6 +38,43 @@ export interface Seen {
   halfFrame: number;
   /** angular radius of the source (rad) */
   size: number;
+}
+
+const _ahead = new Vector3(0, 0, -1), _window = new Vector3(), _turn = new Quaternion();
+
+/** A view as the exposure is told of it: its field and where its optical centre is off the screen's middle (CSS px, to the right and down). */
+export interface Shifted {
+  fovY: number;
+  aspect: number;
+  /** the screen's height (CSS px) */
+  height: number;
+  cx: number;
+  cy: number;
+}
+
+/**
+ * The frame is measured about the direction it is aimed along, with the same half-sizes on every
+ * side. When the view's optical centre is off the middle of the screen the screen's window is not:
+ * it reaches farther in angle on the side the centre is shifted from. So the window is measured
+ * from the middle of its own angles, with the half-sizes it has. `inverse`, the inverse of the
+ * view's orientation, is turned to look along that direction (into `outInverse`), and the field is
+ * given (in `outFrame`) as the window's half-angles make it, for `seen` and the others to meter
+ * the screen as it is, not a frame shifted off it. Nothing changes where the centre is the middle.
+ */
+export function meterFrame(view: Shifted, inverse: Quaternion, outInverse: Quaternion, outFrame: { fovY: number; aspect: number }): void {
+  outInverse.copy(inverse);
+  outFrame.fovY = view.fovY;
+  outFrame.aspect = view.aspect;
+  if (view.cx === 0 && view.cy === 0) return;
+  const ty = Math.tan((view.fovY * Math.PI) / 360), k = (2 * ty) / view.height, W = view.aspect * view.height, H = view.height;
+  // the angles from the optical axis to the window's right, left, top and bottom edges
+  const aR = Math.atan((W / 2 - view.cx) * k), aL = Math.atan((W / 2 + view.cx) * k);
+  const aU = Math.atan((H / 2 + view.cy) * k), aD = Math.atan((H / 2 - view.cy) * k);
+  const yaw = (aR - aL) / 2, pitch = (aU - aD) / 2, halfX = (aR + aL) / 2, halfY = (aU + aD) / 2;
+  _window.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+  outInverse.premultiply(_turn.setFromUnitVectors(_ahead, _window).invert());
+  outFrame.fovY = (2 * halfY * 180) / Math.PI;
+  outFrame.aspect = Math.tan(halfX) / Math.tan(halfY);
 }
 
 /** a source keeps its hold on the exposure until it is this share of the frame's half-size beyond the edge */

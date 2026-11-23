@@ -442,11 +442,14 @@ export interface Rect { left: number; top: number; right: number; bottom: number
  * framed when only `free` is clear of the interface: the direction of the middle of that part in
  * the camera's own axes (x to the right, y up, -z ahead: as CameraRig.ray has them), and the
  * angles (rad) from there to the nearer of its sides and to the nearer of its top and bottom.
+ * `cx`, `cy`: where the optical centre is from the middle of the view (CSS px, y down), if it is
+ * not the middle (the camera then looks along the direction that puts the subject at the free
+ * part's middle all the same: App's `centre`).
  */
-export function viewFrame(free: Rect, width: number, height: number, fovY: number): { dir: Triple; halfX: number; halfY: number } {
-  const t = Math.tan((fovY * Math.PI) / 360), aspect = width / height;
+export function viewFrame(free: Rect, width: number, height: number, fovY: number, cx = 0, cy = 0): { dir: Triple; halfX: number; halfY: number } {
+  const t = Math.tan((fovY * Math.PI) / 360), k = (2 * t) / height;
   const ray = (x: number, y: number): Triple => {
-    const v: Triple = [((2 * x) / width - 1) * t * aspect, (1 - (2 * y) / height) * t, -1], l = Math.hypot(v[0], v[1], v[2]);
+    const v: Triple = [(x - width / 2 - cx) * k, (height / 2 + cy - y) * k, -1], l = Math.hypot(v[0], v[1], v[2]);
     return [v[0] / l, v[1] / l, v[2] / l];
   };
   const angle = (p: Triple, q: Triple) => Math.acos(Math.min(1, p[0] * q[0] + p[1] * q[1] + p[2] * q[2]));

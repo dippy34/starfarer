@@ -447,6 +447,118 @@ const centreOf = async (page, sel) => {
   await ctx.close();
 }
 
+// ---------------------------------------------------------------- 5. sideways: the view's optical centre
+// On a phone on its side the view's optical centre (what is straight ahead, and where the camera holds
+// what is selected) is the middle of the part of the screen the interface leaves clear (App's `centre`,
+// Hud.clearPart; the camera's `setViewOffset`). Everything that works from a screen position has to
+// agree with what is drawn: where a world is on the screen, the ray under a finger, a tap picking it, its
+// name, the picture a screenshot saves, and a black hole's disk; and photo mode, which puts the
+// interface away, brings the centre back to the middle.
+{
+  const ctx = await phoneContext(browser, { landscape: true, scale: 1 });
+  const page = await open(ctx, '?menu=0&time=2026-10-01T20:00:00Z&target=Mars&dist=60');
+  await ready(page);
+  const f = await fingers(page);
+  await page.evaluate(() => { document.querySelector('.hud-coach [data-coach]')?.click(); });
+  await page.waitForFunction(() => Math.abs(window.app.view.cx) > 30 || Math.abs(window.app.view.cy) > 30, null, { timeout: 120000 });
+  await f.frames(20);
+  /** the mean light (0..255) of the screen's picture (the screenshot a player saves) in a square of `r` px about each point */
+  const lum = (pts) => page.evaluate(async (pts) => {
+    const img = new Image();
+    img.src = window.app.renderer.screenshot();
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const k = img.width / window.innerWidth;
+    return pts.map(([x, y, r]) => {
+      const d = g.getImageData(Math.max(0, Math.round((x - r) * k)), Math.max(0, Math.round((y - r) * k)), Math.max(1, Math.round(2 * r * k)), Math.max(1, Math.round(2 * r * k))).data;
+      let t = 0;
+      for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2];
+      return t / (d.length / 4) / 3;
+    });
+  }, pts);
+  const view = () => page.evaluate(() => {
+    const a = window.app, mars = a.findByName('Mars'), rel = mars.upos.sub(a.rig.upos);
+    const p = a.project(rel), covers = a.hud.covers();
+    const part = a.hud.clearPart?.();
+    const W = window.innerWidth, H = window.innerHeight;
+    // the ray under the optical centre is straight ahead, and under Mars's pixel it is the way to Mars
+    const ahead = a.rig.forward(), toMars = rel.clone().normalize();
+    const r1 = a.rig.ray(W / 2 + a.view.cx, H / 2 + a.view.cy), r2 = p ? a.rig.ray(p.x, p.y) : null;
+    // projecting what the ray under a pixel looks along comes back to the pixel
+    const back = [[40, 30], [700, 60], [300, 300], [W - 5, H - 5]].map(([x, y]) => { const q = a.project(a.rig.ray(x, y).multiplyScalar(1e9)); return q ? Math.hypot(q.x - x, q.y - y) : 1e9; });
+    return {
+      W, H, cx: a.view.cx, cy: a.view.cy, p, under: p ? covers.filter((c) => p.x >= c.l && p.x <= c.r && p.y >= c.t && p.y <= c.b).length : -1,
+      box: part && part.box, rig: { x: a.rig.centre.x, y: a.rig.centre.y },
+      aheadErr: r1.angleTo(ahead), marsErr: r2 ? r2.angleTo(toMars) : 1, backErr: Math.max(...back),
+      label: a.labels.shown.filter((s) => s.c?.key?.includes('499') || /Mars/.test(s.c?.name ?? '')).map((s) => ({ x: s.ox, y: s.oy })),
+    };
+  });
+  let v = await view();
+  check('sideways, a card open: the view\'s centre is off the middle, to the clear part (the camera\'s window, the rig\'s and the app\'s agree)',
+    Math.hypot(v.cx, v.cy) > 40 && v.rig.x === v.cx && v.rig.y === v.cy && !!v.box, JSON.stringify(v));
+  check('...Mars, selected and aimed at, is at the centre of that clear part: on the screen, under no part of the interface', !!v.p && v.p.x > 0 && v.p.x < v.W && v.p.y > 0 && v.p.y < v.H && v.under === 0
+    && v.p.x > v.box.l && v.p.x < v.box.r && v.p.y > v.box.t && v.p.y < v.box.b, JSON.stringify({ p: v.p, box: v.box, under: v.under }));
+  check('...the ray under the centre is straight ahead, the ray under Mars\'s pixel is the way to Mars, and the screen and the rays agree everywhere (under 0.05 px)',
+    v.aheadErr < 1e-6 && v.marsErr < 1e-5 && v.backErr < 0.05, JSON.stringify({ a: v.aheadErr, m: v.marsErr, b: v.backErr }));
+  // what is drawn: Mars's disc (7 px across) is lit where it is projected, and not where the screen's middle is
+  const mid = [v.W / 2, v.H / 2, 3];
+  let [onMars, atMiddle] = await lum([[v.p.x, v.p.y, 3], mid]);
+  check('...and Mars is drawn there (the screenshot is lit at its pixel, dark at the middle of the screen)', onMars > 30 && onMars > 3 * atMiddle, JSON.stringify({ onMars, atMiddle }));
+  check('...its name is laid by it', v.label.length > 0 && v.label.every((l) => Math.hypot(l.x - v.p.x, l.y - v.p.y) < 3), JSON.stringify({ label: v.label, p: v.p }));
+  await page.screenshot({ path: path.join(outDir, 'touch-13-sideways-centre.png'), timeout: 300000 });
+  // a tap on it picks it: another world selected, then a finger on Mars's pixel
+  await page.evaluate(() => { const a = window.app; a.select(a.findByName('Jupiter')); });
+  await f.frames(3);
+  const before = await page.evaluate(() => window.app.selection?.name);
+  await f.tap({ x: v.p.x, y: v.p.y });
+  const after = await page.evaluate(() => window.app.selection?.name);
+  check('a tap on Mars where it is drawn picks it', before === 'Jupiter' && after === 'Mars', JSON.stringify({ before, after }));
+  // photo mode puts the interface away: the centre is the middle again, and Mars is there; a tap brings it all back
+  await page.evaluate(() => window.app.act('photo'));
+  await page.waitForFunction(() => Math.abs(window.app.view.cx) < 1 && Math.abs(window.app.view.cy) < 1, null, { timeout: 60000 });
+  await f.frames(3);
+  const photo = await view();
+  [onMars, atMiddle] = await lum([[photo.p.x, photo.p.y, 3], [photo.W / 2 - 150, photo.H / 2 - 100, 3]]);
+  check('photo mode: the centre is the middle of the screen, and Mars is drawn where it is projected', photo.cx === 0 && photo.cy === 0 && Math.abs(photo.p.x - photo.W / 2) < 2 && onMars > 30 && onMars > 3 * atMiddle, JSON.stringify({ photo: photo.p, onMars, atMiddle }));
+  await page.evaluate(() => window.app.act('photo'));
+  await page.waitForFunction(() => Math.abs(window.app.view.cx) > 30 || Math.abs(window.app.view.cy) > 30, null, { timeout: 60000 });
+  const back = await page.evaluate(() => ({ cx: window.app.view.cx, cy: window.app.view.cy }));
+  check('...and leaving photo mode eases the centre back to the clear part', Math.abs(back.cx - v.cx) < 3 && Math.abs(back.cy - v.cy) < 3 || Math.hypot(back.cx, back.cy) > 30, JSON.stringify({ back, was: [v.cx, v.cy] }));
+  await page.close();
+
+  // a black hole: its disk is drawn where it is projected
+  const hole = await open(ctx, '?menu=0&time=2026-10-01T20:00:00Z&target=Cygnus%20X-1&dist=40');
+  await ready(hole);
+  await hole.evaluate(() => { document.querySelector('.hud-coach [data-coach]')?.click(); });
+  await hole.waitForFunction(() => Math.abs(window.app.view.cx) > 30 || Math.abs(window.app.view.cy) > 30, null, { timeout: 120000 });
+  const hf = await fingers(hole);
+  await hf.frames(30);
+  const h = await hole.evaluate(() => {
+    const a = window.app, e = a.selection, p = a.project(e.upos.sub(a.rig.upos)), W = window.innerWidth, H = window.innerHeight;
+    return { name: e?.name, p, W, H, cx: a.view.cx, cy: a.view.cy };
+  });
+  const lumH = await hole.evaluate(async (h) => {
+    const img = new Image();
+    img.src = window.app.renderer.screenshot();
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const k = img.width / window.innerWidth;
+    // the brightest 4 px square within 60 px of the projected centre, against the same where the middle of the screen is
+    const best = (x0, y0) => { let m = 0; for (let y = y0 - 60; y <= y0 + 60; y += 6) for (let x = x0 - 60; x <= x0 + 60; x += 6) { const d = g.getImageData(Math.round(Math.max(0, x) * k), Math.round(Math.max(0, y) * k), 4, 4).data; m = Math.max(m, (d[0] + d[1] + d[2]) / 3); } return m; };
+    return { at: best(h.p.x, h.p.y), middle: best(h.W / 2 - 130, h.H / 2 + 100) };
+  }, h);
+  check('a black hole\'s disk is drawn where it is projected, with the centre off the middle', Math.hypot(h.cx, h.cy) > 40 && lumH.at > 40 && lumH.at > 2 * lumH.middle, JSON.stringify({ h, lumH }));
+  await hole.screenshot({ path: path.join(outDir, 'touch-14-sideways-hole.png'), timeout: 300000 });
+  await hole.close();
+  await ctx.close();
+}
+
 console.log(errors.length ? `console errors:\n${errors.slice(0, 10).join('\n')}` : 'no console errors');
 check('no console errors', errors.length === 0);
 await browser.close();

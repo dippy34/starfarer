@@ -20,6 +20,8 @@ export class ShipArt {
   private lastQ = new Quaternion();
   private turn = new Vector3();
   private turnRaw = new Vector3();
+  /** the share of the view's width and height that the interface leaves clear, eased (for the chase view's framing) */
+  private clear = { w: 1, h: 1 };
 
   constructor(private app: App, private game: Game) {}
 
@@ -50,7 +52,11 @@ export class ShipArt {
     this.turn.lerp(this.turnRaw, 1 - Math.exp(-dt / 0.35));
     this.lastQ.copy(app.rig.quat);
     if (g.mode === 'chase') {
-      g.ship.frameChase(app.view.aspect, app.view.fovY, this.turn);
+      // (framed as in the part of the view the interface leaves clear, as the optical centre eases to its middle)
+      const part = app.hud.clearPart(), k = 1 - Math.exp(-dt / 0.1);
+      this.clear.w += ((part?.shifts ? Math.min(1, (part.box.r - part.box.l) / app.view.width) : 1) - this.clear.w) * k;
+      this.clear.h += ((part?.shifts ? Math.min(1, (part.box.b - part.box.t) / app.view.height) : 1) - this.clear.h) * k;
+      g.ship.frameChase(app.view.aspect, app.view.fovY, this.turn, this.clear);
       // its shadows from the star (none when the star is hidden: nothing to cast)
       if (SHIP_LIGHT.uSun.value > 0) {
         const geo = g.ship.hull.geometry;
@@ -73,7 +79,8 @@ export class ShipArt {
       let px = 0, py = 0, pr = 0, have = false;
       for (let i = 0; i < m.path.length; i += 2) {
         w.copy(m.path[i]).applyQuaternion(q);
-        const s = app.project(w);
+        // (the frame stays where it is on the screen when the optical centre moves: Game.holdCockpit)
+        const s = app.project(w, true);
         if (!s) { have = false; continue; }
         const r = m.half / w.length() / cssPixel + 1.5;
         if (have) VIEW_MASK.capsules.push({ ax: px, ay: py, bx: s.x, by: s.y, r: Math.max(pr, r) });
@@ -83,7 +90,7 @@ export class ShipArt {
     const edge: number[] = [];
     let first: { x: number; y: number } | null = null, last: { x: number; y: number } | null = null;
     for (const p of c.edge) {
-      const s = app.project(w.copy(p).applyQuaternion(q));
+      const s = app.project(w.copy(p).applyQuaternion(q), true);
       if (!s) continue;
       edge.push(s.x, s.y);
       first ??= s;

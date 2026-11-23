@@ -190,6 +190,7 @@ export class Game {
     // the screens stay dark there; the headset and the desk keep them)
     this.cockpit.setScreens(app.vr.active || !app.input.touch);
     this.cockpit.update(dt);
+    this.holdCockpit();
     if (this.mode === 'cockpit') this.updateHud();
   }
 
@@ -205,7 +206,7 @@ export class Game {
     this.viz.update(f.predictor, f.predictor.frame?.upos ?? null, app.rig.upos, app.view.quat, app.view.pixelAngle, !travelling && !!D, R);
     // (no tag of the orbit's under the interface's cards and chips, nor half off the screen)
     if (!app.vr.active) this.viz.clearOf(app.hud.covers(), (p) => app.project(p), app.view.width, app.view.height);
-    this.viz.fitScreen(app.renderer.camera, app.vr.active);
+    this.viz.fitScreen(app.renderer.camera, app.vr.active, app.view.cx, app.view.cy);
     // vignette from about 3 g (gentle: comfort in VR), red-out from tides
     const vig = Math.max(0, Math.min(1, (r.gForce - 3) / 7)) * (app.vr.active ? 0.6 : 1) + Math.min(0.6, r.tidal / (100 * G0));
     const plasma = Math.max(0, Math.min(1, Math.log10(Math.max(ship.heatFlux, 1) / 3e4) / 2));
@@ -228,27 +229,74 @@ export class Game {
   }
   private lastVrWarn = '';
 
+  /**
+   * The cockpit's frame and dashboard are part of the screen, not of the world: when the optical
+   * centre moves off the middle of the view (App.updateCentre) they stay where they are. A shear of
+   * the cockpit about the eye does it exactly: x -> x - a z, y -> y - b z moves every point's
+   * tangent-plane position by (a, b), as the shifted frustum moves the world's.
+   */
+  private holdCockpit(): void {
+    const g = this.cockpit.group, v = this.app.view;
+    const k = (2 * Math.tan((v.fovY * Math.PI) / 360)) / v.height;
+    const a = v.xr ? 0 : -v.cx * k, b = v.xr ? 0 : v.cy * k;
+    g.matrixAutoUpdate = false;
+    g.matrix.set(1, 0, -a, 0, 0, 1, -b, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+    g.matrixWorldNeedsUpdate = true;
+  }
+
   /** Canopy markers: target bracket, flight-path marker. */
   private updateHud(): void {
     const app = this.app, rig = app.rig;
     const inv = rig.quat.clone().invert();
     const sel = app.selection;
-    let tdir: Vector3 | null = null, text = '';
+    let tdir: Vector3 | null = null, text = '', pin: number | null | undefined;
     if (sel && !this.docked) {
       const rel = sel.upos.sub(rig.upos, new Vector3());
       const d = rel.length();
-      // (its bracket and distance, 96 x 72 CSS px about it, not under the interface nor off the screen)
+      // (its bracket and distance, 96 x 72 CSS px about it, not under the interface nor off the screen:
+      // otherwise pinned at the edge of the part of the view the interface leaves clear, pointing the way)
       const p = app.vr.active ? null : app.project(rel);
       const covers = app.hud.covers();
       const box = p && { l: p.x - 48, r: p.x + 48, t: p.y - 36, b: p.y + 44 };
       const clear = app.vr.active || (!!box && box.l >= 0 && box.t >= 0 && box.r <= app.view.width && box.b <= app.view.height
         && !covers.some((c) => box.l < c.r + 4 && box.r > c.l - 4 && box.t < c.b + 4 && box.b > c.t - 4));
-      tdir = clear ? rel.normalize().applyQuaternion(inv) : null;
+      if (clear) {
+        tdir = rel.normalize().applyQuaternion(inv);
+        if (!app.vr.active) pin = null;
+      } else {
+        const e = this.edgePin(rel.applyQuaternion(inv), p);
+        tdir = e.dir;
+        pin = e.arrow;
+      }
       text = `${sel.name}|${formatDistance(Math.max(0, d - sel.radius))}`;
     }
     const v = rig.vel;
     const vdir = v.lengthSq() > 1e-6 && rig.speed > 0.5 ? v.clone().normalize().applyQuaternion(inv) : null;
-    this.hud.update(tdir, text, vdir);
+    this.hud.update(tdir, text, vdir, pin);
+  }
+
+  /**
+   * Where the target's brackets go when they cannot be drawn on it (behind the ship, off the side,
+   * or under a card or a control): on the edge of the clear part of the view (Hud.clearPart; the
+   * whole view without one), as far from its middle as the brackets fit, on the side of the target:
+   * its own side of the screen, or the side it lies to when it is behind. `camRel`: the vector to it
+   * in the camera's axes, `p` where it is on the screen (null behind the camera). Returns the
+   * direction in the camera's axes that the point on the screen has, and the arrow's step.
+   */
+  private edgePin(camRel: Vector3, p: { x: number; y: number } | null): { dir: Vector3; arrow: number } {
+    const app = this.app, v = app.view, W = v.width, H = v.height;
+    const part = app.hud.clearPart()?.box ?? { l: 0, t: 0, r: W, b: H };
+    // (room for the brackets' 96 x 80 about the point, and the margin that markers keep)
+    const il = part.l + 52, ir = part.r - 52, it = part.t + 40, ib = part.b - 48;
+    const mx = il < ir ? (il + ir) / 2 : (part.l + part.r) / 2, my = it < ib ? (it + ib) / 2 : (part.t + part.b) / 2;
+    const hw = Math.max(0, (ir - il) / 2), hh = Math.max(0, (ib - it) / 2);
+    let dx = p ? p.x - mx : camRel.x, dy = p ? p.y - my : -camRel.y;
+    if (Math.hypot(dx, dy) < 1e-6) { dx = 0; dy = 1; }
+    const s = Math.min(Math.abs(dx) > 1e-9 ? hw / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-9 ? hh / Math.abs(dy) : Infinity);
+    const px = mx + dx * s, py = my + dy * s;
+    const k = (2 * Math.tan((v.fovY * Math.PI) / 360)) / H;
+    const dir = new Vector3((px - W / 2 - v.cx) * k, (H / 2 + v.cy - py) * k, -1).normalize();
+    return { dir, arrow: ((Math.round((Math.atan2(dy, dx) * 12) / Math.PI) % 24) + 24) % 24 };
   }
 
   /** Where a docked ship sits: 14 m in front of the port, on the hub axis. */

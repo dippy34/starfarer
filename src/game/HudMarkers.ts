@@ -76,13 +76,29 @@ export class HudMarkers {
   constructor() {
     // the brackets: four corners round a 34 px square, the distance under them
     this.target = new Marker(96, 72, (c, w, h, text) => {
-      const [, dist] = text.split('|');
+      const [, dist, step] = text.split('|');
       const s = 34, x0 = (w - s) / 2, y0 = 6, k = 8;
       stroked(c, CYAN, 1.6, () => {
         for (const [x, y, dx, dy] of [[x0, y0, 1, 1], [x0 + s, y0, -1, 1], [x0, y0 + s, 1, -1], [x0 + s, y0 + s, -1, -1]]) {
           c.moveTo(x + dx * k, y); c.lineTo(x, y); c.lineTo(x, y + dy * k);
         }
       });
+      // pinned at the edge of the clear part of the view: an arrow in the square, pointing the way to the target
+      if (step) {
+        const a = (Number(step) * Math.PI) / 12, ux = Math.cos(a), uy = Math.sin(a), cx = w / 2, cy = y0 + s / 2;
+        c.fillStyle = CYAN;
+        c.strokeStyle = SHADE;
+        c.lineWidth = 2.4;
+        c.lineJoin = 'round';
+        c.beginPath();
+        c.moveTo(cx + ux * 10, cy + uy * 10);
+        c.lineTo(cx - ux * 5 - uy * 7, cy - uy * 5 + ux * 7);
+        c.lineTo(cx - ux * 2, cy - uy * 2);
+        c.lineTo(cx - ux * 5 + uy * 7, cy - uy * 5 - ux * 7);
+        c.closePath();
+        c.stroke();
+        c.fill();
+      }
       c.font = '600 10.5px Inter, system-ui, sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
@@ -120,9 +136,13 @@ export class HudMarkers {
 
   /**
    * `targetDirRig`: unit direction to the target in rig-local axes (null = none); `velDirRig`:
-   * direction of motion (null when still). Text: "name|distance".
+   * direction of motion (null when still). Text: "name|distance". `pin`: undefined puts a target
+   * off to the side or behind at the edge of a symmetric view (a headset, which has no screen to
+   * measure on); null places the brackets on the direction as it is; a number places them there
+   * too, with an arrow in them pointing that way on the screen (in 15 degree steps, 0 to the
+   * right, clockwise): the game has put the direction at the edge of the clear part of the view.
    */
-  update(targetDirRig: Vector3 | null, text: string, velDirRig: Vector3 | null): void {
+  update(targetDirRig: Vector3 | null, text: string, velDirRig: Vector3 | null, pin?: number | null): void {
     const face = (m: Mesh, dir: Vector3) => {
       m.position.copy(dir).multiplyScalar(this.R);
       m.quaternion.copy(new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), dir.clone().negate()));
@@ -133,7 +153,7 @@ export class HudMarkers {
     if (targetDirRig) {
       // behind or far off to the side: pin to the edge of the view, pointing the way
       const d = targetDirRig.clone();
-      if (d.z > -0.35) {
+      if (pin === undefined && d.z > -0.35) {
         const side = new Vector3(d.x, d.y, 0);
         if (side.lengthSq() < 1e-6) side.set(0, -1, 0);
         side.normalize();
@@ -142,7 +162,7 @@ export class HudMarkers {
       face(this.target.mesh, d);
       // (the brackets' square is centred on the target: the quad's middle sits a little lower)
       this.target.mesh.translateY(-(this.target.h / 2 - 23) * this.cssPixel * this.R);
-      this.target.set(text);
+      this.target.set(typeof pin === 'number' ? `${text}|${pin}` : text);
     }
     this.flight.mesh.visible = !!velDirRig && velDirRig.z < -0.2;
     if (velDirRig && this.flight.mesh.visible) face(this.flight.mesh, velDirRig);

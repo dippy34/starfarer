@@ -1,4 +1,5 @@
 import { CATEGORIES, type Category, type Destination, type Picture } from '../app/destinations';
+import { type Box, isClear, largestClear, worth } from '../core/clearArea';
 import { touchFirst } from '../core/device';
 import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
 import { ICON } from './icons';
@@ -145,6 +146,13 @@ type Sheet = 'explore' | 'time' | 'more' | 'flight';
 const CARD_ROOM = 196;
 /** a watch is given at least this share of an upright view's height: an open panel of the card folds away for it (makeRoom) */
 const FOLD_BELOW = 0.4;
+/** the clear part of the view: room kept round each part of the interface (px, as markers keep it), the least size worth holding a marker, how wide a rectangle is worth against its height, how much better a new one must be to take over, and the farthest its middle may be from the view's (of the view's size) */
+const CLEAR_PAD = 4;
+const CLEAR_MIN_W = 112;
+const CLEAR_MIN_H = 96;
+const CLEAR_STAY = 1.25;
+const CLEAR_WIDE = 1.6;
+const CLEAR_SHIFT = 0.3;
 /** the keys a range input moves by (they are the mass slider's while it has the focus; the rest stay shortcuts) */
 const SLIDER_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 
@@ -481,6 +489,42 @@ export class Hud {
   }
   private coversAt = -1e9;
   private coverBoxes: readonly { l: number; t: number; r: number; b: number }[] = [];
+
+  /**
+   * The part of the view the interface leaves clear: the widest clear rectangle among the parts of
+   * the interface that cover the view (`covers`), room enough for a marker in it (null in photo mode,
+   * or where nothing is). One that has been chosen is kept until a clearly better one appears, so a
+   * chip growing a few pixels does not move anything. The edge pointer of the ship's target is
+   * pinned in it (src/game/Game.ts).
+   *
+   * And, on a phone held on its side, where its middle is from the middle of the view (`x`, `y`: CSS
+   * px, to the right and down): the camera holds what it is aimed at there (src/app/App.ts, `centre`),
+   * as a map app pads its view by the card that stands over it (`shifts`: that is so). Upright the
+   * middle is clear and the subject is lifted by `subjectLift`; with a mouse the view is as it was:
+   * 0, 0.
+   */
+  clearPart(): { box: Box; x: number; y: number; shifts: boolean } | null {
+    const boxes = this.covers();
+    if (boxes === this.clearFor) return this.clearNow;
+    this.clearFor = boxes;
+    const root = this.el.getBoundingClientRect();
+    const W = root.width, H = root.height;
+    let found: Box | null = null;
+    if (boxes.length > 0 && W > 0 && H > 0) {
+      found = largestClear(W, H, boxes, CLEAR_PAD, CLEAR_MIN_W, CLEAR_MIN_H, CLEAR_WIDE);
+      const was = this.clearBox;
+      if (found && was && isClear(was, boxes, CLEAR_PAD) && worth(found, CLEAR_WIDE) < CLEAR_STAY * worth(was, CLEAR_WIDE)) found = was;
+    }
+    this.clearBox = found;
+    const shifts = !!found && (this.coarse || !!this.state?.touch) && W > H && getComputedStyle(this.$('.hud-dock')).flexDirection !== 'column';
+    // (not so far off the middle that the view is stretched out of shape at its other side)
+    const x = found && shifts ? Math.max(-CLEAR_SHIFT * W, Math.min(CLEAR_SHIFT * W, (found.l + found.r) / 2 - W / 2)) : 0;
+    const y = found && shifts ? Math.max(-CLEAR_SHIFT * H, Math.min(CLEAR_SHIFT * H, (found.t + found.b) / 2 - H / 2)) : 0;
+    return (this.clearNow = found ? { box: found, x, y, shifts } : null);
+  }
+  private clearFor: readonly Box[] | null = null;
+  private clearBox: Box | null = null;
+  private clearNow: { box: Box; x: number; y: number; shifts: boolean } | null = null;
 
   /** where the ship's full read-out goes on a touch screen (src/game/FlightHud.ts fills it) */
   get flightBody(): HTMLElement {

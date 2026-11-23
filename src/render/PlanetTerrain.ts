@@ -187,7 +187,7 @@ export class PlanetTerrain {
   /** the Solar System's heights (render/Bodies.ts terrainSource), for building tiles in workers */
   source: TerrainSource | null = null;
   /** the view (App.view): direction and pixel size, for refinement */
-  view: { quat: Quaternion; pixelAngle: number; pixelRatio?: number; fovY?: number; aspect?: number } | null = null;
+  view: { quat: Quaternion; pixelAngle: number; pixelRatio?: number; fovY?: number; aspect?: number; width?: number; height?: number; cx?: number; cy?: number } | null = null;
   /** pixels per grid cell before a tile splits (desktop, headset) */
   pixPerCell = 18;
   pixPerCellVr = 24;
@@ -430,7 +430,7 @@ export class PlanetTerrain {
     const viewW = new Vector3(0, 0, -1);
     if (this.view) viewW.applyQuaternion(this.view.quat);
     const viewBF = viewW.clone().applyMatrix3(toBF).normalize();
-    const halfFov = this.vr ? 1.2 : Math.max(0.6, Math.atan(Math.tan(((this.view?.fovY ?? 50) * Math.PI) / 360) * Math.max(1, this.view?.aspect ?? 1.8)) + 0.1);
+    const halfFov = this.vr ? 1.2 : Math.max(0.6, Math.atan(Math.tan(((this.view?.fovY ?? 50) * Math.PI) / 360) * (Math.max(1, this.view?.aspect ?? 1.8) + (2 * Math.max(Math.abs(this.view?.cx ?? 0), Math.abs(this.view?.cy ?? 0))) / Math.max(1, this.view?.height ?? 1e9))) + 0.1);
     const rOcc = this.occluder(w, up, D);
     const horEye = Math.acos(Math.min(1, rOcc / D));
     const want: { n: Node; p: number }[] = [];

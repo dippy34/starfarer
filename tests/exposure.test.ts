@@ -1,6 +1,6 @@
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { adapt, DAZZLE, diskLimit, diskMean, diskMiddle, diskSeen, FILL, GLINT_AREA, GLINT_LEVEL, hidden, MARGIN, middleLimit, released, seen, TAU_OPEN, TAU_SHUT, TAU_STARS, type Frame } from '../src/app/Exposure';
+import { adapt, DAZZLE, diskLimit, diskMean, diskMiddle, diskSeen, FILL, GLINT_AREA, GLINT_LEVEL, hidden, MARGIN, meterFrame, middleLimit, released, seen, TAU_OPEN, TAU_SHUT, TAU_STARS, type Frame } from '../src/app/Exposure';
 
 // The turns below are cut fine, so that a step cannot hide between two views: tens of thousands
 // of views of 676 cells each, three seconds of arithmetic for the longest of them on a machine
@@ -517,5 +517,48 @@ describe('the middle of a disk, and the light it is drawn with', () => {
   it('a disk with no light in it sets no limit', () => {
     expect(middleLimit(from(100), () => 0, inner, hottest, level, pixel, open)).toBe(Infinity);
     expect(middleLimit(from(100), glow, inner, 0, level, pixel, open)).toBe(Infinity);
+  });
+});
+
+describe('metering a view whose optical centre is off the middle of the screen', () => {
+  // a phone on its side (844 x 390, 72 degrees tall), the optical centre 157 px left of and 70 px above the screen's middle
+  const frame: Frame = { quat: new Quaternion(), fovY: 72, aspect: 844 / 390 };
+  const k = (2 * Math.tan((72 * deg) / 2)) / 390;
+  const metered = (cx: number, cy: number) => {
+    const inv = new Quaternion(), f = { fovY: 0, aspect: 0 };
+    meterFrame({ fovY: 72, aspect: 844 / 390, height: 390, cx, cy }, frame.quat.clone().invert(), inv, f);
+    return { inv, frame: { ...frame, ...f } as Frame };
+  };
+  /** a sphere 3 degrees across at the direction seen (x, y) px from the optical axis (to the right, down), metered as `m` */
+  const at = (x: number, y: number, m: { inv: Quaternion; frame: Frame }) => {
+    const dir = new Vector3(x * k, -y * k, -1).normalize(), dist = 1e9;
+    return seen(dir.multiplyScalar(dist), dist * Math.sin(1.5 * deg), m.frame, new Vector3(), m.inv);
+  };
+
+  it('is the frame as it was when the centre is the middle', () => {
+    const m = metered(0, 0);
+    expect(m.inv.angleTo(frame.quat.clone().invert())).toBe(0);
+    expect(m.frame.fovY).toBe(72);
+    expect(m.frame.aspect).toBe(844 / 390);
+  });
+
+  it('is turned to the middle of the window, which is not the optical axis', () => {
+    const m = metered(-157, -70), plain = { inv: frame.quat.clone().invert(), frame };
+    // (the window's angles run from 44 degrees left of the axis to 65 right, so its middle is 11 degrees right of it)
+    const turned = new Vector3(0, 0, -1).applyQuaternion(m.inv.clone().invert().multiply(plain.inv));
+    expect(Math.atan2(turned.x, -turned.z) * (180 / Math.PI)).toBeGreaterThan(8);
+    expect(m.frame.aspect).not.toBe(frame.aspect);
+  });
+
+  it('keeps the frame the size of the screen: what is on it counts, what is past its edge does not', () => {
+    const m = metered(-157, 0);
+    // the screen's edges: 579 px right of the axis, 265 px left of it
+    expect(at(579 - 60, 0, m).shown).toBe(1);
+    expect(at(-265 + 60, 0, m).shown).toBe(1);
+    expect(at(579 + 150, 0, m).shown).toBeLessThan(0.5);
+    expect(at(-265 - 150, 0, m).shown).toBeLessThan(0.5);
+    // (the symmetric frame about the axis would have held what is 150 px past the screen's left edge)
+    const plain = { inv: frame.quat.clone().invert(), frame };
+    expect(at(-265 - 150, 0, plain).shown).toBeGreaterThan(0.6);
   });
 });
