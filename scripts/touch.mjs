@@ -511,8 +511,10 @@ const centreOf = async (page, sel) => {
   await page.screenshot({ path: path.join(outDir, 'touch-13-sideways-centre.png'), timeout: 300000 });
   // a tap on it picks it: another world selected, then a finger on Mars's pixel
   await page.evaluate(() => { const a = window.app; a.select(a.findByName('Jupiter')); });
-  await f.frames(3);
+  // (its card is the same size: the centre stays; where Mars is drawn is read again once it has settled)
+  await f.frames(30);
   const before = await page.evaluate(() => window.app.selection?.name);
+  v = await view();
   await f.tap({ x: v.p.x, y: v.p.y });
   const after = await page.evaluate(() => window.app.selection?.name);
   check('a tap on Mars where it is drawn picks it', before === 'Jupiter' && after === 'Mars', JSON.stringify({ before, after }));
