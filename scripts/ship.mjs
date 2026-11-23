@@ -51,7 +51,7 @@ const HELPERS = () => {
         const low = mem.path.every((p) => p.y < -0.3);
         let prev = null;
         for (const p of mem.path) {
-          const v = p.clone().applyQuaternion(q), s = a.project(v);
+          const v = p.clone().applyQuaternion(q), s = a.project(v, true);
           const cur = s && { x: s.x, y: s.y, r: mem.half / v.length() / cssPixel };
           if (cur && prev) (low ? sill : frame).push({ ax: prev.x, ay: prev.y, bx: cur.x, by: cur.y, r: Math.max(prev.r, cur.r) });
           prev = cur;
@@ -237,25 +237,19 @@ for (const orient of ['up', 'side']) {
   });
   await step(page, 3);
   // (No bracket or tag is drawn under the interface, nor half off the screen: Game's updateHud and
-  // FlightViz.clearOf, since e1e9491. On a phone on its side the card and the ship's instruments meet
-  // at the middle of the view, where Earth now is, so there the sizes are measured in photo mode, the
-  // interface put away as a player does with a tap, and the view as it was; upright the middle is clear.)
-  const photo = await page.evaluate(() => {
-    const a = window.app, W = a.view.width, H = a.view.height, b = { l: W / 2 - 48, r: W / 2 + 48, t: H / 2 - 36, b: H / 2 + 44 };
-    const under = a.hud.covers().some((c) => b.l < c.r + 4 && b.r > c.l - 4 && b.t < c.b + 4 && b.b > c.t - 4);
-    if (under) a.act('photo');
-    return under;
-  });
-  if (photo) await step(page, 3);
+  // FlightViz.clearOf, since e1e9491. On a phone on its side the card and the ship's instruments meet at the
+  // middle of the view; since the landscape work the view's optical centre is the middle of what the
+  // interface leaves clear (App's `centre`, Hud.clearPart), so Earth, dead ahead, is there: the sizes are
+  // measured with the interface on, as a player sees it, and not in photo mode as they were between.)
+  await step(page, 10);
   const s1 = await sizes();
   await page.evaluate(() => { const r = window.app.renderer; r.renderScale = 0.6; r.setSize(window.innerWidth, window.innerHeight, r.pixelRatio); });
   await step(page, 3);
   const s2 = await sizes();
   await page.evaluate(() => { const r = window.app.renderer; r.renderScale = 1; r.setSize(window.innerWidth, window.innerHeight, r.pixelRatio); });
-  if (photo) await page.evaluate(() => window.app.act('photo'));
   await step(page, 2);
-  check(`${tag}: the target's brackets are 96 CSS px wide, also at a lower resolution`, Math.abs(s1.bracket - 96) < 4 && Math.abs(s2.bracket - 96) < 4, JSON.stringify({ s1, s2, photo }));
-  check(`${tag}: the orbit's tags are 104 CSS px wide (their names about 11 px), also at a lower resolution`, s1.tag !== null && Math.abs(s1.tag - 104) < 4 && Math.abs(s2.tag - 104) < 4, JSON.stringify({ s1, s2, photo }));
+  check(`${tag}: the target's brackets are 96 CSS px wide, also at a lower resolution`, Math.abs(s1.bracket - 96) < 4 && Math.abs(s2.bracket - 96) < 4, JSON.stringify({ s1, s2 }));
+  check(`${tag}: the orbit's tags are 104 CSS px wide (their names about 11 px), also at a lower resolution`, s1.tag !== null && Math.abs(s1.tag - 104) < 4 && Math.abs(s2.tag - 104) < 4, JSON.stringify({ s1, s2 }));
   // overlays never over the frame
   st = await overlaysOverMask(page);
   check(`${tag}: orbit lines, the path, its tags and the markers never draw over the frame`, st.n > 200 && st.diff === 0 && st.drawn > 20, JSON.stringify(st));
@@ -312,6 +306,65 @@ for (const orient of ['up', 'side']) {
   });
   check(`${tag}: the ship is lit by the Sun (brighter than the sky round it)`, st.n > 100 && st.ship > 30 && st.ship > st.around * 2.5, JSON.stringify(st));
 
+  // (back in the cockpit, looking at Earth)
+  await page.evaluate(() => {
+    const a = window.app, d = a.findByName('Earth').upos.sub(a.rig.upos).normalize();
+    a.game.setMode('cockpit');
+    const fwd = new d.constructor(0, 0, -1).applyQuaternion(a.rig.quat);
+    const R = new a.rig.quat.constructor().setFromUnitVectors(fwd, d);
+    a.game.flight.ship.quat.premultiply(R);
+    a.rig.quat.premultiply(R);
+  });
+  await step(page, 12);
+  // ---- the target on a clear part of the view, with the interface on: Earth dead ahead, the card open
+  // and (its panel hidden by the test: a selected target always has its card) closed; then the target behind the ship
+  const placed = () => page.evaluate(() => {
+    const a = window.app, g = a.game, W = a.view.width, H = a.view.height, covers = a.hud.covers();
+    const meet = (b, c) => b.l < c.r && c.l < b.r && b.t < c.b && c.t < b.b;
+    const quad = (m, w, h, local) => { m.updateMatrixWorld(true); const p = a.project(local ? new m.position.constructor().setFromMatrixPosition(m.matrixWorld) : m.position); return p && { l: p.x - w / 2, r: p.x + w / 2, t: p.y - h / 2, b: p.y + h / 2, x: p.x, y: p.y }; };
+    const br = g.hud.target.mesh.visible ? quad(g.hud.target.mesh, 96, 72, true) : null;
+    const tags = g.viz.tags.filter((t) => t.mesh.visible).map((t) => quad(t.mesh, 104, 39)).filter(Boolean);
+    const e = a.findByName('Earth'), v = e.upos.sub(a.rig.upos).applyQuaternion(a.rig.quat.clone().invert());
+    const part = a.hud.clearPart ? a.hud.clearPart() : null;
+    return {
+      bracket: br && { x: Math.round(br.x), y: Math.round(br.y) },
+      bracketUnder: br ? covers.filter((c) => meet(br, c)).length : -1,
+      bracketOn: !!br && br.l >= 0 && br.t >= 0 && br.r <= W && br.b <= H,
+      inClear: !!br && !!part && br.l >= part.box.l - 1 && br.r <= part.box.r + 1 && br.t >= part.box.t - 1 && br.b <= part.box.b + 1,
+      tags: tags.length, tagsUnder: tags.filter((t) => covers.some((c) => meet(t, c))).length,
+      side: Math.sign(v.x), behind: v.z > 0, across: Math.abs(v.x) / v.length(),
+      mid: part ? { x: (part.box.l + part.box.r) / 2, y: (part.box.t + part.box.b) / 2 } : null,
+      centre: { x: Math.round(a.view.cx), y: Math.round(a.view.cy) },
+    };
+  });
+  for (const withCard of [true, false]) {
+    if (!withCard) {
+      await page.evaluate(() => { const c = document.querySelector('.hud-slot > .on'); if (c) c.style.display = 'none'; window.app.hud.covers(); });
+      await step(page, 10);
+    }
+    const got = await placed();
+    check(`${tag}, the card ${withCard ? 'open' : 'closed'}, Earth dead ahead: its bracket and orbit tag are drawn, on the screen, under no control`,
+      got.bracket !== null && got.bracketOn && got.bracketUnder === 0 && got.tags >= 1 && got.tagsUnder === 0, JSON.stringify(got));
+  }
+  await page.evaluate(() => { for (const c of document.querySelectorAll('.hud-slot > *')) c.style.display = ''; window.app.hud.covers(); });
+  await step(page, 10);
+  // the target behind and a little to one side: an edge pointer, inside the clear part, on the side it lies
+  for (const yaw of [0.7, -0.7]) {
+    await page.evaluate((yaw) => {
+      const a = window.app, d = a.findByName('Earth').upos.sub(a.rig.upos).normalize().negate();
+      d.applyAxisAngle(new d.constructor(0, 1, 0).applyQuaternion(a.rig.quat), yaw);
+      const fwd = new d.constructor(0, 0, -1).applyQuaternion(a.rig.quat);
+      const R = new a.rig.quat.constructor().setFromUnitVectors(fwd, d);
+      a.game.flight.ship.quat.premultiply(R);
+      a.rig.quat.premultiply(R);
+    }, yaw);
+    await step(page, 12);
+    const got = await placed();
+    const right = got.bracket && got.mid ? Math.sign(got.bracket.x - got.mid.x) : 0;
+    check(`${tag}, the target behind the ship, ${yaw > 0 ? 'left' : 'right'} of the way it points: an edge pointer is drawn inside the clear part of the view, under no control, on the side the target lies`,
+      got.behind && got.across > 0.3 && got.bracket !== null && got.bracketOn && got.bracketUnder === 0 && got.inClear && right === got.side, JSON.stringify(got));
+  }
+  await step(page, 2);
   if (!landscape) {
     // the drive shows: the torch's plume and its heat, then the reactionless drive's band and no plume
     st = await page.evaluate(async () => {

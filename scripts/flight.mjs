@@ -537,6 +537,49 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the 
   await ctx.close();
 }
 
+// 15c. the explorer on the same ten sizes, a card open: the selected world's centre is in the clear
+// part of the view (not under the card, a chip or a button), upright and on its side. (On its side the
+// view's optical centre is the middle of what the interface leaves clear, App's `centre`: the world,
+// aimed at, is held there; upright it is lifted above the card.)
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=4&az=40&el=5&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) {
+    await f.tap(await phone.evaluate(() => { const b = document.querySelector('.hud-coach [data-coach]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }));
+  }
+  const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
+  const bad = [];
+  let seen = 0;
+  for (const [w, h, inset] of sizes) {
+    await phone.setViewportSize({ width: w, height: h });
+    await phone.evaluate((i) => { const r = document.documentElement.style; r.setProperty('--safe-l', `${i}px`); r.setProperty('--safe-r', `${i}px`); }, inset);
+    await f.frames(3);
+    // (Look at: the camera turns to the world, as after a tap on it, and the centre eases to the clear part)
+    await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Earth')); a.act('centre'); });
+    await phone.waitForTimeout(600);
+    await f.frames(40);
+    const got = await phone.evaluate(() => {
+      const a = window.app, p = a.project(a.findByName('Earth').upos.sub(a.rig.upos)), part = a.hud.clearPart ? a.hud.clearPart() : null;
+      const covers = a.hud.covers().map((c) => ({ ...c }));
+      const under = p ? covers.filter((c) => p.x >= c.l && p.x <= c.r && p.y >= c.t && p.y <= c.b).length : -1;
+      const card = !!document.querySelector('.hud-slot > .on[data-sheet="card"]');
+      return { p: p && { x: Math.round(p.x), y: Math.round(p.y) }, under, card, W: innerWidth, H: innerHeight, side: innerWidth > innerHeight, box: part && part.box, shifts: !!part?.shifts };
+    });
+    const onScreen = got.p && got.p.x > 0 && got.p.y > 0 && got.p.x < got.W && got.p.y < got.H;
+    // (on its side it is in the clear part, whose middle the view is centred on)
+    const inClear = !got.side || (got.box && got.p && got.p.x >= got.box.l && got.p.x <= got.box.r && got.p.y >= got.box.t && got.p.y <= got.box.b);
+    seen++;
+    if (!got.card || !onScreen || got.under !== 0 || !inClear) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, ...got });
+    if (w === 844 && h === 390) await phone.screenshot({ path: path.join(outDir, 'f26-explorer-side-card.png'), timeout: 180000 });
+  }
+  check('the explorer on ten phone sizes, a card open: the selected world\'s centre is on the screen, under no part of the interface, and on its side in the clear part of the view', bad.length === 0 && seen === 10, JSON.stringify(bad).slice(0, 900));
+  await ctx.close();
+}
+
 // 16. a new player on a phone (from the playtests): the ship found from a selected place ("Fly
 // there in your ship"), the missions, "How to move" and the start menu in More, back to today in the
 // Time sheet, a flight to a place on the ground in real time, the drag button saying what it does,
