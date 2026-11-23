@@ -1946,7 +1946,16 @@ above is validated against JPL Horizons and stays as it is unless something is w
        (`hi`) works as before. Not changed, measured for a decision: the render targets at a
        phone's pixel ratio 3 are some 111 MB (the HDR target 1,170 x 2,532, half floats, 2
        samples: 90 MB; bloom 8 MB; the volume pass 13 MB), at pixel ratio 2 some 79 MB (the HDR
-       target 780 x 1,688 with 4 samples, 70 MB; bloom 3 MB; volume 6 MB).
+       target 780 x 1,688 with 4 samples, 70 MB; bloom 3 MB; volume 6 MB). Decided: pixel ratio
+       3 stays for now (the 32 MB saved is not worth the sharpness); to be looked at again only if
+       phones still lose the tab.
+       A flight's destination keeps its full maps on the way (`Bodies.keepWanted`, from
+       `App.frame` for the camera's flight and the ship's autopilot): they were wanted at takeoff
+       only, so a flight of more than 10 s let them go before it came, and on a phone the Earth
+       was drawn close up with its small copies while its four maps came again: from the Moon,
+       22.9 s of the approach and 7.9 s after arrival; from Mars 9.9 s. Now they come in some 10 s
+       into the flight and stay: sharp on arrival, no time on the small copies, both ways.
+       `scripts/places.mjs` 10b flies Mars to the Earth and checks it.
      - *The stars out at night in a valley* (interact's "walking at Apollo 17" failing on GitHub's
        runners, the same numbers every run): at night at the Apollo 17 site, 2.6 km under the
        Moon's mean radius, with the view turned to where the Sun is (7.9 degrees under the
