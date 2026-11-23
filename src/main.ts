@@ -1,6 +1,7 @@
 import { App } from './app/App';
 import { LoadProgress } from './app/Loading';
 import { StartMenu } from './app/StartMenu';
+import { linkFragment } from './platform/share';
 import { installPerfTools } from './perf/tools';
 import { countDownloads, Splash } from './ui/Splash';
 
@@ -22,12 +23,14 @@ async function main(): Promise<void> {
   progress.onChange = () => splash.show(progress);
   const stopCounting = countDownloads(progress);
   splash.show(progress);
+  // (asked before the app opens a shared scene and takes it off the address)
+  const menuWanted = StartMenu.wanted(location.search, linkFragment());
   try {
     if (!document.createElement('canvas').getContext('webgl2')) throw new Error('WebGL 2 is not available in this browser.');
     const app = await App.create(canvas, hud, labels, progress);
     app.start();
     await app.firstView(progress);
-    const menu = StartMenu.wanted() ? new StartMenu(app) : null;
+    const menu = menuWanted ? new StartMenu(app) : null;
     if (menu) window.startMenu = menu;
     // (More, Start menu: the title screen again, over the explorer as it is)
     app.openMenu = () => { window.startMenu = new StartMenu(app); };

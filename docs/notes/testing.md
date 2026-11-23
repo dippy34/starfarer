@@ -57,7 +57,7 @@ passed. It takes about as long as the slowest chosen job plus ~3 minutes (build,
 Run it in the background.
 
 - **One full run at a time, for everyone.** The account runs about 20 jobs at once, shared by all
-  helpers *and by the live site's deploys* (deploy-pages.yml): a full set is 18 jobs. Start a
+  helpers *and by the live site's deploys* (deploy-pages.yml): a full set is 19 jobs. Start a
   `--suites all` run only when no other full run is in flight (look at
   https://github.com/dippy34/starfarer/actions or `mcp__github__actions_list` `list_workflow_runs`),
   once per batch before a large push. Small runs (the affected suites, `--suites "a b"`) are fine

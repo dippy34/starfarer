@@ -15,13 +15,13 @@
 import { execFileSync } from 'node:child_process';
 
 /** Every browser suite of the deploy checklist (HANDOFF.md "Checks before every deploy"). */
-export const FULL = ['start', 'touch', 'interact', 'verify', 'exposure', 'stars', 'whatif', 'live', 'vr', 'game', 'walk', 'places', 'terrain', 'flight', 'ship'];
+export const FULL = ['start', 'touch', 'interact', 'verify', 'exposure', 'stars', 'whatif', 'live', 'vr', 'game', 'walk', 'places', 'terrain', 'flight', 'ship', 'share'];
 
 /**
  * The suites that run in parts at once on GitHub's runners (one job each): the parts together are
  * the whole suite. walk's modes (argument 4) and flight's FLIGHT_ONLY are the suites' own; `all`
  * of walk is touch + desktop + vr. Only the longest suites are split: the account runs about 20
- * jobs at once for all helpers, and a full set is then 18.
+ * jobs at once for all helpers, and a full set is then 19.
  */
 export const PARTS = {
   walk: [{ part: 'touch', args: 'touch' }, { part: 'desktop', args: 'desktop' }, { part: 'vr', args: 'vr' }],
@@ -38,7 +38,7 @@ export function matrix(suites) {
   })));
 }
 
-const HUD = ['start', 'touch', 'interact', 'live', 'whatif', 'flight', 'ship', 'walk', 'game', 'vr'];
+const HUD = ['start', 'touch', 'interact', 'live', 'whatif', 'flight', 'ship', 'walk', 'game', 'vr', 'share'];
 const GROUND = ['walk', 'terrain', 'touch', 'flight', 'verify'];
 const SHIP = ['flight', 'game', 'ship', 'vr', 'verify', 'walk'];
 
@@ -56,11 +56,13 @@ const RULES = [
   [/^src\/perf\//, ['interact']],                       // the perf HUD and bench (bench.mjs is not in the set)
   // the scripts themselves
   [/^scripts\/lib\/browser\.mjs$/, null],
-  [/^scripts\/lib\/touch\.mjs$/, ['flight', 'live', 'ship', 'stars', 'touch', 'walk', 'whatif']],
+  [/^scripts\/lib\/touch\.mjs$/, ['flight', 'live', 'ship', 'stars', 'touch', 'walk', 'whatif', 'share']],
   [/^scripts\/stereo\.mjs$/, ['vr']],
   [/^\.github\/workflows\/browser-tests\.yml$/, null],
   // the start: the loading screen and the title screen
-  [/^src\/(app\/StartMenu\.ts|ui\/start\.css)$/, ['start', 'touch', 'vr']],
+  [/^src\/(app\/StartMenu\.ts|ui\/start\.css)$/, ['start', 'touch', 'vr', 'share']],
+  // links to a scene, saves, and handing them on
+  [/^src\/(app\/(SceneLink|SceneWorld|Saves)\.ts|platform\/(share|storage)\.ts)$/, ['share', 'start']],
   [/^src\/(ui\/Splash\.ts|app\/Loading\.ts)$/, null],
   // the interface
   [/^src\/ui\/(Hud\.ts|styles\.css|icons\.ts)$/, HUD],
@@ -71,7 +73,7 @@ const RULES = [
   // the ground, walking, landing
   [/^src\/(app\/Walk\.ts|render\/(Rocks|PlanetTerrain|TerrainPatch|TileDetail|Materials)\.ts|universe\/(Elevation|Terrain|TerrainHeights|TerrainTiles|Landmarks|ExoTerrain)\.ts|workers\/terrainTiles\.worker\.ts)$/, GROUND],
   // live physics, the powers, what if
-  [/^src\/(app\/(LivePhysics|Powers|History|Watch|Mover|WhatIf|Worked)\.ts|sim\/(NBody|SystemSim|KeplerDrift|Kepler)\.ts)$/, ['live', 'whatif']],
+  [/^src\/(app\/(LivePhysics|Powers|History|Watch|Mover|WhatIf|Worked)\.ts|sim\/(NBody|SystemSim|KeplerDrift|Kepler)\.ts)$/, ['live', 'whatif', 'share']],
   // the eye
   [/^src\/app\/(Exposure|Daylight|Awe)\.ts$/, ['exposure', 'stars', 'verify', 'ship', 'interact', 'places']],
   // stars up close

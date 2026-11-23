@@ -36,7 +36,9 @@ export type HudAction =
   | 'size-link'
   // undo the last change; watching what a change does (src/app/Watch.ts): stop, watch it again, put the offer away;
   // whether changes are watched at all
-  | 'undo' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me';
+  | 'undo' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me'
+  // a link to the scene as it is now: the share sheet on a phone, copied at a desk (src/app/SceneLink.ts)
+  | 'share';
 
 export interface HudHost {
   act(action: HudAction): void;
@@ -249,6 +251,7 @@ const TEMPLATE = `
         <div class="card-head">
           <span class="thumb"></span>
           <div class="card-title"><h2></h2><p></p></div>
+          <button class="icon-btn card-share" type="button" data-act="share" aria-label="Share this view">${ICON.share}</button>
           <button class="icon-btn" type="button" data-act="deselect" aria-label="Close">${ICON.close}</button>
         </div>
         <div class="card-actions">
@@ -348,6 +351,7 @@ const TEMPLATE = `
         <div class="sheet-grab"></div>
         <div class="sheet-head"><h2>${PRODUCT_NAME}</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
         <div class="list">
+          <button class="row" type="button" data-act="share">${ICON.share}<span class="row-text"><b>Share this view</b><small class="touch-only">A link that opens it as it is now</small><small class="mouse-only">Copies a link that opens it as it is now</small></span></button>
           <button class="row" type="button" data-help>${ICON.help}<span class="row-text"><b>How to move</b><small class="touch-only">Every touch, in the ship too</small><small class="mouse-only">Every key and click</small></span>${ICON.chevron}</button>
           <details class="missions"><summary>${ICON.flag}<span class="row-text"><b>Missions</b><small></small></span>${ICON.chevron}</summary><ul></ul></details>
           <button class="row" type="button" data-act="menu">${ICON.menu}<span class="row-text"><b>Start menu</b><small>Back to the title screen</small></span>${ICON.chevron}</button>
@@ -418,6 +422,8 @@ export class Hud {
   private thumbs: ThumbSheet | null = null;
   private toastTimer = 0;
   private coarse: boolean;
+  /** a device that is held and touched (src/core/device.ts), as the interface was laid out for */
+  get touchFirst(): boolean { return this.coarse; }
   /** the card's picture is to be drawn again (another selection, or the photographs have arrived) */
   private pictureStale = true;
   private factKeys = '';

@@ -1,6 +1,6 @@
 import { Quaternion, type ShaderMaterial, Vector3 } from 'three';
 import { HITCH } from '../core/hitch';
-import { STORAGE_PREFIX } from '../core/product';
+import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
 import { VIEW_CONE } from '../render/Cull';
 import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
@@ -66,10 +66,12 @@ import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
-import { aheadWords, dayWords, farWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
+import { forgetFragment, handOn, linkFragment, onFragmentChange, pageLink, reloadPage } from '../platform/share';
+import { decodeLink, encodeLink, isoOf, type Named, type SceneView } from './SceneLink';
 import { type Sunlit, temperatureOf, type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
@@ -144,6 +146,8 @@ const WATCH_MOST_TOUCH = 10 * 365.25 * DAY, WATCH_MOST = 100 * 365.25 * DAY;
 const REAL_AGAIN_MS = 20_000;
 /** two worlds about to hit, in the clear part of the view and at least this far apart on the screen (px), are seen coming together where they are */
 const SEEN_APART = 40;
+/** a link naming an object only the catalogue of real objects has waits this long for it (ms) */
+const LINK_LOOKUP_WAIT = 8000;
 /** the look ahead starts again from a change at most this often (ms) */
 const AHEAD_AGAIN_MS = 200;
 
@@ -459,6 +463,10 @@ export class App {
     app.warmupPending = true;
     app.resize(); // (first: how far back the camera starts depends on the view's shape)
     app.applyUrl();
+    // (a link to a scene, after the '#': it overrides what the query asked for)
+    await app.openFragment(linkFragment());
+    // (another link opened into this tab while it is open changes only the '#': the page starts again with it)
+    onFragmentChange((f) => { if (f) reloadPage(); });
     app.bindKeys();
     window.addEventListener('resize', () => app.resize());
     return app;
@@ -609,7 +617,117 @@ export class App {
     this.rig.upos.copy(obj.upos).addVec(dir, dist);
     this.rig.lookAt(dir.clone().negate(), north);
     this.rig.target = obj;
-    this.rig.setAnchor(obj instanceof Body || obj instanceof Comet || obj instanceof ExoPlanet || obj instanceof Spacecraft || this.isCompanion(obj) ? obj : null);
+    this.rig.setAnchor(this.anchorFor(obj));
+  }
+
+  /** What the camera rides with when it is at `obj`: what moves (a body, a comet, a planet of another star, a spacecraft, a hole's companion), else nothing. */
+  private anchorFor(obj: SpaceObject): SpaceObject | null {
+    return obj instanceof Body || obj instanceof Comet || obj instanceof ExoPlanet || obj instanceof Spacecraft || this.isCompanion(obj) ? obj : null;
+  }
+
+  // ------------------------------------------------------------------ links to a scene (src/app/SceneLink.ts)
+  /** Something as a link names it: its name, and its number if it is a body of the Solar System. */
+  private nameOf(obj: SpaceObject): Named {
+    return { name: obj.name, id: obj instanceof Body ? obj.id : null };
+  }
+
+  /**
+   * The camera's rotation without the tilt that puts what it looks at above the card on an upright
+   * phone (`rig.aim`): which way it looks, the same on any screen.
+   */
+  private pureTurn(): Quaternion {
+    return this.rig.quat.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), this.rig.aim));
+  }
+
+  /** The scene as it is now, for a link: what is selected, the camera from what it is at, the date and the rate of time. */
+  sceneView(): SceneView {
+    const at = this.rig.target, q = this.pureTurn(), sel = this.selection;
+    const cam = at ? this.rig.upos.sub(at.upos, new Vector3()) : new Vector3(this.rig.upos.xh + this.rig.upos.xl, this.rig.upos.yh + this.rig.upos.yl, this.rig.upos.zh + this.rig.upos.zl);
+    return {
+      selected: sel ? this.nameOf(sel) : null, at: at ? this.nameOf(at) : null,
+      camera: [cam.x, cam.y, cam.z], turn: [q.x, q.y, q.z, q.w], fov: this.rig.fov,
+      jd: this.clock.jdTdb, rate: this.clock.rate, paused: this.clock.paused, world: null,
+    };
+  }
+
+  /** The link to the scene as it is now. */
+  sceneLink(): string {
+    return pageLink(encodeLink(this.sceneView()));
+  }
+
+  /** Share: the link to the scene, by the system's share sheet on a phone, copied at a desk. */
+  async share(): Promise<void> {
+    const sel = this.selection, url = this.sceneLink();
+    const what = sel ? `${sel.name}, ${dayWords(this.clock.jdTdb)}` : dayWords(this.clock.jdTdb);
+    const how = await handOn({ url, title: PRODUCT_NAME, text: `${what}, in ${PRODUCT_NAME}` }, this.input.touch || this.hud.touchFirst);
+    if (how === 'copied') this.hud.toast('Link copied');
+    else if (how === 'shared') this.hud.toast('Shared');
+    else if (how === 'failed') this.hud.toast('The link could not be shared here');
+  }
+
+  /** Something a link names, found: a body by its number, else anything by its name (the catalogue of real objects last; null if nothing). */
+  private async find(n: Named): Promise<SpaceObject | null> {
+    const b = n.id !== null ? this.system.byId.get(n.id) : undefined;
+    if (b && b.name === n.name) return b.valid ? b : null;
+    const found = this.findByName(n.name);
+    if (found) return found instanceof Body && !found.valid ? null : found;
+    const cat = this.objCatalog;
+    if (!cat) return null;
+    // (an object only the catalogue has: its best exact match, if it comes in time)
+    const late = new Promise<null>((resolve) => setTimeout(resolve, LINK_LOOKUP_WAIT, null));
+    return Promise.race([cat.lookup(n.name).catch(() => null), late]);
+  }
+
+  /**
+   * Open the scene a link holds (the part of the address after the '#'; '' for none): the date,
+   * the rate of time, the camera and the selection, and a short note of what it is. A link that is
+   * not one, is damaged, or names what is not here opens the app as usual and says so. The real
+   * universe stays real: nothing here switches on live physics.
+   */
+  async openFragment(fragment: string): Promise<void> {
+    if (!fragment) return;
+    forgetFragment();
+    const d = decodeLink(fragment);
+    if (!d.ok) { this.hud.notice(`This link could not be opened: ${d.why}. Here is ${PRODUCT_NAME} as usual.`); return; }
+    const v = d.view;
+    if (v.world) { this.hud.notice(`This link holds a changed universe, which this version cannot open yet. Here is ${PRODUCT_NAME} as usual.`); return; }
+    const [at, selected] = await Promise.all([v.at ? this.find(v.at) : null, v.selected ? this.find(v.selected) : null]);
+    const missing = [v.at && !at ? v.at.name : null, v.selected && !selected && v.selected.name !== v.at?.name ? v.selected.name : null].filter((x): x is string => !!x);
+    this.clock.jdTdb = v.jd;
+    this.setRate(v.rate);
+    this.clock.paused = v.paused;
+    this.system.update(this.clock.jdTdb);
+    // (let go of what the camera rode with until now: it has moved with the date, and the camera must not follow it there)
+    this.rig.setAnchor(null);
+    if (v.at && !at) {
+      // (what the camera was at is not here: the view of what was selected, or of the Earth, as a plain link has it)
+      const to = selected ?? this.system.byId.get(399)!;
+      this.placeNear(to, 3.4 * Math.max(to.radius, 1) * this.rig.framing, 35, 12);
+    } else {
+      if (at) this.rig.upos.copy(at.upos).addXYZ(v.camera[0], v.camera[1], v.camera[2]);
+      else this.rig.upos.set(v.camera[0], v.camera[1], v.camera[2]);
+      this.rig.target = at;
+      this.rig.setAnchor(at ? this.anchorFor(at) : null);
+      this.rig.quat.set(v.turn[0], v.turn[1], v.turn[2], v.turn[3]).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -this.rig.aim));
+      this.rig.fov = v.fov;
+    }
+    this.select(selected);
+    const when = `${dayWords(v.jd)}, ${isoOf(v.jd).slice(11, 16)} UTC`;
+    const time = v.paused ? 'time paused' : v.rate === 1 ? 'time running' : `time at ${rateWords(v.rate)}${v.rate < 0 ? ', backwards' : ''}`;
+    const what = selected ? the(selected.name) : at ? the(at.name) : 'open space';
+    const lost = missing.length ? ` ${listed(missing.map((m) => `"${m}"`))} could not be found here.` : '';
+    this.hud.notice(`A shared view: ${what}, ${when}, ${time}.${lost}`);
+  }
+
+  /** Time at `rate` (simulated seconds a second): the steps of Faster and Slower carry on from the one at or below it. */
+  private setRate(rate: number): void {
+    const most = this.physics.on ? LIVE_RATE : RATE_STEPS[RATE_STEPS.length - 1];
+    const r = Math.min(Math.abs(rate), most);
+    this.rateSign = rate < 0 ? -1 : 1;
+    this.rateIndex = 0;
+    while (this.rateIndex + 1 < RATE_STEPS.length && RATE_STEPS[this.rateIndex + 1] <= r) this.rateIndex++;
+    if (r >= LIVE_RATE) this.rateIndex = RATE_STEPS.length;
+    this.clock.rate = this.rateSign * r;
   }
 
   /** true for the companion star of a black hole (it moves on its orbit). */
@@ -726,6 +844,7 @@ export class App {
         break;
       case 'photo': this.togglePhoto(); break;
       case 'screenshot': this.screenshot(); break;
+      case 'share': void this.share(); break;
     }
   }
 

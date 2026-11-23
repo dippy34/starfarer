@@ -12,7 +12,7 @@ import '../ui/start.css';
  * screen (src/ui/Splash.ts) is through: everything on it can be chosen at once.
  *
  * Skipped when the URL carries a deep link (a target, a time, a camera position…, which is what
- * the test scripts use) or `?menu=0`; `?menu=1` shows it anyway.
+ * the test scripts use), a shared scene after its '#', or `?menu=0`; `?menu=1` shows it anyway.
  */
 
 /** URL parameters that place the explorer somewhere: the title screen would only be in the way. */
@@ -21,12 +21,12 @@ const DEEP_LINK = ['target', 'time', 'campc', 'look', 'ship', 'paused', 'rate', 
 type Item = { id: 'sim' | 'story' | 'vr' | 'bench' | 'credits'; label: string; sub: string; disabled?: boolean; badge?: string };
 
 export class StartMenu {
-  /** whether the title screen should be shown for this URL */
-  static wanted(search = location.search): boolean {
+  /** whether the title screen should be shown for this URL (`fragment`: what follows its '#', a link to a scene: src/app/SceneLink.ts) */
+  static wanted(search = location.search, fragment = ''): boolean {
     const q = new URLSearchParams(search);
     if (q.get('menu') === '1') return true;
     if (q.get('menu') === '0') return false;
-    return !DEEP_LINK.some((k) => q.has(k));
+    return !fragment && !DEEP_LINK.some((k) => q.has(k));
   }
 
   private root: HTMLDivElement;

@@ -1030,6 +1030,73 @@ from the mass it was made with, while it still has that size.
   a temperature for Titan or any world whose Bond albedo NASA's sheets do not give; the size of a star;
   a made sun below 0.08 Suns (the slider stops there); landing on a world whose size has changed.
 
+## Save & share (share worker)
+
+The owner wants the app to grow, and a link that opens someone's exact scene is how players will
+show friends ("look, I threw the Moon out of orbit"). Two parts, each tested and live before the
+next: links to the real universe and the Share button; then a changed universe (live physics),
+saves on this device and the link's preview.
+
+### Part 1: links to the real universe, and Share (done)
+
+- *The link* (`src/app/SceneLink.ts`). After the `#` of the app's address, readable on purpose:
+
+      #v=1&o=Moon&oi=301&a=Earth&ai=399&c=-27592462.15,-25771836.13,5974591.841
+         &q=0.6376606,-0.204707,-0.2634449,0.6943204&t=2026-10-02T05:23:58.102Z&r=3600&p=1
+
+  `v` the form's version; `o` what is selected and `oi` its number (a body of the Solar System:
+  its NAIF id, which tells the moon Io from the asteroid Io); `a`/`ai` what the camera is at and
+  moves with, left out when it is what is selected, `a=-` in open space; `c` the camera from it
+  (m; from the barycentre in open space), 10 significant figures (a millimetre at the Earth from
+  the Moon); `q` which way it looks (a quaternion, 7 decimals: a hundredth of a pixel on a phone),
+  *without* the tilt an upright phone gives the camera to put the world above the card
+  (`rig.aim`), so a phone's link opens at a desk looking the same way and the other way round;
+  `f` the field of view where it is not 50; `t` the date, UTC to the millisecond; `r` the rate of
+  time; `p=1` paused; `w` (Part 2) the changed universe. About 210 characters.
+- Decided: the fragment (`#`), not the query. The browser never sends it to the server, so a long
+  link (Part 2's) is never refused by GitHub Pages (it answers 414 to long request lines) and
+  nobody's scene is in a server log; a second link opened into a tab that is already open changes
+  only the fragment, so the page reloads itself for it (`onFragmentChange`). The old query form
+  (`?time ?rate ?paused ?fov ?target ?dist ?az ?el ?campc ?look`, the tests' and the trailer's) is
+  untouched and still read first; a fragment overrides it. Once opened the fragment is taken off
+  the address bar (a reload starts the app as usual; saves, Part 2, are for keeping).
+- Decided: a link that fails any check is not opened at all (no half scene): the app opens as
+  usual and a note says why in plain words ("This link could not be opened: it was made by a
+  newer version of the app (form 7). Here is Starfarer as usual."). What a link names but this
+  app cannot find is said ("\"Planet Nine\" could not be found here."), and the rest is opened.
+  `decodeLink` never throws: every number is finite and in range (the camera within the
+  observable universe, the rotation a rotation, the field of view 0.1-170°, the rate at most a
+  thousand years a second), names at most 80 characters without control characters, a key given
+  twice refused, the whole at most 64 KB; unknown keys are passed over (for a later form). A name
+  from a link is only ever shown as text (the note is `textContent`).
+- *Opening* (`App.openFragment`, from `App.create` after `applyUrl`): the date, the rate (the steps
+  of Faster and Slower carry on from the one at or below it), the pause, what the camera is at
+  (a body by its number, else anything by name, else the catalogue of real objects for up to
+  8 s), the camera's place and look, the selection, and a note over the panels: "A shared view:
+  the Moon, 2 October 2026, 05:23 UTC, time paused." The title screen is skipped
+  (`StartMenu.wanted(search, fragment)`). It never switches on live physics. Found doing it: the
+  camera's anchor had to be let go before the date changed (`setAnchor` keeps the anchor's last
+  place, and the camera was carried 0.8 AU with the Earth's move to the link's date).
+- *Share* (`App.share`, `src/platform/share.ts`). On the card of what is selected (a share icon
+  beside its Close) and first in More ("Share this view"), with a mouse as with a finger. On a
+  phone (a touch screen, or a finger used) the system's share sheet (`navigator.share`, title
+  "Starfarer", text "Moon, 2 October 2026, in Starfarer", the link); at a desk, or where there is
+  no sheet, the link is copied (`navigator.clipboard`, else the older `execCommand('copy')`, else a
+  box to copy it from) and the toast says "Link copied". Closing the sheet says nothing.
+  Every browser API is in `src/platform/share.ts` (the address, history, the share sheet, the
+  clipboard, the prompt, and Part 2's compression streams).
+- Checked: `tests/scenelink.test.ts` (the form as written; 2,000 random views of every kind round
+  trip; 24 kinds of bad link turned away in plain words; a name with markup comes back as text;
+  20,000 random and mutated links never throw and never give a number that is not finite) and a
+  new browser suite, `scripts/share.mjs` (`share` in `FULL` of `scripts/affected.mjs`; a full set
+  is now 19 jobs): on a phone upright, on its side and at a desk, the Moon selected with the camera
+  at the Earth turned off its default, an hour a second, paused; Share from the card (from More on
+  its side); the link opened in a fresh browser: no title screen, the same selection and anchor,
+  the camera to a millionth of its distance and its look to 0.001°, the date to the millisecond,
+  the rate and the pause, no live physics, the note, the address cleaned; time running at a day a
+  second (the link holds the moment it was shared); a phone's link opened at a desk; a damaged
+  link, a newer one, something that is not a link, one naming what is not here.
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
@@ -1058,7 +1125,7 @@ the Solar System, the Earth dragged sunwards and warming, a world's size, Mars t
 path ahead on a phone on its side; 184:
 `LIVE_ONLY=watch,jupiter,sun,moon,made,throw,open,warm,size,hit,side,place` picks blocks),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
-`terrain` (15), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
+`terrain` (15), `flight` (34), `ship` (the ship's looks on a phone; 25), `share` (a scene shared and opened again, on a phone upright and on its side and at a desk: HANDOFF "Save & share"). At most three at a
 time on four cores (more
 starves the software renderer: screenshots and clicks time out). On a machine with a real GPU
 these run far faster than in the cloud container (software rendering, a few frames a second).
