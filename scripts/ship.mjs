@@ -236,14 +236,26 @@ for (const orient of ['up', 'side']) {
     a.rig.quat.premultiply(R);
   });
   await step(page, 3);
+  // (No bracket or tag is drawn under the interface, nor half off the screen: Game's updateHud and
+  // FlightViz.clearOf, since e1e9491. On a phone on its side the card and the ship's instruments meet
+  // at the middle of the view, where Earth now is, so there the sizes are measured in photo mode, the
+  // interface put away as a player does with a tap, and the view as it was; upright the middle is clear.)
+  const photo = await page.evaluate(() => {
+    const a = window.app, W = a.view.width, H = a.view.height, b = { l: W / 2 - 48, r: W / 2 + 48, t: H / 2 - 36, b: H / 2 + 44 };
+    const under = a.hud.covers().some((c) => b.l < c.r + 4 && b.r > c.l - 4 && b.t < c.b + 4 && b.b > c.t - 4);
+    if (under) a.act('photo');
+    return under;
+  });
+  if (photo) await step(page, 3);
   const s1 = await sizes();
   await page.evaluate(() => { const r = window.app.renderer; r.renderScale = 0.6; r.setSize(window.innerWidth, window.innerHeight, r.pixelRatio); });
   await step(page, 3);
   const s2 = await sizes();
   await page.evaluate(() => { const r = window.app.renderer; r.renderScale = 1; r.setSize(window.innerWidth, window.innerHeight, r.pixelRatio); });
+  if (photo) await page.evaluate(() => window.app.act('photo'));
   await step(page, 2);
-  check(`${tag}: the target's brackets are 96 CSS px wide, also at a lower resolution`, Math.abs(s1.bracket - 96) < 4 && Math.abs(s2.bracket - 96) < 4, JSON.stringify({ s1, s2 }));
-  check(`${tag}: the orbit's tags are 104 CSS px wide (their names about 11 px), also at a lower resolution`, s1.tag !== null && Math.abs(s1.tag - 104) < 4 && Math.abs(s2.tag - 104) < 4, JSON.stringify({ s1, s2 }));
+  check(`${tag}: the target's brackets are 96 CSS px wide, also at a lower resolution`, Math.abs(s1.bracket - 96) < 4 && Math.abs(s2.bracket - 96) < 4, JSON.stringify({ s1, s2, photo }));
+  check(`${tag}: the orbit's tags are 104 CSS px wide (their names about 11 px), also at a lower resolution`, s1.tag !== null && Math.abs(s1.tag - 104) < 4 && Math.abs(s2.tag - 104) < 4, JSON.stringify({ s1, s2, photo }));
   // overlays never over the frame
   st = await overlaysOverMask(page);
   check(`${tag}: orbit lines, the path, its tags and the markers never draw over the frame`, st.n > 200 && st.diff === 0 && st.drawn > 20, JSON.stringify(st));
