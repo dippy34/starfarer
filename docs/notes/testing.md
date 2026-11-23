@@ -113,7 +113,7 @@ that races the frame rate or the wall clock can therefore fail on one side only.
 | flight: arrives at the star (Rigil Kentaurus) | pass | fail | the flight takes longer than the loop's 900 s of wall time there |
 | touch: pinching the other way lifts off | pass | fail | not yet explained (the pinch did not lift off: 1.6 m both times) |
 | flight and game: a gentle drop is a landing (the Moon) | pass | failed in one of three runs each (CRASHED) | not yet explained; a drop timed against the terrain streaming in |
-| interact: time acceleration; arrivals by autopilot | pass | failed in two of six runs (Δ 1.00 d; a 60-120 s wait running out) | wall-clock checks that a slow frame (over 1 s) shortens |
+| interact: time acceleration; arrivals by autopilot | pass | failed in two of six runs (Δ 1.00 d; a 60-120 s wait running out); then in two of four runs of the landscape work (the 120 s wait for the autopilot to the ISS), passing in the other two, as the old commit did in both its runs | wall-clock checks that a slow frame (over 1 s) shortens |
 | flight: More, How to move (scrolls to the help) | pass | fail, now fixed | a fixed 800 ms for a smooth scroll that, at a frame a second, had not begun; it now waits for the scroll |
 
 Read a runner-only failure the way you would a failure under load here: run that suite again
