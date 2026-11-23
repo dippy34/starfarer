@@ -42,11 +42,16 @@ function opacity() {
 const seeThrough = (list) => list.filter((p) => !(p.alpha >= 0.88 && p.blur));
 const waitFor = (fn, arg, timeout = 240000) => page.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
 
+// (Parts, for running the suite in two halves at once on two machines: together they are the whole suite.)
+// FLIGHT_ONLY=desk runs 1-12 (one page at a desk), FLIGHT_ONLY=phone 13-16 (each on a fresh phone); unset: both.
+const part = process.env.FLIGHT_ONLY ?? '';
+let st;
+if (part !== 'phone') { // (FLIGHT_ONLY: desk, 1-12; not indented, to keep the change small)
 // 1. boarding in low Earth orbit: physics on, a circular orbit, the predicted path and its apsides
 await page.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=1.0628&az=40&el=5&ship=cockpit&menu=0`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
 await waitFor(() => window.app.game.flight.predictor.count > 50 && window.app.game.flight.predictor.done);
-let st = await state();
+st = await state();
 check('in the ship, physics flight is on, orbiting Earth', st.on && st.frame === 'Earth', JSON.stringify({ frame: st.frame, alt: st.alt }));
 check('boarding drops into a circular orbit at ~400 km', st.e !== null && st.e < 0.01 && Math.abs(st.alt - 400e3) < 30e3, `e=${st.e?.toFixed(4)} alt=${(st.alt / 1e3).toFixed(0)} km v=${st.v.toFixed(0)}`);
 check('the predicted path is drawn with its apsides', st.pts > 50 && st.events.includes('ap') && st.events.includes('pe'), `${st.pts} pts ${st.events.join(',')}`);
@@ -231,7 +236,9 @@ check('J: the autopilot flies to Rigil Kentaurus, the time to go in both clocks'
 check('never faster than light on the way', fastest > 0.5 && fastest < 1, `fastest closing speed ${fastest.toFixed(6)} c`);
 check('arrives at the star', !prev.ap && prev.d < prev.r * 12, JSON.stringify({ d: prev.d, radius: prev.r, ap: prev.ap }));
 await shot('f14-alpha-cen.png');
+} // (FLIGHT_ONLY: desk)
 
+if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the change small)
 // 13. on a phone, by touch alone: More, Spaceship boards the ship; the tabs stay (where to go, time,
 // the way out); + raises the drive's setting; Go there on a selected world starts the autopilot
 {
@@ -555,7 +562,16 @@ await shot('f14-alpha-cen.png');
   await f.frames(2);
   const open = await phone.evaluate(() => document.querySelector('.more .missions').open);
   await f.tap(await at('.more [data-help]'));
-  await phone.waitForTimeout(800);
+  // (the list scrolls to the help smoothly, a frame at a time: until the help is in sight and the
+  // list has stood still for two frames, rather than a fixed 800 ms, which at one frame a second
+  // on a runner was over before the scroll began; what is checked below is unchanged)
+  await phone.waitForFunction(() => {
+    const t = document.querySelector('.more .help-title').getBoundingClientRect(), list = document.querySelector('.more .list'), l = list.getBoundingClientRect();
+    const w = (window.__helpScroll ??= { top: -1, still: 0 });
+    w.still = list.scrollTop === w.top ? w.still + 1 : 0;
+    w.top = list.scrollTop;
+    return t.top >= l.top - 1 && t.bottom <= l.bottom && w.still >= 2;
+  }, null, { timeout: 60000, polling: 'raf' }).catch(() => undefined);
   const help = await phone.evaluate(() => { const t = document.querySelector('.more .help-title').getBoundingClientRect(), l = document.querySelector('.more .list').getBoundingClientRect(); return t.top >= l.top - 1 && t.bottom <= l.bottom; });
   check('More: How to move first (and it scrolls to the help), the missions with their count', /^How to move/.test(more.first) && /\d+ of \d+ done/.test(more.missions) && more.items >= 20 && open && help, JSON.stringify({ ...more, open, help }));
   await phone.evaluate(() => document.querySelector('.more [data-act="menu"]').scrollIntoView({ block: 'center' }));
@@ -669,6 +685,7 @@ await shot('f14-alpha-cen.png');
   await ctx.close();
 }
 
+} // (FLIGHT_ONLY: phone)
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok).length;
