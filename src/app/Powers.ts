@@ -189,15 +189,22 @@ export function orbitWords(o: Orbit): string {
   if (!o.bound) return `an open path: it passes at ${farWords(o.peri)}, then leaves`;
   const near = farWords(o.peri), far = farWords(o.apo), round = fmtDuration(o.period);
   if (near === far) return `a circle ${near} out · ${round}`;
+  // (a circle too where the details already say 0, `stretchWords`: a world left on a circle is pulled a little
+  // off it as soon as time runs, and two ends a kilometre apart at the Moon's twice-distance made the card
+  // read "a circle" or "nearly a circle, 738,670 to 738,671 km" by which side of a rounding they fell on)
+  if (o.e < CIRCLE_E) return `a circle ${farWords((o.peri + o.apo) / 2)} out · ${round}`;
   const shape = o.e < 0.02 ? 'nearly a circle' : o.e < 0.2 ? 'a slightly stretched circle' : o.e < 0.6 ? 'an oval' : 'a long oval';
   // (the unit once, where both ends have the same: "365,709 to 382,840 km")
   const unit = (w: string) => w.replace(/^[\d.,]+ /, '');
   return `${shape}, ${unit(near) === unit(far) ? `${near.slice(0, near.length - unit(near).length - 1)} to ${far}` : `${near} to ${far}`} · ${round}`;
 }
 
+/** Below this stretch an orbit is a circle in words, and its stretch reads 0. */
+const CIRCLE_E = 0.0005;
+
 /** How stretched an orbit is, its eccentricity, with what the number means. */
 export function stretchWords(o: Orbit): string {
-  const e = o.e < 0.0005 ? '0' : o.e.toFixed(o.e < 0.1 ? 3 : 2);
+  const e = o.e < CIRCLE_E ? '0' : o.e.toFixed(o.e < 0.1 ? 3 : 2);
   return `${e} (0 is a circle, 1 and more an open path)`;
 }
 

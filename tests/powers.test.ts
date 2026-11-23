@@ -168,6 +168,22 @@ describe('the orbit a body is on', () => {
     expect(stretchWords(o)).toBe('0 (0 is a circle, 1 and more an open path)');
   });
 
+  it('a circle pulled a little off by the Sun is still a circle in words, as the details say 0', () => {
+    // the Moon, taken to twice its distance and left on a circle, a few seconds later: its two ends a kilometre
+    // apart (e about 7e-7), which printed as "nearly a circle, 738,670 to 738,671 km" or "a circle 738,670 km out"
+    // by which side of a kilometre they fell on
+    const gm = 3.986004418e14 * (1 + 1 / 81.3), r = 738_670_400, v = Math.sqrt(gm / r);
+    for (const k of [1, 1.0000007, 1.000002, 1.0002]) {
+      const o = orbitOf([r, 0, 0], [0, v * k, 0], gm);
+      expect(orbitWords(o)).toMatch(/^a circle 738,\d{3} km out · 72\.\d+ d$/);
+      expect(stretchWords(o)).toBe('0 (0 is a circle, 1 and more an open path)');
+    }
+    // a little more stretch than the details call 0 is a stretched circle, with its two ends
+    const o = orbitOf([r, 0, 0], [0, v * 1.001, 0], gm);
+    expect(o.e).toBeGreaterThan(0.0005);
+    expect(orbitWords(o)).toMatch(/^nearly a circle, 738,\d{3} to 7\d\d,\d{3} km · /);
+  });
+
   it('an oval: from the nearest point, in any plane', () => {
     // at 0.5 AU with the speed of an orbit that reaches 1.5 AU (e = 0.5, a = 1 AU)
     const v = Math.sqrt(mu * (2 / (0.5 * AU) - 1 / AU));
