@@ -208,6 +208,21 @@ clock in hand.
   frame in which the picture switches. GRS 1915+105 was looked at the same way while the fix was
   being made.
 
+## Later: the eye's settling, coming up to Cygnus X-1
+
+The trailer's frame-to-frame scan found the frame going dark within a few frames at about 105
+horizon radii from Cygnus X-1. The cause was not in the hole's drawing but in the eye's rule for
+settling on what fills the frame (`App.updateExposure`, `settle`): an interpolation in the
+logarithm from the dark-adapted exposure to the bright thing's key by its weight. A disk a
+thousand million times brighter than the dark sits some 34 e-folds from it, so the last hundredth
+of the weight moved the eye by a third of an e-fold, and the eye, which shuts in 0.12 s, followed
+it within frames. `Exposure.settleOn` sets the eye by the frame's mean light instead (the thing's
+share and the dark's): the same at both ends, at most a thirtieth of an e-fold per hundredth of
+weight from a weight of 0.3 up. The exposure suite's "cygnus-slow" approach measures it. It is
+used for the disks alone: a star's face, as bright, came into the frame's edge on the far approach
+to Cygnus X-1 and took the eye over at a hundredth of the frame (the hole's light leapt 3.6 times
+in a frame); for it, and for worlds, the eye still goes over in the logarithm.
+
 ## Seen and left
 
 * **The glint does not brighten as the eye comes nearer** until the disk is a surface: stylised, as
