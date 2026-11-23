@@ -843,7 +843,10 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-18; not indented, to keep the 
   await phone.waitForTimeout(300);
   await f.tap(await at('.switch[data-act="ship"]'));
   await f.frames(4);
-  await phone.evaluate(() => { const a = window.app; a.game.flight.ship.driveAccel = 9.80665; a.select(a.findByName('Moon')); });
+  // (time held from here: boarded 2 km up, the ship hangs still and falls, and a frame on a runner is up to a second of
+  // fall: 20 frames and it has hit the Earth, and a ship that has crashed gets no notice at all, "shown: false" and the
+  // screenshot a "CRASHED" over the Earth at 59 m/s. The test is about what Go there says, not about the fall.)
+  await phone.evaluate(() => { const a = window.app; a.game.flight.ship.driveAccel = 9.80665; a.select(a.findByName('Moon')); a.clock.paused = true; });
   await f.frames(4);
   await f.tap(await at('[data-act="go"]'));
   await f.frames(3);
