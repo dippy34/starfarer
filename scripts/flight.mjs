@@ -145,6 +145,53 @@ st = await state();
 check('a gentle drop is a landing', settled && landed && st.landed === 'Moon' && !st.ending, JSON.stringify({ settled, landed: st.landed, ending: st.ending }));
 await shot('f5-landed.png');
 
+// 7b. the ground changing under a ship low over it (a tile replacing another, or the first tile replacing the coarse
+// height: tens to hundreds of metres on the Earth's steep ground, HANDOFF.md "Ground and level of detail", src/game/GroundRide.ts):
+// the ship rides with it, its height above the ground and its velocity as they were, and a level of detail is neither a
+// fall nor a crash. 600 m over the Moon's ground falling at 20 m/s; the ground (what the terrain reports) is made to rise
+// 800 m, over the ship, then sink 800 m, then sink 300 m, each in one step (a tile swap is gentler: it morphs in over
+// half a second). Without the riding the first is a crash in the air at 20 m/s (over the 12 m/s) and the others a fall
+// of 800 and 300 m more.
+{
+  await page.evaluate(() => {
+    const a = window.app, f = a.game.flight, T = a.terrain, m = a.findByName('Moon');
+    a.clock.paused = true;
+    // (the ground the terrain reports is moved by `__off`, and a change asked for is made inside the terrain's own update,
+    // in its `place`, where tiles are chosen and come in, so that it is a refinement at the ship's place and not a place that moved)
+    window.__off = 0;
+    window.__ask = null;
+    if (!T.__orig) {
+      T.__orig = T.groundRadius.bind(T);
+      T.groundRadius = (n) => T.__orig(n) + window.__off;
+      T.__place = T.place;
+      T.place = function (c, dt) { const ok = this.__place(c, dt); if (window.__ask !== null) { window.__off = window.__ask; window.__ask = null; } return ok; };
+    }
+  });
+  const drop = () => page.evaluate(() => {
+    const a = window.app, f = a.game.flight, m = a.findByName('Moon');
+    a.clock.paused = true;
+    f.hoverOverGround(600);
+    f.ship.vel.addScaledVector(f.ship.upos.sub(m.upos, f.ship.vel.clone()).normalize(), -20);
+    a.clock.paused = false;
+  });
+  const look = () => page.evaluate(() => { const a = window.app, f = a.game.flight; return { alt: f.readout.altitude, vy: f.readout.vertSpeed, end: f.ending?.title ?? null, jd: a.clock.jdTdb }; });
+  const steps = [];
+  for (const [name, off] of [['rises 800 m over it', 800], ['sinks 800 m', 0], ['sinks 300 m more', -300]]) {
+    await drop();
+    await frames(2);
+    const last = await look();
+    await page.evaluate((off) => { window.__ask = off; }, off);
+    await frames(2);
+    const now = await look();
+    const dt = (now.jd - last.jd) * 86400;
+    // (what falling in the Moon's 1.6 m/s2 over dt seconds does to its height and speed, and no more than that has happened)
+    const fell = -last.vy * dt + 0.5 * 1.7 * dt * dt;
+    steps.push({ name, dt: +dt.toFixed(1), dAlt: +(now.alt - last.alt).toFixed(1), fell: +fell.toFixed(1), vy: +now.vy.toFixed(1), end: now.end, ok: !now.end && Math.abs(now.alt - last.alt + fell) < 30 && Math.abs(now.vy - (last.vy - 1.7 * dt)) < 3 });
+  }
+  await page.evaluate(() => { const a = window.app, T = a.terrain; a.clock.paused = true; T.groundRadius = T.__orig; T.place = T.__place; delete T.__orig; delete T.__place; });
+  check('ground refined under a ship low over it: it rides with it, its height and speed as they were, no crash at 20 m/s', steps.every((x) => x.ok), JSON.stringify(steps));
+}
+
 // 8. a stellar black hole: tides near the limit, then torn apart inside it
 await page.evaluate(() => { const a = window.app; const h = a.findByName('Cygnus X-1'); a.select(h); a.placeNear(h, 6.5e6, 20, 8); });
 await waitFor(() => window.app.game.flight.readout.frame === 'Cygnus X-1');

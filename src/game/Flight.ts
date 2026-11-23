@@ -12,6 +12,7 @@ import { Body, type SpaceObject } from '../universe/Body';
 import { ExoPlanet, starProps } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
 import { autopilotRate, brake, climb, type ClimbSituation, inTheWay, PLAN, placeSlot, type Situation, steer, type Steering } from './Autopilot';
+import { rideShift } from './GroundRide';
 import { Station } from './Station';
 
 export type SasMode = 'off' | 'stability' | 'prograde' | 'retrograde' | 'normal' | 'antinormal' | 'radial-out' | 'radial-in' | 'target' | 'anti-target';
@@ -332,6 +333,7 @@ export class Flight {
 
   disable(): void {
     this.on = false;
+    this.app.terrain.watch = null;
     this.ending = null;
     this.autopilot = null;
     this.stopping = null;
@@ -412,6 +414,30 @@ export class Flight {
     this.ending = null;
     core.syncRel();
     this.app.rig.upos.copy(ship.upos);
+  }
+
+  /**
+   * `refined` (m): what the ground at the ship's own place changed by since the frame before, from the terrain's tiles
+   * (PlanetTerrain.takeRefinement). An airborne ship low over the ground is moved along the vertical by as much: its height
+   * above the ground and its velocity as they were (GroundRide.ts: a level of detail is not a fall, nor a crash).
+   */
+  private rideGround(refined: number): void {
+    const core = this.core, D = core.frame, ship = this.ship, T = this.app.terrain;
+    if (!D || D.obj !== T.owner || core.landed || D.rs > 0) return;
+    const rel = ship.upos.sub(D.upos, this.tmp), r = rel.length();
+    const shift = rideShift(refined, r - core.groundR, false);
+    if (shift === 0 || !(r > 0)) return;
+    ship.upos.copy(D.upos).addVec(rel, (r + shift) / r);
+    this.app.rig.upos.copy(ship.upos);
+    core.syncRel();
+  }
+
+  /** Where the terrain watches the ground for the ship: under it, where it is now (not the camera, which in the chase view is behind). */
+  private watchGround(): void {
+    const core = this.core, D = core.frame, T = this.app.terrain;
+    if (!D || D.obj !== T.owner || core.landed || D.rs > 0) { T.watch = null; return; }
+    const below = T.below(this.ship.upos);
+    T.watch = below ? below.dir : null;
   }
 
   /** Velocity of what the camera rides with when it is not a gravitating body (stations, ships, spacecraft). */
@@ -755,13 +781,18 @@ export class Flight {
       return this.simDt;
     }
     // the explorer was moved (a tour stop, a search pick, a script): the ship goes with it
+    let moved = false;
     if (rig().upos.sub(ship.upos, this.tmp).length() > 1e-3) {
       this.ending = null;
       ship.upos.copy(rig().upos);
       ship.quat.copy(rig().quat);
       ship.angVel.set(0, 0, 0);
       this.dropIntoOrbit(true);
+      moved = true;
     }
+    // the ground under it was refined (tiles came in, or were morphed in) since the frame before: the ship rides with it
+    const refined = app.terrain.takeRefinement();
+    if (!moved) this.rideGround(refined);
     core.chooseFrame();
     this.frameEnv();
     if (this.ending) {
@@ -898,6 +929,7 @@ export class Flight {
     }
     this.lastJd = app.clock.jdTdb;
     rig.upos.copy(ship.upos);
+    this.watchGround();
     // view shake from heating, thrust and tides (lighter in VR)
     const heat = Math.min(1, ship.heatFlux / 2e6);
     const tidal = Math.min(1, ship.tidal / SHIP_SPEC.tidalLimit);
