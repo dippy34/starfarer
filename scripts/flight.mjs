@@ -221,12 +221,18 @@ await waitFor(() => window.app.game.flight.readout.frame === 'Earth');
 await page.evaluate(() => { const a = window.app; a.select(a.findByName('Rigil Kentaurus')); a.game.flight.ship.driveAccel = 50 * 9.80665; a.clock.rate = 1e5; });
 await page.keyboard.press('KeyJ');
 await frames(3);
-const look = () => page.evaluate(() => { const a = window.app, f = a.game.flight, t = a.findByName('Rigil Kentaurus'); return { d: t.upos.sub(f.ship.upos).length(), jd: a.clock.jdTdb, ap: !!f.autopilot, rig: a.rig.autopilot, r: t.radius, hud: document.querySelector('.fl-panel')?.textContent.replace(/\s+/g, ' ') ?? '' }; });
+const look = () => page.evaluate(() => { const a = window.app, f = a.game.flight, t = a.findByName('Rigil Kentaurus'); return { d: t.upos.sub(f.ship.upos).length(), jd: a.clock.jdTdb, ap: !!f.autopilot, rig: a.rig.autopilot, r: t.radius, frames: a.frameCount, hud: document.querySelector('.fl-panel')?.textContent.replace(/\s+/g, ' ') ?? '' }; });
 let prev = await look(), fastest = 0;
 const toGo = /to go \(speed up, turn, brake\)/.test(prev.hud) && /aboard/.test(prev.hud) && /outside/.test(prev.hud);
 const engaged = prev.ap && !prev.rig;
 const t0 = Date.now();
-while (Date.now() - t0 < 900000) {
+// (The flight takes a number of frames, not of seconds: the autopilot turns the ship at the control step of 0.1 s a frame
+// at x1 and its time warp is held to a twentieth of the time to go a frame, so it arrives after about 1,150 frames: 540 s
+// here at 2 frames a second under load, and on GitHub's runners, at about one a second in deep space, a little over the
+// loop's old 900 s of wall time, which ended it with the autopilot still braking: 7.3e9 m and 5.1e9 m short on two runs, 4.5e12 m
+// on a slower runner. It waits for the arrival itself, for up to four times the frames it takes, and for an hour at most.)
+const f0 = prev.frames;
+while (Date.now() - t0 < 3600000 && prev.frames - f0 < 4600) {
   await page.waitForTimeout(3000);
   const cur = await look();
   const dt = (cur.jd - prev.jd) * 86400;
