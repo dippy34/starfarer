@@ -220,6 +220,44 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     && st.proxima.filter((l) => /^Proxima Cen(tauri)?$/.test(l)).length === 1 && st.tour.join() === 'Sagittarius A*,M87*,Cygnus X-1', JSON.stringify(st));
 }
 
+// 4f. A star whose distance is a poor parallax's says so on its card: the Garnet Star (μ Cephei), 8,400 pc in
+// the catalogue from a Gaia parallax of 0.119 ± 0.264 mas (it is about a tenth as far): its distance uncertain,
+// with the numbers, and its luminosity and estimated size, worked out from that distance, not stated as fact;
+// Deneb's (a good parallax) as before
+{
+  const card = (name) => page.evaluate(async (name) => {
+    const a = window.app, s = a.findByName(name);
+    a.select(s);
+    for (let i = 0; i < 100 && !s.distanceGrade; i++) await new Promise((r) => setTimeout(r, 100));
+    const det = document.querySelector('.card [data-details]');
+    if (det.getAttribute('aria-expanded') !== 'true') det.click();
+    // (the card as the app has drawn it for this star: its title, and its distance as the star itself states it;
+    // on a slow machine the card is a frame or more behind the selection)
+    const want = new Map(s.info()).get('Distance from Sun');
+    const read = () => {
+      const rows = {};
+      const dts = [...document.querySelectorAll('.card .facts dt')], dds = [...document.querySelectorAll('.card .facts dd')];
+      dts.forEach((dt, k) => { rows[dt.textContent] = dds[k]?.textContent ?? ''; });
+      return rows;
+    };
+    let rows = read();
+    for (let i = 0; i < 300 && (document.querySelector('.card h2')?.textContent !== s.name || rows['Distance from Sun'] !== want); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      rows = read();
+    }
+    return { grade: s.distanceGrade, detail: document.querySelector('.card .card-title p')?.textContent, rows };
+  }, name);
+  const garnet = await card('Garnet Star');
+  const deneb = await card('Deneb');
+  const g = garnet.rows;
+  check("a star with a poor parallax: its card says its distance is uncertain, with the numbers, and what follows from it is not stated as fact",
+    /distance uncertain \(parallax 0\.119 ± 0\.264 mas\)/.test(g['Distance from Sun'] ?? '') && /uncertain/.test(g['Luminosity (V)'] ?? '') && /uncertain/.test(g['Absolute mag (V)'] ?? '')
+      && /uncertain/.test(g.Radius ?? '') && /uncertain/.test(g.Scale ?? '') && /uncertain/.test(garnet.detail ?? '')
+      && !/uncertain/.test(`${deneb.rows['Distance from Sun']} ${deneb.rows['Luminosity (V)']} ${deneb.detail}`),
+    JSON.stringify({ garnet: { grade: garnet.grade, detail: garnet.detail, distance: g['Distance from Sun'], luminosity: g['Luminosity (V)'], radius: g.Radius, scale: g.Scale }, deneb: { grade: deneb.grade, distance: deneb.rows['Distance from Sun'] } }));
+  await page.evaluate(() => { const d = document.querySelector('.card [data-details]'); if (d?.getAttribute('aria-expanded') === 'true') d.click(); window.app.select(null); });
+}
+
 // 5. Search and go to a star
 await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');
@@ -296,7 +334,7 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
     // (from the Apollo 17 site, over the massifs round the valley)
     const ridge = over.filter((x) => el(x) > 0 && blocked(tilt(x.rel.clone().normalize(), -6)));
     return {
-      world: T.owner.name, below: Math.round(D - R), named: all.length, behindWorlds: all.filter(behindWorld).length, under: under.length, overEyeLevel: over.filter((x) => el(x) < 0).length,
+      world: T.owner.name, below: Math.round(D - R), mLim: +a.lastMLim.toFixed(2), labels: a.labels.enabled, frame: a.frameCount, jd: a.clock.jdTdb, sunUp: +((Math.asin(a.system.sun.upos.sub(a.rig.upos, a.rig.vel.clone()).normalize().dot(up)) * 180) / Math.PI).toFixed(1), named: all.length, behindWorlds: all.filter(behindWorld).length, under: under.length, overEyeLevel: over.filter((x) => el(x) < 0).length,
       ridge: ridge.map((x) => `${x.text} ${el(x)}°${has.has(x.text) ? '' : ' (unnamed)'}`),
       wrong: under.filter((x) => has.has(x.text)).map((x) => `${x.text} ${el(x)}°`), lost: over.filter((x) => !has.has(x.text)).map((x) => `${x.text} ${el(x)}°`),
     };
