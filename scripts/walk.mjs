@@ -325,7 +325,7 @@ if (which === 'all' || which === 'touch') {
   await page.evaluate(() => window.app.walk.start());
   await page.waitForFunction(() => window.app.walk.state === 'walk', null, { timeout: 180000 });
   const sizes = [[390, 844], [390, 664], [375, 667], [360, 640], [430, 932], [844, 390], [844, 280], [667, 375], [932, 430], [740, 360]];
-  const padBad = [];
+  const padBad = [], offCentre = [];
   for (const [w, h] of sizes) {
     await page.setViewportSize({ width: w, height: h });
     await f.frames(3);
@@ -334,8 +334,10 @@ if (which === 'all' || which === 'touch') {
       const box = (e, what) => { const r = e.getBoundingClientRect(); return { what, l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width }; };
       const parts = [box(document.querySelector('.walk-stick'), 'stick'), box(document.querySelector('.walk-jump'), 'Jump'), box(document.querySelector('.walk-fly'), 'Fly'),
         ...[...document.querySelectorAll('#hud .hud-top .chip')].map((e) => box(e, 'chip')), box(document.querySelector('.walk-hud'), 'walker line')];
-      return { parts, W: innerWidth, H: innerHeight };
+      return { parts, W: innerWidth, H: innerHeight, cx: window.app.view.cx, cy: window.app.view.cy };
     });
+    // (on foot the view stays as it is: its optical centre is the middle on every size, on its side too)
+    if (got.cx !== 0 || got.cy !== 0) offCentre.push({ size: `${w}x${h}`, cx: got.cx, cy: got.cy });
     const meet = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
     const hits = [];
     got.parts.forEach((a, i) => got.parts.slice(i + 1).forEach((b) => { if (a.w > 0 && b.w > 0 && meet(a, b)) hits.push(`${a.what}/${b.what}`); }));
@@ -344,6 +346,7 @@ if (which === 'all' || which === 'touch') {
     if (hits.length || off.length || missing.length) padBad.push({ size: `${w}x${h}`, hits, off, missing });
   }
   check('t6: on ten phone sizes the stick, Jump and Fly are on the screen, a thumb\'s size, apart, clear of the chips and the walker\'s line', padBad.length === 0, JSON.stringify(padBad).slice(0, 500));
+  check('t6b: on foot the view\'s optical centre is the middle of the screen on ten phone sizes, sideways too (the horizon does not move with the interface)', offCentre.length === 0, JSON.stringify(offCentre));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.app.walk.exit(true));
   await f.frames(2);
