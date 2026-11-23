@@ -42,11 +42,16 @@ function opacity() {
 const seeThrough = (list) => list.filter((p) => !(p.alpha >= 0.88 && p.blur));
 const waitFor = (fn, arg, timeout = 240000) => page.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
 
+// (Parts, for running the suite in two halves at once on two machines: together they are the whole suite.)
+// FLIGHT_ONLY=desk runs 1-12 (one page at a desk), FLIGHT_ONLY=phone 13-16 (each on a fresh phone); unset: both.
+const part = process.env.FLIGHT_ONLY ?? '';
+let st;
+if (part !== 'phone') { // (FLIGHT_ONLY: desk, 1-12; not indented, to keep the change small)
 // 1. boarding in low Earth orbit: physics on, a circular orbit, the predicted path and its apsides
 await page.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=1.0628&az=40&el=5&ship=cockpit&menu=0`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
 await waitFor(() => window.app.game.flight.predictor.count > 50 && window.app.game.flight.predictor.done);
-let st = await state();
+st = await state();
 check('in the ship, physics flight is on, orbiting Earth', st.on && st.frame === 'Earth', JSON.stringify({ frame: st.frame, alt: st.alt }));
 check('boarding drops into a circular orbit at ~400 km', st.e !== null && st.e < 0.01 && Math.abs(st.alt - 400e3) < 30e3, `e=${st.e?.toFixed(4)} alt=${(st.alt / 1e3).toFixed(0)} km v=${st.v.toFixed(0)}`);
 check('the predicted path is drawn with its apsides', st.pts > 50 && st.events.includes('ap') && st.events.includes('pe'), `${st.pts} pts ${st.events.join(',')}`);
@@ -231,7 +236,9 @@ check('J: the autopilot flies to Rigil Kentaurus, the time to go in both clocks'
 check('never faster than light on the way', fastest > 0.5 && fastest < 1, `fastest closing speed ${fastest.toFixed(6)} c`);
 check('arrives at the star', !prev.ap && prev.d < prev.r * 12, JSON.stringify({ d: prev.d, radius: prev.r, ap: prev.ap }));
 await shot('f14-alpha-cen.png');
+} // (FLIGHT_ONLY: desk)
 
+if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the change small)
 // 13. on a phone, by touch alone: More, Spaceship boards the ship; the tabs stay (where to go, time,
 // the way out); + raises the drive's setting; Go there on a selected world starts the autopilot
 {
@@ -374,9 +381,24 @@ await shot('f14-alpha-cen.png');
   const viewAt = await at('.fl-view');
   const vsize = await phone.evaluate(() => { const b = document.querySelector('.fl-view').getBoundingClientRect(); return { w: b.width, h: b.height, label: document.querySelector('.fl-view b').textContent, mode: window.app.game.mode }; });
   const other = (m) => (m === 'chase' ? 'cockpit' : 'chase'), named = (m) => (m === 'chase' ? 'Chase' : 'Cockpit');
+  // (what the switch says: the view, in a touch screen's words, under the instruments, not behind
+  // them; recorded as it is shown, since a frame of the chase view can outlast the message here)
+  await phone.evaluate(() => {
+    const t = document.querySelector('.hud-toast');
+    window.__said = null;
+    const look = () => {
+      if (window.__said || !t.classList.contains('show')) return;
+      const r = t.getBoundingClientRect();
+      const covered = [...document.querySelectorAll('.fl-glance, .fl-touch, .fl-stick, .fl-lever, .fl-stop, .fl-view')].map((e) => e.getBoundingClientRect()).some((o) => o.width > 0 && r.left < o.right && o.left < r.right && r.top < o.bottom && o.top < r.bottom);
+      window.__said = { text: t.textContent, shown: true, covered };
+    };
+    new MutationObserver(look).observe(t, { attributes: true, childList: true, characterData: true, subtree: true });
+  });
   await f.tap(viewAt);
+  const said = await phone.evaluate(() => window.__said ?? { shown: false, text: document.querySelector('.hud-toast').textContent });
   await f.frames(4);
   const v1 = await phone.evaluate(() => ({ mode: window.app.game.mode, on: window.app.game.flight.on, label: document.querySelector('.fl-view b').textContent }));
+  check('on a phone the view switch says only the view, in touch words, clear of the instruments', said.shown && /^(Chase|Cockpit) view$/.test(said.text) && !/W\/S|SAS|key/.test(said.text) && !said.covered, JSON.stringify(said));
   await phone.screenshot({ path: path.join(outDir, 'f22-phone-view.png'), timeout: 180000 });
   await f.tap(await at('.fl-view'));
   await f.frames(4);
@@ -472,6 +494,49 @@ await shot('f14-alpha-cen.png');
   await ctx.close();
 }
 
+// 15b. the explorer on the same ten sizes: with a card's details open and the night notice up,
+// nothing of the interface lies on anything else of it (the round buttons, the notice, the card,
+// the tab bar, the chips, the live mark), and all of it is on the screen
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=4&az=40&el=5&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) {
+    await f.tap(await phone.evaluate(() => { const b = document.querySelector('.hud-coach [data-coach]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }));
+  }
+  await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); a.hud.notice('Night at Mount Everest: sunrise in 9 h 23 min', 'sunrise', 'Skip to sunrise'); });
+  await f.frames(4);
+  await phone.evaluate(() => document.querySelector('.card [data-details]').click());
+  const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
+  const bad = [];
+  for (const [w, h, inset] of sizes) {
+    await phone.setViewportSize({ width: w, height: h });
+    await phone.evaluate((i) => { const r = document.documentElement.style; r.setProperty('--safe-l', `${i}px`); r.setProperty('--safe-r', `${i}px`); }, inset);
+    await f.frames(3);
+    await phone.waitForTimeout(400);
+    const got = await phone.evaluate(() => {
+      const shown = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
+      const box = (e, what) => { const r = e.getBoundingClientRect(); return { what, l: r.left, r: r.right, t: r.top, b: r.bottom }; };
+      const q = (sel, what) => [...document.querySelectorAll(sel)].filter(shown).map((e) => box(e, what));
+      return {
+        parts: [...q('#hud .hud-fabs > .fab', 'round button'), ...q('#hud .hud-notice', 'notice'), ...q('#hud .hud-slot > .on', 'panel'), ...q('#hud .hud-tabs', 'tabs'), ...q('#hud .hud-top .chip', 'chip'), ...q('#hud .live-mark', 'live mark')],
+        details: !document.querySelector('.card .facts').hidden, W: innerWidth, H: innerHeight,
+      };
+    });
+    const meet = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
+    const hits = [];
+    got.parts.forEach((a, i) => got.parts.slice(i + 1).forEach((b) => { if (meet(a, b)) hits.push(`${a.what}/${b.what}`); }));
+    const off = got.parts.filter((p) => p.l < -0.5 || p.t < -0.5 || p.r > got.W + 0.5 || p.b > got.H + 0.5).map((p) => `${p.what} off screen`);
+    if (hits.length || off.length || !got.details || !got.parts.some((p) => p.what === 'notice')) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, hits, off, details: got.details });
+    if (w === 390 && h === 664) await phone.screenshot({ path: path.join(outDir, 'f25-phone-details-notice.png'), timeout: 180000 });
+  }
+  check('the explorer on ten phone sizes, a card\'s details open and a notice up: no part of the interface lies on another, all on the screen', bad.length === 0, JSON.stringify(bad).slice(0, 600));
+  await ctx.close();
+}
+
 // 16. a new player on a phone (from the playtests): the ship found from a selected place ("Fly
 // there in your ship"), the missions, "How to move" and the start menu in More, back to today in the
 // Time sheet, a flight to a place on the ground in real time, the drag button saying what it does,
@@ -497,7 +562,16 @@ await shot('f14-alpha-cen.png');
   await f.frames(2);
   const open = await phone.evaluate(() => document.querySelector('.more .missions').open);
   await f.tap(await at('.more [data-help]'));
-  await phone.waitForTimeout(800);
+  // (the list scrolls to the help smoothly, a frame at a time: until the help is in sight and the
+  // list has stood still for two frames, rather than a fixed 800 ms, which at one frame a second
+  // on a runner was over before the scroll began; what is checked below is unchanged)
+  await phone.waitForFunction(() => {
+    const t = document.querySelector('.more .help-title').getBoundingClientRect(), list = document.querySelector('.more .list'), l = list.getBoundingClientRect();
+    const w = (window.__helpScroll ??= { top: -1, still: 0 });
+    w.still = list.scrollTop === w.top ? w.still + 1 : 0;
+    w.top = list.scrollTop;
+    return t.top >= l.top - 1 && t.bottom <= l.bottom && w.still >= 2;
+  }, null, { timeout: 60000, polling: 'raf' }).catch(() => undefined);
   const help = await phone.evaluate(() => { const t = document.querySelector('.more .help-title').getBoundingClientRect(), l = document.querySelector('.more .list').getBoundingClientRect(); return t.top >= l.top - 1 && t.bottom <= l.bottom; });
   check('More: How to move first (and it scrolls to the help), the missions with their count', /^How to move/.test(more.first) && /\d+ of \d+ done/.test(more.missions) && more.items >= 20 && open && help, JSON.stringify({ ...more, open, help }));
   await phone.evaluate(() => document.querySelector('.more [data-act="menu"]').scrollIntoView({ block: 'center' }));
@@ -520,6 +594,53 @@ await shot('f14-alpha-cen.png');
   st = await phone.evaluate(() => ({ rate: window.app.clock.rate, toast: document.querySelector('.hud-toast').textContent }));
   check('a flight to a place on the ground drops time to real time, and says so', st.rate === 1 && /Real time for the flight/.test(st.toast), JSON.stringify(st));
   await phone.evaluate(() => { const a = window.app; a.rig.cancelGoto(); a.select(null); });
+
+  // night at a place on a surface: on arrival a notice says so, with the time to sunrise, and offers it
+  const nightAt = (name) => phone.evaluate((n) => {
+    const a = window.app, lm = a.landmarks.find((l) => l.name === n);
+    const s = a.system.sun.upos.sub(lm.world.upos).normalize();
+    return Math.asin(lm.up().dot(s)) * 180 / Math.PI;
+  }, name);
+  // (a time of night at Everest: hour by hour from now, the first with the Sun 20° down)
+  await phone.evaluate(() => {
+    const a = window.app, lm = a.landmarks.find((l) => l.name === 'Mount Everest');
+    a.clock.rate = 1;
+    for (let h = 0; h < 30; h++) {
+      a.system.update(a.clock.jdTdb);
+      const s = a.system.sun.upos.sub(lm.world.upos).normalize();
+      if (Math.asin(lm.up().dot(s)) < -0.35) break;
+      a.clock.jdTdb += 1 / 24;
+    }
+  });
+  await f.frames(3);
+  await phone.evaluate(() => { const a = window.app, lm = a.landmarks.find((l) => l.name === 'Mount Everest'); a.select(lm); a.goTo(lm); });
+  const told = await phone.waitForFunction(() => { const n = document.querySelector('.hud-notice'); return n && !n.hidden; }, null, { timeout: 300000 }).then(() => true).catch(() => false);
+  const notice = await phone.evaluate(() => ({ text: document.querySelector('.hud-notice span').textContent, act: document.querySelector('.hud-notice .notice-act').textContent }));
+  const h0 = await nightAt('Mount Everest');
+  await phone.screenshot({ path: path.join(outDir, 'f24-phone-night.png'), timeout: 180000 });
+  await f.tap(await at('.hud-notice .notice-act'));
+  await f.frames(4);
+  const h1 = await nightAt('Mount Everest');
+  check('night at a place: said on arrival with the time to sunrise; Skip to sunrise brings the morning', told && /^Night at Mount Everest: sunrise in \d/.test(notice.text) && notice.act === 'Skip to sunrise' && h0 < -5 && h1 > 4 && h1 < 9, JSON.stringify({ told, ...notice, before: h0.toFixed(1), after: h1.toFixed(1) }));
+  // a tour place is arrived at in daylight
+  await phone.evaluate(() => {
+    const a = window.app, lm = a.landmarks.find((l) => l.name === 'Mount Everest');
+    for (let h = 0; h < 30; h++) {
+      a.system.update(a.clock.jdTdb);
+      const s = a.system.sun.upos.sub(lm.world.upos).normalize();
+      if (Math.asin(lm.up().dot(s)) < -0.35) break;
+      a.clock.jdTdb += 1 / 24;
+    }
+  });
+  await f.frames(2);
+  const tourId = await phone.evaluate(() => window.app.tourItems().find((i) => i.label === 'Mount Everest').id);
+  await phone.evaluate((id) => window.app.pickDestination(id, 'tour'), tourId);
+  await f.frames(3);
+  const h2 = await nightAt('Mount Everest');
+  check('a tour place is arrived at in daylight (the clock on to its morning, said so)', h2 > 4, `the Sun ${h2.toFixed(1)}° up at Mount Everest`);
+  // (back out to where the phone began, well above the Earth's air)
+  await phone.evaluate(() => { const a = window.app; a.rig.cancelGoto(); a.select(null); a.hud.clearNotice(); const e = a.findByName('Earth'); a.placeNear(e, e.radius * 4, 40, 10); });
+  await f.frames(3);
 
   // back to today: offered in the Time sheet when the date is far from it
   await phone.evaluate(() => { window.app.clock.jdTdb += 400 * 365.25; });
@@ -564,6 +685,7 @@ await shot('f14-alpha-cen.png');
   await ctx.close();
 }
 
+} // (FLIGHT_ONLY: phone)
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok).length;
