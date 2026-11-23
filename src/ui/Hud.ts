@@ -37,8 +37,8 @@ export type HudAction =
   // undo the last change; watching what a change does (src/app/Watch.ts): stop, watch it again, put the offer away;
   // whether changes are watched at all
   | 'undo' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me'
-  // a link to the scene as it is now: the share sheet on a phone, copied at a desk (src/app/SceneLink.ts)
-  | 'share';
+  // a link to the scene as it is now: the share sheet on a phone, copied at a desk (src/app/SceneLink.ts); the scene kept on this device (src/app/Saves.ts)
+  | 'share' | 'save';
 
 export interface HudHost {
   act(action: HudAction): void;
@@ -57,6 +57,9 @@ export interface HudHost {
   sizeHeld(held: boolean): void;
   /** the mass slider of a world just made, being put in place, was put at `s` (0 to 1; src/app/WhatIf.ts: madeMassAt) */
   setMadeMass(s: number): void;
+  /** a saved scene was chosen from More's list (src/app/Saves.ts), or its Delete tapped twice */
+  openSave(id: string): void;
+  deleteSave(id: string): void;
 }
 
 export interface HudState {
@@ -368,6 +371,9 @@ const TEMPLATE = `
           <button class="row" type="button" data-act="photo">${ICON.photo}<span class="row-text"><b>Photo mode</b><small class="touch-only">Hides everything; tap to bring it back</small><small class="mouse-only">Hides everything; U brings it back</small></span></button>
           <button class="row" type="button" data-act="screenshot">${ICON.camera}<span class="row-text"><b>Save a picture</b><small>The view as a PNG</small></span></button>
           <button class="row" type="button" data-fullscreen hidden>${ICON.fullscreen}<span class="row-text"><b>Full screen</b><small>Without the browser around it</small></span></button>
+          <h3>Saved scenes</h3>
+          <button class="row" type="button" data-act="save">${ICON.save}<span class="row-text"><b>Save this scene</b><small>Kept on this device, to open again from here</small></span></button>
+          <div class="saves" aria-label="Saved scenes"></div>
           <h3 class="help-title">How to move</h3>
           <table class="help touch-only">${TOUCH_HELP.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
           <table class="help mouse-only">${KEY_HELP.map(([k, v]) => `<tr><th>${k ? `<kbd>${escapeHtml(k)}</kbd>` : ''}</th><td>${v}</td></tr>`).join('')}</table>
@@ -814,6 +820,38 @@ export class Hud {
   }
 
   /**
+   * The scenes saved on this device, newest first, under Save this scene in More: each opens with a
+   * tap; its delete button asks once more ("Delete?") before it forgets it. Names and dates are
+   * put in as text, never as markup (a save's name came from a scene, which may have come from a link).
+   */
+  setSaves(list: readonly { id: string; name: string; detail: string }[]): void {
+    const box = this.$('.more .saves');
+    box.replaceChildren(...list.map((s) => {
+      const row = document.createElement('div');
+      row.className = 'save-row';
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'row';
+      open.dataset.saveOpen = s.id;
+      const text = document.createElement('span');
+      text.className = 'row-text';
+      const b = document.createElement('b'), small = document.createElement('small');
+      b.textContent = s.name;
+      small.textContent = s.detail;
+      text.append(b, small);
+      open.append(text);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'icon-btn save-delete';
+      del.dataset.saveDelete = s.id;
+      del.setAttribute('aria-label', `Delete ${s.name}`);
+      del.innerHTML = ICON.close;
+      row.append(open, del);
+      return row;
+    }));
+  }
+
+  /**
    * A notice over the panels that stays until it is closed or another takes its place (night at a
    * place, and the way on to its sunrise): its words, and the action its button asks for (null: none).
    */
@@ -1108,6 +1146,12 @@ export class Hud {
     else if ('sizeReal' in d) { this.sizeSlider.value = '0'; this.host.sizeHeld(true); this.host.setSize(0); this.host.sizeHeld(false); }
     else if ('live' in d) { if (this.state?.live) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); } }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
+    else if (d.saveOpen) this.host.openSave(d.saveOpen);
+    else if (d.saveDelete) {
+      // (asked once more: a second tap on it deletes)
+      if (b.classList.contains('armed')) this.host.deleteSave(d.saveDelete);
+      else { b.classList.add('armed'); b.textContent = 'Delete?'; }
+    }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
     else if (d.act) {
       if (b.classList.contains('notice-act')) this.clearNotice();

@@ -3,6 +3,7 @@ import { AU, SUN_ABS_MAG } from '../core/units';
 import { G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER, R_SUN, radiusFromDensity } from '../sim/physics';
 import type { Body } from '../universe/Body';
 import type { BodyJson } from '../universe/SolarSystem';
+import type { MadeRecord } from './SceneWorld';
 import { circularVelocity, M_MOON, massWords, starMassWords } from './Powers';
 
 /**
@@ -261,4 +262,15 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
     case 'star':
       return { label, text, math: `${mainSequence(kg / M_SUN).radius.math}: a star of the main sequence (its temperature and light follow from its mass too)` };
   }
+}
+
+/**
+ * A made world described again from what a link or a save kept of it (src/app/SceneWorld.ts), as
+ * newMoon and newTwin described it when it was made: `home` is what it was made for, `like` what
+ * a copy is a copy of (null for a moon), `texture` the key of that one's map. Its mass and size
+ * as it was made are set by whoever makes it (LivePhysics.adoptWorld): this is its look and name.
+ */
+export function madeAgain(m: MadeRecord, home: Body, like: Body | null, texture: string | null): BodyJson {
+  const plan = m.kind === 'moon' || !like ? newMoon(home, [1, 0, 0], m.icy ? Infinity : 0, 0, m.id) : newTwin(like, texture, home, [1, 0, 0], 0, m.id);
+  return { ...plan.json, name: m.name, madeAs: { kind: m.kind, kg: m.kg, icy: m.icy } };
 }
