@@ -102,19 +102,51 @@ to be diffed against one taken here.
 
 **Not the same machine.** A runner's 4 cores are its own, but its frames are not uniformly faster:
 verify's scenes draw 3-4x faster there than here under load, while walk, terrain and flight's deep
-space ran 1.5-3x slower, and runners differ from one job to the next (Intel and AMD parts). A check
-that races the frame rate or the wall clock can therefore fail on one side only. Seen so far
-(full set at ce1fa02, run 45075450821, against this container):
+space ran 1.5-3x slower (a frame a second or two is usual there for flight, the Moon's ground and
+the walks), and runners differ from one job to the next (Intel and AMD parts).
 
-| check | here | runner | why |
+**Count frames, not seconds.** Most of the runner-only failures found so far came from one thing: the app
+counts its time in frames, and a check that waits seconds for what takes frames passes at sixty
+frames a second and fails at one. A frame is at most 0.1 s of the camera's and the ship's controls
+(its easing, the flip of an autopilot, an ending's 45 frames), at most a second of the clock's and the
+live-physics watch's, and the autopilot's warp is a share of the time to go a frame. So: wait for the
+state, with a long bound (ten minutes; a suite's own steps are the measure), never for a number of
+seconds; and where a check needs a state to *last* (a watch that is on, a toast, a ship that has not
+yet fallen), hold it, or count from when it began.
+
+**SLOW_FRAME_MS=n** (scripts/lib/browser.mjs) holds every animation frame of every page for n ms before
+the app's frame runs: `SLOW_FRAME_MS=1000 node scripts/<suite>.mjs ...` is a runner at a frame a
+second, here. It reproduced the live, interact and touch rows below before their fixes and shows them
+passing after (the sections that are long at that rate can be run alone: `LIVE_ONLY=watch
+LIVE_KINDS=desk`). A flake that does not show at 1000 may at 300 to 600: try several.
+
+Checks that were the test's and are fixed (from the test-health pass of 23 November, against this
+container; none loosened). The numbers are GitHub runner runs, github.com/dippy34/starfarer/actions/runs/<number>.
+
+| check | was | cause | fix and the run after |
 |---|---|---|---|
-| ship: the three "sideways" checks | fail | fail | the same failure (not a runner matter) |
-| live: desk, Stop ends the watch | crash (under load) | pass | likely the 15 s watch ending by itself before Stop is pressed: the Stop button was not visible |
-| flight: arrives at the star (Rigil Kentaurus) | pass | fail | the flight takes longer than the loop's 900 s of wall time there |
-| touch: pinching the other way lifts off | pass | fail | not yet explained (the pinch did not lift off: 1.6 m both times) |
-| flight and game: a gentle drop is a landing (the Moon) | pass | failed in one of three runs each (CRASHED) | not yet explained; a drop timed against the terrain streaming in |
-| interact: time acceleration; arrivals by autopilot | pass | failed in two of six runs (Δ 1.00 d; a 60-120 s wait running out); then in two of four runs of the landscape work (the 120 s wait for the autopilot to the ISS), passing in the other two, as the old commit did in both its runs | wall-clock checks that a slow frame (over 1 s) shortens |
-| flight: More, How to move (scrolls to the help) | pass | fail, now fixed | a fixed 800 ms for a smooth scroll that, at a frame a second, had not begun; it now waits for the scroll |
+| ship: sideways "orbit lines, the path and its tags never draw over the ship" and "the ship is lit by the Sun" | fail here and there (n 90 and 85 against floors of 100; the answers were right) | since 0fce693 the Earth's card has a Size row and a temperature line: sideways the ship is framed in the strip over the card, which got shorter, so the ship is smaller and has fewer pixels to sample (n 131 and 122 up to 35fc045; 45206153137, 45211759470). Not the three "sideways" checks of ce1fa02, which 485b327 and 94f9dae fixed | measured with the card put away, as the bracket check beside them is (n 692 and 429, floors as they were); "on the screen, under nothing" and "no name over the ship" still with the card on. 45243068805: 33/33. The ship is about 100 px wide there with the card open: a known trade-off, HANDOFF.md |
+| live: "the Moon's month" (phone and desk) | fail there and on the base (45206153137, 45216536036), pass here | the card said "a circle 738,670 km out" only where the orbit's two ends agree to the kilometre, else "nearly a circle, 738,670 to 738,671 km": the Sun pulls the Moon about 7e-7 off its circle in seconds, so the wording came by a rounding | app: an orbit under the stretch the details call 0 (e < 0.0005) is a circle in words (`orbitWords`); unit test. 45240361435: live 184/184 |
+| flight-phone: the sky names "more than 50 names looked at" | 50, 51 or 52 from run to run, here and there (45230593811) | from the ship's first view, mostly Earth and dark, 1 to 6 names a screen: the floor sat on the edge of what there was | the eye is turned to Orion's belt first: 129 names, floor as it was (45242874244) |
+| flight: "arrives at the star" (Rigil Kentaurus) | pass here (538 s under load), fail there: 7.3e9, 5.1e9, 4.5e12 m short with the autopilot braking (45206153137, 45230593811, 45211759470) | still the runner's pace, now measured: the flight is about 1,150 frames (a flip at x1 in steps of 0.1 s, a warp of a twentieth of the time to go a frame) and the loop gave it 900 s | waits for the arrival: up to 4,600 frames and an hour. 45248014161: arrived after about 1,017 s, flight-desk 26/26 |
+| flight and game: a gentle drop is a landing (the Moon) | CRASHED there one run in three, 25.2 and 15.8 m/s in two of six probed (45206153137, 45242874244) | the ship is set 12 m over the coarse ground seen from 5 km up; the terrain is built finer under it, and the ground moved by +14 to +33 m and by -65 and -184 m while it fell, several frames of 2 to 3 s there (HANDOFF.md "Ground and level of detail") | the checks hold the ship at 12 m, time paused, until the terrain's jobs are done and the ground steady for 8 frames. And the app: a ship low over refined ground rides with it (`GroundRide`), flight.mjs 7b. 45248014161: flight-desk 26/26, game 21/21 |
+| flight: after the crash, respawn in a safe orbit | fail once there ("pe -1,735 km", still the crash; 45211759470, 45242874244) | the ending counts 45 frames: about 120 s over the Moon there, in a wait of 120 s | the wait is ten minutes |
+| flight-phone: with the drive too weak to climb, Go there says so (two checks) | fail there (45242874244) | the ship is boarded 2 km over the Earth and falls; a frame there is up to a second of flight, so it had hit the ground (59 m/s) before the notice was read | time held while the check is made. 45252506409: both pass |
+| flight-phone: the instruments say so while it climbs | fail once there (45252506409) | read once, at the first frame of the climb, they still said "Autopilot: turning" | read through the climb until they say it; 45262156702: 66/66 |
+| flight: More, How to move (scrolls to the help) | fail there (before ce1fa02's notes) | a fixed 800 ms for a smooth scroll that, at a frame a second, had not begun | waits for the scroll (a3a8655); "How to move" is first in More again (68982f7) |
+| live: desk, Stop ends the watch | "crash" under load here (ce1fa02), pass there lately | the watch counts its 15 s in frames of a second at most, the camera eases in steps of a tenth: at a frame a second the watch is over after 15 frames, before the camera has finished easing out, and the Stop button is gone: Playwright waits "element is not visible" and the suite ends. Reproduced at SLOW_FRAME_MS=1000 (twice, also with a Replay before it) | Stop is pressed on a watch held on (its countdown set high; Replay if it is over already). At 1000: passes. 45262156702: passes |
+| interact: time acceleration "Δ 1.00 d"; the flights to Mars, Sirius and the space station | fail now and then there (45216536036: Δ 1.00 d; the 60 s and 120 s waits) | the clock advances a second of its rate at most a frame: two seconds are one frame there, one day; the camera's flights are 60 frames and more, a minute and more there. Reproduced at 1000: the suite ended at the first wait | the day-a-second check waits for the two days; the flights' waits are bounds of ten minutes. At 1000: goto Mars passes, Δ 3.00 d. 45262156702: goto Mars, Δ 2.48 d, the camera's co-move pass |
+| touch: photo mode "the centre is the middle of the screen" | fail once there (45263636238; the two other runs and every other check passed) | waited for the centre within a pixel of the middle, then three frames, and asked it to be exactly the middle: it is set there within 0.05 px after some frames, three at a frame a second and many at sixty | waits for it to be exactly 0. touch 99/99 on the runner after (45272797197, with the Save a picture fix) |
+| touch: Save a picture says where it went, "still to be read three seconds on" | fail at SLOW_FRAME_MS=800 here (toast: null) | three seconds counted from the download, which is a frame, a second or more, after the toast went up (a wall-clock toast) | counts from when the toast went up |
+
+Still seen, not explained (these are listed so that a failure of one is not a surprise; none has been
+a failure of the app that we know of):
+
+| check | where seen | what is known |
+|---|---|---|
+| touch: pinching the other way lifts off | one runner run at ce1fa02 (1.6 m both times) | 3 runner runs of touch since (99/99, 99/99, 98/99: altitudes 152.8, 38.0, 50.3 m, different each time) and one run at SLOW_FRAME_MS=800 (70.2 m) pass it. Not reproduced; the old failure left the camera at the ground's eye height as if the zoom were not applied |
+| live: phone, a sun made, its mass changed later with Mass (and, at SLOW_FRAME_MS=450 here, once in five, the red dwarf one before it) | 45262156702 (2.000 Suns where 0.8 was asked, the radius a step behind) | a drag on the card's mass slider that did not land where asked; 8 runs here at 150 to 1000 ms pass it but one. Not reproduced; the next place to look is the slider's box read while the card is still settling |
+| interact: search and go to Sirius, after the walks | 45262156702 (the 600 s wait ended the suite; the walks before it took 12 to 17 minutes each there) | passes here alone at SLOW_FRAME_MS=1000 and in the whole suite at a normal frame rate (21 checks, 40 minutes under load). Not reproduced; the wait now ends in a failed check that names what it saw, so the suite goes on to the space station |
 
 Read a runner-only failure the way you would a failure under load here: run that suite again
 (there or here) before believing it, and never loosen a check to make either side green.
