@@ -379,6 +379,56 @@ if (!only.length || only.includes('glow-out')) {
   await page.close();
 }
 
+// Cygnus X-1 come up to slowly through some 120 of its radii (1.5 % nearer a frame, from 160 to
+// 80), from where the star stands to one side, 25 degrees above the disk: the frame as shown never
+// changes by more than 5 % from one frame to the next. As the disk's bright middle grew past a
+// twelfth of the frame, the eye's settling on it went from the dark's exposure to its key in a few
+// hundredths of its weight, and the frame went darker by 16 % in one frame and by 60 % in four.
+if (!only.length || only.includes('cygnus-slow')) {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  collectErrors(page, errors);
+  await page.goto(`${base}?menu=0&time=2026-10-01T20:00:00Z&target=Cygnus%20X-1&dist=160`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.app && window.app.frameCount > 30, null, { timeout: 600000 });
+  await page.waitForFunction(() => window.app.rig.target?.name === 'Cygnus X-1', null, { timeout: 180000 });
+  await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 180000 }).catch(() => undefined);
+  await page.evaluate((above) => {
+    const a = window.app, r = a.rig, t = r.target;
+    a.renderer.gl.setAnimationLoop(null);
+    a.hud.setHidden(true);
+    a.labels.enabled = false;
+    a.orbits.enabled = false;
+    const up = t.diskNormal.clone().normalize();
+    window.__line = up.clone().cross(t.companion.upos.sub(t.upos)).normalize().multiplyScalar(Math.cos(above)).addScaledVector(up, Math.sin(above));
+    r.lookAt(window.__line.clone().negate(), up);
+  }, (ABOVE * Math.PI) / 180);
+  const shown = (dist) => page.evaluate(async (dist) => {
+    const a = window.app, r = a.rig, t = r.target;
+    r.upos.copy(t.upos).addVec(window.__line, dist * t.radius);
+    await new Promise((res) => setTimeout(res, 105));
+    a.frame();
+    const c = window.__mean ?? (window.__mean = Object.assign(document.createElement('canvas'), { width: 96, height: 96 }));
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(a.renderer.gl.domElement, 0, 0, 96, 96);
+    const px = g.getImageData(0, 0, 96, 96).data;
+    let s = 0;
+    for (let i = 0; i < px.length; i += 4) s += px[i] + px[i + 1] + px[i + 2];
+    return s / (96 * 96 * 3);
+  }, dist);
+  // (already on the way in when the measuring starts: the dust that streaks past a moving eye
+  // comes in as it starts to move, and lightens the frame by a tenth)
+  for (let i = 25; i > 0; i--) await shown(160 / 0.985 ** i);
+  let last = await shown(160), worst = { by: 0, at: 160 };
+  for (let d = 160 * 0.985; d >= 80; d *= 0.985) {
+    const now = await shown(d);
+    const by = Math.abs(Math.log(now / last));
+    if (by > worst.by) worst = { by, at: d };
+    last = now;
+  }
+  check('Cygnus X-1 come up to slowly: the frame never changes by more than 5 % from one frame to the next', worst.by < Math.log(1.05),
+    `largest change x${Math.exp(worst.by).toFixed(3)} at ${worst.at.toFixed(0)} radii`);
+  await page.close();
+}
+
 console.log(errors.length ? `console errors:\n${errors.slice(0, 10).join('\n')}` : 'no console errors');
 check('no console errors', errors.length === 0);
 await browser.close();
