@@ -66,7 +66,7 @@ import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
-import { aheadWords, dayWords, farWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { aheadWords, dayWords, farWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
@@ -3280,7 +3280,9 @@ export class App {
           // its size, as a factor on its real radius
           if (this.sizeable(sel)) {
             const size = sel.radius / this.physics.realRadius(sel);
-            selection.size = { slider: sizeSlider(size), words: radiusWords(sel.radius), times: timesWords(Math.abs(size - 1) < 1e-9 ? 1 : size, 'size'), linked: this.sizeFollows };
+            // (a factor the slider snapped to, read back from the radius, is that factor to the last digits)
+            const nice = sizeFactor(sizeSlider(size)), f = Math.abs(size / nice - 1) < 1e-9 ? nice : size;
+            selection.size = { slider: sizeSlider(size), words: radiusWords(sel.radius), times: sizeTimesWords(f), linked: this.sizeFollows };
           }
         }
         // a world just made, being put in place: its own mass slider, and what it is at that mass

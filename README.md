@@ -101,7 +101,7 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 
 <img src="docs/img/hit.jpg" width="640" alt="Mars thrown at the Earth on a phone: aimed with the slingshot, the card saying its path goes into the Earth and, with every pull counted, that it hits it in 1.6 days; let go, time slowed to an hour and a half a second for the last of the fall, the two framed; then the flash where they met, and the card with what the hit was: 9.4 km/s, 2.5×10³¹ J, as much as the Sun gives off in 18.4 hours, 5.2 times the energy that holds Mars together, and the prediction, labelled, that Mars would break apart">
 
-<img src="docs/img/warm.jpg" width="640" alt="On a phone: the Earth's card with its temperature, 15 °C as measured and −18 °C without its air; the Earth dragged half way to the Sun, the card saying, as it goes, Earth here: 111 °C, the oceans would boil; and Size, beside Mass, the Earth made three times as large, 19,020 km, with Real size and Same density">
+<img src="docs/img/warm.jpg" width="640" alt="On a phone: the Earth's card with its temperature, 15 °C as measured and −18 °C without its air; the Earth dragged half way to the Sun, the card saying, as it goes, Earth here: 111 °C, the oceans would boil; and Size, beside Mass, the Earth made three times as large, 19,113 km, with Real size and Same density">
 
 *Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
 verification run, not hand-picked renders.*
