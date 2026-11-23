@@ -309,6 +309,16 @@ const centreOf = async (page, sel) => {
   let facts = await page.evaluate(() => [...document.querySelectorAll('.card .facts dt')].map((d) => d.textContent));
   check('Details unfolds the facts of what is selected', facts.includes('Radius') && facts.includes('Distance') && facts.length > 5, facts.join(', '));
   await page.screenshot({ path: path.join(outDir, 'touch-6-details.png'), timeout: 300000 });
+  // another body's facts open at their top, not where the last one's were scrolled to (playtest D2:
+  // the Moon's opened scrolled down, its Distance out of sight)
+  {
+    const down = await page.evaluate(() => { const f = document.querySelector('.card .facts'); f.scrollTop = f.scrollHeight; return f.scrollTop; });
+    await page.evaluate(() => window.app.select(window.app.findByName('Moon')));
+    await f.frames(2);
+    await tapOn('.card [data-details]');
+    const top = await page.evaluate(() => ({ name: document.querySelector('.card h2').textContent, scroll: document.querySelector('.card .facts').scrollTop }));
+    check("another body's facts open at their top", down > 50 && top.name === 'Moon' && top.scroll === 0, JSON.stringify({ down, ...top }));
+  }
   await tapOn('.card [data-act="deselect"]');
   let st = await state(page);
   check('the card closes with its cross', st.selection === null && st.sheet === 'none');
@@ -317,7 +327,8 @@ const centreOf = async (page, sel) => {
   await tapOn('.hud-tabs [data-tab="explore"]');
   let rows = await page.evaluate(() => [...document.querySelectorAll('.explore .row b')].map((b) => b.textContent));
   st = await state(page);
-  check('Explore opens the tour', st.sheet === 'explore' && rows.includes('Olympus Mons') && !rows.some((r) => /Walk/.test(r)), rows.slice(0, 4).join(', '));
+  // (walking works by touch now: the tour offers the walk at Apollo 17 on a phone too)
+  check('Explore opens the tour, with the walk on the Moon', st.sheet === 'explore' && rows.includes('Olympus Mons') && rows.includes('Walk on the Moon at Apollo 17'), rows.slice(0, 4).join(', '));
   await page.screenshot({ path: path.join(outDir, 'touch-7-explore.png'), timeout: 300000 });
   await tapOn('.cats [data-cat="solar"]');
   rows = await page.evaluate(() => [...document.querySelectorAll('.explore .row')].map((b) => ({ name: b.querySelector('b').textContent, photo: b.querySelector('.thumb').classList.contains('photo') })));
@@ -389,6 +400,20 @@ const centreOf = async (page, sel) => {
   await f.frames(2);
   const shown = await page.evaluate(() => getComputedStyle(document.querySelector('.hud-dock')).visibility !== 'hidden' && window.app.labels.enabled && !window.app.photoMode);
   check('photo mode hides everything; a tap brings it back', hidden && shown, JSON.stringify({ hidden, shown }));
+  // Save a picture: the picture is downloaded, the sheet gets out of the way, and it is said where the picture went,
+  // still to be read three seconds on (playtest D5: "no feedback")
+  {
+    await tapOn('.hud-tabs [data-tab="more"]');
+    const row = await page.evaluate(() => { const b = document.querySelector('.more [data-act="screenshot"]'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    const download = page.waitForEvent('download', { timeout: 60000 }).catch(() => null);
+    await f.tap(row);
+    const file = (await download)?.suggestedFilename() ?? null;
+    await page.waitForTimeout(3000);
+    const after = await page.evaluate(() => { const t = document.querySelector('.hud-toast'); return { toast: t.classList.contains('show') ? t.textContent : null }; });
+    st = await state(page);
+    check('Save a picture downloads it, closes the sheet and says where it went', !!file && /\.png$/.test(file) && st.sheet !== 'more' && !!after.toast && after.toast.includes('downloads') && after.toast.includes(file), JSON.stringify({ file, sheet: st.sheet, ...after }));
+    await page.screenshot({ path: path.join(outDir, 'touch-10b-saved.png'), timeout: 300000 });
+  }
   await page.close();
   await ctx.close();
 }

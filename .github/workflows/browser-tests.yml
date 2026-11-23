@@ -1,0 +1,169 @@
+# The browser suites (scripts/<suite>.mjs) on GitHub's runners: a runner per suite (the longest in parts), all at once.
+#
+# Runs on a push to a throwaway branch `claude/test-**` (never on main or the deploy branch, and it
+# deploys nothing). scripts/remote-test.mjs pushes to such a branch, waits for this run and fetches
+# the results: see docs/notes/testing.md. A new push to the branch cancels the run still going there.
+#
+# Which suites: those scripts/affected.mjs picks for the change against claude/friendly-hypatia-up418z,
+# unless the head commit's message has a trailer line `Suites: all` or `Suites: flight walk`.
+#
+# Ubuntu 24.04, as in the agents' container (and Playwright 1.56, pinned, cannot install its system
+# libraries on ubuntu-latest, 26.04). The runner's browser and fonts are the container's (Chrome for
+# Testing, CHROME_VERSION below; Inter), so a result here means what it means there. The suites measure within a run, never against stored
+# pictures, so there are no pixel baselines to keep per machine.
+name: Browser tests
+
+on:
+  push:
+    branches:
+      - 'claude/test-**'
+
+permissions:
+  contents: read
+
+# a newer push to the same test branch replaces a run still going
+concurrency:
+  group: browser-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_BRANCH: claude/friendly-hypatia-up418z
+  # the agents' container: `/opt/pw-browsers/chromium --version`
+  CHROME_VERSION: 153.0.8010.12
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      jobs: ${{ steps.pick.outputs.jobs }}
+    steps:
+      # (history and trees only, and only scripts/ checked out: the data is not needed to choose)
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: scripts
+      - id: pick
+        run: |
+          git fetch --quiet --filter=blob:none origin "$BASE_BRANCH"
+          trailer="$(git log -1 --format=%B "$GITHUB_SHA" | sed -n 's/^Suites:[[:space:]]*//Ip' | tail -1)"
+          if [ "$trailer" = "all" ]; then
+            list="$(node scripts/affected.mjs --all)"
+          elif [ -n "$trailer" ]; then
+            list="$trailer"
+          else
+            list="$(node scripts/affected.mjs --base FETCH_HEAD --why)"
+          fi
+          echo "suites: $list (trailer: '${trailer}')"
+          # one job per suite, the longest in parts (PARTS in scripts/affected.mjs)
+          jobs="$(node scripts/affected.mjs --matrix $list)"
+          echo "jobs: $jobs"
+          echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.jobs != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 1
+          # (nearly all of it is JPEG, PNG and packed binary already)
+          compression-level: 0
+
+  suite:
+    needs: [plan, build]
+    if: needs.plan.outputs.jobs != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.plan.outputs.jobs) }}
+    name: ${{ matrix.job.name }}
+    steps:
+      # the scripts, package.json and vite.config.ts (root files come with a sparse checkout); not the data
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The same browser as the agents' container: Chrome for Testing at the version installed there
+      # (/opt/pw-browsers/chromium), driven by the pinned @playwright/test. (With Playwright's own
+      # Chromium 141 and DejaVu for text, walk's touch checks t2 and t3 failed here and passed there.)
+      - run: npx playwright install-deps chromium
+      # and the container's fonts: the interface asks for Inter, and the container's fontconfig
+      # (its /etc/fonts/conf.d/56-prefer-inter.conf, copied here) gives Inter for system-ui and
+      # sans-serif too. Without them the text is DejaVu, wider, and layouts and taps land elsewhere.
+      - name: Fonts as in the container
+        run: |
+          sudo apt-get install -y --no-install-recommends fonts-inter fonts-jetbrains-mono fonts-crosextra-caladea fonts-crosextra-carlito
+          sudo tee /etc/fonts/conf.d/56-prefer-inter.conf > /dev/null <<'XML'
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+          <fontconfig>
+            <alias><family>system-ui</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>ui-sans-serif</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>-apple-system</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>BlinkMacSystemFont</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>SF Pro Text</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>SF Pro Display</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>Segoe UI</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>Helvetica Neue</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>sans-serif</family><prefer><family>Inter</family></prefer></alias>
+          </fontconfig>
+          XML
+          fc-cache -f > /dev/null
+          echo "sans-serif: $(fc-match sans-serif), system-ui: $(fc-match system-ui)"
+      - uses: actions/cache@v4
+        id: chrome
+        with:
+          path: ~/chrome-for-testing
+          key: chrome-for-testing-${{ env.CHROME_VERSION }}
+      - if: steps.chrome.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/chrome-for-testing && cd ~/chrome-for-testing
+          curl -sSfLo chrome.zip "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-linux64.zip"
+          unzip -q chrome.zip && rm chrome.zip
+      - run: |
+          echo "CHROMIUM_PATH=$HOME/chrome-for-testing/chrome-linux64/chrome" >> "$GITHUB_ENV"
+          "$HOME/chrome-for-testing/chrome-linux64/chrome" --version; nproc; grep -m1 'model name' /proc/cpuinfo
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist
+      - name: Serve the build
+        run: |
+          nohup npx vite preview --port 4173 --strictPort --host 127.0.0.1 > preview.log 2>&1 &
+          for i in $(seq 60); do curl -sf -o /dev/null http://127.0.0.1:4173/ && exit 0; sleep 1; done
+          cat preview.log; exit 1
+      - name: Run ${{ matrix.job.name }}
+        run: |
+          mkdir -p out
+          start=$(date +%s)
+          set +e
+          env ${{ matrix.job.env }} node scripts/${{ matrix.job.suite }}.mjs http://127.0.0.1:4173/ out ${{ matrix.job.args }} 2>&1 | tee out/${{ matrix.job.name }}.log
+          rc=${PIPESTATUS[0]}
+          echo "exit $rc after $(( $(date +%s) - start )) s" | tee -a out/${{ matrix.job.name }}.log
+          exit $rc
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.job.name }}-${{ github.sha }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: warn

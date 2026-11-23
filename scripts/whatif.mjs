@@ -6,6 +6,9 @@
 //     simulated from the start (scripts/live.mjs has the planets and the suns that can be made)
 //   - the moon says it was made, and is taken away like any world; with the return to reality
 //     nothing of it is left
+// (Changes are not watched here: "Show me what happens" is switched off in More first. The watch moves the
+// camera and runs time on, and this measures where the moon starts against the eye and times a quarter of its
+// period by the clock; scripts/live.mjs watches changes.)
 // Usage: node scripts/whatif.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { phoneContext } from './lib/touch.mjs';
@@ -41,6 +44,13 @@ const details = async (page) => {
   await frames(page, 2);
 };
 const press = async (page, sel) => { const b = page.locator(sel); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
+/** Changes not watched (More: "Show me what happens", off). */
+const quiet = async (page) => {
+  await press(page, '#hud .hud-tabs [data-tab="more"]');
+  if ((await page.locator('#hud .switch[data-act="show-me"]').getAttribute('aria-checked')) === 'true') await press(page, '#hud .switch[data-act="show-me"]');
+  await press(page, '#hud .sheet.more [data-close]');
+  await frames(page, 2);
+};
 
 for (const kind of ['phone', 'desk']) {
   const ctx = kind === 'phone' ? await phoneContext(browser) : await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -49,6 +59,7 @@ for (const kind of ['phone', 'desk']) {
   await page.goto(`${base}?menu=0&target=Earth&dist=6&time=2026-10-01T20:00:00Z`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 });
   const on = (name) => `${kind}: ${name}`;
+  await quiet(page);
 
   // --- the working behind the facts
   await details(page);
@@ -61,7 +72,7 @@ for (const kind of ['phone', 'desk']) {
   c = await card(page);
   check(on('a line opens to show its working: the formula, the numbers put in, the result'), c.worked[0].open && /^g = GM \/ R² = .+ kg \/ \(.+ m\)² = 9\.82 m\/s²$/.test(c.worked[0].math), c.worked[0].math);
   const year = c.worked.find((w) => w.label === 'Once round the Sun');
-  check(on('its year comes out of where it is and how it moves'), !!year && /^36[45]\.\d d$/.test(year.text), year?.text);
+  check(on('its year is the catalogued one in the real Solar System'), !!year && /^365\.256 d$/.test(year.text) && /mean period/.test(year.math), year?.text);
 
   // --- a moon for the Earth
   check(on("a planet's card offers to add something"), c.add && c.remove && c.offers.length === 0);
@@ -69,13 +80,18 @@ for (const kind of ['phone', 'desk']) {
   await frames(page, 2);
   c = await card(page);
   check(on('what can be added to a planet is a moon'), c.offers.join() === 'A moon', c.offers.join(', '));
-  const before = await page.evaluate(() => ({ bodies: window.app.system.bodies.length, moons: window.app.findByName('Earth').children.length, live: window.app.physics.on }));
+  // (where the eye is as Add is tapped: the new moon starts between it and the Earth; the camera may then ease out, to
+  // show the new moon clear of the card while it is put in place)
+  const before = await page.evaluate(() => {
+    const a = window.app, earth = a.findByName('Earth');
+    return { bodies: a.system.bodies.length, moons: earth.children.length, live: a.physics.on, eye: a.rig.upos.sub(earth.upos, new (a.rig.ray(0, 0).constructor)()).toArray() };
+  });
   await press(page, '#hud .card [data-act="add-moon"]');
   await frames(page, 6);
-  const made = await page.evaluate(() => {
+  const made = await page.evaluate((eyeThen) => {
     const a = window.app, m = a.selection, earth = a.findByName('Earth');
     const V = a.rig.ray(0, 0).constructor;
-    const rel = m.pos.clone().sub(earth.pos), eye = a.rig.upos.sub(earth.upos, new V());
+    const rel = m.pos.clone().sub(earth.pos), eye = new V(...eyeThen);
     const v = a.bodies.views.get(m);
     const p = a.project(m.upos.sub(a.rig.upos, new V()));
     return {
@@ -85,7 +101,7 @@ for (const kind of ['phone', 'desk']) {
       speed: m.vel.clone().sub(earth.vel).length(), circular: Math.sqrt((earth.gm + m.gm) / rel.length()),
       px: v?.pixelRadius ?? 0, resolved: !!v?.resolved, at: p, size: [innerWidth, innerHeight], radius: m.radius / earth.radius,
     };
-  });
+  }, before.eye);
   c = await card(page);
   check(on('taking the offer makes one: it is a body of the system, and selected'), made.bodies === before.bodies + 1 && made.moons === before.moons + 1 && made.made === 1 && made.name === "Earth's new moon" && c.title === made.name,
     `${made.name}; ${made.bodies} bodies (${before.bodies} before); the card: ${c.title}`);
