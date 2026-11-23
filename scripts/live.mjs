@@ -1326,8 +1326,9 @@ for (const kind of kinds) {
       await frames(page, 3);
       const z1 = await sized();
       const k = z1.R / z0.R;
+      // (the slider's step nearest three times is 2.985 times: it means three times exactly, and the card's two numbers agree)
       check(on('the size slider to three times: the Earth is three times as large, and drawn so, its mass the same, and the card says so'),
-        Math.abs(k - 3) < 0.05 && z1.gm === z0.gm && z1.on && Math.abs(z1.px / z0.px / k - 1) < 0.02 && /^(19,\d\d\d) km$/.test(z1.words) && /^(2\.9|3|3\.1) times its real size$/.test(z1.times),
+        Math.abs(k - 3) < 1e-9 && z1.gm === z0.gm && z1.on && Math.abs(z1.px / z0.px / k - 1) < 0.02 && z1.words === '19,113 km' && z1.times === '3 times its real size',
         `${k.toFixed(3)} times the radius, drawn ${(z1.px / z0.px).toFixed(3)} times as large; "${z1.words}", "${z1.times}"; ${(z1.gm / z0.gm).toFixed(6)} of its mass`);
       // what follows from its size: its ground pulls a ninth as hard, its escape speed is a third less... (the details)
       await press(page, '#hud .card [data-details]');

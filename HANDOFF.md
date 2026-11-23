@@ -959,7 +959,7 @@ fetched by `pipeline/fetch_albedos.py` from NASA's fact sheets, on `Body.climate
 *Size, as well as mass* (`LivePhysics.setSize`, `realRadius`, `resized`; `sizeFactor`, `sizeSlider`,
 `sameDensity`, `radiusWords` in `src/app/Powers.ts`; the Size power in `src/ui/Hud.ts`).
 - **Size**, a power of its own beside Mass (five in a row on a phone, 64 px each): the radius in words
-  ("6,371 km", "3 times its real size"), Real size, a slider from a tenth to ten times the real radius
+  ("19,113 km", "3 times its real size"), Real size, a slider from a tenth to ten times the real radius
   (a thousand times the volume either way, as the mass), and between its ends **Same density**: on, the
   size follows the mass at the density it really has, R = R₀ (M / M₀)^⅓ (and moving the size moves the
   mass, the cube of it; the Mass panel says "Its size follows: the same density"); turned on, the size
@@ -970,6 +970,14 @@ fetched by `pipeline/fetch_albedos.py` from NASA's fact sheets, on `Body.climate
   whole view instead (under 120 px it does), and `makeRoom` was fooled into leaving the panel open
   through a watch (live's watch block, the finger taking the camera back, found it); `makeRoom` now
   measures the clear part as it is (`freeBox`).
+- The two numbers agree (the coordinator: it said "19,020 km, 3 times its real size", where three times
+  the Earth's radius is 19,113 km: the slider's step nearest three times was 2.985 times). Chosen: both.
+  The slider snaps to a whole or half factor, or one over a whole one (1.5, 2, 2.5 ... 10; 1/2, 1/3 ...
+  1/10), within 0.006 of a power of ten (1.4 %; its steps are 1.2 % apart, so the step nearest each
+  lands on it); and a factor it has not snapped to, or one Same density gives, is said to three figures
+  ("2.95 times", "2.00 times", "0.794 of its real size"), the radius to the kilometre beside it within
+  what those figures say (`sizeFactor`, `sizeTimesWords`; `tests/powers.test.ts` walks every step of the
+  slider; live's size block asks for "19,113 km" and "3 times its real size", three times exactly).
 - The radius goes to the simulation (`NBody.setMass(id, gm, radius)`), so a bigger world is easier to
   hit (`tests/livephysics.test.ts`: the Moon sent past the Earth two of its radii from its centre
   misses it, and hits it made three times as large); what rides on it is let go, so that a moon it

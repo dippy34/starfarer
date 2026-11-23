@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   affected, aheadWords, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
   FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, starMassWords,
-  orbitWords, powerWords, radiusWords, sameDensity, SIZE_DECADES, sizeFactor, sizeSlider, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
+  orbitWords, powerWords, radiusWords, sameDensity, SIZE_DECADES, sizeFactor, sizeSlider, sizeTimesWords, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
   WATCH_SLOWEST, watchPlan, watchRate,
 } from '../src/app/Powers';
 import { G, L_SUN, M_EARTH, M_JUPITER, M_SUN, R_EARTH } from '../src/sim/physics';
@@ -78,6 +78,16 @@ describe('a size beside the mass', () => {
     for (const f of [0.1, 0.37, 1, 2.5, 10]) expect(sizeFactor(sizeSlider(f))).toBeCloseTo(f, 12);
     // (a thousand times the volume either way: the same range as the mass, so that at the same density the two go together)
     expect(sizeFactor(1) ** 3).toBeCloseTo(10 ** 3, 9);
+    // near a whole or half factor, or one over one, exactly that: the slider's steps (0.005) land on none of them; three times
+    // was 2.985, "19,020 km, 3 times its real size"
+    expect(sizeFactor(0.475)).toBe(3);
+    expect(sizeFactor(0.48)).toBe(3);
+    expect(sizeFactor(0.175)).toBe(1.5);
+    expect(sizeFactor(-0.3)).toBe(0.5);
+    expect(sizeFactor(-0.475)).toBe(1 / 3);
+    expect(sizeFactor(Math.log10(2.73))).toBeCloseTo(2.73, 12);
+    // (below its real size, one over a whole factor: two thirds is not one)
+    expect(sizeFactor(-0.175)).toBeCloseTo(10 ** -0.175, 12);
   });
 
   it('at the same density the radius goes as the cube root of the mass: five Earths of rock, 1.71 times the Earth', () => {
@@ -90,9 +100,33 @@ describe('a size beside the mass', () => {
     expect(radiusWords(6371e3)).toBe('6,371 km');
     expect(radiusWords(69_911e3)).toBe('69,911 km');
     expect(radiusWords(5.6e3)).toBe('5.6 km');
-    expect(timesWords(1, 'size')).toBe('its real size');
-    expect(timesWords(3, 'size')).toBe('3 times its real size');
-    expect(timesWords(0.5, 'size')).toBe('0.5 of its real size');
+    // the factor of a size agrees with the radius said beside it, to the kilometre: plainly when whole or half, else to three figures
+    expect(sizeTimesWords(1)).toBe('its real size');
+    expect(sizeTimesWords(3)).toBe('3 times its real size');
+    expect(sizeTimesWords(2.5)).toBe('2.5 times its real size');
+    expect(sizeTimesWords(2.985)).toBe('2.98 times its real size');
+    expect(sizeTimesWords(1.9953)).toBe('2.00 times its real size');
+    expect(sizeTimesWords(0.5)).toBe('1/2 of its real size');
+    expect(sizeTimesWords(1 / 3)).toBe('1/3 of its real size');
+    expect(sizeTimesWords(1 / 10)).toBe('1/10 of its real size');
+    expect(sizeTimesWords(0.37)).toBe('0.370 of its real size');
+    expect(sizeTimesWords(2 / 3)).toBe('0.667 of its real size');
+  });
+
+  it('says a size as a factor and a radius that agree, wherever the slider is put', () => {
+    // the Earth at the step of the slider nearest three times (it said "19,020 km, 3 times its real size": 2.985 times)
+    expect(radiusWords(sizeFactor(0.475) * 6371e3)).toBe('19,113 km');
+    expect(sizeTimesWords(sizeFactor(0.475))).toBe('3 times its real size');
+    for (let i = -200; i <= 200; i++) {
+      const f = sizeFactor(i / 200), said = sizeTimesWords(f), km = Number(radiusWords(f * 6371e3).replace(/,| km$/g, ''));
+      const m = /^(?:its real size|(\d+(?:\.\d+)?) times its real size|1\/(\d+) of its real size|(0\.\d+) of its real size)$/.exec(said);
+      expect(m, said).not.toBeNull();
+      const figures = m![1] ?? m![3], of = m![2] ? 1 / Number(m![2]) : figures ? Number(figures) : 1;
+      // to three figures: to half the last of them; else exactly what it says
+      const within = figures && figures.replace(/^0\.0*|\./g, '').length === 3 ? 0.5 * 10 ** (Math.floor(Math.log10(of)) - 2) : 0;
+      if (!within) expect(f, said).toBeCloseTo(of, 12);
+      expect(Math.abs(km - of * 6371), `${said}: ${km} km`).toBeLessThanOrEqual(within * 6371 + 0.5 + 1e-9);
+    }
   });
 });
 

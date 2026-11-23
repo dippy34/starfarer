@@ -57,25 +57,42 @@ export function starMassWords(kg: number): string {
   return kg >= 0.1 * M_SUN ? massWords(kg) : `${count(kg / M_SUN, 'Sun')} (${massWords(kg)})`;
 }
 
-/** A factor on a body's real mass (or its real `what`: its size), in words. */
-export function timesWords(factor: number, what = 'mass'): string {
-  if (factor === 1) return `its real ${what}`;
-  if (factor > 1) return `${round(factor)} times its real ${what}`;
-  if (factor >= 0.095) return `${round(factor)} of its real ${what}`;
-  return `1/${Number((1 / factor).toPrecision(2)).toLocaleString('en-US')} of its real ${what}`;
+/** A factor on a body's real mass, in words (to the two figures its mass is said in). */
+export function timesWords(factor: number): string {
+  if (factor === 1) return 'its real mass';
+  if (factor > 1) return `${round(factor)} times its real mass`;
+  if (factor >= 0.095) return `${round(factor)} of its real mass`;
+  return `1/${Number((1 / factor).toPrecision(2)).toLocaleString('en-US')} of its real mass`;
 }
 
 // ---------------------------------------------------------------- a size, changed and said
 
 /** the size slider runs this many powers of ten either side of the real size (a thousand times the volume either way, as the mass) */
 export const SIZE_DECADES = 1;
-/** this near the middle (in powers of ten) it means the real size exactly */
-const SIZE_SNAP = 0.01;
+/**
+ * this near (in powers of ten) a whole or half factor, or one over a whole one (1, 1.5, 2, 2.5 ... 10; 1/2, 1/3 ... 1/10),
+ * the size slider means it exactly: its steps are 1.2 % apart and land on none of them but 1 (three times was 2.985:
+ * "19,020 km, 3 times its real size", where three times the Earth's radius is 19,113 km)
+ */
+const SIZE_SNAP = 0.006;
 
 /** The factor on a body's real radius for a place on the size slider (-SIZE_DECADES to SIZE_DECADES, even in the logarithm). */
 export function sizeFactor(slider: number): number {
-  const s = Math.max(-SIZE_DECADES, Math.min(SIZE_DECADES, slider));
-  return Math.abs(s) < SIZE_SNAP ? 1 : Math.pow(10, s);
+  const s = Math.max(-SIZE_DECADES, Math.min(SIZE_DECADES, slider)), f = Math.pow(10, s);
+  const near = f >= 1 ? Math.round(2 * f) / 2 : 1 / Math.round(1 / f);
+  return Math.abs(Math.log10(f / near)) < SIZE_SNAP ? near : f;
+}
+
+/**
+ * A factor on a body's real size, in words: plainly where it is one the slider snaps to ("3 times
+ * its real size", "2.5 times", "1/3 of"), else to three figures ("2.73 times", "2.00 times",
+ * "0.794 of"), so that the radius said beside it, to the kilometre, agrees with it.
+ */
+export function sizeTimesWords(f: number): string {
+  if (f === 1) return 'its real size';
+  if (f > 1) return `${Number.isInteger(2 * f) ? String(f) : f.toPrecision(3)} times its real size`;
+  const n = Math.round(1 / f);
+  return Math.abs(n * f - 1) < 1e-12 ? `1/${n} of its real size` : `${f.toPrecision(3)} of its real size`;
 }
 
 /** Where on the size slider a factor on the radius is. */
