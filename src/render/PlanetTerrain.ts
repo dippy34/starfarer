@@ -14,6 +14,9 @@ import { QUALITY, XR_TERRAIN_FACTOR } from './Quality';
 import { ATMO_HAZE_FRAG } from './shaders/atmosphere';
 import { FIX_LOGDEPTH, PROJECT_PARS } from './shaders/xr';
 
+
+/** the names on the sky ask for the ground's horizon this many times before it is worked out again where the eye stands */
+const HORIZON_ASKS = 20_000;
 /** A world near the explorer that could get terrain this frame (offered by the body layers). */
 export interface TerrainCandidate {
   ground: Ground;
@@ -1016,6 +1019,65 @@ export class PlanetTerrain {
     const dir = camBF.divideScalar(dist);
     return { dir, dist, ground: this.groundRadius(dir), centre: c.upos };
   }
+
+  /**
+   * How high the ground's horizon stands (radians above the eye's level, negative below it) seen
+   * from `cam` in the direction (world axes, unit) `dir`, and how far out it was looked for (m):
+   * the ground (or the water over it) followed out along that bearing to past where the horizon
+   * would be with the ground ten kilometres lower than the eye's, as drawn where tiles are loaded
+   * and from the height data beyond. Null without terrain. (A valley's walls stand above the
+   * eye's level; from a summit the ground falls away, and the horizon is degrees below it.)
+   */
+  horizonAt(cam: UPos, dir: Vector3): { elevation: number; reach: number } | null {
+    const c = this.current, w = this.world;
+    if (!c || !w) return null;
+    const eye = cameraBodyFixed(c.upos.sub(cam, new Vector3()), c.orient);
+    const D = eye.length();
+    const up = eye.divideScalar(D);
+    const inv = new Matrix3().setFromMatrix4(c.orient).transpose();
+    const d = dir.clone().applyMatrix3(inv);
+    const east = d.addScaledVector(up, -d.dot(up));
+    if (east.lengthSq() < 1e-12) return { elevation: -Math.PI / 2, reach: 0 }; // (straight up or down)
+    east.normalize();
+    const R = baseRadius(w.ground, up);
+    const reach = Math.sqrt(2 * R * Math.max(0, D - R + 10_000));
+    // (kept by bearing, a degree wide, while the eye stays within five metres of where it was
+    // worked out from, and worked out again now and then as finer ground comes in: the names on
+    // the sky ask for it every frame, and a phone can afford 48 heights for each bearing a name
+    // stands on only once in a while)
+    const hc = this.horizonCache;
+    if (hc.world !== c || hc.eye.distanceToSquared(eye.clone().multiplyScalar(D)) > 25 || ++hc.asked > HORIZON_ASKS) {
+      hc.asked = 0;
+      hc.world = c;
+      hc.eye.copy(up).multiplyScalar(D);
+      hc.bins.fill(NaN);
+      // a bearing's zero: the tangent direction towards the body's +z (or +x at a pole)
+      hc.north.set(0, 0, 1).addScaledVector(up, -up.z);
+      if (hc.north.lengthSq() < 1e-6) hc.north.set(1, 0, 0).addScaledVector(up, -up.x);
+      hc.north.normalize();
+      hc.west.crossVectors(up, hc.north);
+    }
+    const bin = ((Math.round((Math.atan2(east.dot(hc.west), east.dot(hc.north)) * 180) / Math.PI) % 360) + 360) % 360;
+    if (!Number.isNaN(hc.bins[bin])) return { elevation: hc.bins[bin], reach };
+    const n = new Vector3();
+    let best = -Math.PI / 2;
+    // (from two metres out, where a steep slope under the eye already stands in the way, out to the reach)
+    const STEPS = 48, NEAR = 2;
+    for (let i = 0; i < STEPS; i++) {
+      const s = NEAR * (reach / NEAR) ** (i / (STEPS - 1));
+      const th = s / R;
+      n.copy(up).multiplyScalar(Math.cos(th)).addScaledVector(east, Math.sin(th));
+      let r = this.groundRadius(n);
+      const lvl = this.waterLevel(n);
+      if (lvl !== null) r = Math.max(r, baseRadius(w.ground, n) + lvl);
+      // the ground there, from the eye: its height over the eye's level, and its distance along it
+      const y = r * Math.cos(th) - D, x = r * Math.sin(th);
+      best = Math.max(best, Math.atan2(y, x));
+    }
+    hc.bins[bin] = best;
+    return { elevation: best, reach };
+  }
+  private horizonCache = { asked: 0, world: null as TerrainCandidate | null, eye: new Vector3(), north: new Vector3(), west: new Vector3(), bins: new Float64Array(360).fill(NaN) };
 
   /** The Sun's clearance over the relief (penumbra widths, lit above -0.5) at body-fixed direction `n`, as drawn. */
   sunClearance(n: Vector3): number {

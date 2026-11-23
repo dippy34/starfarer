@@ -82,6 +82,10 @@ import { PERF } from '../perf/Perf';
  * pixels wide (shown brighter, a face is shown hotter: orange, yellow, white. StarLook: faceLight).
  */
 const starCap = (small: number, cssRadius: number) => small + (FACE_KEY - small) * smoothstep(12, 60, cssRadius);
+/** a name a hair under the ground's horizon (radians: a tenth of a degree) still stands, as the limb's let off by a little */
+const HORIZON_LEEWAY = 0.1 * (Math.PI / 180);
+/** below this height over the ground (m) names are hidden by the ground's real horizon, bearing by bearing */
+const LOW_OVER_GROUND = 2000;
 const DATA = `${import.meta.env.BASE_URL}data`;
 /** catalogue stars closer than this (pc) are drawn individually by the near-star layer */
 const NEAR_STAR_RADIUS = 0.02;
@@ -2439,15 +2443,29 @@ export class App {
     for (const o of this.occluders) {
       if (o.body === self) continue;
       if (o.dist > dist) continue;
+      // low over the landing terrain, what lies beyond the ground's horizon is behind it where the
+      // ground really stands along that bearing: a valley's walls, or the land falling away from a
+      // summit (higher up, the sphere through the ground below is near enough, and far cheaper)
+      if (o.low) {
+        const dir = rel.clone().divideScalar(dist);
+        const h = this.terrain.horizonAt(this.rig.upos, dir);
+        if (h && dist > h.reach) {
+          const elevation = -Math.asin(Math.max(-1, Math.min(1, dir.dot(o.rel) / o.rel.length())));
+          if (elevation < h.elevation - HORIZON_LEEWAY) return true;
+          continue;
+        }
+      }
       // ray-sphere test (camera at origin, direction rel/dist)
       const t = o.rel.dot(rel) / dist;
       if (t <= 0 || t > dist) continue;
       const d2 = o.rel.lengthSq() - t * t;
-      if (d2 < o.radius * o.radius * 0.995) return true;
+      // (a world's limb is let off by a quarter of a percent of its radius, so names just over it
+      // stay; the ground's horizon is already set a little low, and that much would be kilometres)
+      if (d2 < o.radius * o.radius * (o.exact ? 1 : 0.995)) return true;
     }
     return false;
   }
-  private occluders: { body: object; rel: Vector3; dist: number; radius: number }[] = [];
+  private occluders: { body: object; rel: Vector3; dist: number; radius: number; exact?: boolean; low?: boolean }[] = [];
 
   /** Black holes worth a label/pick: near ones, ones being drawn, and the selection. */
   private labelledHoles(): { bh: BlackHole; rel: Vector3; shadowPx: number; diskPx: number }[] {
@@ -2511,8 +2529,9 @@ export class App {
       const owner = this.terrain.owner;
       const oc = this.occluders.find((o) => o.body === owner);
       const r = Math.min(below.ground, below.dist) - Math.max(2, (below.dist - below.ground) * 0.02);
-      if (oc) oc.radius = r;
-      else this.occluders.push({ body: owner!, rel: below.centre.sub(this.rig.upos, new Vector3()), dist: below.dist, radius: r });
+      const low = below.dist - below.ground < LOW_OVER_GROUND;
+      if (oc) { oc.radius = r; oc.exact = true; oc.low = low; }
+      else this.occluders.push({ body: owner!, rel: below.centre.sub(this.rig.upos, new Vector3()), dist: below.dist, radius: r, exact: true, low });
     }
     const mLim = this.lastMLim;
     const sel = this.selection;
