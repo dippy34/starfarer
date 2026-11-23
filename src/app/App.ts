@@ -3178,6 +3178,9 @@ export class App {
       this.bodies.glareFill = smoothstep(0.08, 0.35, sunSeen.size / Math.min(halfY, Math.atan(Math.tan(halfY) * this.view.aspect)));
     }
     this.bodies.allowHi = !this.vr.active && !this.lean;
+    // (the world a flight is on its way to, the camera's or the ship's: its full maps on the way)
+    const bound = this.rig.autopilot ? this.rig.target : this.game.flight.autopilot?.target;
+    if (bound instanceof Body) this.bodies.keepWanted(bound);
     this.bodies.update(this.rig.upos, pixelAngle, dt, this.view.quat);
     HITCH.lap('bodies');
     this.bodies.updateDetail(this.renderer.gl, this.tiles, pixelAngle, new Vector3(0, 0, -1).applyQuaternion(this.view.quat));
