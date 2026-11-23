@@ -56,6 +56,7 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .label.blackhole { color: #d3a6ff; }
 .label.galaxy { color: #ffe2b0; font-weight: 600; }
 .label.selected { color: #fff27a; font-weight: 600; }
+.label.future { color: #ffb07a; font-weight: 650; font-size: 12.5px; }
 
 /* ------------------------------------------------------------------ the interface */
 /* (other parts of the app put their own panels inside #hud — the ship's instruments, the walker's
@@ -102,8 +103,9 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .chip.clock.paused small { color: var(--warn); }
 #hud .chip:active { background: var(--solid); }
 
+/* (in front of the panels: on a phone on its side they reach up to it, and news is brief; taps go through it) */
 .hud-toast {
-  position: absolute; top: calc(var(--safe-t) + 68px); left: 50%; transform: translate(-50%, -6px);
+  position: absolute; z-index: 1; top: calc(var(--safe-t) + 68px); left: 50%; transform: translate(-50%, -6px);
   width: max-content; max-width: min(88vw, 520px); box-sizing: border-box; padding: 9px 16px; border-radius: 16px;
   font-size: 14px; text-align: center; white-space: pre-line; opacity: 0; transition: opacity 0.25s, transform 0.25s;
 }
@@ -187,6 +189,22 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
   display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 16px 0 10px; border-radius: 22px;
   background: var(--fill); font-weight: 650;
 }
+/* two worlds that met: what the hit was, above the card */
+.hud-impact {
+  pointer-events: auto; display: flex; align-items: flex-start; gap: 4px; padding: 10px 4px 10px 16px; border-radius: 22px;
+  background: var(--solid); border: 1px solid rgba(255, 176, 122, 0.5); font-size: 14px; line-height: 1.3;
+  -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5);
+}
+.impact-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.impact-text b { color: var(--live); font-size: 15px; }
+.impact-text small { color: var(--dim); font-size: 12.5px; }
+#hud .hud-impact .icon-btn { flex: none; margin-top: -6px; }
+/* (where there is no room for it all: its first line, and More) */
+#hud .hud-impact .impact-more { display: none; flex: none; min-height: 44px; padding: 0 12px; margin: -6px 0; border-radius: 18px; background: var(--fill); font-weight: 650; }
+#hud .hud-impact.brief { align-items: center; padding-top: 4px; padding-bottom: 4px; }
+#hud .hud-impact.brief .impact-more { display: block; }
+#hud .hud-impact.brief .icon-btn { margin-top: 0; }
+.hud-impact.brief .impact-text :is(span, small) { display: none; }
 /* watching what a change does: the pace, Stop; then how long was watched, Replay (where the flight's chip goes) */
 .hud-watch {
   pointer-events: auto; align-self: center; display: flex; align-items: center; gap: 6px; max-width: 100%; box-sizing: border-box;
@@ -308,6 +326,8 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .seg button { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 2px 6px; border-radius: 11px; font-size: 13.5px; font-weight: 600; line-height: 1.15; color: var(--dim); }
 #hud .seg button[aria-pressed='true'] { background: var(--live); color: #2a1404; }
 .power-now { margin: 8px 0 0; font-size: 14px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.power-ahead { margin: 4px 0 0; font-size: 14px; line-height: 1.35; color: var(--live); }
+.power-ahead:empty { display: none; }
 /* a world just made, being put in place: its mass and Done above its slider */
 .placing { margin-bottom: 6px; }
 #hud .power-read .place-done { background: var(--live); color: #2a1404; padding: 0 22px; }

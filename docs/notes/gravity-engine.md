@@ -209,6 +209,16 @@ pictures and the same frame as before.
   `squareThrow`, `throwVelocity`; `LivePhysics.move` with its place unchanged). The Moon flicked at
   1.56 speeds of a circle is free of the Earth at once: the simulation has it go round the Sun, on
   an orbit like the Earth's, and says so.
+  While a world is held or aimed (or its mass slider held, or a world added waits to be put in
+  place) the engine is run ahead on a copy (`src/app/Foresight.ts`: `NBody.restore` of a snapshot,
+  what goes round faster than a quarter of the world's turn on rails, as a watch of the change would
+  have it), up to three of the world's turns or a hundred years, until the copy says the world hit
+  something, left, or goes round something else; the path is drawn dashed and what ended it said.
+  The look ahead and the live run that follows agree bit for bit when nothing else changes (the
+  steps fall on the same grid however the time is cut up). The Moon put on a circle at twice the
+  distance it was at on 17 September 2026 (405,000 km: an 82-day month), nearer the edge of the
+  Earth's reach than twice its mean distance, goes round the Sun 49 days on, in the look ahead
+  and in live physics within a day of each other.
 * **Add** (`src/app/WhatIf.ts`, `LivePhysics.make`). A planet or a dwarf planet can be given a
   moon; a star a planet like the Earth, one like Jupiter, or a second sun. A plan says what the
   new body is, as the catalogue would describe one, and where it starts: on a circle, 0.55 of the
@@ -256,7 +266,15 @@ pictures and the same frame as before.
   it), a world set free or gone for good, a change of what a world goes round. Worlds by name,
   asteroids only counted. Each is logged for the moment it happened. On the screen three lines
   at most (`App.tellNews`): after the explorer's own act its line first ("Sun 2 is new", "Ceres
-  is gone"), then what follows from it, the weightiest first; the rest is in the log.
+  is gone"), then what follows from it, the weightiest first; the rest is in the log. Two worlds
+  that matter to what is seen (`weighty`) meeting are shown rather than told (`src/app/Impacts.ts`):
+  the first hit ahead is foreseen on the two-body orbit of each pair (`Powers.soonestContact`,
+  closed form: good near the end of a fall, where what else pulls pulls on both alike); where the
+  last of the fall, from 8 times their radii added, would take less than 3 s on the screen, time
+  slows for it to take 3 s, and the camera frames the two; a flash where they meet (a depiction);
+  a card with the speed, the energy (the event's ½μv²) against the Sun's light and against what
+  holds the lighter together (3GM²/5R, a ball of even density), and a rule of thumb's word on
+  whether they would break apart, labelled a prediction (they become one here).
 * **Back to reality** puts back every mass, size and parent, takes away what was made, and gives
   the bodies to the ephemeris again at the moment the first change was made (the app puts the rate
   of time back as it was then). `tests/livephysics.test.ts` compares every body with a system that

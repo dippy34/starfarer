@@ -185,6 +185,48 @@ export function stateToElements(r: Vector3, v: Vector3, mu: number, jd: number):
   return { q, e, i: i / DEG, node: node / DEG, peri: peri / DEG, tp, mu };
 }
 
+/**
+ * An orbit whose energy is nearer nothing than this share of μ/r is open: its far end would be some
+ * 10¹² times as far away as it is now. A body thrown at exactly the speed of escape is on the edge,
+ * which rounding would put on either side: it does not come back.
+ */
+export const ESCAPE_EDGE = 1e-12;
+
+/** Is the orbit of a body `d` (m) from what it goes round, with `energy` (J/kg: v²/2 − μ/d) about `mu` (m³/s²), open? */
+export function isOpen(energy: number, mu: number, d: number): boolean {
+  return !(energy < -ESCAPE_EDGE * (mu / d));
+}
+
+/**
+ * Where a body on an open path (nearest `q` m; a parabola, e = 1, or a hyperbola, e > 1) goes on to
+ * from true anomaly `nu0` (rad) until it is `far` m out: as offsets (m) from where it is now, x and y
+ * in the plane of the path (x towards the nearest point), into `out` two numbers a point; `n` even
+ * steps of true anomaly, and before them `refine` more, halving towards the start. From q and the
+ * true anomaly, r = q (1 + e) / (1 + e cos ν), which holds for any e: a parabola has no semi-major
+ * axis to work from. Returns how many points (the first is where it is now: 0, 0).
+ */
+export function openPath(q: number, e: number, nu0: number, far: number, n: number, refine: number, out: Float64Array): number {
+  const p = q * (1 + e);
+  // (it can never turn as far as the asymptote of a hyperbola, or the far end of a parabola)
+  const limit = e > 1 ? Math.acos(-1 / e) : Math.PI;
+  const c = (p / far - 1) / e;
+  const end = Math.min(limit * (1 - 1e-9), c <= -1 ? limit : Math.acos(Math.min(1, c)));
+  const r0 = p / (1 + e * Math.cos(nu0)), x0 = r0 * Math.cos(nu0), y0 = r0 * Math.sin(nu0);
+  let k = 0;
+  const put = (nu: number) => {
+    const r = p / (1 + e * Math.cos(nu));
+    out[k++] = r * Math.cos(nu) - x0;
+    out[k++] = r * Math.sin(nu) - y0;
+  };
+  out[k++] = 0;
+  out[k++] = 0;
+  if (!(end > nu0)) return 1;
+  const step = (end - nu0) / n;
+  for (let i = refine; i >= 1; i--) put(nu0 + step * Math.pow(0.5, i));
+  for (let i = 1; i <= n; i++) put(nu0 + i * step);
+  return k / 2;
+}
+
 /** Orbital period in days (Infinity for open orbits). */
 export function periodDays(el: OrbitalElements): number {
   if (el.e >= 1) return Infinity;

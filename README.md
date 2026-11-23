@@ -51,7 +51,13 @@ Jupiter twenty times heavier and its moons fall onto new orbits, some of them in
 away and the planets leave on straight lines, in the dark. Drag the Moon out to twice its distance
 and within four months the Sun has taken it from the Earth. **Throw** a world: pull back from it like
 a slingshot, its arrow marked where it would go round in a circle and where it would escape, or flick
-it. Add a second Jupiter near the Earth's orbit, or a second sun: put it where you want it with a
+it. While you aim, its orbit is drawn (an open path too: a parabola at the speed of escape, a
+hyperbola beyond), and **the future**: a dashed line where it will really go, the simulation run
+ahead with every pull counted, and what ends it ("it hits Earth in 1.6 days", "it goes round the Sun
+in 3.2 days"). Throw Mars at the Earth and **time slows** for the last of the fall, the view frames
+the two, a flash marks where they meet, and a card says what the hit was: how fast, its energy
+against the Sun's light and against what holds Mars together, and, labelled as a prediction,
+whether it would break apart (breaking apart is not simulated yet). Add a second Jupiter near the Earth's orbit, or a second sun: put it where you want it with a
 finger, give it the mass you want, from a small moon to two suns (its size follows from its mass:
 rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence), let go or flick
 it, and Done sets it going. Time runs from real time up to a thousand years a second (as fast as the
@@ -85,6 +91,8 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 <img src="docs/img/live-physics.jpg" width="640" alt="Live physics on a phone: Jupiter made twice as heavy with the mass slider, the Moon dragged to twice its distance and left on a circle, and a second sun beside the first"> <img src="docs/img/whatif.jpg" width="640" alt="What if: the Earth given a second moon with Add, told as it is made, and the new moon's card: simulated since it was made, its orbit, and the powers that change or remove it">
 
 <img src="docs/img/watch.jpg" width="640" alt="Watching a change on a phone: Jupiter made twenty times heavier, the view eased out to frame its four great moons on their new orbits, time at 26 minutes a second with Stop; then, the watch over, Replay, and Europa told to have hit Jupiter; then Undo, and the real Jupiter again at the date before the change"> <img src="docs/img/throw.jpg" width="640" alt="Throwing a world on a phone: the Moon pulled back from like a slingshot, its arrow at the mark of a circle and the circle it would go round drawn; pulled on to the mark of escape, the card saying it will not come back; and a second Earth just added, given five times the Earth's mass, 1.71 times its size, put farther out and waiting for Done">
+
+<img src="docs/img/hit.jpg" width="640" alt="Mars thrown at the Earth on a phone: aimed with the slingshot, the card saying its path goes into the Earth and, with every pull counted, that it hits it in 1.6 days; let go, time slowed to an hour and a half a second for the last of the fall, the two framed; then the flash where they met, and the card with what the hit was: 9.4 km/s, 2.5×10³¹ J, as much as the Sun gives off in 18.4 hours, 5.2 times the energy that holds Mars together, and the prediction, labelled, that Mars would break apart">
 
 *Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
 verification run, not hand-picked renders.*
@@ -326,14 +334,18 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   (a finger on the world drags it in the plane of its orbit while time waits; where it is left it
   keeps its velocity or is put on a circle; or it is thrown: pulled back from like a slingshot, an
   arrow marked at the speed of a circle and of escape, the orbit it would be on drawn while it is
-  aimed, or flicked, as fast as the finger went: `src/app/Mover.ts`), **Add** (a moon for a planet;
+  aimed, or flicked, as fast as the finger went: `src/app/Mover.ts`; while it is held or aimed the
+  simulation is run ahead on a copy, every pull counted, and the path it will take is drawn
+  dashed, with what ends it: `src/app/Foresight.ts`), **Add** (a moon for a planet;
   for a star a planet like the Earth, one like Jupiter, a second sun; put in place with a finger
   while time waits, its mass set from a small moon to two suns and its size following from it by
   stated rules, the working in its details; Done sets it going: bodies like any other from then on,
   which say they were made) and **Remove** (any world, the Sun included). The first change starts an N-body
   simulation from where everything is at that date (Wisdom and Holman's symplectic mapping on a
   hierarchy of pairs that is found, not given; exact two-body motion for every pair; collisions
-  that merge; changes of what goes round what): the Sun, the planets, Pluto, Ceres, the weighed
+  that merge, the last of the fall of two worlds slowed to three seconds on the screen and framed,
+  a flash where they meet and a card with what the hit was: `src/app/Impacts.ts`; changes of what
+  goes round what): the Sun, the planets, Pluto, Ceres, the weighed
   asteroids and the twenty moons heavy enough to matter, and any other world once it or its planet
   is touched. A mark says physics is live, with **Back to reality** beside it; the Time sheet has
   the log of what happened (which two collided and how fast, who was thrown out, who was captured)
@@ -515,8 +527,8 @@ Known limitations (planned for later phases unless noted):
 5. Full UI: search panel, bookmarks, settings and quality presets.
 6. Polish: lens flares, spinning (Kerr) black holes, performance tuning.
 7. Gravity for real, the owner's plan after its first step (live physics with Mass, Move, Add,
-   Remove, watching a change, Undo, throwing a world, placing what you add: done): things that
-   break and hit (the Roche limit, impacts seen), the future drawn, black
+   Remove, watching a change, Undo, throwing a world, placing what you add, impacts seen, the
+   future drawn: done): things that break (the Roche limit, impacts that shatter), black
    holes that pull and eat, stars that live and die, deep time, the rest of "God mode", a story
    mode. Also: the stepping in a Web Worker for thousands of years a second, and the powers in
    the headset.

@@ -1,6 +1,7 @@
+import { ESCAPE_EDGE, isOpen } from '../astro/kepler';
 import { jdToCalendar, tdbToUtc } from '../core/time';
 import { AU, formatDistance } from '../core/units';
-import { fmtDuration, G, M_EARTH, M_JUPITER, M_SUN, mainSequence } from '../sim/physics';
+import { bindingEnergy, fmtDuration, G, L_SUN, M_EARTH, M_JUPITER, M_SUN, mainSequence } from '../sim/physics';
 
 /**
  * The powers: what the explorer can do to a world (src/app/LivePhysics.ts does it; the card of
@@ -51,6 +52,11 @@ export function massWords(kg: number): string {
   return `1/${Number((M_MOON / kg).toPrecision(2)).toLocaleString('en-US')} of the Moon`;
 }
 
+/** A star's mass: in Suns, and below a tenth of the Sun in Jupiters as well ("0.08 Suns (83.8 Jupiters)"). */
+export function starMassWords(kg: number): string {
+  return kg >= 0.1 * M_SUN ? massWords(kg) : `${count(kg / M_SUN, 'Sun')} (${massWords(kg)})`;
+}
+
 /** A factor on a body's real mass, in words. */
 export function timesWords(factor: number): string {
   if (factor === 1) return 'its real mass';
@@ -89,9 +95,6 @@ function years(y: number): string {
 
 // ---------------------------------------------------------------- the orbit a body is on now
 
-/** an orbit whose energy is nearer nothing than this share of μ/r is open: its far end would be some 10¹² times as far away as it is now */
-const ESCAPE_EDGE = 1e-12;
-
 export interface Orbit {
   /** closed: it comes round again */
   bound: boolean;
@@ -116,17 +119,10 @@ export function orbitOf(r: ArrayLike<number>, v: ArrayLike<number>, mu: number):
   const h2 = hx * hx + hy * hy + hz * hz;
   const e = Math.sqrt(Math.max(0, 1 + (2 * energy * h2) / (mu * mu)));
   const peri = h2 / (mu * (1 + e));
-  // (a body thrown at exactly the speed of escape is on the edge, which rounding would put on either side: it does not come back)
-  if (!(energy < -ESCAPE_EDGE * (mu / d))) return { bound: false, e, peri, apo: Infinity, period: Infinity };
+  // (a body thrown at exactly the speed of escape is on the edge: it does not come back)
+  if (isOpen(energy, mu, d)) return { bound: false, e, peri, apo: Infinity, period: Infinity };
   const a = -mu / (2 * energy);
   return { bound: true, e, peri, apo: 2 * a - peri, period: 2 * Math.PI * Math.sqrt((a * a * a) / mu) };
-}
-
-/** An orbit's shape in words (the number is its eccentricity). */
-export function shapeWords(o: Orbit): string {
-  const e = o.e < 0.0005 ? '0' : o.e.toFixed(o.e < 0.1 ? 3 : 2);
-  if (!o.bound) return `open (${e}): it will not come back`;
-  return `${o.e < 0.02 ? 'nearly a circle' : o.e < 0.2 ? 'a slightly stretched circle' : o.e < 0.6 ? 'an oval' : 'a long oval'} (${e})`;
 }
 
 /** A distance within the system in words: kilometres near a world, astronomical units between worlds. */
@@ -134,9 +130,26 @@ export function farWords(m: number): string {
   return m >= 0.01 * AU ? `${Number((m / AU).toPrecision(3))} AU` : formatDistance(m);
 }
 
-/** An orbit's nearest and farthest, and how long once round takes, in words. */
-export function reachWords(o: Orbit): string {
-  return o.bound ? `${farWords(o.peri)} to ${farWords(o.apo)} · ${fmtDuration(o.period)}` : `passes at ${farWords(o.peri)}, then leaves`;
+/**
+ * An orbit in words: its shape, how near and how far, and how long once round ("a slightly
+ * stretched circle, 365,709 to 382,840 km · 26.21 d"); a circle where its two ends come out the
+ * same ("a circle 369,335 km out · 25.7 d"); on an open path, how near it passes. How stretched it
+ * is, as a number, is for the details (`stretchWords`).
+ */
+export function orbitWords(o: Orbit): string {
+  if (!o.bound) return `an open path: it passes at ${farWords(o.peri)}, then leaves`;
+  const near = farWords(o.peri), far = farWords(o.apo), round = fmtDuration(o.period);
+  if (near === far) return `a circle ${near} out · ${round}`;
+  const shape = o.e < 0.02 ? 'nearly a circle' : o.e < 0.2 ? 'a slightly stretched circle' : o.e < 0.6 ? 'an oval' : 'a long oval';
+  // (the unit once, where both ends have the same: "365,709 to 382,840 km")
+  const unit = (w: string) => w.replace(/^[\d.,]+ /, '');
+  return `${shape}, ${unit(near) === unit(far) ? `${near.slice(0, near.length - unit(near).length - 1)} to ${far}` : `${near} to ${far}`} · ${round}`;
+}
+
+/** How stretched an orbit is, its eccentricity, with what the number means. */
+export function stretchWords(o: Orbit): string {
+  const e = o.e < 0.0005 ? '0' : o.e.toFixed(o.e < 0.1 ? 3 : 2);
+  return `${e} (0 is a circle, 1 and more an open path)`;
 }
 
 // ---------------------------------------------------------------- a body moved by a finger
@@ -469,6 +482,121 @@ export function frameDistance(radius: number, halfX: number, halfY: number): num
   return radius / Math.tan(Math.min(halfX, halfY));
 }
 
+// ---------------------------------------------------------------- two worlds that meet
+
+/**
+ * How long until `x` (m) apart, on the way in, for two bodies `d` (m) apart and closing as `rv` (r·v:
+ * negative while they near), with `energy` (J/kg), `h2` (the square of r × v) and `e` about `mu`
+ * (G times both masses), on the two-body orbit of one about the other: from where it is to `x`
+ * (at least its nearest, `x` >= q), through the far end first if it is going out (NaN where it never
+ * comes in again). From the energy's sign: an ellipse, a parabola or a hyperbola, straight ones (e = 1,
+ * h = 0: one falling straight at the other) among them.
+ */
+function inbound(d: number, rv: number, mu: number, energy: number, h2: number, e: number, x: number): number {
+  if (Math.abs(energy) < ESCAPE_EDGE * (mu / d)) {
+    // a parabola (Barker): from where it would be at its nearest, t = √(p³/μ)/2 (D + D³/3), D = tan(ν/2); a straight one falls
+    // in as r^(3/2)
+    if (rv >= 0) return NaN;
+    const p = h2 / mu;
+    if (!(p > 1e-12 * d)) return Math.sqrt(2 / (9 * mu)) * (d ** 1.5 - x ** 1.5);
+    const at = (r: number) => { const D = -Math.tan(Math.acos(Math.max(-1, Math.min(1, p / r - 1))) / 2); return 0.5 * Math.sqrt((p * p * p) / mu) * (D + (D * D * D) / 3); };
+    return at(x) - at(d);
+  }
+  if (energy < 0) {
+    // an ellipse: the eccentric anomaly from where it is and how it moves (no division by e: a straight fall is one too)
+    const a = -mu / (2 * energy), n = Math.sqrt(mu / (a * a * a)), k = Math.min(1, e);
+    const E0 = Math.atan2(rv / Math.sqrt(mu * a), 1 - d / a), Ex = -Math.acos(Math.max(-1, Math.min(1, (1 - x / a) / Math.max(k, 1e-300))));
+    const turn = 2 * Math.PI;
+    return ((((Ex - k * Math.sin(Ex)) - (E0 - k * Math.sin(E0))) % turn) + turn) % turn / n;
+  }
+  if (rv >= 0) return NaN;
+  const a = mu / (2 * energy), n = Math.sqrt(mu / (a * a * a)), k = Math.max(1, e);
+  const F0 = Math.asinh(rv / (k * Math.sqrt(mu * a))), Fx = -Math.acosh(Math.max(1, (1 + x / a) / k));
+  return ((k * Math.sinh(Fx) - Fx) - (k * Math.sinh(F0) - F0)) / n;
+}
+
+/**
+ * When two bodies, `r` (m) and `v` (m/s) one from the other, with `mu` = G times both masses, touch
+ * (`touch`, m: their radii added) and when they first come within `zone` (m) of each other, from now
+ * (s; 0 for already within), on the two-body orbit of one about the other; null if they never touch
+ * going on: its nearest is farther than `touch`, or they are parting on an open path. Near the end
+ * of a fall the two-body orbit is what happens: what else pulls, pulls on both nearly alike.
+ */
+export function contactTimes(r: Vec, v: Vec, mu: number, touch: number, zone: number): { contact: number; zone: number } | null {
+  const d = Math.hypot(r[0], r[1], r[2]);
+  if (d <= touch) return { contact: 0, zone: 0 };
+  const rv = r[0] * v[0] + r[1] * v[1] + r[2] * v[2], v2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+  const energy = v2 / 2 - mu / d;
+  const hx = r[1] * v[2] - r[2] * v[1], hy = r[2] * v[0] - r[0] * v[2], hz = r[0] * v[1] - r[1] * v[0], h2 = hx * hx + hy * hy + hz * hz;
+  const e = Math.sqrt(Math.max(0, 1 + (2 * energy * h2) / (mu * mu)));
+  if (!(h2 / (mu * (1 + e)) < touch)) return null;
+  const contact = inbound(d, rv, mu, energy, h2, e, touch);
+  if (!(contact >= 0)) return null;
+  return { contact, zone: d <= zone ? 0 : Math.min(contact, inbound(d, rv, mu, energy, h2, e, zone)) };
+}
+
+/** A world as the look for a hit has it: G times its mass (m³/s²), its radius (m), where it is (m) and how it moves (m/s). */
+export interface Meeting<T> { body: T; gm: number; radius: number; pos: Vec; vel: Vec }
+/** Two worlds that will hit: when they touch and when they come within `zone` of each other (s from now). */
+export interface Approach<T> { a: T; b: T; contact: number; zone: number }
+
+/**
+ * The first hit ahead among `worlds`, if one comes within `within` seconds of their coming `zone`
+ * times their radii added apart (contactTimes), the two-body orbit of each pair being what is
+ * looked at. Pairs that cannot come that near so soon, at the most speed falling together could
+ * give them, are passed over unworked.
+ */
+export function soonestContact<T>(worlds: readonly Meeting<T>[], within: number, zone: number): Approach<T> | null {
+  let best: Approach<T> | null = null;
+  const r: Triple = [0, 0, 0], v: Triple = [0, 0, 0];
+  for (let i = 0; i < worlds.length; i++) {
+    const p = worlds[i];
+    for (let j = i + 1; j < worlds.length; j++) {
+      const q = worlds[j], mu = p.gm + q.gm, touch = p.radius + q.radius, near = zone * touch;
+      for (let c = 0; c < 3; c++) { r[c] = q.pos[c] - p.pos[c]; v[c] = q.vel[c] - p.vel[c]; }
+      const d = Math.hypot(r[0], r[1], r[2]);
+      if (d - near > Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + (2 * mu) / near) * within) continue;
+      const t = contactTimes(r, v, mu, touch, near);
+      if (t && t.zone <= within && (!best || t.contact < best.contact)) best = { a: p.body, b: q.body, contact: t.contact, zone: t.zone };
+    }
+  }
+  return best;
+}
+
+/** A number in powers of ten, as read: "4.9×10³¹". */
+export function powerWords(x: number): string {
+  const [m, p] = x.toExponential(1).split('e');
+  const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+  return `${m.replace(/\.0$/, '')}×10${String(Number(p)).replace('-', '⁻').replace(/\d/g, (k) => SUP[Number(k)])}`;
+}
+
+/** One of two worlds that met: its name, G times its mass (m³/s²) and its radius (m), as they were. */
+export interface Met { name: string; gm: number; radius: number }
+
+/**
+ * Two worlds that met, in words: who hit whom and how fast; the energy of the hit (½μv², μ the
+ * two masses' product over their sum: the energy of their motion against each other) against the
+ * light the Sun gives off, and against what holds the lighter together (physics.bindingEnergy,
+ * as a ball of even density); and what a rule of thumb says that would do, labelled so, as it is
+ * not simulated. `small` is the lighter, which became part of `big`.
+ */
+export function impactWords(small: Met, big: Met, speed: number, energy: number): { head: string; energy: string; holds: string; foretold: string; simulated: string } {
+  const sun = energy / L_SUN;
+  const ofSun = sun >= 1 ? spanWords(sun) : `1/${round(1 / sun)} of a second`;
+  const hold = (m: Met) => bindingEnergy(m.gm / G, m.radius);
+  const k = energy / hold(small), name = the(small.name);
+  const verdict = energy >= hold(big) ? 'both would break apart' : k >= 1 ? `${name} would break apart, ${the(big.name)} would not` : 'neither would break apart';
+  return {
+    head: `${capital(name)} hit ${the(big.name)} at ${speedWords(speed)}`,
+    energy: `Energy ${powerWords(energy)} J: as much as the Sun gives off in ${ofSun}.`,
+    holds: `${k >= 1 ? `${round(k)} times` : `1/${round(1 / k)} of`} the energy that holds ${name} together.`,
+    foretold: `Prediction, by a rule of thumb (the energy against what holds each together): ${verdict}.`,
+    simulated: 'Breaking apart is not simulated yet: the two become one.',
+  };
+}
+
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 // ---------------------------------------------------------------- saying things
 
 /** A body's name as it stands in a sentence: "the Sun", "the Moon", "Jupiter". */
@@ -508,6 +636,11 @@ export function spanWords(seconds: number): string {
   if (s >= 3600) return count(s / 3600, 'hour');
   if (s >= 60) return count(s / 60, 'minute');
   return count(s, 'second');
+}
+
+/** When something will happen, `seconds` from now, on `jd` (TDB): "in 43 days" within a year, "in 2031" beyond. */
+export function whenWords(seconds: number, jd: number): string {
+  return seconds < 365.25 * 86_400 ? `in ${spanWords(seconds)}` : `in ${jdToCalendar(tdbToUtc(jd)).year}`;
 }
 
 /** A speed in words for an event: "12 km/s", "340 m/s". */

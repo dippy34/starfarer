@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Vector3 } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { keplerState, solveKeplerElliptic, solveKeplerHyperbolic, stateToElements } from '../src/astro/kepler';
+import { isOpen, keplerState, openPath, perifocalMatrix, solveKeplerElliptic, solveKeplerHyperbolic, stateToElements } from '../src/astro/kepler';
 import { blackbodyRGB, bvToTeff, magToIrradiance, irradianceToMag } from '../src/astro/photometry';
 import { evaluateRotation, orientationMatrix } from '../src/astro/rotation';
 import { GAL_TO_EQU, vectorToRaDec } from '../src/core/frames';
@@ -132,6 +132,47 @@ describe('Kepler solvers', () => {
     const r1 = new Vector3();
     keplerState(el, 2451400, r1);
     expect(r1.distanceTo(r2)).toBeLessThan(1); // metres
+  });
+  it('an open path is drawn from q and the true anomaly: at exactly the speed of escape a parabola, beyond it a hyperbola, from the body outwards', () => {
+    // (the Moon thrown square to the line from the Earth, at the speed of escape and at 1.6 times the speed of a circle)
+    const mu = 4.035e14, q = 3.844e8, out = new Float64Array(2 * 220);
+    for (const f of [Math.SQRT2, 1.6]) {
+      const r = new Vector3(q, 0, 0), v = new Vector3(0, f * Math.sqrt(mu / q), 0);
+      const el = stateToElements(r, v, mu, 2461315);
+      // (at exactly the speed of escape rounding puts it on either side of e = 1: the energy says it is open)
+      expect(isOpen(v.lengthSq() / 2 - mu / q, mu, q)).toBe(true);
+      const e = Math.max(1, el.e);
+      expect(e).toBeCloseTo(f * f - 1, 9);
+      const n = openPath(el.q, e, 0, 4 * q, 192, 14, out);
+      expect(n).toBe(1 + 14 + 192);
+      expect([out[0], out[1]]).toEqual([0, 0]);
+      // every point is on the conic r (1 + e cos ν) = q (1 + e), measured from the Earth, and they go out from the body
+      let last = 0;
+      for (let k = 0; k < n; k++) {
+        const x = q + out[2 * k], y = out[2 * k + 1], d = Math.hypot(x, y), nu = Math.atan2(y, x);
+        expect(d * (1 + e * Math.cos(nu)) / (q * (1 + e))).toBeCloseTo(1, 12);
+        expect(nu).toBeGreaterThanOrEqual(last);
+        last = nu;
+      }
+      // the last point is as far out as asked: four times the distance it was thrown from
+      expect(Math.hypot(q + out[2 * n - 2], out[2 * n - 1]) / (4 * q)).toBeCloseTo(1, 9);
+    }
+    // a hyperbola never turns as far as its asymptote, however far out it is drawn
+    const n = openPath(q, 1.56, 0, 1e6 * q, 192, 14, out);
+    expect(Math.atan2(out[2 * n - 1], q + out[2 * n - 2])).toBeLessThan(Math.acos(-1 / 1.56));
+    // one coming in is drawn on through its nearest point; one already beyond the end gets no path
+    const inbound = openPath(q, 1, -1, 4 * q, 192, 14, out);
+    expect(Math.atan2(out[2 * inbound - 1], q * 2 / (1 + Math.cos(-1)) * Math.cos(-1) + out[2 * inbound - 2])).toBeGreaterThan(0);
+    expect(openPath(q, 1, 2.5, 4 * q, 192, 14, out)).toBe(1);
+    // the true anomaly is read from where the body is, in the plane of the path
+    const el = stateToElements(new Vector3(0, q, 0), new Vector3(-Math.SQRT2 * Math.sqrt(mu / q), 0, 0), mu, 0);
+    const R = perifocalMatrix(el.i, el.node, el.peri).elements;
+    expect(Math.atan2(q * R[4], q * R[1])).toBeCloseTo(0, 6);
+  });
+  it('a bound orbit is not open, however near the edge, and an exact escape is', () => {
+    expect(isOpen(-1e-9, 1, 1)).toBe(false);
+    expect(isOpen(-1e-13, 1, 1)).toBe(true);
+    expect(isOpen(0, 1, 1)).toBe(true);
   });
   it('near-parabolic is continuous across e = 1', () => {
     const base = { q: AU, i: 10, node: 20, peri: 30, tp: 2460000, mu: GM_SUN };

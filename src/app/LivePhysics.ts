@@ -4,7 +4,7 @@ import { LEFT_OUT, NBody, type NBodySnapshot, type SimEvent } from '../sim/NBody
 import { apply, capture, type Live, liveDate, release, riders } from '../sim/SystemSim';
 import type { Body } from '../universe/Body';
 import type { BodyJson, Family, SolarSystem } from '../universe/SolarSystem';
-import { dayWords, listed, type Orbit, orbitOf, reachWords, shapeWords, speedWords, the } from './Powers';
+import { dayWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
 
 /**
  * Live physics: the Solar System under its own gravity, from the moment the explorer changes
@@ -47,6 +47,8 @@ const ALSO_LEFT_OUT: readonly string[] = [
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
   'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up. Its size follows the mass you give it by a rule, said in its details: rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence. A star made lighter than the Sun is drawn as if all its light were visible light: a red dwarf would look fainter.',
   'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
+  'When two worlds are about to meet, time slows to show it, and a flash marks where they meet: the flash is drawn, its brightness is not worked out. The card says the energy of the hit (half the product of their masses over their sum, times their speed squared) against what holds the lighter together, worked out as for a ball of even density (3GM²/5R: a real world is denser at its centre and held more tightly, the Earth by about a tenth), and whether a rule of thumb has them break apart. Breaking apart is not simulated.',
+  'The path drawn ahead of a world you hold or aim is the simulation run on, every pull counted, as time would run while the change is watched: for three of its turns or a hundred years at most, and only until it hits something, leaves for good or goes round something else.',
 ];
 /** an unbound body this far from what it left has left for good */
 const EDGE = 2000 * AU;
@@ -106,6 +108,9 @@ export interface LiveStatus {
   log: { day: string; text: string }[];
 }
 
+/** Two worlds that met (each `weighty`): the lighter, which became part of the heavier, each as it was; how fast (m/s) and the energy of the hit (J); when (TDB), into what, and what was said of it. */
+export interface Hit { small: Met; big: Met; speed: number; energy: number; jd: number; into: Body; told: string }
+
 export class LivePhysics {
   /** the simulation, once something has been changed */
   live: Live | null = null;
@@ -120,6 +125,7 @@ export class LivePhysics {
   /** how many changes have been made, ever: a gesture that changed nothing leaves it as it was */
   changes = 0;
   private news: string[] = [];
+  private hits: Hit[] = [];
   /** the catalogue's values of the bodies whose mass or size has been changed */
   private real = new Map<Body, Real>();
   private share = 1;
@@ -315,6 +321,13 @@ export class LivePhysics {
     return n;
   }
 
+  /** The worlds that have met since the last call, oldest first (each is told in the news too). */
+  takeHits(): Hit[] {
+    const h = this.hits;
+    this.hits = [];
+    return h;
+  }
+
   // ------------------------------------------------------------------ back to reality
 
   /**
@@ -334,6 +347,7 @@ export class LivePhysics {
     this.live = null;
     this.log.length = 0;
     this.news = [];
+    this.hits = [];
     this.share = 1;
     clock.jdTdb = live.jd0;
     this.system.update(clock.jdTdb);
@@ -385,6 +399,7 @@ export class LivePhysics {
     this.real = new Map(cp.real.map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]));
     this.log.splice(0, this.log.length, ...cp.log.map((e) => ({ ...e })));
     this.news = [];
+    this.hits = [];
     [this.share, this.rate, this.slowFor, this.stage, this.cross] = cp.pace;
     const sim = cp.sim;
     this.live = sim && {
@@ -414,9 +429,8 @@ export class LivePhysics {
     };
   }
 
-  /** The orbit a body is on now about what it goes round, or null (it goes round nothing, or its mass and its primary's are unknown). */
-  orbit(b: Body): Orbit | null {
-    const p = b.parent;
+  /** The orbit a body is on now about what it goes round (or about `p`), or null (it goes round nothing, or its mass and its primary's are unknown). */
+  orbit(b: Body, p: Body | null = b.parent): Orbit | null {
     if (!p || !(p.gm + b.gm > 0)) return null;
     return orbitOf([b.pos.x - p.pos.x, b.pos.y - p.pos.y, b.pos.z - p.pos.z], [b.vel.x - p.vel.x, b.vel.y - p.vel.y, b.vel.z - p.vel.z], p.gm + b.gm);
   }
@@ -437,7 +451,7 @@ export class LivePhysics {
     if (pair) rows.push(['Goes round', `each other, with ${the(pair.name)}`]);
     else if (!b.parent) rows.push(['Goes round', 'nothing: it flies free']);
     else rows.push(['Goes round', the(b.parent.name)]);
-    if (o) rows.push(["Its orbit's shape", shapeWords(o)], ['Nearest to farthest · once round', reachWords(o)]);
+    if (o) rows.push(['Its orbit', b.parent && o.peri < b.parent.radius + b.radius ? `a path into ${the(b.parent.name)}: it hits it` : orbitWords(o)], ['How stretched', stretchWords(o)]);
     return rows;
   }
 
@@ -576,6 +590,7 @@ export class LivePhysics {
   private grown(live: Live, e: Extract<SimEvent, { kind: 'collision' }>, lost: number, jd: number): void {
     const system = this.system, s = system.byId.get(e.survivor), a = system.byId.get(e.absorbed);
     if (!s || !a) return;
+    const big = { name: s.name, gm: s.gm, radius: s.radius };
     // (what rode on it is simulated from here on: it pulls harder than the body their catalogued paths are round)
     release(live, system, riders(live, system, s));
     const i = live.sim.indexOf(s.id);
@@ -588,7 +603,10 @@ export class LivePhysics {
       s.radius *= k;
       s.radii = [s.radii[0] * k, s.radii[1] * k, s.radii[2] * k];
     }
-    this.tell(jd, `${capital(the(a.name))} hit ${the(s.name)} at ${speedWords(e.speed)} and is part of it now.${lost ? ` ${lost} small moon${lost > 1 ? 's' : ''} went with it.` : ''}`);
+    const told = `${capital(the(a.name))} hit ${the(s.name)} at ${speedWords(e.speed)} and is part of it now.${lost ? ` ${lost} small moon${lost > 1 ? 's' : ''} went with it.` : ''}`;
+    this.tell(jd, told);
+    // (the worlds that matter to what is seen of a change: a moonlet into its planet is told, and no more)
+    if (weighty(a) && weighty(s)) this.hits.push({ small: { name: a.name, gm: a.gm, radius: a.radius }, big, speed: e.speed, energy: e.heat, jd, into: s, told });
   }
 }
 
@@ -598,10 +616,10 @@ export function goesRound(m: Body, b: Body): boolean {
   for (let p = m.parent; p; p = p.parent) if (p === b) return true;
   return false;
 }
-/** a body worth telling of by name: a star, a planet or a dwarf planet, or a moon heavy enough to be weighed */
 /** The bodies of a simulation told leaving (1) or gone for good (2), each told so once. */
 const TOLD_FREE = new WeakMap<Live, Map<Body, number>>();
 
+/** a body worth telling of by name: a star, a planet or a dwarf planet, or a moon whose mass is known */
 const isWorld = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind === 'dwarf' || (b.kind === 'moon' && b.gm > 0);
 /**
  * A world heavy enough to matter to what is seen of a change (src/app/App.ts watches the worlds a
