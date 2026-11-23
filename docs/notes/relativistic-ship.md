@@ -127,11 +127,22 @@ warp in the deployed build in headless Chromium).
    and since the point is worked out again each frame from where the worlds are then, a world
    that moves (or is moved) is gone round where it is. With that, the **mass lock is gone** (the
    Elite fiction "no autopilot where gravity passes 0.5 m/s²", whose only reason was the straight
-   line). In its place, two refusals with physical reasons (`Flight.autopilotRefusal`): in a
-   world's air (it would cross it at many km/s), and where gravity is more than half the drive's
-   acceleration at its setting (too little left to steer: "set it to 5 g or more"). The second
-   matters on a phone: the explorer's first view of the Earth is at 3.4 radii (0.85 m/s²), where
-   the old lock refused and a phone has no throttle to climb out with.
+   line). In its place one refusal with a physical reason (`Flight.autopilotRefusal`): where
+   gravity is more than half the drive's acceleration at its setting (too little left to steer:
+   "set it to 5 g or more"; on a phone the notice carries a button that sets the drive the trip
+   needs and goes). That matters on a phone: the explorer's first view of the Earth is at 3.4
+   radii (0.85 m/s²), where the old lock refused and a phone has no throttle to climb out with.
+   In a world's air the autopilot no longer refuses ("climb above 127 km first"): it climbs out
+   first (`Autopilot.climb`, `Flight.guideClimb`): straight up, from the ground too (the wheels
+   turn the nose up; it lifts off when the drive beats gravity), at the speed `climbSpeed` allows
+   through the air it is in: the hull's radiative equilibrium under 1,500 K (Sutton-Graves, as
+   `ShipPhysics.finish` heats it), the drag under 3 g and under half of what the drive has to
+   spare over gravity, never over 4 km/s, the speed followed over a few seconds with the air's
+   drag and gravity made up for, so it goes no faster than the drive can take it. A frame in the
+   air is at most two seconds of flight, whatever the warp asked. At the top of the air
+   (`atmosphere.top`, 15 scale heights) the ordinary flight to the target goes on. Earth from the
+   ground at 5 g: about 110 s aboard, 900 K at the hottest. "Fly there in your ship" picks a
+   drive with at least 2 g to spare over gravity there (`CLIMB_SPARE`).
 10. **Hitting a world at speed.** The integrator's substeps are sized by the orbital time scale,
    not by the speed, so a fast ship could cross a world between two substeps and come out the
    other side (measured: from 10 radii of a small moon at γ = 100, one 0.01 s frame carried it
@@ -184,8 +195,8 @@ Lorentz factor (1 + 3.3×10⁻¹⁰ in low orbit; 2.42×10⁹), past a tenth of 
 the view ahead (half the sky crowds into θ with tan θ = 1/(γβ); light ahead is e^η times bluer),
 the orbit, throttle, propellant or the drive's setting (and "at its limit"), the felt g, SAS, the
 target with its distance and the time to it **aboard and in the universe** (flip-and-burn at the
-drive's setting, or coasting at the present speed), the autopilot (ready / in the air / drive too
-weak here / what it is doing, or "round" the world it is going round), time warp, the ship's clock (with its rate against the universe's), the universe's.
+drive's setting, or coasting at the present speed), the autopilot (ready / drive too
+weak here / what it is doing, climbing out of the air first when it starts there, or "round" the world it is going round), time warp, the ship's clock (with its rate against the universe's), the universe's.
 The cockpit's screens (desk and headset) show the same in short: when fast, speed, γ and the time
 to go replace the orbit lines.
 

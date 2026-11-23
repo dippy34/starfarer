@@ -3,7 +3,8 @@
 // tides and a supermassive one's horizon; the reactionless drive near light speed (never at it) and
 // the autopilot to another star; on a phone, boarding, the drive's setting and Go there by touch, the
 // instruments at a glance and the full read-out, the Time chip's rate in the ship, and flying by hand
-// (steering by a finger, the throttle lever, Stop), upright and on its side. Usage: node scripts/flight.mjs [baseUrl] [outDir]
+// (steering by a finger, the throttle lever, Stop), upright and on its side; Fly there in your ship from
+// the ground in a planet's air (it climbs out under its own drive, then goes on). Usage: node scripts/flight.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
@@ -43,7 +44,7 @@ const seeThrough = (list) => list.filter((p) => !(p.alpha >= 0.88 && p.blur));
 const waitFor = (fn, arg, timeout = 240000) => page.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
 
 // (Parts, for running the suite in two halves at once on two machines: together they are the whole suite.)
-// FLIGHT_ONLY=desk runs 1-12 (one page at a desk), FLIGHT_ONLY=phone 13-16 (each on a fresh phone); unset: both.
+// FLIGHT_ONLY=desk runs 1-12 (one page at a desk), FLIGHT_ONLY=phone 13-17 (each on a fresh phone); unset: both.
 const part = process.env.FLIGHT_ONLY ?? '';
 let st;
 if (part !== 'phone') { // (FLIGHT_ONLY: desk, 1-12; not indented, to keep the change small)
@@ -238,7 +239,7 @@ check('arrives at the star', !prev.ap && prev.d < prev.r * 12, JSON.stringify({ 
 await shot('f14-alpha-cen.png');
 } // (FLIGHT_ONLY: desk)
 
-if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the change small)
+if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the change small)
 // 13. on a phone, by touch alone: More, Spaceship boards the ship; the tabs stay (where to go, time,
 // the way out); + raises the drive's setting; Go there on a selected world starts the autopilot
 {
@@ -725,6 +726,98 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-16; not indented, to keep the 
   await f.frames(3);
   st = await phone.evaluate(() => ({ mode: window.app.game.mode, rate: window.app.clock.rate }));
   check('leaving the ship: time back to real time', st.mode === 'off' && st.rate === 1, JSON.stringify(st));
+  await ctx.close();
+}
+
+// 17. "Fly there in your ship" from inside a planet's air (it was refused: "climb above 127 km first"):
+// from the ground at Earth with the Moon selected, one tap boards the ship and its autopilot climbs
+// out of the air on its own drive (hull kept cool, never faster than the drive can push it, nothing
+// jumping), then carries on to the Moon. With the drive too weak to climb, the refusal comes with a
+// button that sets a stronger drive and goes.
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?target=Earth&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  const until = (fn, timeout) => phone.waitForFunction(fn, null, { timeout }).then(() => true).catch(() => false);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  // down at Earth (the explorer at its surface), the Moon selected
+  await phone.evaluate(() => { const a = window.app, e = a.findByName('Earth'); a.placeNear(e, e.radius + 2000, 40, 10); a.select(a.findByName('Moon')); });
+  await f.frames(6);
+  const label = await phone.evaluate(() => document.querySelector('.ship-fab span').textContent);
+  // (watched every frame from here: the ship's place against what its speed allows between two frames)
+  await phone.evaluate(() => {
+    const fl = window.app.game.flight, w = (window.__climb = { d0: window.app.selection.upos.sub(window.app.rig.upos).length(), jump: -1e9, temp: 0, over: -1e9, prev: null, t0: null, phases: new Set(), glance: '' });
+    const tick = () => {
+      const r = fl.readout, p = fl.ship.upos.clone();
+      if (fl.autopilot) {
+        w.phases.add(fl.autopilot.steering.phase);
+        if (w.t0 === null) w.t0 = fl.ship.shipTime;
+        if (w.prev) w.jump = Math.max(w.jump, p.sub(w.prev).length() - (fl.ship.vel.length() + 30) * Math.max(fl.simDt, 1e-3) * 1.5);
+        // (against the ground: what the drive's push gives in the time aboard since the autopilot began, and a little)
+        w.over = Math.max(w.over, r.surfSpeed - (fl.ship.driveAccel * (fl.ship.shipTime - w.t0) + 5));
+        w.temp = Math.max(w.temp, r.hullTemp);
+        if (/climbing/.test(r.apState) && !w.glance) w.glance = document.querySelector('.fl-glance').textContent.replace(/\s+/g, ' ');
+        w.prev = fl.ship.upos.clone();
+      } else w.prev = null;
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  await phone.screenshot({ path: path.join(outDir, 'f25-phone-air-before.png'), timeout: 180000 });
+  await f.tap(await at('.ship-fab'));
+  await f.frames(4);
+  st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, refusal: fl.autopilotRefusal(), alt: fl.readout.altitude, toast: document.querySelector('.hud-toast').textContent }; });
+  check('"Fly there in your ship" from the ground in Earth\'s air: the autopilot takes the trip, and says it climbs first', label === 'Fly there in your ship' && st.mode === 'chase' && st.target === 'Moon' && !st.refusal && /climbing out of Earth's air first/.test(st.toast), JSON.stringify({ label, ...st }));
+  // (time quickened: the autopilot holds a frame to two seconds of flight in the air)
+  await phone.evaluate(() => { window.app.clock.rate = 50; });
+  const out = await until(() => { const fl = window.app.game.flight; return !!fl.ending || fl.readout.altitude > 127.5e3; }, 600000);
+  const up = await phone.evaluate(() => { const w = window.__climb, fl = window.app.game.flight; return { alt: fl.readout.altitude, ending: fl.ending?.title ?? null, temp: w.temp, over: w.over, jump: w.jump, phases: [...w.phases], glance: w.glance, v: fl.readout.surfSpeed, ap: fl.autopilot?.target.name ?? null, t: fl.ship.shipTime - w.t0 }; });
+  await phone.screenshot({ path: path.join(outDir, 'f26-phone-air-out.png'), timeout: 180000 });
+  check('it climbs out of the air under its own drive: past 127 km, nothing burnt or crashed, the hull well under its limit', out && !up.ending && up.alt > 127.5e3 && up.temp < 2000 && up.phases.includes('climbing'), JSON.stringify({ alt: Math.round(up.alt), temp: Math.round(up.temp), ending: up.ending, phases: up.phases, secs: Math.round(up.t) }));
+  check('and honestly: never faster than the drive can have pushed it, no jump between frames', up.phases.includes('climbing') && up.over < 0 && up.jump < 0, `faster than the drive by ${up.over.toFixed(1)} m/s (negative: not), jump ${up.jump.toFixed(1)} m beyond what its speed allows (negative: none), ${up.v.toFixed(0)} m/s at the top`);
+  check('the instruments say so while it climbs', /Autopilot: climbing/.test(up.glance), up.glance);
+  // on from the top of the air, towards the Moon: the autopilot goes on flying there (no longer
+  // climbing, never refused), and the Moon comes closer than it was when the flight began
+  await phone.evaluate(() => { window.app.clock.rate = 1000; });
+  const near = await until(() => { const fl = window.app.game.flight; return !!fl.ending || !fl.autopilot || fl.autopilot.target.upos.sub(fl.ship.upos).length() < 0.8 * window.__climb.d0; }, 600000);
+  st = await phone.evaluate(() => { const fl = window.app.game.flight; return { ap: fl.autopilot?.target.name ?? null, phase: fl.autopilot?.steering.phase ?? '', d: fl.autopilot ? fl.autopilot.target.upos.sub(fl.ship.upos).length() : NaN, ending: fl.ending?.title ?? null, d0: window.__climb.d0, climbed: window.__climb.phases.has('climbing') }; });
+  check('then it carries on to the Moon: still flying there, no longer climbing, and the Moon comes closer', near && st.ap === 'Moon' && st.phase !== 'climbing' && st.d < 0.8 * st.d0 && !st.ending && st.climbed, JSON.stringify(st));
+  await ctx.close();
+}
+
+// 17b. the drive too weak to climb (1 g, gravity at the ground nearly 10 m/s²): Go there says why and
+// offers the next sensible thing in a button: a stronger drive, and go
+{
+  const ctx = await phoneContext(browser);
+  const phone = await ctx.newPage();
+  collectErrors(phone, errors);
+  await phone.goto(`${base}?target=Earth&menu=0`, { waitUntil: 'load' });
+  await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
+  const f = await fingers(phone);
+  const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  await phone.evaluate(() => { const a = window.app, e = a.findByName('Earth'); a.placeNear(e, e.radius + 2000, 40, 10); });
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(2);
+  await phone.evaluate(() => document.querySelector('.switch[data-act="ship"]').scrollIntoView({ block: 'center' }));
+  await phone.waitForTimeout(300);
+  await f.tap(await at('.switch[data-act="ship"]'));
+  await f.frames(4);
+  await phone.evaluate(() => { const a = window.app; a.game.flight.ship.driveAccel = 9.80665; a.select(a.findByName('Moon')); });
+  await f.frames(4);
+  await f.tap(await at('[data-act="go"]'));
+  await f.frames(3);
+  st = await phone.evaluate(() => { const n = document.querySelector('.hud-notice'), b = n.querySelector('.notice-act'); return { shown: !n.hidden, text: n.querySelector('span').textContent, act: b.hidden ? '' : b.textContent, ap: !!window.app.game.flight.autopilot, g: window.app.game.flight.ship.driveAccel / 9.80665 }; });
+  check('with the drive too weak to climb, Go there says so and offers a button that names the drive it would use (5 g, enough to climb), and go', st.shown && /too weak/.test(st.text) && /^Use 5 g, and go$/.test(st.act) && !st.ap && st.g === 1, JSON.stringify(st));
+  await phone.screenshot({ path: path.join(outDir, 'f27-phone-air-weak.png'), timeout: 180000 });
+  await f.tap(await at('.hud-notice .notice-act'));
+  await f.frames(4);
+  st = await phone.evaluate(() => { const fl = window.app.game.flight; return { ap: fl.autopilot?.target.name ?? null, g: fl.ship.driveAccel / 9.80665, refusal: fl.autopilotRefusal(), shown: !document.querySelector('.hud-notice').hidden }; });
+  check('that button sets the stronger drive and the autopilot starts (the climb first)', st.ap === 'Moon' && st.g >= 5 && !st.refusal && !st.shown, JSON.stringify(st));
   await ctx.close();
 }
 

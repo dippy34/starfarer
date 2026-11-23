@@ -1,7 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { UPos } from '../src/core/upos';
-import { autopilotRate, brake, inTheWay, placeSlot, type Situation, steer, type Steering } from '../src/game/Autopilot';
+import { autopilotRate, brake, climb, climbSpeed, type ClimbSituation, inTheWay, placeSlot, type Situation, steer, type Steering } from '../src/game/Autopilot';
 import { C, GravityField, makeSource, type GravitySource } from '../src/sim/Gravity';
 import { flipAndBurn } from '../src/sim/Relativity';
 import { FlightCore, G0, SHIP_SPEC } from '../src/sim/ShipPhysics';
@@ -201,6 +201,111 @@ describe('the autopilot', () => {
     // at a million g, a tenth of the rapidity a frame: 3 s aboard
     st.tauGo = 1e6;
     expect(autopilotRate(1e5, st, 0.1, 1e6 * G0)).toBeCloseTo((0.1 * C) / (1e6 * G0) / 0.1, 9);
+  });
+});
+
+/**
+ * The climb out of the Earth's air as Flight flies it, from the ground (landed, nose along the
+ * ground) or from `alt` metres up: the wheels turn the nose at 0.5 rad/s, time at `rate` held back
+ * by autopilotRate, the air an exponential one (sea level 1.2 kg/m³, 8.5 km a scale height, 15 of
+ * them to its top) turning with the world. Ends when the air is left, or at an event.
+ */
+function climbOut(driveG: number, alt: number, rate: number, frameDt = 0.05) {
+  const field = new GravityField();
+  const earth = makeSource({ name: 'Earth', gm: 3.986004418e14, radius: 6.371e6, upos: UPos.from(1.5e11, 0, 0) });
+  field.sources = [earth];
+  const core = new FlightCore(field);
+  const H = 8500, top = 15 * H;
+  core.atmosphere = { rho0: 1.2, H, R0: earth.radius, top };
+  core.groundR = earth.radius;
+  core.spin.set(0, 0, 7.292e-5);
+  const ship = core.ship;
+  ship.drive = 'reactionless';
+  ship.driveAccel = driveG * G0;
+  const rel = new Vector3(1, 0, 0);
+  if (alt <= 0) {
+    ship.upos.copy(earth.upos).addVec(rel, earth.radius);
+    core.landed = { dir: rel.clone(), src: earth };
+    ship.quat.setFromUnitVectors(NOSE, new Vector3(0, 1, 0));
+  } else ship.upos.copy(earth.upos).addVec(rel, earth.radius + alt);
+  ship.setProperVelocity(new Vector3().crossVectors(core.spin, rel.clone().multiplyScalar(earth.radius + Math.max(alt, 0))));
+  core.chooseFrame();
+  core.syncRel();
+  const sit: ClimbSituation = { up: new Vector3(), air: new Vector3(), gravity: new Vector3(), nose: new Vector3(), height: 0, top, rho: 0, cdA: SHIP_SPEC.cdA, noseRadius: SHIP_SPEC.noseRadius, mass: 0, drive: ship.driveAccel, rcs: 0, dt: 0 };
+  const st: Steering = { aim: NOSE.clone().applyQuaternion(ship.quat), throttle: 0, rcs: new Vector3(), turning: false, tauGo: Infinity, tGo: Infinity, phase: 'turning', arrived: false };
+  let t = 0, peakTemp = 0, peakG = 0, peakSpeed = 0, over = 0, jump = 0, frames = 0, last = ship.upos.clone();
+  for (; frames < 6000; frames++) {
+    core.chooseFrame();
+    const r = ship.upos.sub(earth.upos, new Vector3()), len = r.length();
+    if (len >= core.atmosphere.R0 + top) break;
+    sit.up.copy(r).divideScalar(len);
+    sit.air.copy(ship.vel).sub(new Vector3().crossVectors(core.spin, r));
+    core.field.gravityAt(ship.upos, sit.gravity);
+    sit.nose.copy(NOSE).applyQuaternion(ship.quat);
+    sit.height = len - core.atmosphere.R0;
+    sit.rho = core.atmosphere.rho0 * Math.exp(-sit.height / H);
+    sit.mass = ship.mass;
+    sit.rcs = SHIP_SPEC.rcsThrust / ship.mass;
+    climb(sit, st);
+    ship.throttle = st.throttle;
+    ship.rcs.copy(st.rcs).applyQuaternion(ship.quat.clone().invert()).divideScalar(sit.rcs).clampScalar(-1, 1);
+    const ang = sit.nose.angleTo(st.aim);
+    if (ang > 1e-9) {
+      const axis = sit.nose.clone().cross(st.aim);
+      if (axis.lengthSq() < 1e-18) axis.set(0, 1, 0);
+      ship.quat.premultiply(new Quaternion().setFromAxisAngle(axis.normalize(), Math.min(ang, 0.5 * frameDt)));
+    }
+    const tau = frameDt * autopilotRate(rate, st, frameDt, ship.driveAccel);
+    sit.dt = core.universeTimeFor(tau);
+    core.step(sit.dt);
+    core.place();
+    t += tau;
+    peakTemp = Math.max(peakTemp, ship.hullTemp);
+    peakG = Math.max(peakG, ship.gForce);
+    // (what the drive could have given it: its own acceleration for the time, from where it began)
+    const speed = ship.vel.length();
+    peakSpeed = Math.max(peakSpeed, speed);
+    over = Math.max(over, ship.vel.clone().sub(new Vector3().crossVectors(core.spin, ship.upos.sub(earth.upos, new Vector3()))).length() - ship.driveAccel * t);
+    jump = Math.max(jump, ship.upos.sub(last, new Vector3()).length() - (speed + 20) * sit.dt);
+    last = ship.upos.clone();
+    if (core.event) break;
+  }
+  const h = ship.upos.sub(earth.upos, new Vector3()).length() - earth.radius;
+  return { event: core.event, h, top, t, frames, peakTemp, peakG, over, jump, landed: core.landed };
+}
+
+describe('the climb out of the air', () => {
+  it('goes faster up thin air than thick, held by the heat and the drag, never past 4 km/s', () => {
+    const v = (rho: number, spare = 30) => climbSpeed(rho, spare, SHIP_SPEC.cdA, SHIP_SPEC.noseRadius, 40000);
+    expect(v(1.2)).toBeLessThan(800);
+    expect(v(1.2)).toBeGreaterThan(100);
+    expect(v(1e-3)).toBeGreaterThan(v(1.2));
+    expect(v(1e-9)).toBe(4000);
+    expect(v(0)).toBe(4000);
+    // a drive with little to spare must push through the drag too: slower
+    expect(v(1.2, 3)).toBeLessThan(v(1.2, 30));
+  });
+
+  it('lifts a landed ship out of the Earth\'s air at 5 g: cool, no more than the drive gives, no jump', () => {
+    const r = climbOut(5, 0, 50);
+    expect(r.event).toBeNull();
+    expect(r.h).toBeGreaterThanOrEqual(r.top);
+    expect(r.landed).toBeNull();
+    expect(r.peakTemp).toBeLessThan(1800);
+    expect(r.peakG).toBeLessThan(6);
+    // (never faster against the air than its drive could have pushed it in that long)
+    expect(r.over).toBeLessThan(1);
+    expect(r.jump).toBeLessThan(1);
+    // within a few minutes aboard
+    expect(r.t).toBeLessThan(600);
+  });
+
+  it('climbs from 3 km up at 2 g too (a little to spare over gravity: slow, and still out)', () => {
+    const r = climbOut(2, 3000, 50);
+    expect(r.event).toBeNull();
+    expect(r.h).toBeGreaterThanOrEqual(r.top);
+    expect(r.peakTemp).toBeLessThan(1800);
+    expect(r.over).toBeLessThan(1);
   });
 });
 

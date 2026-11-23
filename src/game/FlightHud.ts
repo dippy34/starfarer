@@ -386,7 +386,7 @@ export function glance(r: FlightReadout): { speed: string; side: string; state: 
   if (r.target) {
     target = `${r.target} · ${fmtDist(r.targetDist)}`;
     if (Number.isFinite(r.etaShip)) toGo = `there in ${fmtTime(r.etaShip)} for you · ${fmtTime(r.etaUniverse)} outside`;
-    else if (r.refusal) toGo = r.refusal.startsWith('In the air') ? 'autopilot: not in the air' : 'autopilot: drive too weak here';
+    else if (r.refusal) toGo = 'autopilot: drive too weak here';
   }
   const tip = advice(r);
   if (tip) toGo = toGo ? `${toGo}. ${tip}` : tip;
@@ -443,7 +443,7 @@ function readout(r: FlightReadout, plain = false): string {
     // (far short of it, as at a galaxy: the times are to there, not to the target itself)
     if (r.arrival > 0.05 * r.targetDist) target += row('stopping', `${fmtDist(r.arrival)} <span class="k">short of it</span>`);
   }
-  const ap = r.refusal && !r.autopilot ? row('autopilot', r.refusal.startsWith('In the air') ? 'in the air' : 'drive too weak here', 'bad') : row('autopilot', r.autopilot ? esc(r.autopilot) : r.target ? 'ready (J)' : 'select a target', r.autopilot || r.target ? 'ok' : '');
+  const ap = r.refusal && !r.autopilot ? row('autopilot', 'drive too weak here', 'bad') : row('autopilot', r.autopilot ? esc(r.autopilot) : r.target ? 'ready (J)' : 'select a target', r.autopilot || r.target ? 'ok' : '');
   return `
     <div class="t"><span>ORBIT · ${esc(r.frame.toUpperCase())}</span><span>${torch ? 'TORCH' : `REACTIONLESS ${fmtG(r.driveG)}`}</span></div>
     ${row('altitude', fmtDist(r.altitude))}

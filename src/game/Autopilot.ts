@@ -47,7 +47,7 @@ export interface Steering {
   /** proper time and universe time to go (s), by flip-and-burn from here */
   tauGo: number;
   tGo: number;
-  phase: 'turning' | 'accelerating' | 'braking' | 'arriving' | 'holding';
+  phase: 'turning' | 'climbing' | 'accelerating' | 'braking' | 'arriving' | 'holding';
   arrived: boolean;
 }
 
@@ -116,6 +116,94 @@ export function steer(s: Situation, out: Steering): Steering {
   return out;
 }
 
+/** the climb through the air keeps the hull's radiative equilibrium under this (K): well short of what burns it up */
+const CLIMB_HULL = 1500;
+/** ... and the drag under this many g (it is felt aboard) */
+const CLIMB_DRAG_G = 3;
+/** ... and the speed up through the air under this (m/s), whatever the air */
+const CLIMB_MAX = 4000;
+/** the Stefan-Boltzmann constant (W/m²/K⁴), and the hull's absorptivity the physics heats it by (ShipPhysics, finish) */
+const SIGMA = 5.670374419e-8;
+const ABSORB = 0.85;
+/** Sutton-Graves' coefficient for the stagnation heating (ShipPhysics, finish) */
+const SUTTON = 1.7415e-4;
+
+/** The ship in the air of the world it leaves: what the climb needs of it (every quantity in the world's frame). */
+export interface ClimbSituation {
+  /** away from the world's centre (unit, world) */
+  up: Vector3;
+  /** the ship's velocity against the air (m/s, world): the air turns with the world */
+  air: Vector3;
+  /** gravity at the ship (m/s², world), less the world's own pull on its frame */
+  gravity: Vector3;
+  /** the ship's nose (unit, world) */
+  nose: Vector3;
+  /** metres over the world's reference radius, and where the air ends (m over it) */
+  height: number;
+  top: number;
+  /** air density here (kg/m³) and the hull's: drag area (m²), nose radius (m), mass (kg) */
+  rho: number;
+  cdA: number;
+  noseRadius: number;
+  mass: number;
+  /** the drive's acceleration at full throttle and the RCS's (m/s²); universe seconds of the last frame */
+  drive: number;
+  rcs: number;
+  dt: number;
+}
+
+/**
+ * The fastest the ship may go up through air of density `rho` (m/s): where the hull's heat
+ * (Sutton-Graves, as ShipPhysics heats it) stays under CLIMB_HULL, the drag under CLIMB_DRAG_G and
+ * under half of what the drive has to spare over gravity (`spare`, m/s²: it must push through the
+ * drag too), and never over CLIMB_MAX.
+ */
+export function climbSpeed(rho: number, spare: number, cdA: number, noseRadius: number, mass: number): number {
+  let v = CLIMB_MAX;
+  if (rho > 0) {
+    const flux = ABSORB * SIGMA * CLIMB_HULL ** 4;
+    v = Math.min(v, Math.cbrt(flux / (SUTTON * Math.sqrt(rho / noseRadius))));
+    v = Math.min(v, Math.sqrt((2 * Math.min(CLIMB_DRAG_G * 9.80665, 0.5 * Math.max(0, spare)) * mass) / (rho * cdA)));
+  }
+  return v;
+}
+
+/**
+ * Out of the air: straight up, as fast as the air allows (climbSpeed: the hull stays cool, the
+ * drag gentle, the drive's own push the limit), the speed it sets followed over a few seconds and the
+ * air's drag and gravity made up for, so the ship goes no faster than the drive takes it. The nose
+ * is turned up (the wheels turn it; on the ground too) and the drive throttled to what is
+ * wanted as in `steer`. Sets phase 'climbing' (arrived: never). The caller says when the air is
+ * left (height >= top) and goes on with `steer`.
+ */
+export function climb(s: ClimbSituation, out: Steering): Steering {
+  const A = PLAN * s.drive;
+  const gUp = Math.max(0, -s.gravity.dot(s.up));
+  const want = climbSpeed(s.rho, A - gUp, s.cdA, s.noseRadius, s.mass);
+  const k = (0.5 * s.rho * s.cdA) / s.mass;
+  const speed = s.air.length();
+  // (the air's drag: -k |v| v; made up for, with gravity, by what the drive must push)
+  const err = _e.copy(s.up).multiplyScalar(want).sub(s.air);
+  const cmd = _c.copy(err).divideScalar(Math.max(3 * s.dt, 5)).addScaledVector(s.air, k * speed).sub(s.gravity);
+  if (cmd.length() < s.rcs) {
+    out.throttle = 0;
+    out.rcs.copy(cmd);
+    out.turning = false;
+    out.aim.copy(s.up);
+  } else {
+    out.rcs.set(0, 0, 0);
+    out.aim.copy(cmd).normalize();
+    const c = s.nose.dot(out.aim);
+    out.turning = c < 0.97;
+    out.throttle = Math.min(1, cmd.length() / s.drive) * Math.max(0, Math.min(1, (c - 0.9) / 0.09));
+  }
+  out.phase = out.turning ? 'turning' : 'climbing';
+  // (the time to go: the climb at the speed it will have; the caller adds the trip after it)
+  out.tauGo = out.tGo = Math.max(0, s.top - s.height) / Math.max(want, 1);
+  out.arrived = false;
+  return out;
+}
+
 /**
  * Stop: brake to rest in the frame of `s` (the nearest world's, or a star's) and hold there against
  * the pull that is left, on the drive along the nose. The situation is the ship's own place (rel 0,
@@ -175,7 +263,9 @@ export function inTheWay(ship: UPos, vel: Vector3, target: SpaceObjectLike, worl
  */
 export function autopilotRate(rate: number, s: Steering, realDt: number, drive: number): number {
   if (s.turning) rate = Math.min(rate, 1);
-  return Math.min(rate, Math.max(1, Math.min(0.05 * Math.max(s.tauGo, 2 * SETTLE), (0.1 * C) / drive) / Math.max(realDt, 1e-3)));
+  // (in the air a frame is two seconds at most: the drag and the heat are worked out as the ship climbs)
+  const go = s.phase === 'climbing' ? 0 : s.tauGo;
+  return Math.min(rate, Math.max(1, Math.min(0.05 * Math.max(go, 2 * SETTLE), (0.1 * C) / drive) / Math.max(realDt, 1e-3)));
 }
 
 /**
