@@ -350,6 +350,22 @@ measurements in `docs/notes/relativistic-ship.md`):
 - Tests: `tests/relativity.test.ts`, `tests/autopilot.test.ts`, `tests/flight.test.ts`;
   `scripts/flight.mjs` (34 checks), `scripts/game.mjs` (21).
 
+- **Free flight by touch** (`src/app/FreeFly.ts`): the explorer's own flight, the keys W A S D R F with
+  Shift for ten times, without a keyboard. More has a **Fly freely** switch (touch only); while it is
+  on, a stick stands under the left thumb (over the tab bar upright, beside the tabs on its side), Up
+  and Down and Done under the right, and one finger dragged on the view looks around (it sets the
+  "one finger looks around" drag, and puts back what it was). The stick feeds `CameraRig.ext.move`
+  (the headset's input too): a direction in the camera's axes up to length 1, which the rig smooths
+  and scales by the height above the nearest surface (0.8 of it a second at full push, as W does);
+  pushed to the rim it is ×10 (Shift), and the middle 8 % is dead. Tap, double-tap, pinch, two-finger
+  look and twist are as they were; the card and the round buttons stand aside while it is on (the
+  controls own the foot of the screen) and a sheet (Search, Explore, Time, More) puts the stick away
+  while it is open. Not in the ship nor on foot: starting either puts it away, and the switch is
+  refused there. Checks: `scripts/touch.mjs` section 15 (the switch; the stick forward, left, back; Up
+  and Down; ×10 at the rim; speed in proportion to the height; one finger looks, standing still; tap,
+  pinch and double-tap; a sheet; the ship; Done) upright and on its side, and the controls on the ten
+  phone sizes.
+
 ## Gravity for real: live physics and the first powers (physics worker)
 
 The owner: "it feels like you can't really interact with any of the planets or stars or black
@@ -1705,7 +1721,7 @@ above is validated against JPL Horizons and stays as it is unless something is w
    night at a place on arrival (`Daylight.ts`: the Sun's height and the next sunrise from the
    world's spin and its drift round its sun; a notice with Skip to sunrise, which moves the clock
    to the Sun 6° up; not in live physics nor in the ship) and the tour's places arrived at in
-   daylight (`App.toDaylight`). Still keyboard only: free flight on touch. Upright, the dock stops
+   daylight (`App.toDaylight`). Free flight on touch followed (see "Free flight by touch" below). Upright, the dock stops
    below the chips (and the live mark), the round buttons step aside while a card's details are
    read, and flight.mjs checks the explorer's parts never lie on each other on ten phone sizes.
 8. **Data streaming** (star tiles, map uploads, elevation, catalogue). Known from a run in

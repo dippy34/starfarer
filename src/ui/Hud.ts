@@ -24,8 +24,8 @@ export type HudAction =
   | 'ship' | 'ship-go'
   // back to today's date; back to the title screen
   | 'today' | 'menu'
-  // night at a place: on to its sunrise; land and walk here (src/app/Walk.ts)
-  | 'sunrise' | 'walk'
+  // night at a place: on to its sunrise; land and walk here (src/app/Walk.ts); fly freely by touch, or stop (src/app/FreeFly.ts)
+  | 'sunrise' | 'walk' | 'free'
   // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
@@ -117,6 +117,8 @@ export interface HudState {
   minor: boolean;
   /** one finger looks around instead of orbiting */
   look: boolean;
+  /** flying freely by touch: a stick, Up and Down over the view (src/app/FreeFly.ts) */
+  free?: boolean;
   /** exploring, or in a mode that brings its own controls */
   mode: 'explore' | 'ship' | 'walk';
   /** a finger has been used: speak of taps, show the touch controls */
@@ -164,6 +166,7 @@ const TOUCH_HELP: [string, string][] = [
   ['Twist', 'Roll the view'],
   ['Tap', 'Select what you tapped (its name works too)'],
   ['Double-tap', 'Fly there; on the world you are at, come closer'],
+  ['Fly freely', 'More turns it on: the stick under the left thumb moves you (all the way: ten times faster), Up and Down, drag to look; Done puts it away'],
   ['In the ship', 'Drag to turn it (a twist rolls it, a pinch zooms) · the lever is the thrust · Assist sets what the nose holds to (a list of modes) · RCS opens the side thrusters (held to push) · Stop brakes to rest · Chase / Cockpit switches the view · tap the instruments for all of them'],
 ];
 
@@ -343,6 +346,7 @@ const TEMPLATE = `
           <h3>Travel</h3>
           <button class="switch" type="button" role="switch" data-act="ship" aria-checked="false"><span><b>Spaceship</b><small>Physics all the way up: as fast as you like, never faster than light. Go there flies it</small></span><i></i></button>
           <h3>Camera</h3>
+          <button class="switch touch-only" type="button" role="switch" data-act="free" aria-checked="false"><span><b>Fly freely</b><small>A stick moves you, Up and Down, drag to look: the keys' flight without a keyboard</small></span><i></i></button>
           <button class="switch touch-only" type="button" role="switch" data-act="look" aria-checked="false"><span><b>One finger looks around</b><small>instead of turning round the world you are at</small></span><i></i></button>
           <button class="row" type="button" data-act="photo">${ICON.photo}<span class="row-text"><b>Photo mode</b><small class="touch-only">Hides everything; tap to bring it back</small><small class="mouse-only">Hides everything; U brings it back</small></span></button>
           <button class="row" type="button" data-act="screenshot">${ICON.camera}<span class="row-text"><b>Save a picture</b><small>The view as a PNG</small></span></button>
@@ -732,6 +736,7 @@ export class Hud {
     const el = this.el;
     el.classList.toggle('touch', this.coarse || s.touch);
     el.dataset.mode = s.mode;
+    el.toggleAttribute('data-free', !!s.free);
     setText(this.$('.place b'), s.place);
     // (a long name gets a smaller letter before it gets cut: "Apollo 11 landing site" whole on a phone)
     this.$('.place b').dataset.long = s.place.length > 26 ? '2' : s.place.length > 17 ? '1' : '';
@@ -750,7 +755,7 @@ export class Hud {
     const flight = this.$('.hud-flight');
     flight.hidden = !s.flying;
     if (s.flying) setText(flight.firstElementChild as HTMLElement, `Flying to ${s.flying}`);
-    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['look', s.look], ['ship', s.mode === 'ship']] as const) {
+    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['look', s.look], ['free', !!s.free], ['ship', s.mode === 'ship']] as const) {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
     this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
@@ -1049,7 +1054,7 @@ export class Hud {
     else if (d.act) {
       if (b.classList.contains('notice-act')) this.clearNotice();
       // (nothing is left open behind the picture, or the cockpit; a picture saved shows the view it saved)
-      if (d.act === 'photo' || d.act === 'ship' || d.act === 'screenshot') this.closeSheet();
+      if (d.act === 'photo' || d.act === 'ship' || d.act === 'screenshot' || d.act === 'free') this.closeSheet();
       this.host.act(d.act as HudAction);
     }
   }
