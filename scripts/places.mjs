@@ -352,6 +352,23 @@ check('far from the nebula, the volume gives way to its glow', !st && farGlow, `
   const marsBack = await tier('Mars');
   check('the map budget: no more than three worlds\' full maps at once, a world left behind on its small map, sharp again on coming back',
     most <= 3 && marsAway === 'small' && ['full', 'hi'].includes(marsBack), JSON.stringify({ resident, marsAway, marsBack }));
+  // 10b. a flight's destination keeps its full maps on the way: from Mars to the Earth (a flight of more
+  // than the ten seconds of the release), once in they stay in, and the Earth is sharp on arrival.
+  // (Wanted at takeoff only, they were let go ten seconds in and came again only as it grew large:
+  // its small copies close up for several seconds on a phone.)
+  const t0 = Date.now();
+  await page.evaluate(() => { const a = window.app; const o = a.findByName('Earth'); a.select(o); a.goTo(o); });
+  const seen = [];
+  let lost = false, arrival = null;
+  while (Date.now() - t0 < 600000) {
+    const s = await page.evaluate(() => ({ auto: !!window.app.rig.autopilot, earth: window.app.bodies.fullResident.includes('Earth') }));
+    if (seen.length && seen[seen.length - 1] && !s.earth) lost = true;
+    seen.push(s.earth);
+    if (!s.auto) { arrival = { s: +((Date.now() - t0) / 1000).toFixed(1), tier: await tier('Earth') }; break; }
+    await page.waitForTimeout(250);
+  }
+  check("a flight's destination keeps its full maps on the way: sharp on arrival",
+    arrival !== null && arrival.s > 12 && !lost && ['full', 'hi'].includes(arrival.tier), JSON.stringify({ arrival, lost, samples: seen.length }));
 }
 
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
