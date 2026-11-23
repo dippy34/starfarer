@@ -495,31 +495,32 @@ export class LivePhysics {
   }
 
   /**
-   * Live physics from a link or a save (src/app/SceneWorld.ts), on the real universe as it is at
-   * the start (nothing changed yet): the worlds made again (`json` describes each as the catalogue
-   * would), those taken away taken away, the masses and sizes as they were, the simulation where it
-   * was, and the bodies put there. Everything is checked against the catalogue first, and nothing is
-   * changed unless all of it is right: throws WorldError (in a few plain words) otherwise.
+   * Is `w` a changed universe that can be made again here (src/app/SceneWorld.ts)? Everything
+   * `adoptWorld` relies on, checked against the catalogue alone (what was made here and what was
+   * changed here are left out of the reckoning), and nothing changed: so it can be asked while the
+   * universe here is a changed one, before it is let go for another (a save opened, a link come
+   * in). Throws WorldError, in a few plain words; returns the simulation it would start with.
    */
-  adoptWorld(w: LiveWorld, json: (m: MadeRecord) => BodyJson): void {
-    const system = this.system;
-    if (this.live || this.made.length) bad('the universe here has been changed already');
+  checkWorld(w: LiveWorld): { sim: NBody; gone: Set<number> } {
+    const system = this.system, here = new Set(this.made);
+    // the catalogue: a body that is not one made here, with its catalogued mass and size
+    const cat = (id: number) => { const b = system.byId.get(id); return b && !here.has(b) ? b : undefined; };
     // what each number names: a body of the catalogue, or a world to be made
     const made = new Map<number, MadeRecord>();
     const kindOf = (id: number): string | null => {
       const m = made.get(id);
       if (m) return m.kind === 'moon' ? 'moon' : m.kind === 'sun' ? 'star' : 'planet';
-      return system.byId.get(id)?.kind ?? null;
+      return cat(id)?.kind ?? null;
     };
     for (const m of w.made) {
-      if (m.id < MADE_FIRST_ID || made.has(m.id) || system.byId.has(m.id)) bad('a world made in it is numbered twice');
+      if (m.id < MADE_FIRST_ID || made.has(m.id) || cat(m.id)) bad('a world made in it is numbered twice');
       const home = kindOf(m.home);
       // (made for what it could be made for: a moon for a planet or a dwarf planet, the rest for a star)
       const fits = m.kind === 'moon' ? home === 'planet' || home === 'dwarf' : home === 'star';
       if (!fits) bad('a world made in it was made for something it cannot be made for');
       made.set(m.id, m);
     }
-    const exists = (id: number) => made.has(id) || system.byId.has(id);
+    const exists = (id: number) => made.has(id) || !!cat(id);
     const gone = new Set<number>();
     for (const id of w.gone) {
       if (!exists(id) || gone.has(id)) bad('it takes away a body that is not here');
@@ -530,10 +531,10 @@ export class LivePhysics {
     for (const id of made.keys()) if (!gone.has(id) && !simulated.has(id)) bad('a world made in it is not in its simulation');
     const carried = new Set<number>();
     for (const [id, moons] of w.carried) {
-      if (!simulated.has(id) || system.byId.get(id) === undefined) bad('it has a family of moons for a body that is not simulated');
+      if (!simulated.has(id) || !cat(id)) bad('it has a family of moons for a body that is not simulated');
       for (const mid of moons) {
-        const m = system.byId.get(mid);
-        if (!m || m.kind !== 'moon' || !(m.gm > 0) || system.homeOf(m)?.id !== id || simulated.has(mid) || gone.has(mid) || carried.has(mid)) bad('it has a moon in a family it is not of');
+        const m = cat(mid);
+        if (!m || m.kind !== 'moon' || !(this.realGm(m) > 0) || system.homeOf(m)?.id !== id || simulated.has(mid) || gone.has(mid) || carried.has(mid)) bad('it has a moon in a family it is not of');
         carried.add(mid);
       }
     }
@@ -544,14 +545,26 @@ export class LivePhysics {
     }
     if (w.asBody.length !== w.sim.ids.length) bad('its simulation could not be read');
     // the masses and sizes the simulation has as the bodies have them: the catalogue's, a made world's, or as changed
-    const gmOf = (id: number) => made.get(id)?.gm ?? system.byId.get(id)!.gm, radiusOf = (id: number) => made.get(id)?.radius ?? system.byId.get(id)!.radius;
+    const gmOf = (id: number) => made.get(id)?.gm ?? this.realGm(cat(id)!), radiusOf = (id: number) => made.get(id)?.radius ?? this.realRadius(cat(id)!);
     const newly = new Map(w.changed.map(([id, gm, radius]) => [id, { gm, radius }]));
-    let sim: NBody;
     try {
-      sim = NBody.fromBodies(filled(w, (id) => newly.get(id)?.gm ?? gmOf(id), (id) => newly.get(id)?.radius ?? radiusOf(id)));
+      return { sim: NBody.fromBodies(filled(w, (id) => newly.get(id)?.gm ?? gmOf(id), (id) => newly.get(id)?.radius ?? radiusOf(id))), gone };
     } catch {
       return bad('its simulation could not be read');
     }
+  }
+
+  /**
+   * Live physics from a link or a save (src/app/SceneWorld.ts), on the real universe as it is at
+   * the start (nothing changed yet): the worlds made again (`json` describes each as the catalogue
+   * would), those taken away taken away, the masses and sizes as they were, the simulation where it
+   * was, and the bodies put there. Everything is checked against the catalogue first, and nothing is
+   * changed unless all of it is right: throws WorldError (in a few plain words) otherwise.
+   */
+  adoptWorld(w: LiveWorld, json: (m: MadeRecord) => BodyJson): void {
+    const system = this.system;
+    if (this.live || this.made.length) bad('the universe here has been changed already');
+    const { sim, gone } = this.checkWorld(w);
     // all of it is right: the universe is changed as it says
     for (const m of w.made) {
       const b = system.add(json(m)), k = m.radius / b.radius;
