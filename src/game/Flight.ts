@@ -446,10 +446,16 @@ export class Flight {
 
   /** Why the drive at its setting cannot steer against gravity here ('' when it can). */
   private driveTooWeak(): string {
+    const w = this.weakDrive();
+    return w ? w.why : '';
+  }
+
+  /** The drive too weak to steer against gravity here: what to say, the setting it needs (g), and the pull (m/s²); null when it is enough. */
+  private weakDrive(): { why: string; need: number; pull: number } | null {
     const g = gravity.gravityAt(this.ship.upos, this.tmp).length();
-    if (g <= HOLD * this.ship.driveAccel) return '';
+    if (g <= HOLD * this.ship.driveAccel) return null;
     const need = DRIVE_STEPS.find((x) => x * G0 * HOLD >= g) ?? DRIVE_STEPS[DRIVE_STEPS.length - 1];
-    return `The drive at ${fmtG(this.ship.driveAccel / G0)} is too weak against gravity here (${g.toFixed(g < 10 ? 2 : 0)} m/s²): set it to ${fmtG(need)} or more.`;
+    return { need, pull: g, why: `The drive at ${fmtG(this.ship.driveAccel / G0)} is too weak against gravity here (${g.toFixed(g < 10 ? 2 : 0)} m/s²): set it to ${fmtG(need)} or more.` };
   }
 
   /**
@@ -464,7 +470,8 @@ export class Flight {
     const no = this.autopilotRefusal();
     if (no) {
       // (the next sensible thing, one touch away: the drive set as strong as the trip needs, and on)
-      if (app.selection === target && !app.vr.active) app.hud.notice(no, 'ship-go', 'Stronger drive, and go');
+      const weak = this.weakDrive();
+      if (weak && app.selection === target && !app.vr.active) app.hud.notice(`The drive at ${fmtG(ship.driveAccel / G0)} is too weak against gravity here (${weak.pull.toFixed(weak.pull < 10 ? 2 : 0)} m/s²)`, 'ship-go', 'Stronger drive, and go');
       else app.hud.toast(no, 4);
       if (app.vr.active) app.vr.flash(no.split(':')[0]);
       return false;

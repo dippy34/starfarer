@@ -742,6 +742,7 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
   await phone.waitForFunction(() => window.app && window.app.frameCount > 10, null, { timeout: 600000 });
   const f = await fingers(phone);
   const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+  const until = (fn, timeout) => phone.waitForFunction(fn, null, { timeout }).then(() => true).catch(() => false);
   if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
   // down at Earth (the explorer at its surface), the Moon selected
   await phone.evaluate(() => { const a = window.app, e = a.findByName('Earth'); a.placeNear(e, e.radius + 2000, 40, 10); a.select(a.findByName('Moon')); });
@@ -749,7 +750,7 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
   const label = await phone.evaluate(() => document.querySelector('.ship-fab span').textContent);
   // (watched every frame from here: the ship's place against what its speed allows between two frames)
   await phone.evaluate(() => {
-    const fl = window.app.game.flight, w = (window.__climb = { jump: -1e9, temp: 0, over: -1e9, prev: null, t0: null, phases: new Set(), glance: '' });
+    const fl = window.app.game.flight, w = (window.__climb = { d0: window.app.selection.upos.sub(window.app.rig.upos).length(), jump: -1e9, temp: 0, over: -1e9, prev: null, t0: null, phases: new Set(), glance: '' });
     const tick = () => {
       const r = fl.readout, p = fl.ship.upos.clone();
       if (fl.autopilot) {
@@ -760,8 +761,8 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
         w.over = Math.max(w.over, r.surfSpeed - (fl.ship.driveAccel * (fl.ship.shipTime - w.t0) + 5));
         w.temp = Math.max(w.temp, r.hullTemp);
         if (/climbing/.test(r.apState) && !w.glance) w.glance = document.querySelector('.fl-glance').textContent.replace(/\s+/g, ' ');
-      }
-      w.prev = fl.ship.upos.clone();
+        w.prev = fl.ship.upos.clone();
+      } else w.prev = null;
       requestAnimationFrame(tick);
     };
     tick();
@@ -773,18 +774,18 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
   check('"Fly there in your ship" from the ground in Earth\'s air: the autopilot takes the trip, and says it climbs first', label === 'Fly there in your ship' && st.mode === 'chase' && st.target === 'Moon' && !st.refusal && /climbing out of Earth's air first/.test(st.toast), JSON.stringify({ label, ...st }));
   // (time quickened: the autopilot holds a frame to two seconds of flight in the air)
   await phone.evaluate(() => { window.app.clock.rate = 50; });
-  const out = await waitFor(() => { const fl = window.app.game.flight; return !!fl.ending || fl.readout.altitude > 127.5e3; }, null, 600000);
+  const out = await until(() => { const fl = window.app.game.flight; return !!fl.ending || fl.readout.altitude > 127.5e3; }, 600000);
   const up = await phone.evaluate(() => { const w = window.__climb, fl = window.app.game.flight; return { alt: fl.readout.altitude, ending: fl.ending?.title ?? null, temp: w.temp, over: w.over, jump: w.jump, phases: [...w.phases], glance: w.glance, v: fl.readout.surfSpeed, ap: fl.autopilot?.target.name ?? null, t: fl.ship.shipTime - w.t0 }; });
   await phone.screenshot({ path: path.join(outDir, 'f26-phone-air-out.png'), timeout: 180000 });
   check('it climbs out of the air under its own drive: past 127 km, nothing burnt or crashed, the hull well under its limit', out && !up.ending && up.alt > 127.5e3 && up.temp < 2000 && up.phases.includes('climbing'), JSON.stringify({ alt: Math.round(up.alt), temp: Math.round(up.temp), ending: up.ending, phases: up.phases, secs: Math.round(up.t) }));
   check('and honestly: never faster than the drive can have pushed it, no jump between frames', up.over < 0 && up.jump < 0, `faster than the drive by ${up.over.toFixed(1)} m/s (negative: not), jump ${up.jump.toFixed(1)} m beyond what its speed allows (negative: none), ${up.v.toFixed(0)} m/s at the top`);
   check('the instruments say so while it climbs', /Autopilot: climbing/.test(up.glance), up.glance);
-  // on from the top of the air, towards the Moon: the autopilot still flies there, no longer climbing
-  const d0 = await phone.evaluate(() => { const fl = window.app.game.flight; return fl.autopilot ? fl.autopilot.target.upos.sub(fl.ship.upos).length() : NaN; });
-  await waitFor(() => { const fl = window.app.game.flight; return !fl.autopilot || (fl.autopilot.steering.phase !== 'climbing' && fl.autopilot.steering.phase !== 'turning'); }, null, 300000);
-  await f.frames(60);
-  st = await phone.evaluate(() => { const fl = window.app.game.flight; return { ap: fl.autopilot?.target.name ?? null, phase: fl.autopilot?.steering.phase ?? '', d: fl.autopilot ? fl.autopilot.target.upos.sub(fl.ship.upos).length() : NaN, ending: fl.ending?.title ?? null }; });
-  check('then it carries on to the Moon: still flying there, closing on it', st.ap === 'Moon' && st.phase !== 'climbing' && st.d < d0 && !st.ending, JSON.stringify({ ...st, d0 }));
+  // on from the top of the air, towards the Moon: the autopilot goes on flying there (no longer
+  // climbing, never refused), and the Moon comes closer than it was when the flight began
+  await phone.evaluate(() => { window.app.clock.rate = 1000; });
+  const near = await until(() => { const fl = window.app.game.flight; return !!fl.ending || !fl.autopilot || fl.autopilot.target.upos.sub(fl.ship.upos).length() < 0.8 * window.__climb.d0; }, 600000);
+  st = await phone.evaluate(() => { const fl = window.app.game.flight; return { ap: fl.autopilot?.target.name ?? null, phase: fl.autopilot?.steering.phase ?? '', d: fl.autopilot ? fl.autopilot.target.upos.sub(fl.ship.upos).length() : NaN, ending: fl.ending?.title ?? null, d0: window.__climb.d0, climbed: window.__climb.phases.has('climbing') }; });
+  check('then it carries on to the Moon: still flying there, no longer climbing, and the Moon comes closer', near && st.ap === 'Moon' && st.phase !== 'climbing' && st.d < 0.8 * st.d0 && !st.ending && st.climbed, JSON.stringify(st));
   await ctx.close();
 }
 
