@@ -343,6 +343,16 @@ export class BodiesLayer {
     }
   }
 
+  /**
+   * A flight is on its way to this world: its full maps are wanted for as long as it is (counting
+   * against FULL_CAP as any other world's). Wanted once at takeoff only, a flight of more than
+   * FULL_RELEASE_S let them go before it arrived, and the world was drawn close up with its small
+   * copies while they came again (the Earth's four maps: some 9 s).
+   */
+  keepWanted(b: Body): void {
+    if (b.valid && b.kind !== 'star') this.wantFull(b, performance.now() / 1000);
+  }
+
   /** A relief map, full size (data, not colour). */
   private reliefFull(rk: string): Promise<{ tex: Texture; meanLum: number }> {
     let p = this.textures.get(rk);

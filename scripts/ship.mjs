@@ -271,6 +271,15 @@ for (const orient of ['up', 'side']) {
   check(`${tag}: in the chase view the ship is on the screen and not under the interface`, st.p && st.p.x > 0 && st.p.x < st.w && st.p.y > 0 && st.p.y < st.h && st.free && st.mask > 0, JSON.stringify(st));
   st = await page.evaluate(() => window.shipTest.labels());
   check(`${tag}: no name lies over the ship`, st.bad === 0 && st.mask > 0, JSON.stringify(st));
+  // (These two measure the ship's own pixels, so they need a ship drawn big enough to have some: `n` counts the
+  // samples well inside its mask, and the ship is framed in the part of the view the interface leaves clear. Sideways
+  // on a phone that part is the strip over the Earth's card, and the card has grown (a row of buttons and a line of
+  // temperature since 0fce693) from n 131 to 90 against the floor of 100 with the very same drawing. What they
+  // prove is nothing about the card, so it is put away for them, as it is for the bracket's check below, and the
+  // ship is drawn in the open part of the view: n 692 and 429, the floor as it was. "On the screen, not under the
+  // interface" and "no name over it" above are measured with the card on.)
+  await page.evaluate(() => { const c = document.querySelector('.hud-slot > .on'); if (c) c.style.display = 'none'; window.app.hud.covers(); });
+  await step(page, 14);
   st = await overlaysOverMask(page);
   check(`${tag}: orbit lines, the path and its tags never draw over the ship`, st.n > 100 && st.diff === 0, JSON.stringify(st));
   // lit: the ship's pixels against the sky round it, turned from Earth (here behind the ship) with
@@ -305,6 +314,7 @@ for (const orient of ['up', 'side']) {
     return { ship: +(inS / Math.max(nIn, 1)).toFixed(1), around: +(out / Math.max(nOut, 1)).toFixed(1), n: nIn };
   });
   check(`${tag}: the ship is lit by the Sun (brighter than the sky round it)`, st.n > 100 && st.ship > 30 && st.ship > st.around * 2.5, JSON.stringify(st));
+  await page.evaluate(() => { for (const c of document.querySelectorAll('.hud-slot > *')) c.style.display = ''; window.app.hud.covers(); });
 
   // (back in the cockpit, looking at Earth)
   await page.evaluate(() => {
