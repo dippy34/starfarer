@@ -220,6 +220,36 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     && st.proxima.filter((l) => /^Proxima Cen(tauri)?$/.test(l)).length === 1 && st.tour.join() === 'Sagittarius A*,M87*,Cygnus X-1', JSON.stringify(st));
 }
 
+// 4f. A star whose distance is a poor parallax's says so on its card: the Garnet Star (μ Cephei), 8,400 pc in
+// the catalogue from a Gaia parallax of 0.119 ± 0.264 mas (it is about a tenth as far): its distance uncertain,
+// with the numbers, and its luminosity and estimated size, worked out from that distance, not stated as fact;
+// Deneb's (a good parallax) as before
+{
+  const card = (name) => page.evaluate(async (name) => {
+    const a = window.app, s = a.findByName(name);
+    a.select(s);
+    for (let i = 0; i < 100 && !s.distanceGrade; i++) await new Promise((r) => setTimeout(r, 100));
+    const det = document.querySelector('.card [data-details]');
+    if (det.getAttribute('aria-expanded') !== 'true') det.click();
+    await new Promise((r) => setTimeout(r, 300));
+    const a2 = window.app; a2.frame();
+    await new Promise((r) => setTimeout(r, 300));
+    const rows = {};
+    const dts = [...document.querySelectorAll('.card .facts dt')], dds = [...document.querySelectorAll('.card .facts dd')];
+    dts.forEach((dt, k) => { rows[dt.textContent] = dds[k]?.textContent ?? ''; });
+    return { grade: s.distanceGrade, detail: document.querySelector('.card .card-title p')?.textContent, rows };
+  }, name);
+  const garnet = await card('Garnet Star');
+  const deneb = await card('Deneb');
+  const g = garnet.rows;
+  check("a star with a poor parallax: its card says its distance is uncertain, with the numbers, and what follows from it is not stated as fact",
+    /distance uncertain \(parallax 0\.119 ± 0\.264 mas\)/.test(g['Distance from Sun'] ?? '') && /uncertain/.test(g['Luminosity (V)'] ?? '') && /uncertain/.test(g['Absolute mag (V)'] ?? '')
+      && /uncertain/.test(g.Radius ?? '') && /uncertain/.test(g.Scale ?? '') && /uncertain/.test(garnet.detail ?? '')
+      && !/uncertain/.test(`${deneb.rows['Distance from Sun']} ${deneb.rows['Luminosity (V)']} ${deneb.detail}`),
+    JSON.stringify({ garnet: { grade: garnet.grade, detail: garnet.detail, distance: g['Distance from Sun'], luminosity: g['Luminosity (V)'], radius: g.Radius, scale: g.Scale }, deneb: { grade: deneb.grade, distance: deneb.rows['Distance from Sun'] } }));
+  await page.evaluate(() => { const d = document.querySelector('.card [data-details]'); if (d?.getAttribute('aria-expanded') === 'true') d.click(); window.app.select(null); });
+}
+
 // 5. Search and go to a star
 await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');
