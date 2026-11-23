@@ -1,7 +1,10 @@
 import type { SimClock } from '../core/time';
 import { AU, DAY } from '../core/units';
 import { LEFT_OUT, NBody, type NBodyBodies, type NBodySnapshot, type SimEvent } from '../sim/NBody';
+import { G } from '../sim/physics';
+import { type Spread, spread, type Swarm } from '../sim/Swarm';
 import { apply, capture, type Live, liveDate, release, riders } from '../sim/SystemSim';
+import { FLUID_ROCHE, tidalLimit } from '../sim/Tides';
 import type { Body } from '../universe/Body';
 import type { BodyJson, Family, SolarSystem } from '../universe/SolarSystem';
 import { dayWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
@@ -41,6 +44,8 @@ export interface LiveScene {
 
 /** a moon is simulated from the start if G times its mass is at least this (m³/s²): Mimas, the least of the round ones, has 2.5 times it */
 const MOON_GM = 1e9;
+/** a world torn apart is followed as this many pieces (src/sim/Swarm.ts) */
+export const PIECES = 200;
 /** What live physics leaves out besides what the simulation itself does (NBody's LEFT_OUT), in plain words. */
 const ALSO_LEFT_OUT: readonly string[] = [
   'A moon too light to pull on anything, and a world whose mass is not known, keeps its real path round its planet until you change that planet or it.',
@@ -50,6 +55,8 @@ const ALSO_LEFT_OUT: readonly string[] = [
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
   'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up. Its size follows the mass you give it by a rule, said in its details: rock and iron squeezed by its own weight as the Earth\'s is (a fit to models of planets made like the Earth, from 1 to 8 Earths, carried on beyond them), a giant as big as Jupiter, a star of the main sequence. A star made lighter than the Sun is drawn as if all its light were visible light: a red dwarf would look fainter.',
   'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
+  'A round world (a planet, a dwarf planet, a moon from Mimas up, or one you made as heavy) that stays inside the Roche limit of a heavier body is torn apart by its tides: inside 2.46 times its own radius times the cube root of how many times heavier the other is, the limit of a world with no strength (Chandrasekhar), for as long as a pebble takes to circle it at its surface (the Moon: 1.8 hours). A world that falls through the limit and hits first, or passes through it quicker, is not torn apart. A small moon is held together by the strength of its rock too and is never torn apart here (Phobos goes round inside Mars\'s limit for it).',
+  'The pieces of a world torn apart, 200 of them, each go round on its own orbit about what tore it apart, pulled by that body alone: the Sun and the other moons do not pull on them, they pull on nothing, and they never hit each other, so they do not settle into a thin ring over their planet\'s equator as real rings do. Their mass leaves the simulation with them. A later change of that planet\'s mass or size does not change their orbits, and if it is taken away the pieces go with it. The ring they make is drawn as dense as their orbits crowd there: a depiction, not worked out from the size of its grains.',
   'When two worlds are about to meet, time slows to show it, and a flash marks where they meet: the flash is drawn, its brightness is not worked out. The card says the energy of the hit (half the product of their masses over their sum, times their speed squared) against what holds the lighter together, worked out as for a ball of even density (3GM²/5R: a real world is denser at its centre and held more tightly, the Earth by about a tenth), and whether a rule of thumb has them break apart. Breaking apart is not simulated.',
   'The path drawn ahead of a world you hold or aim is the simulation run on, every pull counted, as time would run while the change is watched: for three of its turns or a hundred years at most, and only until it hits something, leaves for good or goes round something else.',
 ];
@@ -96,6 +103,9 @@ export interface LiveCheckpoint {
   readonly log: readonly { jd: number; text: string }[];
   /** the share of the time asked for that the stepping managed, the rate what is on rails was chosen for, the frames it has fallen short, the stage, the simulation's own word on crossing */
   readonly pace: readonly [number, number, number, number, number];
+  /** the worlds torn apart, followed as pieces (src/sim/Swarm.ts), and how many have been numbered */
+  readonly swarms: readonly Swarm[];
+  readonly swarmEver: number;
 }
 
 export interface LiveStatus {
@@ -127,6 +137,15 @@ export class LivePhysics {
   readonly made: Body[] = [];
   /** how many changes have been made, ever: a gesture that changed nothing leaves it as it was */
   changes = 0;
+  /**
+   * The worlds torn apart since the system was last the real one, each followed as its pieces
+   * (src/sim/Swarm.ts: a record, from which every piece follows), oldest first.
+   */
+  readonly swarms: Swarm[] = [];
+  /** how many swarms have been numbered: the next one's number, and its pieces' seed */
+  private swarmEver = 0;
+  /** what each swarm's pieces do, worked out once from its record (by its number) */
+  private spreads = new Map<number, Spread>();
   private news: string[] = [];
   private hits: Hit[] = [];
   /** the catalogue's values of the bodies whose mass or size has been changed */
@@ -158,6 +177,34 @@ export class LivePhysics {
   /** G times the mass the catalogue gives a body (m³/s²), whatever it has been given since. */
   realGm(b: Body): number {
     return this.real.get(b)?.gm ?? b.gm;
+  }
+
+  /**
+   * How a world's tides take it apart (src/sim/Tides.ts): the coefficient of the limit inside which
+   * a heavier body tears it apart, or 0. The fluid limit (Chandrasekhar's, for a body with no
+   * strength) for a world gravity has made round, held together by its own gravity alone: a planet,
+   * a dwarf planet, a moon from Mimas up, and one the explorer made as heavy as that (not a sun).
+   * Never a star, nor a small moon or an asteroid, which the strength of their rock holds together
+   * too: Phobos goes round inside Mars's fluid limit for it.
+   */
+  frailty(b: Body): number {
+    const as = b.meta.madeAs as { kind: string; kg: number } | undefined;
+    if (as) return as.kind !== 'sun' && as.kg * G >= MOON_GM ? FLUID_ROCHE : 0;
+    if (b.kind === 'planet' || b.kind === 'dwarf') return FLUID_ROCHE;
+    return b.kind === 'moon' && this.realGm(b) >= MOON_GM ? FLUID_ROCHE : 0;
+  }
+
+  /** The limit (m, between centres) inside which `big`'s tides tear `b` apart, as they are now; 0 if they never do. */
+  tidalLimit(b: Body, big: Body): number {
+    return tidalLimit(this.frailty(b), b.radius, b.gm, big.gm);
+  }
+
+  /** Every simulated body told how its tides take it apart (after a simulation is made from bodies: they do not say). */
+  private frail(sim: NBody): void {
+    for (const id of sim.ids) {
+      const b = this.system.byId.get(id), k = b ? this.frailty(b) : 0;
+      if (k > 0) sim.setFrail(id, k);
+    }
   }
 
   /** The share of the time asked for that the stepping has managed lately (1: all of it, and while nothing is live). */
@@ -239,6 +286,8 @@ export class LivePhysics {
     b.gm = gm;
     this.reshape(b, radii);
     live.sim.setMass(b.id, gm, b.radius);
+    // (a world made heavy enough to be round is torn apart by tides; a lighter one is not)
+    live.sim.setFrail(b.id, this.frailty(b));
     this.settle(live);
   }
 
@@ -287,7 +336,7 @@ export class LivePhysics {
     const b = this.system.add(json);
     this.made.push(b);
     live.sim.add({
-      id: b.id, gm: b.gm, radius: b.radius, stepped: b.kind === 'star',
+      id: b.id, gm: b.gm, radius: b.radius, stepped: b.kind === 'star', frail: this.frailty(b),
       pos: [about.pos.x + pos[0], about.pos.y + pos[1], about.pos.z + pos[2]],
       vel: [about.vel.x + vel[0], about.vel.y + vel[1], about.vel.z + vel[2]],
     });
@@ -383,6 +432,8 @@ export class LivePhysics {
     this.real.clear();
     this.system.settle();
     for (const b of this.made.splice(0).reverse()) this.drop(b);
+    this.swarms.length = 0;
+    this.swarmEver = 0;
     this.live = null;
     this.log.length = 0;
     this.news = [];
@@ -410,6 +461,7 @@ export class LivePhysics {
       real: [...this.real].map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]),
       log: this.log.map((e) => ({ ...e })),
       pace: [this.share, this.rate, this.slowFor, this.stage, this.cross],
+      swarms: [...this.swarms], swarmEver: this.swarmEver,
     };
   }
 
@@ -440,6 +492,9 @@ export class LivePhysics {
     this.news = [];
     this.hits = [];
     [this.share, this.rate, this.slowFor, this.stage, this.cross] = cp.pace;
+    // (a swarm is a record that never changes: the same ones, shared)
+    this.swarms.splice(0, this.swarms.length, ...cp.swarms);
+    this.swarmEver = cp.swarmEver;
     const sim = cp.sim;
     this.live = sim && {
       sim: NBody.restore(sim.snap), jd0: sim.jd0, carried: new Map(sim.carried.map(([id, family]) => [id, [...family]])),
@@ -477,6 +532,7 @@ export class LivePhysics {
       made, gone: system.bodies.filter((b) => system.isGone(b)).map((b) => b.id),
       changed: [...this.real].filter(([b, r]) => b.gm !== r.gm || b.radius !== r.radius).map(([b]) => [b.id, b.gm, b.radius]),
       log: this.log.slice(-lines).map((e) => ({ ...e })),
+      swarms: this.swarms.map((sw) => ({ ...sw, color: [...sw.color], pos: [...sw.pos], vel: [...sw.vel] })), swarmEver: this.swarmEver,
     };
   }
 
@@ -490,6 +546,7 @@ export class LivePhysics {
     if (!live) return;
     const byId = (id: number) => this.system.byId.get(id)!;
     (live as { sim: NBody }).sim = NBody.fromBodies(filled(w, (id) => byId(id).gm, (id) => byId(id).radius));
+    this.frail(live.sim);
     live.index.clear();
     live.layout = -1;
   }
@@ -544,6 +601,13 @@ export class LivePhysics {
       changed.add(id);
     }
     if (w.asBody.length !== w.sim.ids.length) bad('its simulation could not be read');
+    // (each world torn apart: one that is gone, its pieces round a body that is simulated)
+    const swarmIds = new Set<number>();
+    for (const sw of w.swarms) {
+      if (swarmIds.has(sw.id) || !(sw.id <= w.swarmEver)) bad('its pieces of a world torn apart could not be read');
+      swarmIds.add(sw.id);
+      if (!gone.has(sw.from) || !simulated.has(sw.host)) bad('its pieces of a world torn apart go round a body that is not there');
+    }
     // the masses and sizes the simulation has as the bodies have them: the catalogue's, a made world's, or as changed
     const gmOf = (id: number) => made.get(id)?.gm ?? this.realGm(cat(id)!), radiusOf = (id: number) => made.get(id)?.radius ?? this.realRadius(cat(id)!);
     const newly = new Map(w.changed.map(([id, gm, radius]) => [id, { gm, radius }]));
@@ -588,6 +652,9 @@ export class LivePhysics {
       index: new Map(), layout: -1, shift: new Float64Array(0),
     };
     this.live = live;
+    this.frail(sim);
+    this.swarms.splice(0, this.swarms.length, ...w.swarms);
+    this.swarmEver = w.swarmEver;
     this.log.splice(0, this.log.length, ...w.log.map((e) => ({ ...e })));
     this.news = [];
     this.hits = [];
@@ -652,6 +719,7 @@ export class LivePhysics {
     if (this.live) return this.live;
     const live = capture(this.system, jd, (b) => b.gm > 0 && (b.kind !== 'moon' || b.gm >= MOON_GM));
     live.sim.edge = EDGE;
+    this.frail(live.sim);
     this.live = live;
     this.rate = 0;
     this.cross = live.sim.railsCross;
@@ -679,11 +747,68 @@ export class LivePhysics {
     this.scene.dropped(b);
   }
 
-  /** A body leaves the scene: what went round it goes round what it went round, until the simulation says otherwise. */
+  /**
+   * A body leaves the scene: what went round it goes round what it went round, until the simulation
+   * says otherwise. The pieces of a world torn apart round it go with it (they are followed about it
+   * alone: src/sim/Swarm.ts), and that is said.
+   */
   private depart(b: Body, into: Body | null): void {
     for (const c of [...b.children]) this.system.adopt(c, into ?? b.parent);
     this.system.setGone(b, true);
     this.scene.left(b, into);
+    const round = this.swarms.filter((sw) => sw.host === b.id);
+    if (!round.length || !this.live) return;
+    this.swarms.splice(0, this.swarms.length, ...this.swarms.filter((sw) => sw.host !== b.id));
+    this.note(liveDate(this.live), `The pieces of ${listed(round.map((sw) => the(sw.name)))} round ${the(b.name)} went with it.`);
+  }
+
+  /** What each swarm's pieces do, worked out once (src/sim/Swarm.ts: spread). */
+  spreadOf(sw: Swarm): Spread {
+    let sp = this.spreads.get(sw.id);
+    if (!sp || this.spreadKeys.get(sw.id) !== sw) {
+      sp = spread(sw);
+      this.spreads.set(sw.id, sp);
+      this.spreadKeys.set(sw.id, sw);
+    }
+    return sp;
+  }
+  private spreadKeys = new Map<number, Swarm>();
+
+  /**
+   * The swarms there are now, each with what its pieces do and the body they go round (for drawing
+   * them: src/render/Debris.ts), and the simulation's time (s) they are at.
+   */
+  swarmsNow(): { time: number; list: { sw: Swarm; sp: Spread; host: Body }[] } {
+    const live = this.live;
+    if (!live || !this.swarms.length) return { time: 0, list: [] };
+    const list: { sw: Swarm; sp: Spread; host: Body }[] = [];
+    for (const sw of this.swarms) {
+      const host = this.system.byId.get(sw.host);
+      if (host && host.valid && !this.system.isGone(host)) list.push({ sw, sp: this.spreadOf(sw), host });
+    }
+    return { time: live.sim.time, list };
+  }
+
+  /** A world has come apart in the simulation (its `torn` event): followed as its pieces, and told. */
+  private tornApart(live: Live, e: Extract<SimEvent, { kind: 'torn' }>, jd: number): void {
+    const system = this.system, b = system.byId.get(e.id), by = system.byId.get(e.by);
+    if (!b) return;
+    // (what rode on it goes with it, as with a world absorbed)
+    for (const r of riders(live, system, b)) this.depart(r, null);
+    const id = ++this.swarmEver, rel = (a: number[], c: number[]): [number, number, number] => [a[0] - c[0], a[1] - c[1], a[2] - c[2]];
+    // (the seed: the same for the same swarm, every time and on every device that makes it again)
+    const seed = (Math.imul(id, 0x9e3779b1) ^ Math.imul(e.id | 0, 0x85ebca6b)) >>> 0;
+    const sw: Swarm = {
+      id, from: b.id, name: b.name, gm: e.gm, radius: e.radius, color: [b.color[0], b.color[1], b.color[2]], albedo: b.albedo, cause: 'tides',
+      host: e.by, mu: e.byGm, hostRadius: e.byRadius, reach: e.reach, t0: e.time, pos: rel(e.pos, e.byPos), vel: rel(e.vel, e.byVel), count: PIECES, seed,
+    };
+    this.swarms.push(sw);
+    this.depart(b, null);
+    const sp = this.spreadOf(sw), round = sp.ring.reduce((n, x) => n + x, 0), fall = sp.fall.reduce((n, t) => n + (t < Infinity ? 1 : 0), 0);
+    const name = capital(the(b.name)), big = by ? the(by.name) : 'its planet';
+    this.tell(jd, round >= sw.count / 2 ? `${name} is torn apart by ${big}'s tides: its pieces spread along its path, into a ring round ${big}.`
+      : fall >= sw.count / 2 ? `${name} is torn apart by ${big}'s tides, so near ${big} that most of its pieces fall onto it.`
+        : `${name} is torn apart by ${big}'s tides, and its pieces fly off.`);
   }
 
   /** Something has happened: into the log, and told now. */
@@ -715,8 +840,10 @@ export class LivePhysics {
     const hits = events.filter((e) => e.kind === 'collision');
     const lost = hits.map((e) => this.absorbed(live, e));
     hits.forEach((e, k) => this.grown(live, e, lost[k], when(e)));
+    // then the worlds torn apart by tides
+    for (const e of events) if (e.kind === 'torn') this.tornApart(live, e, when(e));
     for (const e of events) {
-      if (e.kind === 'collision') continue;
+      if (e.kind === 'collision' || e.kind === 'torn') continue;
       if (e.kind === 'unbound' || e.kind === 'escape') {
         const b = body(e.primary);
         // (a family told leaving is told again whenever it gathers a body on its way: that is no news of it)

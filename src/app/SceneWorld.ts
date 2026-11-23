@@ -1,4 +1,5 @@
 import type { NBodyBodies } from '../sim/NBody';
+import type { Swarm } from '../sim/Swarm';
 import { type Kind, MADE_FIRST_ID, MADE_MOST } from './WhatIf';
 
 /**
@@ -27,7 +28,13 @@ import { type Kind, MADE_FIRST_ID, MADE_MOST } from './WhatIf';
  * else is an error (`decodeWorld` throws WorldError, with a few plain words).
  */
 
-export const WORLD_FORMAT = 1;
+/**
+ * The form written now: 2, which adds the worlds torn apart (their pieces' records, src/sim/Swarm.ts)
+ * after the log. Form 1, the first, is still read (it has none).
+ */
+export const WORLD_FORMAT = 2;
+/** the forms read */
+const FORMATS = [1, 2];
 
 /** A world the explorer made, as it is made again: what it was made as, its name, what it was made for, its mass and size then, and a sun's colour and light. */
 export interface MadeRecord {
@@ -61,6 +68,9 @@ export interface LiveWorld {
   changed: [number, number, number][];
   /** what happened, oldest first (the last few) */
   log: { jd: number; text: string }[];
+  /** the worlds torn apart, each followed as its pieces (a record they all follow from), and how many have been numbered */
+  swarms: Swarm[];
+  swarmEver: number;
   /**
    * For each simulated body (in the order of `sim.ids`): 1 if its G x mass in the simulation is
    * the body's own (Body.gm, once the made worlds and `changed` are applied), 2 if its radius is,
@@ -71,7 +81,7 @@ export interface LiveWorld {
 }
 
 /** what a reading may hold at most: bodies, families and their moons, worlds made, lines of the log and their length, a made world's name */
-export const WORLD_LIMITS = { bodies: 1024, families: 64, family: 256, made: MADE_MOST, gone: 1024, changed: 1024, log: 12, line: 400, name: 40 } as const;
+export const WORLD_LIMITS = { bodies: 1024, families: 64, family: 256, made: MADE_MOST, gone: 1024, changed: 1024, log: 12, line: 400, name: 40, swarms: 64, pieces: 1024 } as const;
 /** a link's changed universe unpacks to at most this many bytes */
 export const WORLD_BYTES_MOST = 256 * 1024;
 
@@ -167,6 +177,17 @@ export function encodeWorld(w: LiveWorld): Uint8Array {
   for (const [id, gm, r] of w.changed) { o.uint(id); o.f64(gm); o.f64(r); }
   o.uint(w.log.length);
   for (const e of w.log) { o.f64(e.jd); o.text(e.text); }
+  // (form 2) the worlds torn apart: every piece follows from these numbers (src/sim/Swarm.ts)
+  o.uint(w.swarmEver);
+  o.uint(w.swarms.length);
+  for (const sw of w.swarms) {
+    o.uint(sw.id); o.uint(sw.from); o.text(sw.name); o.u8(0); o.uint(sw.host); o.uint(sw.count); o.uint(sw.seed);
+    o.f64(sw.gm); o.f64(sw.radius); for (const c of sw.color) o.f64(c); o.f64(sw.albedo);
+    // (a pull that holds sway everywhere: written as 0)
+    o.f64(sw.mu); o.f64(sw.hostRadius); o.f64(Number.isFinite(sw.reach) ? sw.reach : 0); o.f64(sw.t0);
+    for (const c of sw.pos) o.f64(c);
+    for (const c of sw.vel) o.f64(c);
+  }
   return o.done();
 }
 
@@ -270,7 +291,8 @@ export function decodeWorld(bytes: Uint8Array): LiveWorld {
  */
 function walk(r: Reader, dry: boolean, doubles?: Reader): LiveWorld {
   const f = (lo: number, hi: number, what: string) => (dry ? 0 : within(doubles!.f64(), lo, hi, what));
-  if (r.u8() !== WORLD_FORMAT) bad('its changed universe is of a form this app does not know');
+  const form = r.u8();
+  if (!FORMATS.includes(form)) bad('its changed universe is of a form this app does not know');
   const jd0 = f(JD_RANGE[0], JD_RANGE[1], 'the date it left the real universe');
   const time = f(-TIME_MOST, TIME_MOST, 'the time of its simulation');
   const nextId = r.uint(2 ** 31);
@@ -328,8 +350,28 @@ function walk(r: Reader, dry: boolean, doubles?: Reader): LiveWorld {
     if (!plainLine(text)) bad('a line of what happened in it is not plain text');
     log.push({ jd, text });
   }
+  const swarms: Swarm[] = [];
+  let swarmEver = 0;
+  if (form >= 2) {
+    swarmEver = r.uint(2 ** 31);
+    const ns = r.uint(WORLD_LIMITS.swarms);
+    for (let k = 0; k < ns; k++) {
+      const id = r.uint(2 ** 31), from = r.uint(2 ** 31 - 1), name = r.text(WORLD_LIMITS.name);
+      if (!plainName(name)) bad('the name of a world torn apart in it is not plain text');
+      if (r.u8() !== 0) bad('a world torn apart in it was torn apart by what this app does not know');
+      const host = r.uint(2 ** 31 - 1), count = r.uint(WORLD_LIMITS.pieces), seed = r.uint(2 ** 32 - 1);
+      if (count < 1) bad('a world torn apart in it has no pieces');
+      const gm = f(1e-30, GM_MOST, 'the mass of a world torn apart in it'), radius = f(1, RADIUS_MOST, 'the size of a world torn apart in it');
+      const color: [number, number, number] = [f(0, 4, 'a colour in it'), f(0, 4, 'a colour in it'), f(0, 4, 'a colour in it')];
+      const albedo = f(0, 1, 'a colour in it');
+      const mu = f(1e-30, GM_MOST, 'a mass in it'), hostRadius = f(1, RADIUS_MOST, 'a size in it'), reach = f(0, PLACE_MOST, 'a size in it'), t0 = f(-TIME_MOST, TIME_MOST, 'a time in it');
+      const pos: [number, number, number] = [f(-PLACE_MOST, PLACE_MOST, 'a place in it'), f(-PLACE_MOST, PLACE_MOST, 'a place in it'), f(-PLACE_MOST, PLACE_MOST, 'a place in it')];
+      const vel: [number, number, number] = [f(-SPEED_MOST, SPEED_MOST, 'a speed in it'), f(-SPEED_MOST, SPEED_MOST, 'a speed in it'), f(-SPEED_MOST, SPEED_MOST, 'a speed in it')];
+      swarms.push({ id, from, name, gm, radius, color, albedo, cause: 'tides', host, mu, hostRadius, reach: reach > 0 ? reach : Infinity, t0, pos, vel, count, seed });
+    }
+  }
   if (!dry && doubles!.doublesLeft !== 0) bad('it has numbers left over');
-  return { jd0, sim, carried, made, gone, changed, log, asBody };
+  return { jd0, sim, carried, made, gone, changed, log, asBody, swarms, swarmEver };
 }
 
 // ---------------------------------------------------------------- base64url

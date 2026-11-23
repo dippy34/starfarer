@@ -714,6 +714,7 @@ export function whenWords(seconds: number, jd: number): string {
 /** What ends the path ahead of a world (src/app/Foresight.ts), by name: it hits `other`, leaves `from` (null: nothing) for good, or `around` takes it over; `when` in words (whenWords). */
 export type AheadEnd =
   | { kind: 'hit'; other: string; when: string }
+  | { kind: 'torn'; by: string; when: string }
   | { kind: 'leaves'; from: string | null }
   | { kind: 'round'; around: string; when: string };
 
@@ -724,6 +725,10 @@ export type AheadEnd =
  * "it goes round the Sun in 3.2 days" read as a year of 3.2 days.
  */
 export function aheadWords(end: AheadEnd): { there: string; line: string } {
+  if (end.kind === 'torn') {
+    const by = the(end.by);
+    return { there: `torn apart ${end.when}`, line: `With every pull counted, ${by}'s tides tear it apart ${end.when}.` };
+  }
   if (end.kind === 'round') {
     const owner = the(end.around);
     return { there: `${end.when} it is ${owner}'s`, line: `With every pull counted, ${end.when} it is ${owner}'s: from then on it goes round ${owner}.` };

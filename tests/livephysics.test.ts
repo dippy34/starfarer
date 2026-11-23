@@ -587,3 +587,85 @@ describe('speed', () => {
   }
 });
 
+describe('torn apart by tides', () => {
+  /** the Moon put on a circle `d` m from the Earth's centre, in the plane of its orbit, the way it goes */
+  function moonAt(s: Awaited<ReturnType<typeof setup>>, d: number) {
+    const { physics, named, clock } = s, earth = named('Earth'), moon = named('Moon');
+    const r = moon.pos.clone().sub(earth.pos), n = r.clone().cross(moon.vel.clone().sub(earth.vel)).normalize(), at = r.normalize().multiplyScalar(d);
+    const v = circularVelocity(at.toArray(), earth.gm + moon.gm, n.toArray());
+    physics.move(moon, [earth.pos.x + at.x, earth.pos.y + at.y, earth.pos.z + at.z], [earth.vel.x + v[0], earth.vel.y + v[1], earth.vel.z + v[2]], clock.jdTdb);
+  }
+
+  it('the round worlds are frail, the fluid limit theirs; small moons, asteroids and suns are not', async () => {
+    const { physics, named } = await setup();
+    for (const n of ['Earth', 'Moon', 'Io', 'Mimas', 'Ceres', 'Pluto']) expect(physics.frailty(named(n)), n).toBe(2.46);
+    for (const n of ['Sun', 'Phobos', 'Amalthea', 'Vesta']) expect(physics.frailty(named(n)), n).toBe(0);
+    // (Phobos goes round inside Mars's fluid limit for it: it is held together by its rock, and not torn apart here)
+    const mars = named('Mars'), phobos = named('Phobos');
+    expect(2.46 * phobos.radius * Math.cbrt(mars.gm / phobos.gm)).toBeGreaterThan(phobos.pos.distanceTo(mars.pos));
+    // the Moon's limit round the Earth, as the card says it
+    expect(physics.tidalLimit(named('Moon'), named('Earth')) / 1e3).toBeCloseTo(18515.4, 0);
+  });
+
+  it('the Moon left on a circle 15,000 km out is torn apart: gone, followed as 200 pieces round the Earth, and told; the pieces make a ring', async () => {
+    const s = await setup(), { physics, named, run, left } = s;
+    moonAt(s, 15000e3);
+    run(JD + 0.2, 0.01);
+    const moon = named('Moon');
+    expect(physics.simulated(moon)).toBe(false);
+    expect(s.sys.isGone(moon)).toBe(true);
+    expect(left).toContainEqual(['Moon', null]);
+    expect(physics.swarms.length).toBe(1);
+    const sw = physics.swarms[0];
+    expect([sw.from, sw.host, sw.count, sw.cause]).toEqual([301, 399, 200, 'tides']);
+    expect(Math.hypot(...sw.pos) / 1e3).toBeCloseTo(15000, -2);
+    expect(physics.log.map((e) => e.text)).toContain('The Moon is torn apart by Earth\'s tides: its pieces spread along its path, into a ring round Earth.');
+    const now = physics.swarmsNow();
+    expect(now.list.length).toBe(1);
+    expect(now.list[0].host).toBe(named('Earth'));
+    expect(now.list[0].sp.ring.reduce((n, x) => n + x, 0)).toBe(200);
+  }, 60_000);
+
+  it('Undo brings the Moon back as it was; a replay tears it apart in the same moment, into the same pieces', async () => {
+    const s = await setup(), { sys, physics, clock, named, run } = s;
+    steady(physics);
+    physics.setMass(named('Jupiter'), named('Jupiter').gm, JD);
+    const before = physics.checkpoint(clock.jdTdb), then = everything(sys, physics);
+    moonAt(s, 15000e3);
+    const after = physics.checkpoint(clock.jdTdb);
+    run(JD + 0.3, 0.01);
+    const once = { ...everything(sys, physics), swarms: JSON.stringify(physics.swarms) };
+    expect(physics.swarms.length).toBe(1);
+    physics.restore(before);
+    clock.jdTdb = before.jd;
+    expect(everything(sys, physics)).toEqual(then);
+    expect(physics.swarms.length).toBe(0);
+    expect(sys.isGone(named('Moon'))).toBe(false);
+    physics.restore(after);
+    clock.jdTdb = after.jd;
+    run(JD + 0.3, 0.01);
+    expect({ ...everything(sys, physics), swarms: JSON.stringify(physics.swarms) }).toEqual(once);
+  }, 60_000);
+
+  it('back to reality: no pieces, the Moon where the ephemeris has it', async () => {
+    const s = await setup(), { physics, clock, named, run } = s;
+    moonAt(s, 15000e3);
+    run(JD + 0.2, 0.01);
+    expect(physics.swarms.length).toBe(1);
+    physics.backToReality(clock);
+    expect(physics.swarms.length).toBe(0);
+    expect(physics.swarmsNow().list).toEqual([]);
+    expect(s.sys.isGone(named('Moon'))).toBe(false);
+  }, 60_000);
+
+  it('a world falling onto the Earth through its limit is not torn apart: it hits', async () => {
+    const s = await setup(), { physics, named, run, clock } = s;
+    const earth = named('Earth'), mars = named('Mars');
+    // (Mars put 100,000 km from the Earth, at rest against it: it falls in, through its limit, in a day)
+    physics.move(mars, [earth.pos.x + 1e8, earth.pos.y, earth.pos.z], [earth.vel.x, earth.vel.y, earth.vel.z], clock.jdTdb);
+    run(JD + 2, 0.01);
+    expect(physics.swarms.length).toBe(0);
+    expect(physics.log.some((e) => /^Mars hit Earth at/.test(e.text))).toBe(true);
+  }, 60_000);
+});
+

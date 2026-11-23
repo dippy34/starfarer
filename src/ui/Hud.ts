@@ -99,7 +99,7 @@ export interface HudState {
      * put in place, which plane the finger moves it in and the orbit it is on now, both in words.
      */
     /** `ahead`: what the simulation run ahead says of where it goes (src/app/Foresight.ts), when it has said */
-    move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string; ahead: string } | null;
+    move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string; ahead: string; roche: string } | null;
     /** It has just been made and is being put in place: where its mass slider stands (0 to 1), its mass and what it is at that mass, in words. */
     place: { slider: number; mass: string; what: string } | null;
   } | null;
@@ -298,6 +298,7 @@ const TEMPLATE = `
             <button type="button" data-act="move-throw" aria-pressed="false">Throw</button>
           </div>
           <p class="power-now"></p>
+          <p class="power-roche"></p>
           <p class="power-ahead"></p>
         </div>
         <div class="power-panel" data-panel="add" hidden>
@@ -1022,6 +1023,7 @@ export class Hud {
       setText(movePanel.querySelector('.move-plane')!, sel.move.plane);
       setText(movePanel.querySelector('.power-now')!, sel.move.orbit);
       setText(movePanel.querySelector('.power-ahead')!, sel.move.ahead);
+      setText(movePanel.querySelector('.power-roche')!, sel.move.roche);
       // (a world just made, being put in place: its mass, Done, and how a finger puts it; otherwise the choice of what it does where it is left)
       movePanel.querySelector<HTMLElement>('.hint-move')!.hidden = placing || how === 'throw';
       movePanel.querySelector<HTMLElement>('.hint-throw')!.hidden = placing || how !== 'throw';

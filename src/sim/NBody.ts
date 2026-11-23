@@ -1,5 +1,6 @@
 import { keplerDrift } from './KeplerDrift';
 import { G } from './physics';
+import { selfTime, staysInside, tidalLimit } from './Tides';
 
 /**
  * Gravity for real: a system of bodies, each pulling on every other, stepped through time. Plain
@@ -47,6 +48,8 @@ export interface BodyInit {
    * star: what its planets do to one another over thousands of turns is what a long run is for.
    */
   stepped?: boolean;
+  /** the coefficient of its tidal limit (src/sim/Tides.ts): a heavier body's tides tear it apart inside it; left out or 0, they never do (`setFrail`) */
+  frail?: number;
   /** position (m) and velocity (m/s) in any one inertial frame */
   pos: ArrayLike<number>;
   vel: ArrayLike<number>;
@@ -69,6 +72,14 @@ export type SimEvent =
   | { kind: 'unbound'; time: number; primary: number; ids: number[] }
   /** an unbound family has passed the edge (`edge`): it is gone for good */
   | { kind: 'escape'; time: number; primary: number; ids: number[] }
+  /**
+   * the body `id`, frail (`setFrail`), stayed inside the tidal limit of `by` long enough to come
+   * apart (src/sim/Tides.ts), and is taken out of the simulation: its G x mass and radius, those of
+   * `by` (its radius, or its horizon's if larger), how far `by`'s pull holds sway (its Hill sphere
+   * about the heaviest body there is: Infinity if it is that one), and its place and motion and those
+   * of `by` as it came apart (m, m/s), for whoever follows its pieces
+   */
+  | { kind: 'torn'; time: number; id: number; by: number; gm: number; radius: number; byGm: number; byRadius: number; reach: number; pos: number[]; vel: number[]; byPos: number[]; byVel: number[] }
   /** the body `id` goes round `around` now (a capture, or a moon lost to its star), where it went round `was` (-1: nothing) */
   | { kind: 'orbit'; time: number; id: number; around: number; was: number };
 
@@ -145,7 +156,9 @@ const ACTIVE = 0, UNIT = 1, FROZEN = 2, INSIDE = 3;
 // a light body: stepped, or carried on its orbit
 const LIVE = 0, RAILS = 1;
 // what a stepped pair is watched for: touching, an open orbit's closest pass, its pace, parting
-const TOUCH = 1, OPEN = 2, FOLLOW = 4, FAR = 8;
+const TOUCH = 1, OPEN = 2, FOLLOW = 4, FAR = 8, TEAR = 16;
+/** two bodies, one of them frail, are watched for its tidal limit from this many times it */
+const TEAR_NEAR = 1.25;
 
 /** Everything that persists: a copy of it is a snapshot. */
 interface State {
@@ -157,6 +170,8 @@ interface State {
   free: Uint8Array;
   /** 1: no family of which this body is the heaviest goes on rails (`BodyInit.stepped`) */
   pin: Uint8Array;
+  /** the coefficient of each body's tidal limit (0: tides never tear it apart), and when it was last judged inside one and found to stay too short a time to come apart (−∞: never) */
+  frail: Float64Array; judged: Float64Array;
   /** the body each goes round, as last told (-1 nothing, -2 not yet known) */
   around: Int32Array;
   /** where a body is kept: its leaf of the hierarchy (>= 0), or -1 - its number among the light bodies */
@@ -186,6 +201,8 @@ interface State {
   cx: Float64Array; cv: Float64Array; ca: Float64Array;
   /** what a pair is watched for, the distance at which its two touch, and at which they would rather be apart */
   kind: Uint8Array; watch: Uint8Array; touch: Float64Array; far: Float64Array;
+  /** a pair of two bodies, the lighter frail: the tidal limit it is torn apart inside (m; 0 none) */
+  tear: Float64Array;
   // what is stepped: pairs (bottom up) and units (bodies and families on rails), in the order of the tree
   na: number; an: Int32Array;
   nu: number; un: Int32Array; unitOf: Int32Array; lo: Int32Array; hi: Int32Array;
@@ -311,7 +328,7 @@ export class NBody {
   private s: State = {
     n: 0, nextId: 1, layout: 0,
     id: new Int32Array(0), gm: new Float64Array(0), radius: new Float64Array(0), rs: new Float64Array(0),
-    zon: new Float64Array(0), pole: new Float64Array(0), free: new Uint8Array(0), pin: new Uint8Array(0), around: new Int32Array(0),
+    zon: new Float64Array(0), pole: new Float64Array(0), free: new Uint8Array(0), pin: new Uint8Array(0), frail: new Float64Array(0), judged: new Float64Array(0), around: new Int32Array(0),
     slot: new Int32Array(0), x: new Float64Array(0), v: new Float64Array(0),
     dirty: true, planned: false,
     time: 0, at: 0, t0: 0, tick: 0, h: Infinity, rate: 0, seen: 0, span: 0,
@@ -321,7 +338,7 @@ export class NBody {
     ngm: new Float64Array(0), fa: new Float64Array(0), fb: new Float64Array(0), tie: new Float64Array(0),
     jr: new Float64Array(0), jv: new Float64Array(0), ja: new Float64Array(0), jt: new Float64Array(0),
     cx: new Float64Array(0), cv: new Float64Array(0), ca: new Float64Array(0),
-    kind: new Uint8Array(0), watch: new Uint8Array(0), touch: new Float64Array(0), far: new Float64Array(0),
+    kind: new Uint8Array(0), watch: new Uint8Array(0), touch: new Float64Array(0), far: new Float64Array(0), tear: new Float64Array(0),
     na: 0, an: new Int32Array(0),
     nu: 0, un: new Int32Array(0), unitOf: new Int32Array(0), lo: new Int32Array(0), hi: new Int32Array(0),
     ux: new Float64Array(0), uxp: new Float64Array(0), ua: new Float64Array(0), ud: new Float64Array(0),
@@ -363,6 +380,8 @@ export class NBody {
   // pairs that came near in the last step, and bodies that met
   private flag = new Int32Array(0);
   private met: number[] = [];
+  /** frail bodies found inside a tidal limit, each with the body whose limit it is: to be judged (`merge`) */
+  private tide: number[] = [];
   private review = false;
   // for reading out between steps: the arrays a read-out changes, and room to keep them meanwhile
   private live: Float64Array[] = [];
@@ -450,6 +469,7 @@ export class NBody {
     const i = s.n++;
     s.nextId = Math.max(s.nextId, id + 1);
     s.id[i] = id; s.gm[i] = b.gm; s.radius[i] = b.radius; s.rs[i] = b.rs ?? 0; s.free[i] = 0; s.pin[i] = b.stepped ? 1 : 0; s.around[i] = -2;
+    s.frail[i] = b.frail ?? 0; s.judged[i] = -Infinity;
     for (let c = 0; c < 3; c++) { s.x[3 * i + c] = b.pos[c]; s.v[3 * i + c] = b.vel[c]; }
     const z = b.zonal;
     s.zon[i] = z ? z.j2 * z.radius * z.radius : 0;
@@ -488,6 +508,36 @@ export class NBody {
     s.free[i] = 0;
   }
 
+  /**
+   * Make the body `id` frail with coefficient `coef` (src/sim/Tides.ts, tidalLimit; 0: not frail):
+   * inside coef R (M / m)^⅓ of a heavier body, where it stays long enough on its two-body orbit about
+   * it (as long as a pebble takes to circle it at its surface: Tides.selfTime), that body's tides
+   * tear it apart. It is then taken out, with a `torn` event, from now on.
+   */
+  setFrail(id: number, coef: number): void {
+    this.settle();
+    const s = this.s, i = this.indexOf(id);
+    if (i < 0) throw new Error(`no body ${id}`);
+    if (!(coef >= 0)) throw new Error(`body ${id}: a tidal coefficient cannot be negative`);
+    s.frail[i] = coef;
+    s.judged[i] = -Infinity;
+  }
+
+  /** The tidal limit (m) inside which the heavier of the bodies `i` and `j` (places in the arrays) tears the lighter apart, if that one is frail; else 0. */
+  private tidal(i: number, j: number): number {
+    const s = this.s, [h, l] = s.gm[i] >= s.gm[j] ? [i, j] : [j, i];
+    return tidalLimit(s.frail[l], s.radius[l], s.gm[l], s.gm[h]);
+  }
+
+  /** Of two bodies inside a tidal limit `limit` (places `a`, `b`; `r2` the square of their distance now): the lighter, frail one is to be judged, unless it was judged on this passage. */
+  private inside(a: number, b: number, r2: number, limit: number): void {
+    const s = this.s, l = s.gm[a] <= s.gm[b] ? a : b;
+    if (!(r2 < limit * limit)) return;
+    // (judged once a passage: one that was found to leave too soon is not looked at again until it could have left and come back)
+    if (s.at - s.judged[l] < selfTime(s.radius[l], s.gm[l])) return;
+    this.tide.push(s.id[l], s.id[l === a ? b : a]);
+  }
+
   /** The events since the last call, oldest first. */
   takeEvents(): SimEvent[] {
     const e = this.events;
@@ -505,12 +555,16 @@ export class NBody {
     s.id = grow(s.id, cap); s.gm = grow(s.gm, cap); s.radius = grow(s.radius, cap); s.rs = grow(s.rs, cap);
     s.zon = grow(s.zon, cap); s.pole = grow(s.pole, 3 * cap);
     s.free = grow(s.free, cap); s.pin = grow(s.pin, cap); s.around = grow(s.around, cap); s.slot = grow(s.slot, cap); s.x = grow(s.x, 3 * cap); s.v = grow(s.v, 3 * cap);
+    const was = s.judged.length;
+    s.frail = grow(s.frail, cap); s.judged = grow(s.judged, cap);
+    s.judged.fill(-Infinity, was);
   }
 
   private drop(i: number): void {
     const s = this.s;
     for (let j = i + 1; j < s.n; j++) {
       s.id[j - 1] = s.id[j]; s.gm[j - 1] = s.gm[j]; s.radius[j - 1] = s.radius[j]; s.rs[j - 1] = s.rs[j]; s.zon[j - 1] = s.zon[j]; s.free[j - 1] = s.free[j]; s.pin[j - 1] = s.pin[j]; s.around[j - 1] = s.around[j];
+      s.frail[j - 1] = s.frail[j]; s.judged[j - 1] = s.judged[j];
       for (let c = 0; c < 3; c++) s.pole[3 * j - 3 + c] = s.pole[3 * j + c];
       for (let c = 0; c < 3; c++) { s.x[3 * j - 3 + c] = s.x[3 * j + c]; s.v[3 * j - 3 + c] = s.v[3 * j + c]; }
     }
@@ -534,7 +588,7 @@ export class NBody {
     let steps = 0, over = false;
     for (;;) {
       this.ready();
-      if (this.met.length) continue;
+      if (this.met.length || this.tide.length) continue;
       // the state is kept at the kick nearest the time shown: within half a step either way
       const half = 0.5 * s.h;
       const way = s.h === Infinity ? 0 : target < s.at - half ? -1 : target >= s.at + half ? 1 : 0;
@@ -577,7 +631,7 @@ export class NBody {
   settle(): void {
     const s = this.s;
     for (;;) {
-      if (this.met.length) this.merge();
+      if (this.met.length || this.tide.length) this.merge();
       if (s.dirty) {
         if (s.time === s.at) break;
         this.plan();
@@ -588,7 +642,7 @@ export class NBody {
 
   /** Bodies that met made one, the plan looked at if it was asked for, and a new one made if needed. */
   private ready(): void {
-    if (this.met.length) this.merge();
+    if (this.met.length || this.tide.length) this.merge();
     else if (this.review && !this.s.dirty) this.look();
     if (this.s.dirty) this.plan();
   }
@@ -811,7 +865,7 @@ export class NBody {
     s.ngm = new Float64Array(nn); s.fa = new Float64Array(nn); s.fb = new Float64Array(nn); s.tie = new Float64Array(nn);
     s.jr = new Float64Array(3 * nn); s.jv = new Float64Array(3 * nn); s.ja = new Float64Array(3 * nn); s.jt = new Float64Array(nn);
     s.cx = new Float64Array(3 * nn); s.cv = new Float64Array(3 * nn); s.ca = new Float64Array(3 * nn);
-    s.kind = new Uint8Array(nn); s.watch = new Uint8Array(nn); s.touch = new Float64Array(nn); s.far = new Float64Array(nn);
+    s.kind = new Uint8Array(nn); s.watch = new Uint8Array(nn); s.touch = new Float64Array(nn); s.far = new Float64Array(nn); s.tear = new Float64Array(nn);
     s.an = new Int32Array(nn); s.un = new Int32Array(nm); s.unitOf = new Int32Array(nn); s.lo = new Int32Array(nn); s.hi = new Int32Array(nn);
     s.ux = new Float64Array(3 * nm); s.uxp = new Float64Array(3 * nm); s.ua = new Float64Array(3 * nm); s.ud = new Float64Array(nm);
     s.ugm = new Float64Array(nm); s.urad = new Float64Array(nm); s.urs = new Float64Array(nm); s.near = new Float64Array(nm * nm);
@@ -960,7 +1014,10 @@ export class NBody {
       reach[k] = light ? reach[A] : Math.max(s.fb[k] * oApo + reach[A], s.fa[k] * oApo + reach[B]);
       peri[k] = oBound ? oPeri : Math.sqrt(s.jr[3 * k] ** 2 + s.jr[3 * k + 1] ** 2 + s.jr[3 * k + 2] ** 2);
       pace[k] = oPace;
-      ok[k] = oBound && oPeriod < limit && ok[A] && ok[B] && !s.pin[s.leaf[s.top[k]]] && oPeri > reach[A] + reach[B] ? 1 : 0;
+      // (a frail body whose orbit takes it inside the tidal limit of the other is stepped, and watched for it: on rails it
+      // would never be seen to come apart)
+      const tear = A < nm && B < nm ? this.tidal(s.leaf[A], s.leaf[B]) : 0;
+      ok[k] = oBound && oPeriod < limit && ok[A] && ok[B] && !s.pin[s.leaf[s.top[k]]] && oPeri > reach[A] + reach[B] && !(oPeri < tear) ? 1 : 0;
     }
     for (let again = true; again;) {
       again = false;
@@ -1148,10 +1205,13 @@ export class NBody {
       conic(s.jr, s.jv, 3 * k, s.ngm[k]);
       const touch = A < nm && B < nm ? Math.max(s.radius[s.leaf[A]], s.rs[s.leaf[A]]) + Math.max(s.radius[s.leaf[B]], s.rs[s.leaf[B]]) : 0;
       s.touch[k] = touch;
+      // (a frail body and a heavier one: its tidal limit, where that is farther out than touching)
+      const tear = A < nm && B < nm ? this.tidal(s.leaf[A], s.leaf[B]) : 0;
+      s.tear[k] = tear > touch ? tear : 0;
       // (looser than the pair that holds it, by STICK: the hierarchy no longer fits)
       const p = s.par[k];
       s.far[k] = p >= 0 ? Math.pow((s.tie[p] * s.ngm[k] * s.ngm[k]) / STICK5, 0.2) : Infinity;
-      s.watch[k] = (touch > 0 ? TOUCH : 0) | (oBound ? 0 : OPEN) | (oFollow ? FOLLOW : 0) | (p >= 0 ? FAR : 0);
+      s.watch[k] = (touch > 0 ? TOUCH : 0) | (oBound ? 0 : OPEN) | (oFollow ? FOLLOW : 0) | (p >= 0 ? FAR : 0) | (s.tear[k] > 0 ? TEAR : 0);
     }
     // how near: where the two would rather be a pair of their own (their measure down to the
     // pair's that holds them, less STICK), or about to touch, or, for a family on rails, where
@@ -1167,7 +1227,8 @@ export class NBody {
           let d = 0;
           if (!own) {
             const g = s.ugm[i] + s.ugm[j];
-            d = Math.max(Math.pow(STICK5 * s.tie[k] * g * g, 0.2), CONTACT * (s.urad[i] + s.urad[j]), this.guard(i, j), this.guard(j, i));
+            d = Math.max(Math.pow(STICK5 * s.tie[k] * g * g, 0.2), CONTACT * (s.urad[i] + s.urad[j]), this.guard(i, j), this.guard(j, i),
+              s.un[i] < nm && s.un[j] < nm ? TEAR_NEAR * this.tidal(s.leaf[s.un[i]], s.leaf[s.un[j]]) : 0);
             const dx = s.ux[3 * j] - s.ux[3 * i], dy = s.ux[3 * j + 1] - s.ux[3 * i + 1], dz = s.ux[3 * j + 2] - s.ux[3 * i + 2];
             d = this.relaxed(d, Math.sqrt(dx * dx + dy * dy + dz * dz), i, j);
           }
@@ -1290,6 +1351,7 @@ export class NBody {
       const touch = s.touch[k];
       if (r2 < touch * touch) { this.met.push(s.id[s.leaf[s.cA[k]]], s.id[s.leaf[s.cB[k]]]); return; }
     }
+    if (watch & TEAR) this.inside(s.leaf[s.cA[k]], s.leaf[s.cB[k]], r2, s.tear[k]);
     if (passed && watch & (TOUCH | OPEN)) {
       conic(s.jr, s.jv, o, s.ngm[k]);
       if (watch & TOUCH && oPeri < s.touch[k]) { this.met.push(s.id[s.leaf[s.cA[k]]], s.id[s.leaf[s.cB[k]]]); return; }
@@ -1400,7 +1462,14 @@ export class NBody {
       const A = s.un[i], B = s.un[j];
       const touch = Math.max(s.urad[i], s.urs[i]) + Math.max(s.urad[j], s.urs[j]);
       if (A < s.nm && B < s.nm && least2 < touch * touch) this.met.push(s.id[s.leaf[A]], s.id[s.leaf[B]]);
-      else this.review = true;
+      else {
+        this.review = true;
+        // (a frail body inside the tidal limit of a heavier one, where they are now)
+        if (A < s.nm && B < s.nm) {
+          const tear = this.tidal(s.leaf[A], s.leaf[B]);
+          if (tear > touch) this.inside(s.leaf[A], s.leaf[B], (px + ex) ** 2 + (py + ey) ** 2 + (pz + ez) ** 2, tear);
+        }
+      }
     }
   }
 
@@ -1638,6 +1707,28 @@ export class NBody {
       this.drop(j);
     }
     this.met.length = 0;
+    // frail bodies inside a tidal limit: torn apart if they stay inside long enough, on their two-body orbit about the body
+    // whose limit it is, before they leave it or hit it (src/sim/Tides.ts); else judged for this passage
+    for (let m = 0; m < this.tide.length; m += 2) {
+      const j = this.indexOf(this.tide[m]), i = this.indexOf(this.tide[m + 1]);
+      // (one of them taken in by a hit at this moment: nothing is torn)
+      if (i < 0 || j < 0) continue;
+      const limit = this.tidal(i, j), touch = Math.max(s.radius[i], s.rs[i]) + s.radius[j];
+      const r = [0, 1, 2].map((c) => s.x[3 * j + c] - s.x[3 * i + c]), v = [0, 1, 2].map((c) => s.v[3 * j + c] - s.v[3 * i + c]);
+      if (!(limit > 0) || !staysInside(r, v, s.gm[i] + s.gm[j], limit, touch, selfTime(s.radius[j], s.gm[j]))) { s.judged[j] = s.at; continue; }
+      const at = (a: Float64Array, k: number) => [a[3 * k], a[3 * k + 1], a[3 * k + 2]];
+      // (the reach of `by`'s pull: its Hill sphere about the heaviest body there is, where it is now)
+      let big = 0;
+      for (let k = 1; k < s.n; k++) if (s.gm[k] > s.gm[big]) big = k;
+      const far = Math.hypot(s.x[3 * i] - s.x[3 * big], s.x[3 * i + 1] - s.x[3 * big + 1], s.x[3 * i + 2] - s.x[3 * big + 2]);
+      const reach = big === i ? Infinity : far * Math.cbrt(s.gm[i] / (3 * s.gm[big]));
+      this.events.push({
+        kind: 'torn', time: s.at, id: s.id[j], by: s.id[i], gm: s.gm[j], radius: s.radius[j], byGm: s.gm[i], byRadius: Math.max(s.radius[i], s.rs[i]), reach,
+        pos: at(s.x, j), vel: at(s.v, j), byPos: at(s.x, i), byVel: at(s.v, i),
+      });
+      this.drop(j);
+    }
+    this.tide.length = 0;
   }
 
   /**

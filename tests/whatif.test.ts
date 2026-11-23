@@ -87,7 +87,7 @@ describe('a moon made for a world', () => {
     const earth = named('Earth'), R = earth.radius;
     const at = (eye: number) => newMoon(earth, [0, eye * R, 0], AU, 0, MADE_FIRST_ID).orbit / R;
     expect(at(10)).toBeCloseTo(5.5, 6);
-    // from close by: clear of the Roche limit of a rocky moon about the Earth (2.44 R (5.51 / 3)^(1/3) = 2.99 R)
+    // from close by: clear of the Roche limit of a rocky moon about the Earth (2.46 R (5.51 / 3)^(1/3) = 3.01 R)
     expect(at(1.2)).toBeGreaterThan(3);
     expect(at(1.2)).toBeLessThan(3.4);
     // from far away: still a moon of the planet

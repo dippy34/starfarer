@@ -42,6 +42,8 @@ uniform float uExposure;
 uniform float uPlanetRadius;
 uniform float uPolar;
 uniform float uShine;       // Saturnshine relative to sunlight
+uniform float uPlain;       // 1: a ring of one colour, without Saturn's rings' colours and ringlets (a world torn apart: src/render/Debris.ts)
+uniform float uFade;        // its optical depth is this share of the profile's (1 for Saturn)
 varying vec3 vLocal;
 varying vec3 vPosView;
 float rh1(float x) { return fract(sin(x * 127.1) * 43758.5453); }
@@ -76,7 +78,7 @@ void main() {
   if (r < uRingRadii.x || r > uRingRadii.y) discard;
   float rk = r * uReqKm;
   float a = texture2D(uRingTex, vec2((r - uRingRadii.x) / (uRingRadii.y - uRingRadii.x), 0.5)).r;
-  float tau = -log(max(1.0 - a, 1e-3)) * ringlets(rk, fwidth(rk));
+  float tau = -log(max(1.0 - a, 1e-3)) * (uPlain > 0.5 ? uFade : ringlets(rk, fwidth(rk)));
   vec3 S = normalize(uSunDirBF);
   vec3 V = normalize(uCamBF - vLocal);
   float mu0 = max(abs(S.z), 1e-3);
@@ -98,7 +100,7 @@ void main() {
   // Saturnshine: the planet's day side lights the ring's near parts, on both faces
   vec3 toP = normalize(-p);
   float shine = uShine * max(dot(toP, S) * -0.5 + 0.5, 0.0) * smoothstep(5.0, 1.2, r) * (1.0 - exp(-tau / mu));
-  vec3 radiance = uColor * ringColour(rk) * 0.5 * (uSunIrr / 3.14159265) * (max(bright, 0.0) * shadow + shine);
+  vec3 radiance = uColor * (uPlain > 0.5 ? vec3(1.0) : ringColour(rk)) * 0.5 * (uSunIrr / 3.14159265) * (max(bright, 0.0) * shadow + shine);
   // Premultiplied alpha output
   gl_FragColor = vec4(min(radiance * uExposure, vec3(6.0e4)), alpha);
 ${OUTPUT_FRAGMENT}

@@ -98,7 +98,8 @@ function makeSphere(lonLeftDeg: number, wSeg = 128, hSeg = 64): BufferGeometry {
   return g;
 }
 
-function makeRing(inner: number, outer: number, seg = 256): BufferGeometry {
+/** A flat ring from `inner` to `outer` (in the units the mesh is scaled by) in the xy plane: Saturn's, and the ring of a world torn apart (src/render/Debris.ts). */
+export function makeRing(inner: number, outer: number, seg = 256): BufferGeometry {
   const pos: number[] = [], idx: number[] = [];
   for (let i = 0; i <= seg; i++) {
     const a = (i / seg) * Math.PI * 2;
@@ -760,7 +761,7 @@ export class BodiesLayer {
         uRingTex: { value: this.ringTex }, uRingRadii: { value: new Vector3(inner, outer, 0) },
         uColor: { value: new Vector3(...b.color) }, uSunDirBF: { value: new Vector3() }, uViewDirBF: { value: new Vector3() },
         uSunIrr: { value: Math.PI }, uExposure: this.surfaceExposure, uPlanetRadius: { value: 1 }, uPolar: { value: b.radii[2] / b.radii[0] },
-        uCamBF: { value: new Vector3() }, uReqKm: { value: req / 1e3 }, uShine: { value: 0.02 },
+        uCamBF: { value: new Vector3() }, uReqKm: { value: req / 1e3 }, uShine: { value: 0.02 }, uPlain: { value: 0 }, uFade: { value: 1 },
         uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
       transparent: true, depthWrite: false, side: DoubleSide,

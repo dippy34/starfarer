@@ -69,6 +69,14 @@ const SCENES: Record<string, (u: U) => void> = {
     physics.setMass(jup, 10 * jup.gm, JD);
     run(JD + 50 * 365.25, 1);
   },
+  // the Moon left on a circle 15,000 km from the Earth, inside its Roche limit, a day on: torn apart into 200 pieces
+  'the Moon torn into a ring': ({ physics, named, run }) => {
+    const earth = named('Earth'), moon = named('Moon');
+    const r = moon.pos.clone().sub(earth.pos), n = r.clone().cross(moon.vel.clone().sub(earth.vel)).normalize(), at = r.normalize().multiplyScalar(15000e3);
+    const v = circularVelocity(at.toArray(), earth.gm + moon.gm, n.toArray());
+    physics.move(moon, [earth.pos.x + at.x, earth.pos.y + at.y, earth.pos.z + at.z], [earth.vel.x + v[0], earth.vel.y + v[1], earth.vel.z + v[2]], JD);
+    run(JD + 1, 1);
+  },
 };
 
 /** More kinds of change, for the round trips: a second sun, a moon made, sizes and masses, a world taken away, a hit. */
@@ -148,6 +156,8 @@ describe('the changed universe in a link', () => {
       const v = await universe(liveDate(u.physics.live!));
       v.physics.adoptWorld(back, remake(v.sys));
       expect(bits(v.physics.live!.sim)).toEqual(bits(u.physics.live!.sim));
+      // (the worlds torn apart: the same records, so the same pieces, where the sender's are)
+      expect(v.physics.swarms).toEqual(u.physics.swarms);
       for (const b of u.sys.bodies) {
         const c = v.sys.byId.get(b.id)!;
         // (what a body taken away goes round is no matter: it is not there)
@@ -194,6 +204,32 @@ describe('the changed universe in a link', () => {
     expect(hit(b)).toBeTruthy();
     expect(hit(b)).toEqual(hit(a));
     expect(b.named('Earth').pos.distanceTo(a.named('Earth').pos)).toBeLessThan(1000);
+  }, 240_000);
+
+  it('a world torn apart comes back as its pieces: one record each, the same pieces in the same places on the receiver\'s device; and a link of the first form still opens', async () => {
+    const a = await universe();
+    SCENES['the Moon torn into a ring'](a);
+    expect(a.physics.swarms.length).toBe(1);
+    const sent = decodeWorld(encodeWorld(a.physics.world()!));
+    a.physics.rebase(sent);
+    const b = await universe(liveDate(a.physics.live!));
+    b.physics.adoptWorld(decodeWorld(encodeWorld(sent)), remake(b.sys));
+    const pa = a.physics.swarmsNow(), pb = b.physics.swarmsNow();
+    expect(pb.time).toBe(pa.time);
+    expect(Array.from(pb.list[0].sp.r0)).toEqual(Array.from(pa.list[0].sp.r0));
+    expect(b.sys.isGone(b.named('Moon'))).toBe(true);
+    expect(pb.list[0].host).toBe(b.named('Earth'));
+    // (a link made before worlds could be torn apart: form 1, no swarms; read as it was written)
+    const plain = await universe();
+    SCENES['the Moon thrown'](plain);
+    const w = plain.physics.world()!, raw = encodeWorld(w), head = raw.length - 8 * countDoubles(w);
+    expect(raw[0]).toBe(2);
+    // (form 2 ends its structure with the number of swarms ever made and of those there are: 0 and 0)
+    expect([raw[head - 2], raw[head - 1]]).toEqual([0, 0]);
+    const first = Uint8Array.from([1, ...raw.slice(1, head - 2), ...raw.slice(head)]);
+    const old = decodeWorld(first);
+    expect(old.swarms).toEqual([]);
+    expect(old.sim).toEqual(decodeWorld(raw).sim);
   }, 240_000);
 
   it('a world made comes back as it was: its name, mass, size, what it goes round', async () => {
@@ -325,9 +361,12 @@ describe('the changed universe in a link', () => {
 
 /** How many doubles a world writes (as encodeWorld does). */
 function countDoubles(w: LiveWorld): number {
-  let n = 7;
+  // (the date it left the real universe, the simulation's time, its three settings of rails and its edge)
+  let n = 6;
   for (let i = 0; i < w.sim.ids.length; i++) n += (w.asBody[i] & 1 ? 0 : 1) + (w.asBody[i] & 2 ? 0 : 1) + (w.sim.rs[i] > 0 ? 1 : 0) + (w.sim.zon[i] > 0 ? 4 : 0) + 6;
   for (const m of w.made) n += 3 + (m.kind === 'sun' ? 2 : 0);
   n += 2 * w.changed.length + w.log.length;
+  // (a world torn apart: its mass and size, colour and how bright its rock, what its pieces go round and when, where and how it moved)
+  n += 16 * w.swarms.length;
   return n;
 }

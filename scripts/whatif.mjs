@@ -13,7 +13,8 @@
 //   - the slingshot's mark of escape near the top of the clear part of the view keeps its word, wholly in sight
 //   - a world's temperature says which it is: the year's average in the real Solar System, where it is now in live physics
 //   - a world made like the Earth is rock squeezed by its own weight: five Earths, 1.54 times its size
-// Usage: node scripts/whatif.mjs [baseUrl] [outDir]   (WHATIF_ONLY=facts,escape,warm,size: those blocks alone; WHATIF_KINDS=desk:
+//   - the Moon dragged inside the Earth's Roche limit: a warning, then torn apart into pieces that make a ring; Undo
+// Usage: node scripts/whatif.mjs [baseUrl] [outDir]   (WHATIF_ONLY=facts,escape,warm,size,roche: those blocks alone; WHATIF_KINDS=desk:
 // the wave-2 blocks at a desk only)
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
@@ -57,7 +58,7 @@ const quiet = async (page) => {
   await frames(page, 2);
 };
 
-/** some blocks only, by name (WHATIF_ONLY=escape,warm: facts, escape, warm, size); the rest are left out */
+/** some blocks only, by name (WHATIF_ONLY=escape,warm: facts, escape, warm, size, roche); the rest are left out */
 const only = process.env.WHATIF_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 
@@ -208,6 +209,19 @@ async function find(page, name) {
 const until = (page, test, arg, seconds = 120) => page.waitForFunction(test, arg, { timeout: seconds * 1000, polling: 100 }).then(() => true, () => false);
 const text = (page, sel) => page.evaluate((sel) => document.querySelector(sel)?.textContent ?? '', sel);
 
+/** Time running, at the rate the clock chip calls `label` ("1 h/s"), with the Time sheet's buttons (as scripts/live.mjs asks for a rate). */
+async function play(page, label) {
+  if (!(await page.evaluate(() => !!document.querySelector('#hud .sheet.time.on')))) await press(page, '#hud .hud-tabs [data-tab="time"]');
+  if (await page.evaluate(() => window.app.clock.paused)) await press(page, '#hud .transport [data-act="pause"]');
+  for (let i = 0; i < 24 && (await text(page, '#hud .chip.clock small')) !== label; i++) {
+    await press(page, '#hud .transport [data-act="faster"]');
+    await frames(page, 2);
+  }
+  const got = await text(page, '#hud .chip.clock small');
+  await press(page, '#hud .sheet.time [data-close]');
+  return got;
+}
+
 /**
  * The knob of a slider (`sel`) dragged from where it is to `to` (0 to 1 along its track: the knob is 30 px wide and stays
  * inside it). (Once more if it did not get there: at a desk, a drag begun as the card settles has been seen to miss the knob.)
@@ -336,6 +350,118 @@ for (const kind of kinds) {
       now.on && Math.abs(now.factor - 2) < 0.1 && now.moved < 1 && now.shown && now.live && /^The Moon here: −?\d+ °C$/.test(now.line)
         && working.includes('the sunlight where it is now') && !!said && working.includes(`on average over the year, at its mean distance from the Sun (1361 W/m², NASA's fact sheet), it is ${said[1]} °C`),
       `"${now.line}"; ${now.factor.toFixed(2)} times its mass, moved ${now.moved.toFixed(3)} m; the working: "…${working.slice(-140)}"`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ torn apart: the Moon dragged inside the Earth's Roche limit
+  if (want('roche')) {
+    const { ctx, page, touch } = await openKind(kind, 'target=Earth&dist=6');
+    const hand = await handOf(page, touch);
+    await quiet(page);
+    await find(page, 'Moon');
+    await press(page, '#hud .hud-flight [data-act="stop"]').catch(() => undefined);
+    await press(page, '#hud .card [data-act="move"]');
+    await press(page, '#hud .card [data-act="move-circle"]');
+    await frames(page, 3);
+    // (setup, not a power: the eye high over the Earth, the Earth and the Moon both in the clear part of the view and well apart,
+    // the plane of the Moon's orbit seen from well out of it: a finger moves it in that plane, which has the Earth in it; and where
+    // the finger is to end, 15,000 km from the Earth's centre towards the Moon, inside the Earth's Roche limit for it, 18,515 km)
+    const view = await page.evaluate(() => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon'), V = earth.pos.constructor;
+      const free = a.hud.freeArea(), clear = (p) => !!p && p.x > free.left + 20 && p.x < free.right - 20 && p.y > free.top + 20 && p.y < free.bottom - 20;
+      // (and nothing of the interface there, a round button say: the sky, or a name on it)
+      const bare = (p) => { const el = document.elementFromPoint(p.x, p.y); return !!el && (el.tagName === 'CANVAS' || el.closest('.labels, #labels, .label') !== null || el.id === 'stage'); };
+      for (const el of [80, 70, 60]) for (const dist of [70, 90, 120, 160]) for (let az = 0; az < 360; az += 15) {
+        a.placeNear(earth, dist * earth.radius, az, el);
+        a.frame();
+        const toward = moon.pos.clone().sub(earth.pos).normalize();
+        const e = a.project(earth.upos.sub(a.rig.upos, new V())), m = a.project(moon.upos.sub(a.rig.upos, new V()));
+        const t = a.project(earth.upos.sub(a.rig.upos, new V()).addScaledVector(toward, 15000e3));
+        if (!e || !m || !t) continue;
+        const flat = a.mover.describe(moon).plane === 'It moves in the plane of its orbit.';
+        if (flat && clear(e) && clear(m) && clear(t) && bare(m) && bare(t) && Math.hypot(m.x - e.x, m.y - e.y) > 140 && Math.hypot(t.x - e.x, t.y - e.y) > 6) return { m, t };
+      }
+      return null;
+    });
+    await frames(page, 3);
+    let held = null;
+    if (view) {
+      // (for the record, should it fail: what the finger comes down on, and where the Moon is drawn then)
+      const before = await page.evaluate(({ x, y }) => {
+        const a = window.app, moon = a.findByName('Moon'), el = document.elementFromPoint(x, y), at = a.project(moon.upos.sub(a.rig.upos, new moon.pos.constructor()));
+        return { under: el ? `${el.tagName}.${String(el.className).split(' ')[0]}` : 'nothing', at: at && { x: Math.round(at.x), y: Math.round(at.y) } };
+      }, view.m);
+      await hand.press(view.m);
+      const holding = await page.evaluate(() => window.app.mover.holding);
+      for (let i = 1; i <= 12; i++) await hand.slide({ x: view.m.x + ((view.t.x - view.m.x) * i) / 12, y: view.m.y + ((view.t.y - view.m.y) * i) / 12 });
+      await frames(page, 3);
+      await until(page, () => !window.app.ahead || window.app.ahead.done, null, 120);
+      await frames(page, 3);
+      held = await page.evaluate(() => {
+        const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon');
+        return {
+          d: moon.pos.distanceTo(earth.pos), warning: a.debris.warning, roche: document.querySelector('#hud .card .power-roche')?.textContent ?? '',
+          ahead: document.querySelector('#hud .card .power-ahead')?.textContent ?? '', paused: a.clock.paused, limit: a.physics.tidalLimit(moon, earth),
+        };
+      });
+      held.how = `the finger down at ${Math.round(view.m.x)},${Math.round(view.m.y)} on ${before.under}, the Moon drawn at ${before.at ? `${before.at.x},${before.at.y}` : 'none'}, ${holding ? 'held' : 'not held'}`;
+    }
+    check(on('the Moon dragged inside the Earth\'s Roche limit: a warning ring round the Earth at the limit, red; the card says so, and that run ahead the Earth\'s tides tear it apart'),
+      !!held && held.paused && held.d < held.limit && Math.abs(held.limit / 18515.4e3 - 1) < 1e-3 && !!held.warning && held.warning.inside && Math.abs(held.warning.radius / held.limit - 1) < 1e-6
+        && held.roche === 'Inside Earth\'s Roche limit (18,515 km from its centre): its tides tear the Moon apart.'
+        && /^With every pull counted, Earth's tides tear it apart in [\d.]+ (seconds|minutes|hours)\.$/.test(held.ahead),
+      held ? `${(held.d / 1e3).toFixed(0)} km out; the warning ${held.warning ? `${(held.warning.radius / 1e3).toFixed(0)} km, ${held.warning.inside ? 'red' : 'amber'}` : 'none'}; "${held.roche}"; "${held.ahead}"${held.d < held.limit ? '' : `; ${held.how}`}` : 'no view found');
+    if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `whatif-${kind}-roche-warning.png`) });
+    await hand.lift();
+    await frames(page, 3);
+    // let go, on a circle there; time runs at an hour a second: torn apart at its first steps
+    const asked = await play(page, '1 h/s');
+    await until(page, () => window.app.physics.swarms.length > 0, null, 180);
+    await frames(page, 4);
+    const torn = await page.evaluate(() => {
+      const a = window.app, moon = a.findByName('Moon'), log = a.physics.log.map((e) => e.text), sw = a.physics.swarms[0];
+      return { gone: a.system.isGone(moon), swarm: sw ? { count: sw.count, host: sw.host, from: sw.from } : null, drawn: a.debris.count, log, toast: document.querySelector('#hud .hud-toast').textContent };
+    });
+    check(on('let go, time running: the Moon is torn apart, gone from the sky, followed as 200 pieces round the Earth, drawn, and told'),
+      asked === '1 h/s' && torn.gone && !!torn.swarm && torn.swarm.count === 200 && torn.swarm.host === 399 && torn.swarm.from === 301 && torn.drawn > 150
+        && torn.log.includes('The Moon is torn apart by Earth\'s tides: its pieces spread along its path, into a ring round Earth.'),
+      `rate ${asked}; ${torn.drawn} pieces drawn; "${torn.log.slice(-1)[0] ?? ''}"`);
+    // the pieces spread along the orbit: a day and a half on (two turns of 16 hours), round the Earth, and a ring drawn
+    const t0 = await page.evaluate(() => window.app.physics.swarms[0]?.t0 ?? 0);
+    await until(page, (t0) => window.app.physics.live && window.app.physics.live.sim.time - t0 > 1.6 * 86400, t0, 300);
+    await frames(page, 4);
+    const ring = await page.evaluate(() => {
+      const a = window.app, sw = a.physics.swarms[0], now = a.physics.swarmsNow(), earth = a.findByName('Earth'), V = earth.pos.constructor;
+      // (where each piece is drawn, round the Earth in the plane of their orbits: how much of the circle they fill, in twelfths;
+      // and how many are on the screen)
+      const pole = now.list[0]?.sp.pole ?? [0, 0, 1], ex = new V(1, 0, 0), z = new V(...pole);
+      const x = ex.sub(z.clone().multiplyScalar(ex.dot(z))).normalize(), y = z.clone().cross(x), centre = earth.upos.sub(a.rig.upos, new V());
+      const bins = new Set();
+      let onScreen = 0;
+      for (const p of a.debris.positions()) {
+        const rel = p.clone().sub(centre);
+        bins.add(Math.floor(((Math.atan2(rel.dot(y), rel.dot(x)) + Math.PI) / (2 * Math.PI)) * 12) % 12);
+        const s = a.project(p);
+        if (s && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight) onScreen++;
+      }
+      // (and what placing them costs a frame, timed on this machine's processor, not a phone's: told, not checked. Drawing
+      // them is two draw calls, the pieces as one instanced mesh of 80 triangles each and the ring)
+      const t = performance.now();
+      for (let i = 0; i < 100; i++) a.updateDebris(1.2e-3);
+      return { fill: bins.size, onScreen, ring: sw ? a.debris.ringOf(sw.id) : null, drawn: a.debris.count, ms: (performance.now() - t) / 100 };
+    });
+    check(on('a day and a half on (two of its 16-hour turns) the pieces fill the circle round the Earth and the ring they make is drawn'),
+      ring.fill === 12 && ring.ring !== null && ring.ring > 0.5 && ring.onScreen > 100, `the pieces in ${ring.fill} twelfths of the circle, ${ring.onScreen} on the screen; the ring ${ring.ring === null ? 'not drawn' : `drawn, ${(100 * ring.ring).toFixed(0)} % formed`}; placing them ${ring.ms.toFixed(3)} ms a frame here`);
+    await page.screenshot({ path: path.join(outDir, `whatif-${kind}-roche-ring.png`) });
+    // Undo: the Moon as it was before the drag, and no pieces
+    await press(page, '#hud .live-mark .live-undo');
+    await frames(page, 4);
+    const undone = await page.evaluate(() => {
+      const a = window.app, moon = a.findByName('Moon'), earth = a.findByName('Earth');
+      return { gone: a.system.isGone(moon), valid: moon.valid, d: moon.pos.distanceTo(earth.pos), swarms: a.physics.swarms.length, drawn: a.debris.count, warning: !!a.debris.warning };
+    });
+    check(on('Undo: the Moon back where it was, no pieces, no warning'), !undone.gone && undone.valid && undone.d > 3e8 && undone.swarms === 0 && undone.drawn === 0 && !undone.warning,
+      `${(undone.d / 1e3).toFixed(0)} km from the Earth; ${undone.swarms} swarms, ${undone.drawn} pieces drawn`);
     await ctx.close();
   }
 

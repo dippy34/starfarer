@@ -172,10 +172,18 @@ export function hillRadius(aM: number, e: number, bodyKg: number, primaryKg: num
   return derived(r, 'm', 'r_H = a(1 − e)∛(m / 3M)', `${num(aM)} m·(1 − ${num(e)})·∛(${num(bodyKg)} / (3·${num(primaryKg)}))`, fmtLength(r));
 }
 
-/** Fluid Roche limit d = 2.44 R_M (ρ_M / ρ_m)^(1/3) (densities in any common unit). */
+/**
+ * Roche's coefficient for a satellite with no strength, a fluid one: inside d = 2.46 R_M (ρ_M / ρ_m)^⅓
+ * no shape of it is in equilibrium with the tides and it comes apart (Chandrasekhar 1969, as
+ * Leinhardt, Ogilvie, Latter & Kokubo 2012, MNRAS 424, 1419, arXiv:1206.2677, eq. 7 and section 3.1.1, give
+ * it: a critical Roche parameter of 11.10). Their simulated rubble piles held together to about 2.2.
+ */
+export const FLUID_ROCHE = 2.46;
+
+/** Fluid Roche limit d = 2.46 R_M (ρ_M / ρ_m)^(1/3) (densities in any common unit): FLUID_ROCHE. */
 export function rocheLimit(primaryR: number, primaryRho: number, satRho: number): Derived {
-  const d = 2.44 * primaryR * Math.cbrt(primaryRho / satRho);
-  return derived(d, 'm', 'd = 2.44 R (ρ_M / ρ_m)^⅓', `2.44·${num(primaryR)} m·(${num(primaryRho)} / ${num(satRho)})^⅓`, fmtLength(d));
+  const d = FLUID_ROCHE * primaryR * Math.cbrt(primaryRho / satRho);
+  return derived(d, 'm', `d = ${FLUID_ROCHE} R (ρ_M / ρ_m)^⅓`, `${FLUID_ROCHE}·${num(primaryR)} m·(${num(primaryRho)} / ${num(satRho)})^⅓`, fmtLength(d));
 }
 
 // ---------------------------------------------------------------- climate

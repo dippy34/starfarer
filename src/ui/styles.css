@@ -359,6 +359,9 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .power-now { margin: 8px 0 0; font-size: 14px; line-height: 1.35; font-variant-numeric: tabular-nums; }
 .power-ahead { margin: 4px 0 0; font-size: 14px; line-height: 1.35; color: var(--live); }
 .power-ahead:empty { display: none; }
+/* a world near the Roche limit of what holds sway where it is (src/app/App.ts: rocheWords) */
+.power-roche { margin: 4px 0 0; font-size: 14px; line-height: 1.35; color: #ff9a80; }
+.power-roche:empty { display: none; }
 /* its temperature: a line under its buttons (one on a phone: the card's room counts it), in the colour of live physics once worked out where it is now */
 .card-warmth { margin: 0 2px; font-size: 14px; line-height: 1.35; color: var(--dim); font-variant-numeric: tabular-nums; }
 .card-warmth.live { color: var(--live); }

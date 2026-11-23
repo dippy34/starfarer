@@ -22,9 +22,10 @@ const TURNS = 3, LONGEST = 100 * 365.25 * 86_400;
 /** the copy goes in steps of this share of a place's time, so that a place is kept where it falls due */
 const SPLIT = 4;
 
-/** What ends the look ahead, `time` seconds on: the world hits `other`, leaves for good, or goes round `around` instead of `was` (-1: nothing). */
+/** What ends the look ahead, `time` seconds on: the world hits `other`, is torn apart by the tides of `by`, leaves for good, or goes round `around` instead of `was` (-1: nothing). */
 export type Ending =
   | { kind: 'hit'; other: number; time: number }
+  | { kind: 'torn'; by: number; time: number }
   | { kind: 'leaves'; time: number }
   | { kind: 'round'; around: number; was: number; time: number };
 
@@ -140,12 +141,22 @@ export class Foresight {
       const time = e.time - this.from;
       let end: Ending | null = null;
       if (e.kind === 'collision' && (e.survivor === id || e.absorbed === id)) end = { kind: 'hit', other: e.survivor === id ? e.absorbed : e.survivor, time };
+      else if (e.kind === 'torn' && e.id === id) end = { kind: 'torn', by: e.by, time };
       else if ((e.kind === 'unbound' || e.kind === 'escape') && e.ids.includes(id)) end = { kind: 'leaves', time };
       else if (e.kind === 'orbit' && e.id === id && e.around !== this.around) end = e.around < 0 ? { kind: 'leaves', time } : { kind: 'round', around: e.around, was: e.was, time };
       if (!end) continue;
       this.end = end;
       this.done = true;
-      // (the last place: where it is now, a moment past; one taken in by another ends where that one is)
+      // (the last place: where it is now, a moment past; one taken in by another ends where that one is; one torn apart where
+      // it came apart, from what it went round as the look began)
+      if (e.kind === 'torn') {
+        const sim = this.sim!, j = this.around >= 0 ? sim.indexOf(this.around) : -1;
+        sim.read();
+        for (let c = 0; c < 3; c++) this.rel[c] = e.pos[c] - (j >= 0 ? sim.pos[3 * j + c] : 0);
+        if (this.count < AHEAD_MOST) this.keep(this.rel);
+        this.sim = null;
+        return true;
+      }
       const into = end.kind === 'hit' && e.kind === 'collision' && e.absorbed === id ? e.survivor : id;
       const was = this.id;
       this.id = into;

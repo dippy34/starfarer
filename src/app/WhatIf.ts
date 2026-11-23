@@ -1,6 +1,6 @@
 import { OBLIQUITY_J2000 } from '../core/frames';
 import { AU, SUN_ABS_MAG } from '../core/units';
-import { G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER, R_SUN, radiusFromDensity } from '../sim/physics';
+import { FLUID_ROCHE, G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER, R_SUN, radiusFromDensity } from '../sim/physics';
 import type { Body } from '../universe/Body';
 import type { BodyJson } from '../universe/SolarSystem';
 import type { MadeRecord } from './SceneWorld';
@@ -81,7 +81,7 @@ export function newMoon(parent: Body, eye: ArrayLike<number>, sunDistance: numbe
   const rho = icy ? ICE : ROCK;
   const gm = G * rho * (4 / 3) * Math.PI * radius ** 3;
   const parentRho = parent.gm / G / ((4 / 3) * Math.PI * R ** 3);
-  const roche = 2.44 * R * Math.cbrt(parentRho / rho);
+  const roche = FLUID_ROCHE * R * Math.cbrt(parentRho / rho);
   const orbit = Math.min(60 * R, Math.max(3 * R, 1.1 * roche, TOWARDS_EYE * Math.hypot(eye[0], eye[1], eye[2])));
   // (the way it turns: the pole of its rotation model is the northern one, whichever way it spins about it)
   const o = parent.orientation.elements, spin = parent.rotation && parent.rotation.pm[1] < 0 ? -1 : 1;

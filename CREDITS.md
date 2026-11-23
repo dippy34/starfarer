@@ -474,6 +474,17 @@ No data: methods, and the textbook figures quoted as predictions. The code is th
   Earth masses, with the Earth's core fraction by it (0.07/0.21, their section 3.1); checked in
   `tests/whatif.test.ts` against their own model radii (their Table 2). Read from the paper's
   source as posted on arXiv (November 2026).
+* A world torn apart by tides, and the ring it makes (`src/sim/physics.ts`, `FLUID_ROCHE`;
+  `src/sim/Tides.ts`; `src/sim/NBody.ts`; `src/sim/Swarm.ts`): Z. M. Leinhardt, G. I. Ogilvie,
+  H. N. Latter & E. Kokubo, "Tidal disruption of satellites and formation of narrow rings",
+  *Monthly Notices of the Royal Astronomical Society* 424, 1419 (2012), arXiv:1206.2677: the fluid
+  Roche limit a/R_p < 2.46 (ρ_s/ρ_p)^(−1/3) (their eq. 7, section 3.1.1: a critical Roche parameter
+  of 11.10, after S. Chandrasekhar, *Ellipsoidal Figures of Equilibrium*, Yale University Press,
+  1969), their rubble piles holding together to about 2.2, and their finding that a satellite
+  within its limit comes wholly apart and forms a narrow ring. Read from the paper's source as
+  posted on arXiv (November 2026). The rigid limit (2^⅓) and the time a world must stay inside the
+  limit to come apart are worked out in `src/sim/Tides.ts`; the pieces' spreading round their
+  orbit is Kepler's laws (each piece on its own orbit, `keplerDrift`).
 
 ## Algorithms and code
 

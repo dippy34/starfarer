@@ -21,6 +21,7 @@ import { Labels, type LabelCandidate } from '../render/Labels';
 import { EARTH_FOR_SCALE } from '../render/ScaleCues';
 import { NearStarsLayer } from '../render/NearStars';
 import { OrbitsLayer } from '../render/Orbits';
+import { DebrisLayer } from '../render/Debris';
 import { FlashLayer } from '../render/Flash';
 import { FuturesLayer } from '../render/Futures';
 import { TrailsLayer } from '../render/Trails';
@@ -154,6 +155,8 @@ const bad = (why: string): never => { throw new WorldError(why); };
 const LINK_LOOKUP_WAIT = 8000;
 /** the look ahead starts again from a change at most this often (ms) */
 const AHEAD_AGAIN_MS = 200;
+/** a world being moved this near the Roche limit round what holds sway there (times it) shows the limit; inside it, it is red */
+const ROCHE_SHOWN = 1.6;
 
 /** The moment the world here was last the real one: the date, the rate of time, and whether the clock was following the present then. */
 interface Start { jd: number; rate: RateState; present: boolean }
@@ -252,6 +255,8 @@ export class App {
   rocks!: Rocks;
   /** comas and tails of the active comets */
   cometTails!: CometTails;
+  /** live physics: the pieces of worlds torn apart, the rings they make, and the warning of a Roche limit (src/render/Debris.ts) */
+  debris!: DebrisLayer;
   /** systems drawn this frame: those of the stars around the explorer, plus a selected/targeted one */
   private nearSystems: PlanetarySystem[] = [];
   activeSystems: PlanetarySystem[] = [];
@@ -440,6 +445,7 @@ export class App {
     app.rocks = new Rocks(app.terrain, lean);
     app.terrain.source = bodies.terrainSource;
     app.cometTails = new CometTails(bodies.surfaceExposure);
+    app.debris = new DebrisLayer(bodies.surfaceExposure);
     app.craft = new SpacecraftLayer(craft, bodies.surfaceExposure, starField.psf);
     // M87's light is centred on its black hole
     const m87 = galaxyList.find((g) => g.name === 'M87'), m87bh = blackHoles.find((b) => b.name === 'M87*');
@@ -457,7 +463,7 @@ export class App {
     if (new URLSearchParams(location.search).get('procedural') === '0') app.procStars.enabled = false;
     const mw = new URLSearchParams(location.search).get('mw');
     if (mw !== null) sky.brightness = Number(mw);
-    renderer.scene.add(sky.mesh, bodies.group, atmospheres.group, orbits.group, small.group, near.group, app.holes.group, app.jets.group, app.procStars.group, app.exo.group, app.terrain.group, app.rocks.group, app.mwVolume.mesh, app.cometTails.group, app.craft.group, app.galaxies.group, app.deepSky.group, ...starFields.map((f) => f.group));
+    renderer.scene.add(sky.mesh, bodies.group, atmospheres.group, orbits.group, small.group, near.group, app.holes.group, app.jets.group, app.procStars.group, app.exo.group, app.terrain.group, app.rocks.group, app.mwVolume.mesh, app.cometTails.group, app.debris.group, app.craft.group, app.galaxies.group, app.deepSky.group, ...starFields.map((f) => f.group));
     small.build(smallData);
     app.lean = lean;
     app.vr = new VRSupport(app, xrCapable, DATA);
@@ -1672,6 +1678,7 @@ export class App {
     const name = (id: number) => this.system.byId.get(id)?.name ?? '?';
     const when = whenWords(end.time, live.jd0 + (this.ahead.from + end.time) / DAY);
     if (end.kind === 'hit') return aheadWords({ kind: 'hit', other: name(end.other), when });
+    if (end.kind === 'torn') return aheadWords({ kind: 'torn', by: name(end.by), when });
     if (end.kind === 'leaves') return aheadWords({ kind: 'leaves', from: this.ahead.around >= 0 ? name(this.ahead.around) : null });
     return aheadWords({ kind: 'round', around: name(end.around), when });
   }
@@ -1861,7 +1868,7 @@ export class App {
     const terrain = [bodyObjs.find((m) => m.name === 'Saturn'), exoObjs[0]].filter((m) => !!m).map((m) => this.terrain.warmupMesh(m.material as ShaderMaterial));
     const air = this.atmospheres.warmupObjects()[0];
     if (air) terrain.push(this.terrain.warmupHaze(air.material as ShaderMaterial));
-    const objs = [...bodyObjs, ...terrain, ...this.atmospheres.warmupObjects(), ...this.holes.warmupObjects(), ...this.near.warmupObjects(), ...exoObjs, ...this.craft.warmupObjects(), ...this.game.warmupObjects(), ...this.deepSky.warmupObjects(), ...this.galaxies.warmupObjects(), ...this.rocks.warmupObjects(), this.mwVolume.mesh, ...this.cometTails.warmupObjects(), ...this.jets.warmupObjects(), ...this.awe.cues.warmupObjects(), (this.trailWarm ??= this.trails.warmupObject()), this.futures.warmupObject(), this.flash.mesh];
+    const objs = [...bodyObjs, ...terrain, ...this.atmospheres.warmupObjects(), ...this.holes.warmupObjects(), ...this.near.warmupObjects(), ...exoObjs, ...this.craft.warmupObjects(), ...this.game.warmupObjects(), ...this.deepSky.warmupObjects(), ...this.galaxies.warmupObjects(), ...this.rocks.warmupObjects(), this.mwVolume.mesh, ...this.cometTails.warmupObjects(), ...this.debris.warmupObjects(), ...this.jets.warmupObjects(), ...this.awe.cues.warmupObjects(), (this.trailWarm ??= this.trails.warmupObject()), this.futures.warmupObject(), this.flash.mesh];
     const was = objs.map((o) => o.visible);
     for (const o of objs) o.visible = true;
     // (into the HDR target the scene is drawn to: programs differ per output target)
@@ -3404,6 +3411,7 @@ export class App {
     this.trails.selected = this.orbits.selected;
     this.trails.update(this.rig.upos, pixelAngle);
     this.flash.update(this.rig.upos, this.view.quat, pixelAngle * this.view.pixelRatio, Math.min(rawDt, 0.1));
+    this.updateDebris(pixelAngle * this.view.pixelRatio);
     this.aheadEnd = this.futures.update(this.rig.upos, this.aheadOf && this.ahead, this.aheadOf);
     HITCH.lap('orbits');
     this.small.update(this.rig.upos, jd);
@@ -3481,6 +3489,42 @@ export class App {
   }
 
   /**
+   * The pieces of the worlds torn apart, and the rings they make (src/render/Debris.ts), lit by the
+   * sun of what they go round; and, while a world that tides can tear apart is held, aimed or put in
+   * place, the Roche limit round what holds sway there (`rocheNow`), drawn when it is near.
+   */
+  private updateDebris(cssAngle: number): void {
+    const now = this.physics.swarmsNow();
+    this.debris.update(this.rig.upos, now.list, now.time, cssAngle, (b) => {
+      const sun = this.system.sunAt(b.pos);
+      return sun ? { sun, irr: sunIrradianceAt(Math.max(sun.pos.distanceTo(b.pos), 1), this.system.brightness(sun)) } : null;
+    });
+    const w = this.rocheNow();
+    if (!w || w.d > ROCHE_SHOWN * w.limit) { this.debris.warn(null); return; }
+    const at = w.big.upos.sub(this.rig.upos, new Vector3()), b = w.b, r = b.pos.clone().sub(w.big.pos), v = b.vel.clone().sub(w.big.vel);
+    const pole = r.clone().cross(v);
+    this.debris.warn(at, w.limit, pole.lengthSq() > 0 ? pole : new Vector3(0, 0, 1).applyQuaternion(this.view.quat), w.d < w.limit);
+  }
+
+  /** The world being moved (Move on, held or not), if tides can tear it apart: what holds sway where it is, its Roche limit there (m) and how far it is (m). */
+  private rocheNow(): { b: Body; big: Body; limit: number; d: number } | null {
+    const b = this.mover.body;
+    if (!b || !b.valid || !this.physics.on) return null;
+    const big = this.physics.swayAt(b.pos.toArray(), b);
+    const limit = big ? this.physics.tidalLimit(b, big) : 0;
+    return big && limit > 0 ? { b, big, limit, d: b.pos.distanceTo(big.pos) } : null;
+  }
+
+  /** The card's warning while a world that tides can tear apart is moved near the Roche limit round what holds sway there ('' otherwise). */
+  private rocheWords(b: Body): string {
+    const w = this.rocheNow();
+    if (!w || w.b !== b || w.d > ROCHE_SHOWN * w.limit) return '';
+    const big = the(w.big.name), km = `${Math.round(w.limit / 1e3).toLocaleString('en-US')} km`;
+    return w.d < w.limit ? `Inside ${big}'s Roche limit (${km} from its centre): its tides tear ${the(b.name)} apart.`
+      : `${big.charAt(0).toUpperCase()}${big.slice(1)}'s Roche limit is ${km} from its centre: inside it, its tides tear ${the(b.name)} apart.`;
+  }
+
+  /**
    * The temperature of a world whose Bond albedo is measured (src/app/Worked.ts: temperatureOf): as
    * its fact sheet has it while the Solar System is the real one, and where it is now, under every
    * sun, in live physics. (A moon the sheet gives no sunlight for gets its planet's: it is as far
@@ -3522,7 +3566,7 @@ export class App {
       if (sel instanceof Body && sel.valid) {
         selection.rows.splice(1, 0, ...this.physics.rows(sel));
         selection.removable = true;
-        selection.move = { ...this.mover.describe(sel), ahead: sel === this.aheadOf ? this.aheadLine() : '' };
+        selection.move = { ...this.mover.describe(sel), ahead: sel === this.aheadOf ? this.aheadLine() : '', roche: this.rocheWords(sel) };
         const real = this.physics.realGm(sel);
         if (real > 0) {
           const factor = sel.gm / real, sun = madeSun(sel);

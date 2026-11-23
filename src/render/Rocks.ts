@@ -165,8 +165,8 @@ void main() {
   gl_FragColor = vec4(0.0, a * a, 0.0, 0.0);
 }`;
 
-/** Unit rock shapes: broken blocks (a lumpy body cut by fracture planes, softened), resting on y = 0. */
-function rockGeometry(seed: number, detail: number): BufferGeometry {
+/** Unit rock shapes: broken blocks (a lumpy body cut by fracture planes, softened), resting on y = 0. (Also the pieces of a world torn apart: src/render/Debris.ts.) */
+export function rockGeometry(seed: number, detail: number): BufferGeometry {
   const g0 = new IcosahedronGeometry(1, detail);
   g0.deleteAttribute('normal');
   g0.deleteAttribute('uv');
