@@ -42,7 +42,8 @@ const MOON_GM = 1e9;
 /** What live physics leaves out besides what the simulation itself does (NBody's LEFT_OUT), in plain words. */
 const ALSO_LEFT_OUT: readonly string[] = [
   'A moon too light to pull on anything, and a world whose mass is not known, keeps its real path round its planet until you change that planet or it.',
-  'A world keeps its size and its look whatever mass you give it. What theory says it would turn into is told, not shown. (A world you are adding is the one exception: its size follows the mass you give it before Done.)',
+  'A world keeps its size whatever mass you give it, unless you change that too: with Size, or with Same density, which has it grow as a ball of rock would (R = R₀ (M / M₀)^⅓; a real giant planet stops growing above about a Jupiter\'s mass, squeezed by its own weight). Its face is drawn as it is, larger or smaller; what theory says a world of that mass would turn into is told, not shown. A sun you add is the exception: its size, colour and light follow its mass as a star of the main sequence, before Done and after.',
+  'You cannot land on a world whose size you have changed: its ground is drawn as measured, for its real size. Its air keeps its measured depth over its new ground; Saturn\'s rings keep their measured size.',
   'The 75,000 small asteroids of the belt and the comets cannot be simulated one by one: they keep their real paths while the Sun is as it was, and are left out once you change it or take it away. The real spacecraft are left out too: they flew their paths in the real Solar System.',
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
   'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up. Its size follows the mass you give it by a rule, said in its details: rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence. A star made lighter than the Sun is drawn as if all its light were visible light: a red dwarf would look fainter.',
@@ -72,8 +73,8 @@ const LOG_MOST = 60;
 
 interface Real { gm: number; systemGm: number; radius: number; radii: [number, number, number] }
 
-/** A body as a checkpoint keeps it: its mass and size, where it stands in the families, and whether it is there. */
-interface Kept extends Family { gm: number; systemGm: number; radius: number; radii: [number, number, number] }
+/** A body as a checkpoint keeps it: its mass and size, a sun's colour and light, where it stands in the families, and whether it is there. */
+interface Kept extends Family { gm: number; systemGm: number; radius: number; radii: [number, number, number]; teff: number; absMag: number }
 
 /**
  * Everything live physics and the worlds it changes are at a moment, for Undo and Replay: the
@@ -174,17 +175,54 @@ export class LivePhysics {
 
   // ------------------------------------------------------------------ the powers
 
-  /** Give a body another mass (G times it, m³/s²): its pull changes from now on, its size and look stay. */
-  setMass(b: Body, gm: number, jd: number): void {
+  /**
+   * Give a body another mass (G times it, m³/s²): its pull changes from now on. Its size stays,
+   * unless `radii` (m) are given: a sun the explorer made has the size of its mass (src/app/WhatIf.ts,
+   * madeSize), and a world given the same density grows with it.
+   */
+  setMass(b: Body, gm: number, jd: number, radii?: readonly [number, number, number]): void {
     const live = this.start(jd);
     this.changes++;
     this.keep(b);
     // (what rides on it would keep its catalogued path round a body that no longer pulls as it did)
     release(live, this.system, [b, ...riders(live, this.system, b)]);
-    live.sim.setMass(b.id, gm);
+    if (radii) this.reshape(b, radii);
+    live.sim.setMass(b.id, gm, radii ? b.radius : undefined);
     b.systemGm += gm - b.gm;
     b.gm = gm;
     this.settle(live);
+  }
+
+  /**
+   * Give a body another size (its mean radius, m), its shape kept and its mass the same: how hard
+   * its ground pulls, what reaches it and what hits it follow (the simulation counts its radius).
+   * What rides on it is let go, so that a moon it has grown round is not carried on through it.
+   */
+  setSize(b: Body, radius: number, jd: number): void {
+    const live = this.start(jd);
+    this.changes++;
+    this.keep(b);
+    release(live, this.system, [b, ...riders(live, this.system, b)]);
+    const k = radius / b.radius;
+    this.reshape(b, [k * b.radii[0], k * b.radii[1], k * b.radii[2]]);
+    live.sim.setMass(b.id, b.gm, b.radius);
+    this.settle(live);
+  }
+
+  /** The radius the catalogue gives a body (m; for a world the explorer made, the one it was made with), whatever it has been given since. */
+  realRadius(b: Body): number {
+    return this.real.get(b)?.radius ?? b.radius;
+  }
+
+  /** Has the body been given another size than its real one? (Its ground, measured for that, is not landed on.) */
+  resized(b: Body): boolean {
+    const r = this.real.get(b);
+    return !!r && r.radius !== b.radius;
+  }
+
+  private reshape(b: Body, radii: readonly [number, number, number]): void {
+    b.radii = [radii[0], radii[1], radii[2]];
+    b.radius = Math.cbrt(radii[0] * radii[1] * radii[2]);
   }
 
   /**
@@ -197,8 +235,7 @@ export class LivePhysics {
     this.changes++;
     b.systemGm += gm - b.gm;
     b.gm = gm;
-    b.radii = [radii[0], radii[1], radii[2]];
-    b.radius = Math.cbrt(radii[0] * radii[1] * radii[2]);
+    this.reshape(b, radii);
     live.sim.setMass(b.id, gm, b.radius);
     this.settle(live);
   }
@@ -366,7 +403,7 @@ export class LivePhysics {
     return {
       jd: live ? liveDate(live) : jd,
       sim: live && { snap: live.sim.snapshot(), jd0: live.jd0, carried: [...live.carried].map(([id, family]) => [id, [...family]]) },
-      bodies: this.system.bodies.map((b) => ({ ...this.system.familyOf(b), gm: b.gm, systemGm: b.systemGm, radius: b.radius, radii: [b.radii[0], b.radii[1], b.radii[2]] })),
+      bodies: this.system.bodies.map((b) => ({ ...this.system.familyOf(b), gm: b.gm, systemGm: b.systemGm, radius: b.radius, radii: [b.radii[0], b.radii[1], b.radii[2]], teff: b.teff, absMag: b.absMag })),
       made: [...this.made],
       real: [...this.real].map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]),
       log: this.log.map((e) => ({ ...e })),
@@ -391,7 +428,7 @@ export class LivePhysics {
     for (const b of system.bodies) if (!system.isGone(b) && then.get(b)?.gone) this.scene.left(b, null);
     for (const b of cp.made) system.bringBack(b);
     for (const k of cp.bodies) {
-      k.b.gm = k.gm; k.b.systemGm = k.systemGm; k.b.radius = k.radius; k.b.radii = [k.radii[0], k.radii[1], k.radii[2]];
+      k.b.gm = k.gm; k.b.systemGm = k.systemGm; k.b.radius = k.radius; k.b.radii = [k.radii[0], k.radii[1], k.radii[2]]; k.b.teff = k.teff; k.b.absMag = k.absMag;
     }
     system.restoreFamilies(cp.bodies);
     for (const b of leaving) this.drop(b, false);

@@ -5,7 +5,7 @@ import { evaluateRotation, type NutPrecAngles, orientationMatrix, type Orientati
 import { eclToEqu, OBLIQUITY_J2000, poleFrame } from '../core/frames';
 import { setLeapSeconds } from '../core/time';
 import { AU, DAY, GM_SUN, J2000_JD, SUN_ABS_MAG, SUN_TEFF } from '../core/units';
-import { Body, type BodyType } from './Body';
+import { Body, type BodyType, type Climate } from './Body';
 
 interface SatOrbit {
   frame: 'ecliptic' | 'equatorial' | 'laplace';
@@ -42,6 +42,12 @@ export type { BodyJson };
 
 /** Where a body stands in the families now: what it goes round, its moons in their order, and whether it is away (for undo: src/app/LivePhysics.ts). */
 export interface Family { b: Body; parent: Body | null; children: Body[]; gone: boolean }
+
+/** NASA's fact sheets as the pipeline keeps them (pipeline/fetch_albedos.py), by NAIF id. */
+export interface AlbedosJson {
+  source: string;
+  bodies: Record<string, { name: string; bondAlbedo?: number; irradiance?: number; blackBodyK?: number; surfaceK?: number; surfaceBar?: number; source: string }>;
+}
 
 export interface SystemJson {
   nutPrecAngles: NutPrecAngles;
@@ -325,8 +331,25 @@ export class SolarSystem {
     const res = await fetch(`${baseUrl}/solar/system.json`);
     if (!res.ok) throw new Error(`system.json: HTTP ${res.status}`);
     const data = (await res.json()) as SystemJson;
+    // (without NASA's albedos no world has a temperature line: nothing is estimated in their place)
+    const albedos = fetch(`${baseUrl}/solar/albedos.json`).then((r) => (r.ok ? (r.json() as Promise<AlbedosJson>) : null)).catch(() => null);
     const eph = await Ephemeris.load(`${baseUrl}/ephem`, data.approxElements);
-    return new SolarSystem(data, eph);
+    const sys = new SolarSystem(data, eph);
+    sys.setClimates(await albedos);
+    return sys;
+  }
+
+  /** What each world's temperature is worked out from, where NASA's fact sheets measure a Bond albedo (Body.climate). */
+  setClimates(albedos: AlbedosJson | null): void {
+    for (const [id, a] of Object.entries(albedos?.bodies ?? {})) {
+      const b = this.byId.get(Number(id));
+      if (!b || a.bondAlbedo === undefined) continue;
+      const climate: Climate = {
+        bond: a.bondAlbedo, irradiance: a.irradiance ?? null, source: a.source,
+        air: a.surfaceK !== undefined && a.surfaceBar !== undefined ? { tempK: a.surfaceK, bar: a.surfaceBar } : null,
+      };
+      b.climate = climate;
+    }
   }
 
   /** Osculating-ish elements of a satellite's mean orbit at `jd` (in its own plane frame), with secular precession. */

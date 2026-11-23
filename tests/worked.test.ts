@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { workedOut, type Worked } from '../src/app/Worked';
+import { temperatureOf, workedOut, type Worked } from '../src/app/Worked';
 import { GM_SUN, SUN_RADIUS, SUN_TEFF } from '../src/core/units';
-import { Body } from '../src/universe/Body';
+import { Body, type Climate } from '../src/universe/Body';
 import { BlackHole } from '../src/universe/BlackHoles';
+import type { AlbedosJson } from '../src/universe/SolarSystem';
 
 const AU = 149_597_870_700;
 const find = (rows: Worked[], label: string) => rows.find((r) => r.label.startsWith(label));
@@ -121,5 +122,54 @@ describe('how long an orbit takes: the catalogue, or as it moves now', () => {
     const year = find(workedOut(tugged, null), 'Once round the Sun')!;
     expect(Math.abs(Number(year.text.split(' ')[0]) - 365.25)).toBeGreaterThan(0.3);
     expect(year.math.startsWith('As it moves now')).toBe(true);
+  });
+});
+
+describe('the temperature of a world', () => {
+  // (as the pipeline fetched it from NASA's fact sheets: pipeline/fetch_albedos.py)
+  const sheets = JSON.parse(readFileSync(new URL('../public/data/solar/albedos.json', import.meta.url), 'utf8')) as AlbedosJson;
+  const climate = (id: number): Climate => {
+    const a = sheets.bodies[String(id)];
+    return { bond: a.bondAlbedo!, irradiance: a.irradiance ?? null, air: a.surfaceK ? { tempK: a.surfaceK, bar: a.surfaceBar! } : null, source: a.source };
+  };
+  const EARTH = { name: 'Earth', giant: false, oceans: true }, L = 3.828e26;
+
+  it('in the real Solar System, as the fact sheet has it: without air from the sunlight at its mean distance, with its air as measured, and what water does', () => {
+    const t = temperatureOf(EARTH, climate(399), { listed: 1361.0 });
+    expect(t.line).toBe('15 °C, as measured. Without its air: −18 °C.');
+    expect(t.worked.map((w) => [w.label, w.text])).toEqual([['Temperature without air', '−18 °C'], ['With its air', '15 °C'], ['Water there', 'liquid']]);
+    expect(t.worked[0].math).toContain('255.1 K');
+    expect(t.worked[1].math).toContain('its air warms it by 32.88 K');
+    const venus = temperatureOf({ name: 'Venus', giant: false, oceans: false }, climate(299), { listed: 2601.3 }), mars = temperatureOf({ name: 'Mars', giant: false, oceans: false }, climate(499), { listed: 586.2 });
+    expect(venus.line).toBe('464 °C, as measured. Without its air: −47 °C.');
+    expect(mars.line).toBe('−59 °C, as measured. Without its air: −63 °C.');
+    // (what water does there, in the working: under Venus's 92 bar it boils, on Mars it is ice)
+    expect([venus, mars].map((w) => w.worked[2].text)).toEqual(['boils', 'ice']);
+    // (a line a phone has room for: 46 letters at most)
+    for (const w of [t, venus, mars]) expect(w.line.length).toBeLessThanOrEqual(46);
+    expect(temperatureOf({ name: 'Moon', giant: false, oceans: false }, climate(301), { listed: 1361.0 }).line).toBe('Temperature without air: −3 °C');
+    expect(temperatureOf({ name: 'Jupiter', giant: true, oceans: false }, climate(599), { listed: 50.26 }).line).toBe('From sunlight alone: −163 °C');
+  });
+
+  it('in live physics, where it is now under every sun, the warming of its air kept as measured: the Earth at half its distance boils its oceans', () => {
+    const here = (d: number, more: { name: string; lumW: number; dM: number }[] = []) => temperatureOf(EARTH, climate(399), { suns: [{ name: 'Sun', lumW: L, dM: d }, ...more] });
+    // (at its mean distance as the sheet has it, to the degree)
+    expect(here(AU).line).toBe('Earth here: 15 °C. The oceans stay liquid.');
+    // (half as far: four times the sunlight, its temperature without air √2 times, 360.8 K, and 32.9 K more from its air)
+    const near = here(AU / 2);
+    expect(near.line).toBe('Earth here: 121 °C. The oceans would boil.');
+    expect(near.worked[1].math).toContain('kept as it is wherever it goes');
+    expect(here(3 * AU).line).toBe('Earth here: −93 °C. The oceans would freeze.');
+    // a second Sun as far again: twice the sunlight
+    const two = here(AU, [{ name: 'Sun 2', lumW: L, dM: AU }]);
+    expect(two.line).toBe('Earth here: 63 °C. The oceans stay liquid.');
+    expect(two.worked[0].math).toContain('the Sun and Sun 2');
+    expect(temperatureOf({ name: 'Moon', giant: false, oceans: false }, climate(301), { suns: [{ name: 'Sun', lumW: L, dM: AU }] }).line).toBe('The Moon here: −3 °C');
+    expect(temperatureOf(EARTH, climate(399), { suns: [] }).line).toBe('Earth here: no sun to warm it.');
+  });
+
+  it('is had only by the worlds whose fact sheet measures a Bond albedo: nothing is estimated for any other', () => {
+    expect(Object.values(sheets.bodies).map((b) => b.name).sort()).toEqual(['Charon', 'Earth', 'Jupiter', 'Mars', 'Mercury', 'Moon', 'Neptune', 'Pluto', 'Saturn', 'Uranus', 'Venus']);
+    for (const b of Object.values(sheets.bodies)) expect(b.bondAlbedo).toBeGreaterThan(0);
   });
 });

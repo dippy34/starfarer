@@ -169,10 +169,18 @@ describe('Kepler solvers', () => {
     const R = perifocalMatrix(el.i, el.node, el.peri).elements;
     expect(Math.atan2(q * R[4], q * R[1])).toBeCloseTo(0, 6);
   });
-  it('a bound orbit is not open, however near the edge, and an exact escape is', () => {
-    expect(isOpen(-1e-9, 1, 1)).toBe(false);
-    expect(isOpen(-1e-13, 1, 1)).toBe(true);
-    expect(isOpen(0, 1, 1)).toBe(true);
+  it('an orbit is open at the speed of escape, or within half a millionth of it; below that it is bound, however stretched', () => {
+    // (the energy against μ/d is (v / v_escape)² − 1)
+    const at = (f: number) => f * f - 1;
+    expect(isOpen(at(1), 1, 1)).toBe(true);
+    expect(isOpen(at(1.5), 1, 1)).toBe(true);
+    expect(isOpen(at(1 - 4e-7), 1, 1)).toBe(true);
+    expect(isOpen(at(1 - 6e-7), 1, 1)).toBe(false);
+    expect(isOpen(at(0.999), 1, 1)).toBe(false);
+    // (Mars thrown at the mark of escape with its moons: e = 1 − 2.4×10⁻⁹, its energy −1.2×10⁻⁹ of μ/d)
+    expect(isOpen(-1.2e-9, 1, 1)).toBe(true);
+    // a world falling straight in has e = 1 whatever its energy: it is bound all the same
+    expect(isOpen(-0.5, 1, 1)).toBe(false);
   });
   it('near-parabolic is continuous across e = 1', () => {
     const base = { q: AU, i: 10, node: 20, peri: 30, tp: 2460000, mu: GM_SUN };

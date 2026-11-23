@@ -2,6 +2,7 @@ import { CATEGORIES, type Category, type Destination, type Picture } from '../ap
 import { type Box, isClear, largestClear, worth } from '../core/clearArea';
 import { touchFirst } from '../core/device';
 import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
+import { type AimView, aimShape } from './aimShape';
 import { ICON } from './icons';
 
 /**
@@ -31,6 +32,8 @@ export type HudAction =
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
   // begin or end moving it with a finger, and what it is to do where it is left (or throw it); a world just made is in place
   | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle' | 'move-throw' | 'place-done'
+  // the size of the selected world follows its mass at the same density, or not
+  | 'size-link'
   // undo the last change; watching what a change does (src/app/Watch.ts): stop, watch it again, put the offer away;
   // whether changes are watched at all
   | 'undo' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me';
@@ -47,16 +50,11 @@ export interface HudHost {
   setMass(slider: number): void;
   /** a finger (or the pointer) came down on the mass slider, or lifted (or the slider was left): all between is one change */
   massHeld(held: boolean): void;
+  /** the size slider of the selected world was put at `slider` (src/app/Powers.ts: sizeFactor), and a finger came down on it or lifted */
+  setSize(slider: number): void;
+  sizeHeld(held: boolean): void;
   /** the mass slider of a world just made, being put in place, was put at `s` (0 to 1; src/app/WhatIf.ts: madeMassAt) */
   setMadeMass(s: number): void;
-}
-
-/** The slingshot's arrow over the view (src/app/Mover.ts: Aim): where the world is and its edge, the way and length of the arrow, and its marks (CSS px). */
-export interface AimView {
-  x: number; y: number; edge: number;
-  ux: number; uy: number; length: number;
-  circle: number; escape: number;
-  snapped: 'circle' | 'escape' | null;
 }
 
 export interface HudState {
@@ -73,13 +71,21 @@ export interface HudState {
     key: string; name: string; detail: string; rows: [string, string][]; picture: Picture; here: boolean;
     /** what follows from those facts by the textbook, each with its working (src/app/Worked.ts) */
     worked: { label: string; text: string; math: string }[];
+    /** its temperature in a line ('' where none is worked out: no Bond albedo measured) */
+    warmth: string;
     /** what can be added to it (src/app/WhatIf.ts); nothing: an empty list */
     add: readonly ('moon' | 'earth' | 'jupiter' | 'sun')[];
     /**
      * Its mass, where it has a known one to change: where the slider stands, the mass and its factor
-     * in words, and what the textbook predicts of a body of that mass ('' where it says nothing).
+     * in words, what changes with it (`says`), and what the textbook predicts of a body of that mass
+     * ('' where it says nothing).
      */
-    mass: { slider: number; words: string; times: string; theory: string } | null;
+    mass: { slider: number; words: string; times: string; says: string; theory: string } | null;
+    /**
+     * Its size, where it has a measured one and a known mass (not a star's): where the slider stands,
+     * the radius and its factor in words, and whether it follows the mass at the same density.
+     */
+    size: { slider: number; words: string; times: string; linked: boolean } | null;
     /** it can be taken away (a world of the Solar System) */
     removable: boolean;
     /**
@@ -145,8 +151,8 @@ export interface ThumbSheet { url: string; cols: number; rows: number; bodies: R
 /** (`flight`: the ship's full read-out, opened from its instruments on a touch screen) */
 type Sheet = 'explore' | 'time' | 'more' | 'flight';
 
-/** the height the selection's card takes above the tab bar, with its gap (px): its three buttons, and the powers under them */
-const CARD_ROOM = 196;
+/** the height the selection's card takes above the tab bar, with its gap (px): its three buttons, the powers under them, and a world's temperature in a line */
+const CARD_ROOM = 225;
 /** a watch is given at least this share of an upright view's height: an open panel of the card folds away for it (makeRoom) */
 const FOLD_BELOW = 0.4;
 /** the clear part of the view: room kept round each part of the interface (px, as markers keep it), the least size worth holding a marker, how wide a rectangle is worth against its height, how much better a new one must be to take over, and the farthest its middle may be from the view's (of the view's size) */
@@ -252,15 +258,22 @@ const TEMPLATE = `
         </div>
         <div class="card-powers" hidden>
           <button class="power" type="button" data-power="mass" aria-expanded="false">${ICON.mass}<span>Mass</span></button>
+          <button class="power" type="button" data-power="size" aria-expanded="false">${ICON.size}<span>Size</span></button>
           <button class="power" type="button" data-act="move" aria-expanded="false">${ICON.move}<span>Move</span></button>
           <button class="power" type="button" data-power="add" aria-expanded="false">${ICON.add}<span>Add</span></button>
           <button class="power" type="button" data-act="remove">${ICON.unmake}<span>Remove</span></button>
         </div>
+        <p class="card-warmth"></p>
         <div class="power-panel" data-panel="mass" hidden>
           <div class="power-read"><span><b></b><small></small></span><button type="button" data-mass-real>Real mass</button></div>
-          <input class="slider" type="range" min="-3" max="3" step="0.01" value="0" aria-label="Its mass, from a thousandth of its real mass to a thousand times it"/>
-          <div class="slider-ends"><span>÷ 1,000</span><span>Only its pull changes, not its size or look</span><span>× 1,000</span></div>
+          <input class="slider mass-slider" type="range" min="-3" max="3" step="0.01" value="0" aria-label="Its mass, from a thousandth of its real mass to a thousand times it"/>
+          <div class="slider-ends"><span>÷ 1,000</span><span class="mass-says"></span><span>× 1,000</span></div>
           <p class="theory" hidden><b>Theory predicts</b><span></span></p>
+        </div>
+        <div class="power-panel" data-panel="size" hidden>
+          <div class="power-read"><span><b></b><small></small></span><button type="button" data-size-real>Real size</button></div>
+          <input class="slider size-slider" type="range" min="-1" max="1" step="0.005" value="0" aria-label="Its size, from a tenth of its real size to ten times it"/>
+          <div class="slider-ends size-ends"><span>÷ 10</span><button type="button" class="size-link" data-act="size-link" aria-pressed="false">${ICON.link}<span>Same density</span></button><span>× 10</span></div>
         </div>
         <div class="power-panel" data-panel="move" hidden>
           <div class="placing" hidden>
@@ -388,12 +401,15 @@ export class Hud {
   /** the selection whose facts were last shown */
   private factsKey: string | null = null;
   private details = false;
+  /** the line of the selection's temperature has folded away to make room (makeRoom), until another is chosen */
+  private warmthFolded = false;
   /** the selection has changed by itself: the open sheet is not to give way to its card (see `selectionMoved`) */
   private moved = false;
   /** the power whose panel is open on the card */
-  private power: 'mass' | 'add' | null = null;
+  private power: 'mass' | 'size' | 'add' | null = null;
   /** a finger is on the mass slider (or on the one of a world being put in place): where it stands is the finger's business */
   private sliding = false;
+  private sizing = false;
   private placeSliding = false;
   /** what the slingshot's arrow was last drawn as */
   private aimKey = '';
@@ -412,6 +428,7 @@ export class Hud {
   private readonly slot: HTMLElement;
   private readonly input: HTMLInputElement;
   private readonly slider: HTMLInputElement;
+  private readonly sizeSlider: HTMLInputElement;
   private readonly placeSlider: HTMLInputElement;
   private readonly cats: HTMLElement;
   private readonly list: HTMLElement;
@@ -427,7 +444,8 @@ export class Hud {
     this.$ = (sel) => found.get(sel) ?? found.set(sel, el.querySelector<HTMLElement>(sel)!).get(sel)!;
     this.slot = this.$('.hud-slot');
     this.input = el.querySelector<HTMLInputElement>('.searchbox input')!;
-    this.slider = el.querySelector<HTMLInputElement>('.card [data-panel="mass"] .slider')!;
+    this.slider = el.querySelector<HTMLInputElement>('.card [data-panel="mass"] .mass-slider')!;
+    this.sizeSlider = el.querySelector<HTMLInputElement>('.card [data-panel="size"] .size-slider')!;
     this.placeSlider = el.querySelector<HTMLInputElement>('.card .placing .slider')!;
     this.cats = this.$('.cats');
     this.list = this.$('.explore .list');
@@ -457,6 +475,12 @@ export class Hud {
     for (const done of ['pointerup', 'pointercancel', 'blur']) this.slider.addEventListener(done, () => this.host.massHeld(false));
     // (the keys that move a slider are its own; every other key is still a shortcut while it has the focus)
     this.slider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
+    // the size slider, the same way
+    this.sizeSlider.addEventListener('input', () => this.host.setSize(Number(this.sizeSlider.value)));
+    this.sizeSlider.addEventListener('pointerdown', () => { this.sizing = true; this.host.sizeHeld(true); });
+    for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.sizeSlider.addEventListener(done, () => { this.sizing = false; });
+    for (const done of ['pointerup', 'pointercancel', 'blur']) this.sizeSlider.addEventListener(done, () => this.host.sizeHeld(false));
+    this.sizeSlider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
     // the mass of a world being put in place: part of its making, until Done
     this.placeSlider.addEventListener('input', () => this.host.setMadeMass(Number(this.placeSlider.value)));
     this.placeSlider.addEventListener('pointerdown', () => { this.placeSliding = true; });
@@ -617,18 +641,24 @@ export class Hud {
    * would leave less than FOLD_BELOW of an upright view's height clear, or does not fit beside a
    * wide view with the chip above it (a phone on its side), the panel folds away (the card keeps
    * its buttons; one tap opens it again). Moving a world keeps its panel: the finger is still at
-   * work on it.
+   * work on it. Beside a wide view, where the card would still not fit, the line of its temperature
+   * folds too, until another world is chosen (its working is in the details).
    */
   makeRoom(): void {
-    if (this.power === null && !this.details) return;
-    const card = this.$('.card');
-    const cramped = getComputedStyle(this.$('.hud-dock')).flexDirection === 'column'
-      ? this.freeArea().bottom - this.freeArea().top < FOLD_BELOW * window.innerHeight
-      : card.scrollHeight > card.clientHeight + 1;
-    if (!cramped) return;
-    this.power = null;
-    this.details = false;
-    if (this.state) this.renderCard(this.state);
+    const card = this.$('.card'), wide = getComputedStyle(this.$('.hud-dock')).flexDirection !== 'column';
+    const scrolls = () => card.scrollHeight > card.clientHeight + 1;
+    if (this.power !== null || this.details) {
+      // (the clear part as it is, however little: an open panel that leaves almost none is the most cramped of all)
+      const free = this.freeBox(), cramped = !wide ? free.bottom - free.top < FOLD_BELOW * window.innerHeight : scrolls();
+      if (!cramped) return;
+      this.power = null;
+      this.details = false;
+      if (this.state) this.renderCard(this.state);
+    }
+    if (wide && !this.warmthFolded && scrolls()) {
+      this.warmthFolded = true;
+      if (this.state) this.renderCard(this.state);
+    }
   }
 
   /**
@@ -638,6 +668,12 @@ export class Hud {
    * with a margin. The whole view if what is left is too small to frame anything in.
    */
   freeArea(): { left: number; top: number; right: number; bottom: number } {
+    const free = this.freeBox(), W = window.innerWidth, H = window.innerHeight;
+    return free.right - free.left > 120 && free.bottom - free.top > 120 ? free : { left: 0, top: 0, right: W, bottom: H };
+  }
+
+  /** The part of the view the interface leaves clear as it stands now, however little it is (freeArea, but never the whole view instead). */
+  private freeBox(): { left: number; top: number; right: number; bottom: number } {
     const W = window.innerWidth, H = window.innerHeight, MARGIN = 8;
     const box = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? r : null; };
     let top = 0, left = 0, bottom = H;
@@ -652,8 +688,7 @@ export class Hud {
       if (row) left = Math.max(left, r.right);
       else bottom = Math.min(bottom, r.top);
     }
-    const free = { left: left + MARGIN, top: top + MARGIN, right: W - MARGIN, bottom: bottom - MARGIN };
-    return free.right - free.left > 120 && free.bottom - free.top > 120 ? free : { left: 0, top: 0, right: W, bottom: H };
+    return { left: left + MARGIN, top: top + MARGIN, right: W - MARGIN, bottom: bottom - MARGIN };
   }
 
   /**
@@ -683,22 +718,20 @@ export class Hud {
     svg.toggleAttribute('hidden', !draw);
     if (!draw) return;
     svg.style.clipPath = `inset(${free!.top.toFixed(1)}px ${(window.innerWidth - free!.right).toFixed(1)}px ${(window.innerHeight - free!.bottom).toFixed(1)}px ${free!.left.toFixed(1)}px)`;
-    const { ux, uy } = aim, nx = -uy, ny = ux;
-    const x0 = aim.x + ux * aim.edge, y0 = aim.y + uy * aim.edge, at = (d: number) => [x0 + ux * d, y0 + uy * d];
-    const line = (el: Element, a: number[], b: number[]) => { el.setAttribute('x1', a[0].toFixed(1)); el.setAttribute('y1', a[1].toFixed(1)); el.setAttribute('x2', b[0].toFixed(1)); el.setAttribute('y2', b[1].toFixed(1)); };
-    line(svg.querySelector('.aim-guide')!, at(0), at(Math.max(aim.length, aim.escape) + 24));
-    const tip = at(aim.length), HEAD = 12;
-    line(svg.querySelector('.aim-shaft')!, at(0), at(Math.max(0, aim.length - HEAD)));
-    svg.querySelector('.aim-head')!.setAttribute('d', `M${tip[0].toFixed(1)},${tip[1].toFixed(1)} L${(tip[0] - ux * HEAD + nx * 7).toFixed(1)},${(tip[1] - uy * HEAD + ny * 7).toFixed(1)} L${(tip[0] - ux * HEAD - nx * 7).toFixed(1)},${(tip[1] - uy * HEAD - ny * 7).toFixed(1)} Z`);
+    // (where each part goes is worked out once, for the drawing and for the names kept off it: src/ui/aimShape.ts)
+    const shape = aimShape(aim, window.innerWidth), f = (v: number) => v.toFixed(1);
+    const line = (el: Element, [a, b]: [number, number][]) => { el.setAttribute('x1', f(a[0])); el.setAttribute('y1', f(a[1])); el.setAttribute('x2', f(b[0])); el.setAttribute('y2', f(b[1])); };
+    line(svg.querySelector('.aim-guide')!, shape.guide);
+    line(svg.querySelector('.aim-shaft')!, shape.shaft);
+    const [tip, c1, c2] = shape.head;
+    svg.querySelector('.aim-head')!.setAttribute('d', `M${f(tip[0])},${f(tip[1])} L${f(c1[0])},${f(c1[1])} L${f(c2[0])},${f(c2[1])} Z`);
     for (const g of svg.querySelectorAll<SVGGElement>('.aim-mark')) {
-      const which = g.dataset.mark as 'circle' | 'escape', p = at(aim[which]);
-      line(g.querySelector('line')!, [p[0] + nx * 9, p[1] + ny * 9], [p[0] - nx * 9, p[1] - ny * 9]);
-      // (the word stands beside its mark, on the side away from the screen's nearer edge)
-      const side = p[0] + nx * 20 < 40 || p[0] + nx * 20 > window.innerWidth - 40 ? -1 : 1;
+      const mark = shape.marks.find((m) => m.which === g.dataset.mark)!;
+      line(g.querySelector('line')!, mark.line);
       const text = g.querySelector('text')!;
-      text.setAttribute('x', (p[0] + side * nx * 22).toFixed(1));
-      text.setAttribute('y', (p[1] + side * ny * 22 + 4).toFixed(1));
-      g.classList.toggle('on', aim.snapped === which);
+      text.setAttribute('x', f(mark.word[0]));
+      text.setAttribute('y', f(mark.word[1]));
+      g.classList.toggle('on', aim.snapped === mark.which);
     }
   }
 
@@ -892,6 +925,7 @@ export class Hud {
       // something new was chosen: its card takes the panel
       this.selectionKey = sel.key;
       this.details = false;
+      this.warmthFolded = false;
       this.power = null;
       this.pictureStale = true;
       if (!this.moved) this.closeSheet();
@@ -904,12 +938,18 @@ export class Hud {
       card.querySelector('.thumb')!.outerHTML = this.thumb(sel.picture);
     }
     setText(card.querySelector('.card-title p')!, sel.detail);
+    const warmth = card.querySelector<HTMLElement>('.card-warmth')!;
+    setText(warmth, sel.warmth);
+    warmth.classList.toggle('live', !!s.live);
+    warmth.hidden = this.warmthFolded;
     setText(card.querySelector('[data-act="go"] span')!, sel.here ? 'Recentre' : 'Go there');
     // what can be done to it: its buttons, and the panel of the one that is open
     const powers = card.querySelector<HTMLElement>('.card-powers')!;
     powers.hidden = !sel.mass && !sel.removable;
     const massButton = powers.querySelector<HTMLElement>('[data-power="mass"]')!;
     massButton.hidden = !sel.mass;
+    const sizeButton = powers.querySelector<HTMLElement>('[data-power="size"]')!;
+    sizeButton.hidden = !sel.size;
     const addButton = powers.querySelector<HTMLElement>('[data-power="add"]')!;
     addButton.hidden = sel.add.length === 0;
     powers.querySelector<HTMLElement>('[data-act="remove"]')!.hidden = !sel.removable;
@@ -918,9 +958,10 @@ export class Hud {
     moveButton.hidden = !sel.move;
     moveButton.setAttribute('aria-expanded', String(moving));
     // (one panel at a time: moving it takes the place of its mass, of what can be added and of its details)
-    if (moving || (this.power === 'mass' && !sel.mass) || (this.power === 'add' && !sel.add.length)) this.power = null;
+    if (moving || (this.power === 'mass' && !sel.mass) || (this.power === 'size' && !sel.size) || (this.power === 'add' && !sel.add.length)) this.power = null;
     if (moving) this.details = false;
     massButton.setAttribute('aria-expanded', String(this.power === 'mass'));
+    sizeButton.setAttribute('aria-expanded', String(this.power === 'size'));
     addButton.setAttribute('aria-expanded', String(this.power === 'add'));
     const addPanel = card.querySelector<HTMLElement>('[data-panel="add"]')!;
     addPanel.hidden = this.power !== 'add';
@@ -951,10 +992,20 @@ export class Hud {
     if (sel.mass && this.power === 'mass') {
       setText(panel.querySelector('.power-read b')!, sel.mass.words);
       setText(panel.querySelector('.power-read small')!, sel.mass.times);
+      setText(panel.querySelector('.mass-says')!, sel.mass.says);
       if (!this.sliding && Math.abs(Number(this.slider.value) - sel.mass.slider) > 0.004) this.slider.value = String(sel.mass.slider);
       const theory = panel.querySelector<HTMLElement>('.theory')!;
       theory.hidden = !sel.mass.theory;
       setText(theory.querySelector('span')!, sel.mass.theory);
+    }
+    // its size: the radius, its slider, and whether it follows the mass
+    const sizePanel = card.querySelector<HTMLElement>('[data-panel="size"]')!;
+    sizePanel.hidden = this.power !== 'size';
+    if (sel.size && this.power === 'size') {
+      setText(sizePanel.querySelector('.power-read b')!, sel.size.words);
+      setText(sizePanel.querySelector('.power-read small')!, sel.size.times);
+      sizePanel.querySelector('.size-link')!.setAttribute('aria-pressed', String(sel.size.linked));
+      if (!this.sizing && Math.abs(Number(this.sizeSlider.value) - sel.size.slider) > 0.002) this.sizeSlider.value = String(sel.size.slider);
     }
     const facts = card.querySelector<HTMLElement>('.facts')!;
     facts.hidden = !this.details;
@@ -1042,12 +1093,13 @@ export class Hud {
     else if (d.tab) this.tab(d.tab);
     else if ('close' in d) this.closeSheet();
     else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
-    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
+    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'size' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
     else if ('noticeClose' in d) this.clearNotice();
     else if ('impactClose' in d) this.impact(null);
     else if ('impactMore' in d) this.$('.hud-impact').classList.remove('brief');
     else if ('help' in d) this.$('.more .help-title').scrollIntoView({ block: 'start', behavior: 'smooth' });
     else if ('massReal' in d) { this.slider.value = '0'; this.host.massHeld(true); this.host.setMass(0); this.host.massHeld(false); }
+    else if ('sizeReal' in d) { this.sizeSlider.value = '0'; this.host.sizeHeld(true); this.host.setSize(0); this.host.sizeHeld(false); }
     else if ('live' in d) { if (this.state?.live) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); } }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));

@@ -323,6 +323,39 @@ describe('putting a world just made in place', () => {
   });
 });
 
+describe('a world thrown with its moons', () => {
+  it('Mars thrown at the mark of escape, either way, is on an open path past the Sun, though its moons swing it as it goes', async () => {
+    // (from far above the plane of Mars's orbit, looking down on it)
+    const aboveMars = (s: SolarSystem) => {
+      const sun = s.sun, mars = s.byId.get(499)!;
+      return mars.pos.clone().addScaledVector(mars.pos.clone().sub(sun.pos).cross(mars.vel.clone().sub(sun.vel)).normalize(), 3e11);
+    };
+    for (const way of [1, -1]) {
+      const s = await setup(aboveMars, (sys) => sys.byId.get(499)!.pos.clone());
+      const mars = s.named('Mars'), sun = s.sys.sun, phobos = s.named('Phobos'), deimos = s.named('Deimos');
+      s.mover.toggle(mars);
+      s.mover.leave('throw');
+      const { dot, ux, uy } = squareOnScreen(s.pixel, mars, sun);
+      const px = way * 1.02 * Math.SQRT2 * AIM_PER_CIRCLE * ux, py = way * 1.02 * Math.SQRT2 * AIM_PER_CIRCLE * uy;
+      const hold = s.mover.grab(dot.x, dot.y, true, 0)!;
+      const t = drag(hold, dot.x, dot.y, px, py, 20, 20, 0);
+      expect(s.mover.aim()!.snapped).toBe('escape');
+      hold.end(dot.x + px, dot.y + py, t + 300, false);
+      // the centre of Mars and its moons is thrown at the speed of escape; Mars swings about it as its moons go round
+      const all = mars.gm + phobos.gm + deimos.gm, mu = sun.gm + mars.gm;
+      const centre = (f: (b: Body) => Vector3) => f(mars).multiplyScalar(mars.gm).addScaledVector(f(phobos), phobos.gm).addScaledVector(f(deimos), deimos.gm).divideScalar(all);
+      const c = orbitOf(centre((b) => b.pos.clone()).sub(sun.pos).toArray(), centre((b) => b.vel.clone()).sub(sun.vel).toArray(), mu);
+      expect(Math.abs(c.e - 1)).toBeLessThan(1e-12);
+      const o = s.physics.orbit(mars)!;
+      expect(Math.abs(o.e - 1)).toBeGreaterThan(1e-9);
+      expect(Math.abs(o.e - 1)).toBeLessThan(1e-8);
+      // and Mars itself is on an open path all the same, on its card as in its line
+      expect(o.bound).toBe(false);
+      expect(s.mover.describe(mars).orbit).toMatch(/^Now on an open path past the Sun: it passes at [\d.]+ AU, then leaves\.$/);
+    }
+  });
+});
+
 describe('a world thrown out', () => {
   it('past the speed of escape from the Sun it goes round nothing, and the card says it is on an open path past the Sun', async () => {
     const { named, mover, physics, sys } = await setup(aboveTheMoon, (s) => s.byId.get(399)!.pos.clone());

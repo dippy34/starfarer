@@ -305,7 +305,7 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .btn.primary { flex: 1.25; background: var(--accent); color: var(--accent-ink); }
 #hud .btn[aria-expanded='true'] { background: rgba(127, 178, 255, 0.22); color: var(--accent); }
 #hud .btn:active { filter: brightness(1.25); }
-/* what can be done to it: the powers (up to four in a row on a phone: each its sign over its name), and the panel of the one that is open */
+/* what can be done to it: the powers (up to five in a row on a phone: each its sign over its name), and the panel of the one that is open */
 .card-powers { display: flex; gap: 8px; }
 #hud .power {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 52px; padding: 4px 2px;
@@ -336,6 +336,13 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent); }
 .slider-ends { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: -6px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .slider-ends span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* its size: the same read and slider as its mass, and between the ends the link that keeps it as dense as it is */
+/* (its link a thumb high under the slider, not reaching up into the slider's own 44 px) */
+.size-ends { align-items: center; margin-top: 0; }
+#hud .size-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 14px; background: var(--fill); font-size: 13px; font-weight: 600; color: var(--dim); }
+#hud .size-link .icon { width: 18px; height: 18px; }
+#hud .size-link[aria-pressed='true'] { background: var(--live); color: #2a1404; }
+#hud .size-link:active { filter: brightness(1.25); }
 .theory { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: rgba(127, 178, 255, 0.1); font-size: 13px; line-height: 1.35; }
 /* moving a world: what to do, the choice of what it does where it is left, the orbit it is on now */
 .power-hint { margin: 0 0 8px; font-size: 13px; line-height: 1.35; color: var(--dim); }
@@ -346,6 +353,10 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .power-now { margin: 8px 0 0; font-size: 14px; line-height: 1.35; font-variant-numeric: tabular-nums; }
 .power-ahead { margin: 4px 0 0; font-size: 14px; line-height: 1.35; color: var(--live); }
 .power-ahead:empty { display: none; }
+/* its temperature: a line under its buttons (one on a phone: the card's room counts it), in the colour of live physics once worked out where it is now */
+.card-warmth { margin: 0 2px; font-size: 14px; line-height: 1.35; color: var(--dim); font-variant-numeric: tabular-nums; }
+.card-warmth.live { color: var(--live); }
+.card-warmth:empty { display: none; }
 /* a world just made, being put in place: its mass and Done above its slider */
 .placing { margin-bottom: 6px; }
 #hud .power-read .place-done { background: var(--live); color: #2a1404; padding: 0 22px; }

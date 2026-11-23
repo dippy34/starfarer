@@ -6,7 +6,7 @@ import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
 import { formatUtc, SimClock, utcToTdb, dateToJdUtc } from '../core/time';
 import { AU, DAY, formatDistance, formatSpeed, PC, SUN_RADIUS } from '../core/units';
-import { fmtDuration, G } from '../sim/physics';
+import { fmtDuration, G, L_SUN, luminosity } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { BodiesLayer } from '../render/Bodies';
@@ -41,6 +41,7 @@ import { DeepSkyLayer } from '../render/DeepSkyLayer';
 import { DeepSkyObject, loadDeepSky } from '../universe/DeepSky';
 import { Galaxy, loadGalaxies } from '../universe/Galaxies';
 import { loadSpacecraft, Spacecraft } from '../universe/Spacecraft';
+import { aimStrokes, ringStrokes } from '../ui/aimShape';
 import { Hud, type HudAction, type HudState } from '../ui/Hud';
 import { BlackHole, loadBlackHoles } from '../universe/BlackHoles';
 import { Awe } from './Awe';
@@ -60,16 +61,16 @@ import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, settleOn, TAU_STARS, type Frame } from './Exposure';
-import { canAdd, type Kind, MADE_FIRST_ID, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
+import { canAdd, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
 import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, weighty } from './LivePhysics';
-import { Mover } from './Mover';
-import { dayWords, farWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, rateWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { type Aim, Mover } from './Mover';
+import { aheadWords, dayWords, farWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
-import { type Worked, workedOut } from './Worked';
+import { type Sunlit, temperatureOf, type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
 import { canvasRatio, leanDevice } from '../core/device';
@@ -267,8 +268,12 @@ export class App {
   private aheadFrom = '';
   private aheadAt = 0;
   private aheadEnd: Vector3 | null = null;
-  /** the power to move a world with a finger (src/app/Mover.ts) */
+  /** the power to move a world with a finger (src/app/Mover.ts), and this frame the ring round the world it moves and its slingshot's arrow (null: none) */
   readonly mover: Mover;
+  private handleNow: { x: number; y: number } | null = null;
+  private aimNow: Aim | null = null;
+  /** a world's size follows its mass at the same density (the Mass panel's Same density), or each is its own */
+  private sizeFollows = false;
   /** watching what a change does (src/app/Watch.ts): the rate of time while it runs, then Replay */
   readonly watch = new Watch();
   /** after a change, time and the camera show what it does (More: "Show me what happens", remembered on the device) */
@@ -695,6 +700,7 @@ export class App {
       case 'watch-stop': this.stopWatch(); break;
       case 'replay': this.replay(); break;
       case 'watch-close': this.putRate(this.watch.clear()); break;
+      case 'size-link': this.linkSize(!this.sizeFollows); break;
       case 'show-me':
         this.showMe = !this.showMe;
         remember('show-me', this.showMe ? '1' : '0');
@@ -1126,13 +1132,17 @@ export class App {
     const size = madeSize(kind, kg, as.icy), k = size.radius / b.radius;
     as.kg = kg;
     this.physics.resize(b, G * kg, [k * b.radii[0], k * b.radii[1], k * b.radii[2]], this.clock.jdTdb);
-    if (size.teff && size.lum) {
-      b.teff = size.teff;
-      b.absMag = madeAbsMag(size.lum);
-      // (its face and its light are drawn afresh for its new temperature)
-      this.bodies.changed(b);
-    }
+    if (kind === 'sun') this.shine(b, kg);
     this.mover.recircle();
+  }
+
+  /** A sun the explorer made shines as a star of the main sequence of `kg` would (src/app/WhatIf.ts: madeSize): its colour and its light. */
+  private shine(b: Body, kg: number): void {
+    const size = madeSize('sun', kg, false);
+    b.teff = size.teff!;
+    b.absMag = madeAbsMag(size.lum!);
+    // (its face and its light are drawn afresh for its new temperature)
+    this.bodies.changed(b);
   }
 
   // ------------------------------------------------------------------ changes: one per gesture, undone, watched
@@ -1318,7 +1328,10 @@ export class App {
     }
     const worlds: Meeting<Body>[] = [];
     for (const b of this.physics.bodies()) {
-      if (b.valid && weighty(b) && b.radius > 0) worlds.push({ body: b, gm: b.gm, radius: b.radius, pos: [b.pos.x, b.pos.y, b.pos.z], vel: [b.vel.x, b.vel.y, b.vel.z] });
+      if (!b.valid || !weighty(b) || !(b.radius > 0)) continue;
+      // (how far its pull holds sway: its Hill sphere about what it goes round; the Sun's, everywhere)
+      const p = b.parent, reach = p && p.gm > 0 ? b.pos.distanceTo(p.pos) * Math.cbrt(b.gm / (3 * p.gm)) : Infinity;
+      worlds.push({ body: b, gm: b.gm, radius: b.radius, pos: [b.pos.x, b.pos.y, b.pos.z], vel: [b.vel.x, b.vel.y, b.vel.z], reach });
     }
     const next = soonestContact(worlds, c.rate * dt, ZONE);
     const run = this.slow.run(dt, c.rate, next);
@@ -1399,25 +1412,23 @@ export class App {
     this.ahead.grow(this.clock.paused ? Math.max(3, Math.min(12, 250 * rawDt)) : 2);
   }
 
-  /** What ends the path ahead, in words, said where it ends: "hits the Earth in 43 days", "goes round the Sun in 49 days", "taken by Jupiter in 2031". */
-  private aheadWords(): string | null {
+  /** What ends the path ahead, in words, where it ends and on the card (Powers.aheadWords: "hits Earth in 43 days", "in 49 days it is the Sun's"); null while nothing does. */
+  private aheadSaid(): { there: string; line: string } | null {
     const end = this.ahead.end, live = this.physics.live, b = this.aheadOf, sun = this.system.sun;
     if (!live) return null;
     // (one bound to nothing from the start, on an open path past the Sun, that nothing stops on its way: it is leaving)
-    if (!end) return this.ahead.done && b && !b.parent && b !== sun && this.physics.orbit(b, sun)?.bound === false ? 'leaves the Sun for good' : null;
-    const name = (id: number) => the(this.system.byId.get(id)?.name ?? '?');
+    if (!end) return this.ahead.done && b && !b.parent && b !== sun && this.physics.orbit(b, sun)?.bound === false ? aheadWords({ kind: 'leaves', from: sun.name }) : null;
+    const name = (id: number) => this.system.byId.get(id)?.name ?? '?';
     const when = whenWords(end.time, live.jd0 + (this.ahead.from + end.time) / DAY);
-    if (end.kind === 'hit') return `hits ${name(end.other)} ${when}`;
-    if (end.kind === 'leaves') return this.ahead.around >= 0 ? `leaves ${name(this.ahead.around)} for good` : 'flies off for good';
-    // (what it went round goes round that too: it is left to it, as the Moon is to the Sun; else it is taken)
-    const was = this.system.byId.get(end.was);
-    return was && was.parent?.id === end.around ? `goes round ${name(end.around)} ${when}` : `taken by ${name(end.around)} ${when}`;
+    if (end.kind === 'hit') return aheadWords({ kind: 'hit', other: name(end.other), when });
+    if (end.kind === 'leaves') return aheadWords({ kind: 'leaves', from: this.ahead.around >= 0 ? name(this.ahead.around) : null });
+    return aheadWords({ kind: 'round', around: name(end.around), when });
   }
 
   /** What the look ahead found, for the card: what ends the path, or how long it goes on as it is; nothing while it is still looking. */
   private aheadLine(): string {
-    const said = this.aheadWords(), f = this.ahead;
-    if (said) return `With every pull counted, it ${said}.`;
+    const said = this.aheadSaid(), f = this.ahead;
+    if (said) return said.line;
     return f.done && f.count > 1 ? `With every pull counted, it goes on like this for ${spanWords(f.times[f.count - 1] - f.from)} at least.` : '';
   }
 
@@ -1486,13 +1497,63 @@ export class App {
   setMass(slider: number): void {
     const b = this.selection;
     if (!(b instanceof Body) || !b.valid) return;
-    const real = this.physics.realGm(b), gm = massFactor(slider) * real;
+    const real = this.physics.realGm(b), sun = madeSun(b);
+    // (a sun the explorer made is a star of the main sequence: of the masses it could be made with)
+    const gm = sun ? G * Math.max(MADE_MASS.sun[0], Math.min(MADE_MASS.sun[1], (massFactor(slider) * real) / G)) : massFactor(slider) * real;
     // (put back where it stood, with nothing changed yet: nothing to simulate)
     if (!(real > 0) || gm === b.gm) return;
     this.beginChange('mass', b, false, `changing ${the(b.name)}'s mass`);
     const wasOn = this.physics.on;
-    this.physics.setMass(b, gm, this.clock.jdTdb);
+    // its size follows: a made sun's as the main sequence has it, a world's at the same density if that is asked
+    const R = sun ? madeSize('sun', gm / G, false).radius : this.sizeFollows && this.sizeable(b) ? sameDensity(this.physics.realRadius(b), gm / real) : b.radius;
+    this.physics.setMass(b, gm, this.clock.jdTdb, R === b.radius ? undefined : this.radiiOf(b, R));
+    if (sun) this.shine(b, gm / G);
     this.tellNews(wasOn);
+  }
+
+  /** Can a body's size be changed: a world (not a star: a made sun's follows its mass, the Sun keeps its look) of a known mass and a measured size? */
+  private sizeable(b: Body): boolean {
+    return b.kind !== 'star' && this.physics.realGm(b) > 0 && b.radius > 0 && !b.radiusEstimated;
+  }
+
+  /** A body's three radii for a mean radius of `R` (m), its shape kept. */
+  private radiiOf(b: Body, R: number): [number, number, number] {
+    const k = R / b.radius;
+    return [k * b.radii[0], k * b.radii[1], k * b.radii[2]];
+  }
+
+  /** The size slider of the selected world was put at `slider` (Powers.sizeFactor): that size from now; at the same density its mass follows. */
+  setSize(slider: number): void {
+    const b = this.selection;
+    if (!(b instanceof Body) || !b.valid || !this.sizeable(b)) return;
+    const R0 = this.physics.realRadius(b), R = sizeFactor(slider) * R0;
+    if (R === b.radius) return;
+    this.beginChange('mass', b, false, `changing ${the(b.name)}'s size`);
+    const wasOn = this.physics.on;
+    if (this.sizeFollows) this.physics.setMass(b, this.physics.realGm(b) * (R / R0) ** 3, this.clock.jdTdb, this.radiiOf(b, R));
+    else this.physics.setSize(b, R, this.clock.jdTdb);
+    this.tellNews(wasOn);
+  }
+
+  /** A finger (or the pointer) has come down on the size slider, or lifted from it: one change from the moment it comes down until it lifts. */
+  sizeHeld(held: boolean): void {
+    const b = this.selection;
+    if (held && b instanceof Body && b.valid) this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
+    else if (!held && this.pending?.kind === 'mass') this.endChange();
+  }
+
+  /** Same density on (`on`) or off: on, the selected world's size is made to follow its mass at once, as one change. */
+  private linkSize(on: boolean): void {
+    this.sizeFollows = on;
+    const b = this.selection;
+    if (!on || !(b instanceof Body) || !b.valid || !this.sizeable(b)) return;
+    const R = sameDensity(this.physics.realRadius(b), b.gm / this.physics.realGm(b));
+    if (Math.abs(R / b.radius - 1) < 1e-12) return;
+    this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
+    const wasOn = this.physics.on;
+    this.physics.setSize(b, R, this.clock.jdTdb);
+    this.tellNews(wasOn);
+    this.endChange();
   }
 
   /** Take a world away: everything else carries on without it. */
@@ -2843,10 +2904,10 @@ export class App {
       if (p) out.push({ rel: earth.clone(), key: 'earth-for-scale', text: EARTH_FOR_SCALE, x: p.x, y: p.y, radius: px, priority: 2e4, cls: 'planet', over: true });
     }
     // what ends the path ahead of a world touched, where it ends (the future, drawn)
-    const end = this.aheadEnd, said = end && this.aheadWords();
+    const end = this.aheadEnd, said = end && this.aheadSaid();
     if (end && said) {
       const p = this.project(end);
-      if (p) out.push({ rel: end.clone(), key: 'future-end', text: said, x: p.x, y: p.y, radius: 4, priority: 3e4, cls: 'future', over: true });
+      if (p) out.push({ rel: end.clone(), key: 'future-end', text: said.there, x: p.x, y: p.y, radius: 4, priority: 3e4, cls: 'future', over: true, avoid: [...ringStrokes(this.handleNow), ...aimStrokes(this.aimNow, this.view.width)] });
     }
     return out;
   }
@@ -3012,7 +3073,8 @@ export class App {
     PERF.lap('exo');
     // landing terrain on the nearest solid world (Solar System body or generated planet)
     {
-      const cands = [this.bodies.terrainCandidate(), this.exo.terrainCandidate()].filter((c) => c !== null);
+      // (none on a world whose size has been changed: its ground is measured for its real size)
+      const cands = [this.bodies.terrainCandidate(), this.exo.terrainCandidate()].filter((c): c is NonNullable<typeof c> => c !== null && !(c.ground.owner instanceof Body && this.physics.resized(c.ground.owner)));
       cands.sort((a, b) => a.alt - b.alt);
       const c = cands[0] ?? null;
       if (c) c.air = this.atmospheres.material(c.ground.owner);
@@ -3123,6 +3185,9 @@ export class App {
     PERF.lap('render');
 
     // 5. overlays
+    // (the ring round a world being moved, and its slingshot's arrow if a throw is aimed: the words at the end of the path ahead keep off them)
+    this.handleNow = this.mover.handle();
+    this.aimNow = this.mover.aim();
     if (this.vr.active) {
       this.labels.update([], this.cssW, this.cssH);
       this.vr.updateOverlays(this.labelCandidates(), dt);
@@ -3132,8 +3197,8 @@ export class App {
       this.labels.update(this.labelCandidates(), this.view.width, this.view.height);
     }
     HITCH.lap('labels');
-    this.hud.setHandle(this.mover.handle());
-    this.hud.setAim(this.mover.aim());
+    this.hud.setHandle(this.handleNow);
+    this.hud.setAim(this.aimNow);
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.1;
@@ -3161,6 +3226,21 @@ export class App {
     return f;
   }
 
+  /**
+   * The temperature of a world whose Bond albedo is measured (src/app/Worked.ts: temperatureOf): as
+   * its fact sheet has it while the Solar System is the real one, and where it is now, under every
+   * sun, in live physics. (A moon the sheet gives no sunlight for gets its planet's: it is as far
+   * from the Sun.) Null for any other.
+   */
+  private temperature(b: Body): { line: string; worked: Worked[] } | null {
+    const climate = b.climate;
+    if (!climate || !b.valid) return null;
+    const listed = climate.irradiance ?? b.parent?.climate?.irradiance ?? null;
+    const sun: Sunlit = !this.physics.on && listed !== null ? { listed }
+      : { suns: this.system.suns.filter((s) => s !== b && s.valid && s.radius > 0 && s.teff > 0).map((s) => ({ name: s.name, lumW: luminosity(s.radius, s.teff).value * L_SUN, dM: s.pos.distanceTo(b.pos) })) };
+    return temperatureOf({ name: b.name, giant: b.isGasGiant, oceans: b.name === 'Earth' }, climate, sun);
+  }
+
   private updateHud(): void {
     const c = this.clock, rig = this.rig;
     this.checkArrival();
@@ -3171,7 +3251,9 @@ export class App {
       // what the textbook makes of its facts, worked afresh a few times a second (an orbit's speed moves on)
       const now = performance.now();
       if (this.worked.key !== sel.key || now - this.worked.at > 400) this.worked = { key: sel.key, at: now, rows: workedOut(sel, this.physics.on ? null : this.system) };
-      const worked = this.worked.rows;
+      // (its temperature, worked afresh each time: it follows a finger dragging it sunwards)
+      const warmth = sel instanceof Body ? this.temperature(sel) : null;
+      const worked = warmth ? [...this.worked.rows, ...warmth.worked] : this.worked.rows;
       // (a fact that is worked out is shown there, with its working: not twice)
       const rows: [string, string][] = [['Distance', distanceText(distanceTo(this, sel))], ...sel.info().filter(([k]) => !worked.some((w) => w.label === k)), ...this.awe.rows(sel, d)];
       if (sel instanceof CatalogStar && !this.isCompanion(sel)) {
@@ -3179,8 +3261,8 @@ export class App {
         if (sys) rows.push(['Planets', sys.real ? `${sys.planets.length} confirmed (NASA Exoplanet Archive)` : `${sys.planets.length} generated (not observed)`]);
       }
       selection = {
-        key: sel.key, name: sel.name, detail: describe(this, sel), rows, worked, picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
-        mass: null, removable: false, move: null, place: null, add: sel instanceof Body ? canAdd(sel, this.made.length) : [],
+        key: sel.key, name: sel.name, detail: describe(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
+        mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body ? canAdd(sel, this.made.length) : [],
       };
       // the powers over a world of the Solar System
       if (sel instanceof Body && sel.valid) {
@@ -3189,8 +3271,17 @@ export class App {
         selection.move = { ...this.mover.describe(sel), ahead: sel === this.aheadOf ? this.aheadLine() : '' };
         const real = this.physics.realGm(sel);
         if (real > 0) {
-          const factor = sel.gm / real;
-          selection.mass = { slider: massSlider(factor), words: (sel.kind === 'star' ? starMassWords : massWords)(massOf(sel.gm)), times: timesWords(factor), theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '' };
+          const factor = sel.gm / real, sun = madeSun(sel);
+          selection.mass = {
+            slider: massSlider(factor), words: (sel.kind === 'star' ? starMassWords : massWords)(massOf(sel.gm)), times: timesWords(factor),
+            says: sun ? 'Its size, colour and light follow' : sel.kind === 'star' ? 'Only its pull changes, not its size or look' : this.sizeFollows ? 'Its size follows: the same density' : 'Only its pull changes, not its size',
+            theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '',
+          };
+          // its size, as a factor on its real radius
+          if (this.sizeable(sel)) {
+            const size = sel.radius / this.physics.realRadius(sel);
+            selection.size = { slider: sizeSlider(size), words: radiusWords(sel.radius), times: timesWords(Math.abs(size - 1) < 1e-9 ? 1 : size, 'size'), linked: this.sizeFollows };
+          }
         }
         // a world just made, being put in place: its own mass slider, and what it is at that mass
         const as = sel.meta.madeAs as BodyJson['madeAs'];
@@ -3317,4 +3408,9 @@ function starReach(reach: number, magnitude: number): number {
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
+}
+
+/** A sun the explorer made: a star of the main sequence of its mass, its size, colour and light following it (src/app/WhatIf.ts: madeSize). */
+function madeSun(b: Body): boolean {
+  return (b.meta.madeAs as BodyJson['madeAs'])?.kind === 'sun';
 }

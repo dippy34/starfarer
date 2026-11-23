@@ -18,6 +18,7 @@ bash pipeline/run_all.sh        # or: npm run data
 | `build_thumbnails.py` | the maps above | `textures/thumbs.jpg` + `thumbs.json` (VR menu) |
 | `build_milkyway.py` | NASA SVS Deep Star Maps 2020 `milkyway_2020_4k.exr` (+ `hiptyc` layer and AT-HYG to measure its brightness response) | `sky/milkyway_4k.jpg`, `sky/manifest.json` |
 | `fetch_atmospheres.py` | NASA NSSDCA planetary fact sheets | `solar/atmospheres.json` |
+| `fetch_albedos.py` | NASA NSSDCA planetary fact sheets (Bond albedos, sunlight at the mean distance, black-body temperatures, the ground's temperature and pressure under thick air) | `solar/albedos.json` |
 | `fetch_gaia.py` | ESA Gaia Archive TAP (Gaia DR3, d < 100 pc subset) | `data-raw/gaia_dr3_100pc.csv` |
 | `build_terrain.py` | SVS LOLA LDEM 16 ppd, USGS MOLA 463 m and MESSENGER 665 m DEMs, NOAA ETOPO 2022 60″, Dawn Ceres HAMO DTM (`earth` or `ceres` alone: `python3 build_terrain.py earth`) | `terrain/{moon,mars,mercury,earth,ceres}.png` (16-bit heights in RGB, 2048x1024) + `terrain/terrain.json` |
 | `build_terrain_patches.py` | PDS LOLA `LDEM_128.IMG` and the MOLA 463 m mosaic, read row by row with range requests; ETOPO 2022 15″ tiles for Earth (`earth` alone: `python3 build_terrain_patches.py earth`) | `terrain/patches/*.png` around the landmarks, listed in `terrain/terrain.json` |

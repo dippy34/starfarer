@@ -41,7 +41,7 @@ navigation screens (sit inside it in VR), a chase view, fictional traffic and a 
 station orbiting the world you are near (fly up to its docking port and the docking computer takes
 over), landing on solid worlds, missions and a discovery log.
 
-**Gravity for real (tap a world: Mass, Move, Add, Remove):** the Solar System is the real one,
+**Gravity for real (tap a world: Mass, Size, Move, Add, Remove):** the Solar System is the real one,
 where the ephemeris has it, until you change something in it. From that moment it is simulated:
 everything in it pulls on everything else, and one button, **Back to reality**, undoes it all.
 **You see what happens**: after each change time speeds up for fifteen seconds, to a pace at which
@@ -53,14 +53,21 @@ and within four months the Sun has taken it from the Earth. **Throw** a world: p
 a slingshot, its arrow marked where it would go round in a circle and where it would escape, or flick
 it. While you aim, its orbit is drawn (an open path too: a parabola at the speed of escape, a
 hyperbola beyond), and **the future**: a dashed line where it will really go, the simulation run
-ahead with every pull counted, and what ends it ("it hits Earth in 1.6 days", "it goes round the Sun
-in 3.2 days"). Throw Mars at the Earth and **time slows** for the last of the fall, the view frames
+ahead with every pull counted, and what ends it ("it hits Earth in 1.6 days", "in 3.2 days it is the
+Sun's: from then on it goes round the Sun"). Throw Mars at the Earth and **time slows** for the last of the fall, the view frames
 the two, a flash marks where they meet, and a card says what the hit was: how fast, its energy
 against the Sun's light and against what holds Mars together, and, labelled as a prediction,
 whether it would break apart (breaking apart is not simulated yet). Add a second Jupiter near the Earth's orbit, or a second sun: put it where you want it with a
 finger, give it the mass you want, from a small moon to two suns (its size follows from its mass:
 rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence), let go or flick
-it, and Done sets it going. Time runs from real time up to a thousand years a second (as fast as the
+it, and Done sets it going. **How warm** a world is, on its card: the planets, the Moon, Pluto and
+Charon, from the sunlight and the share of it they send back as NASA's fact sheets measure it
+(nothing is guessed for any other world), and for Venus, the Earth and Mars with the warming of
+their air, as measured ("15 °C, as measured. Without its air: −18 °C."); drag
+the Earth towards the Sun and it says, as you go, "Earth here: 112 °C. The oceans would boil.", and
+a second sun warms it too. **Size**, beside Mass: a world from a tenth of its size to ten times,
+its gravity and what hits it following, or, with Same density, its size following its mass; a sun
+you add keeps shining as a star of its mass whatever mass you give it later. Time runs from real time up to a thousand years a second (as fast as the
 simulation manages, and it says how fast that is); what collides becomes one; what happens is told
 in words and kept in a log. What theory predicts of a body of the mass you gave it is labelled as
 a prediction, and what the simulation leaves out is listed in the app, two taps from the mark that
@@ -93,6 +100,8 @@ Browser, or Chrome/Edge on a PC with a Link/SteamVR headset) and press **ENTER V
 <img src="docs/img/watch.jpg" width="640" alt="Watching a change on a phone: Jupiter made twenty times heavier, the view eased out to frame its four great moons on their new orbits, time at 26 minutes a second with Stop; then, the watch over, Replay, and Europa told to have hit Jupiter; then Undo, and the real Jupiter again at the date before the change"> <img src="docs/img/throw.jpg" width="640" alt="Throwing a world on a phone: the Moon pulled back from like a slingshot, its arrow at the mark of a circle and the circle it would go round drawn; pulled on to the mark of escape, the card saying it will not come back; and a second Earth just added, given five times the Earth's mass, 1.71 times its size, put farther out and waiting for Done">
 
 <img src="docs/img/hit.jpg" width="640" alt="Mars thrown at the Earth on a phone: aimed with the slingshot, the card saying its path goes into the Earth and, with every pull counted, that it hits it in 1.6 days; let go, time slowed to an hour and a half a second for the last of the fall, the two framed; then the flash where they met, and the card with what the hit was: 9.4 km/s, 2.5×10³¹ J, as much as the Sun gives off in 18.4 hours, 5.2 times the energy that holds Mars together, and the prediction, labelled, that Mars would break apart">
+
+<img src="docs/img/warm.jpg" width="640" alt="On a phone: the Earth's card with its temperature, 15 °C as measured and −18 °C without its air; the Earth dragged half way to the Sun, the card saying, as it goes, Earth here: 111 °C, the oceans would boil; and Size, beside Mass, the Earth made three times as large, 19,020 km, with Real size and Same density">
 
 *Screenshots are from headless Chromium with software (SwiftShader) rendering — the automated
 verification run, not hand-picked renders.*
@@ -157,7 +166,7 @@ Any control (a drag, the lever) takes the ship back from the autopilot or from S
 
 The card of what you selected has **Go there**, **Look at** and **Details**; nothing moves the
 camera until you go. A flight in progress shows a **Stop** button. Under them, for a world of the
-Solar System, is what you can do to it: **Mass**, **Move**, **Add**, **Remove** (gravity for real,
+Solar System, is what you can do to it: **Mass**, **Size**, **Move**, **Add**, **Remove** (gravity for real,
 above); the first use switches live physics on, and at the top **Undo** steps back a change at a
 time and **Back to reality** undoes it all (itself undone, for a moment, by Undo). In Move, choose
 **Throw**, then pull back from the world and let go, or flick it. After Add, drag the new world where
@@ -330,7 +339,9 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   power is used on it; someone who never touches one gets the same pictures and the same frame as
   before. The powers are on a world's card, under its three buttons: **Mass** (a slider from a
   thousandth to a thousand times its real mass: "2 Jupiters", "0.5 Suns"; the orbits answer while
-  the thumb is still down; what theory predicts of that mass is labelled a prediction), **Move**
+  the thumb is still down; what theory predicts of that mass is labelled a prediction), **Size**
+  (beside it: a tenth to ten times, or following the mass at the same density, the radius going to
+  the simulation's collisions: `LivePhysics.setSize`), **Move**
   (a finger on the world drags it in the plane of its orbit while time waits; where it is left it
   keeps its velocity or is put on a circle; or it is thrown: pulled back from like a slingshot, an
   arrow marked at the speed of a circle and of escape, the orbit it would be on drawn while it is
@@ -345,7 +356,8 @@ Checked with `npm test` and the headless-browser suites (`scripts/verify.mjs`, `
   hierarchy of pairs that is found, not given; exact two-body motion for every pair; collisions
   that merge, the last of the fall of two worlds slowed to three seconds on the screen and framed,
   a flash where they meet and a card with what the hit was: `src/app/Impacts.ts`; changes of what
-  goes round what): the Sun, the planets, Pluto, Ceres, the weighed
+  goes round what; how warm each world with a measured Bond albedo is where it is now, under every
+  sun: `temperatureOf` in `src/app/Worked.ts`): the Sun, the planets, Pluto, Ceres, the weighed
   asteroids and the twenty moons heavy enough to matter, and any other world once it or its planet
   is touched. A mark says physics is live, with **Back to reality** beside it; the Time sheet has
   the log of what happened (which two collided and how fast, who was thrown out, who was captured)
@@ -528,7 +540,7 @@ Known limitations (planned for later phases unless noted):
 6. Polish: lens flares, spinning (Kerr) black holes, performance tuning.
 7. Gravity for real, the owner's plan after its first step (live physics with Mass, Move, Add,
    Remove, watching a change, Undo, throwing a world, placing what you add, impacts seen, the
-   future drawn: done): things that break (the Roche limit, impacts that shatter), black
+   future drawn, its temperature live, size as well as mass: done): things that break (the Roche limit, impacts that shatter), black
    holes that pull and eat, stars that live and die, deep time, the rest of "God mode", a story
    mode. Also: the stepping in a Web Worker for thousands of years a second, and the powers in
    the headset.

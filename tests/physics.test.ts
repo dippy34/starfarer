@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   apsides, AU, bindingEnergy, breakupPeriod, circularSpeed, DAY, density, equilibriumTemp, escapeVelocity, flattening, G, habitableZone, hillRadius, isco,
   L_SUN, luminosity, M_EARTH, M_SUN, mainSequence, massFromDensity, num, orbitalPeriod, photonSphere, R_EARTH, R_SUN, radiusFromDensity,
-  rocheLimit, scaleHeight, schwarzschildRadius, semiMajorFromPeriod, surfaceGravity, surfaceTemp, T_SUN, waterState, YEAR,
+  rocheLimit, scaleHeight, schwarzschildRadius, semiMajorFromPeriod, sunlight, sunlitTemp, surfaceGravity, surfaceTemp, T_SUN, waterState, YEAR,
 } from '../src/sim/physics';
+import type { AlbedosJson } from '../src/universe/SolarSystem';
 
 const rel = (a: number, b: number) => Math.abs(a - b) / Math.abs(b);
 
@@ -41,10 +43,50 @@ describe('the physics of the worked-out facts (textbook values)', () => {
     expect(T).toBeGreaterThan(253);
     expect(T).toBeLessThan(256);
     expect(surfaceTemp(T, 33).value).toBeCloseTo(T + 33, 6);
-    expect(waterState(288, 1)).toMatch(/liquid/);
+    expect(waterState(288, 1)).toBe('liquid');
     expect(waterState(250, 1)).toBe('ice');
-    expect(waterState(400, 1)).toMatch(/boils/);
-    expect(waterState(288, 0.001)).toMatch(/triple/);
+    expect(waterState(400, 1)).toBe('boils');
+    expect(waterState(288, 0.001)).toBe('thin');
+    // (under Venus's 92 bar water boils only at some 570 K: the ground's 737 K boils it; on Mars, whose 6 millibar is just
+    // over the triple point, it boils as soon as it melts)
+    expect(waterState(560, 92)).toBe('liquid');
+    expect(waterState(737, 92)).toBe('boils');
+    expect(waterState(274, 0.00636)).toBe('boils');
+  });
+
+  it("sunlight and a Bond albedo give the black-body temperatures NASA's fact sheets list, but for two worked out from older albedos", () => {
+    // (the data the app has, as the pipeline fetched it from the sheets: pipeline/fetch_albedos.py)
+    const sheets = (JSON.parse(readFileSync(new URL('../public/data/solar/albedos.json', import.meta.url), 'utf8')) as AlbedosJson).bodies;
+    const listed = { Mercury: 439.6, Venus: 226.6, Moon: 270.4, Mars: 209.8, Jupiter: 109.9, Saturn: 81.0, Uranus: 58.1, Neptune: 46.6 };
+    for (const [name, T] of Object.entries(listed)) {
+      const s = Object.values(sheets).find((b) => b.name === name)!;
+      expect(s.blackBodyK).toBe(T);
+      expect(Math.abs(sunlitTemp(s.irradiance!, s.bondAlbedo!).value - T)).toBeLessThan(0.2);
+    }
+    // the Earth's 254.0 K and Pluto's 37.5 K follow from albedos of about 0.306 and 0.49, not the 0.294 and 0.72 the
+    // same sheets give: from those, 255.1 K and 32.2 K
+    const earth = sheets['399'], pluto = sheets['999'];
+    expect([earth.blackBodyK, pluto.blackBodyK]).toEqual([254.0, 37.5]);
+    expect(sunlitTemp(earth.irradiance!, earth.bondAlbedo!).value).toBeCloseTo(255.1, 1);
+    expect(sunlitTemp(pluto.irradiance!, pluto.bondAlbedo!).value).toBeCloseTo(32.2, 1);
+    expect(sunlitTemp(earth.irradiance!, 0.306).value).toBeCloseTo(254.0, 0);
+    expect(sunlitTemp(pluto.irradiance!, 0.49).value).toBeCloseTo(37.5, 0);
+    // the sunlight at a mean distance of one AU is the Sun's light spread over a sphere that wide: the sheet's 1,361 W/m²
+    expect(sunlight([{ lumW: L_SUN, dM: AU }])).toBeCloseTo(1361.2, 1);
+    expect(sunlitTemp(sunlight([{ lumW: L_SUN, dM: AU }]), 0.3).value).toBeCloseTo(equilibriumTemp(L_SUN, AU, 0.3).value, 9);
+  });
+
+  it('under two suns the sunlight of each is added: two Suns at the same distance warm a world by the fourth root of two', () => {
+    const one = sunlitTemp(sunlight([{ lumW: L_SUN, dM: AU }]), 0.294).value;
+    const two = sunlitTemp(sunlight([{ lumW: L_SUN, dM: AU }, { lumW: L_SUN, dM: AU }]), 0.294).value;
+    expect(two / one).toBeCloseTo(2 ** 0.25, 12);
+    // (each counts as the square of its distance: a second Sun twice as far adds a quarter)
+    const far = sunlitTemp(sunlight([{ lumW: L_SUN, dM: AU }, { lumW: L_SUN, dM: 2 * AU }]), 0.294).value;
+    expect(far / one).toBeCloseTo(1.25 ** 0.25, 12);
+    // T = ((1 − A) Σ Lᵢ / (16πσdᵢ²))^¼
+    const SIGMA = 5.670374419e-8;
+    expect(far).toBeCloseTo(((0.706 * (L_SUN / AU ** 2 + L_SUN / (2 * AU) ** 2)) / (16 * Math.PI * SIGMA)) ** 0.25, 9);
+    expect(sunlitTemp(0, 0.294).value).toBe(0);
   });
 
   it("Kepler's third law gives the planets' periods", () => {

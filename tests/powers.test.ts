@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  affected, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
+  affected, aheadWords, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
   FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, starMassWords,
-  orbitWords, powerWords, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
+  orbitWords, powerWords, radiusWords, sameDensity, SIZE_DECADES, sizeFactor, sizeSlider, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
   WATCH_SLOWEST, watchPlan, watchRate,
 } from '../src/app/Powers';
 import { G, L_SUN, M_EARTH, M_JUPITER, M_SUN, R_EARTH } from '../src/sim/physics';
@@ -64,6 +64,35 @@ describe('a mass in words', () => {
     expect(timesWords(1000)).toBe('1,000 times its real mass');
     expect(timesWords(0.5)).toBe('0.5 of its real mass');
     expect(timesWords(0.004)).toBe('1/250 of its real mass');
+  });
+});
+
+describe('a size beside the mass', () => {
+  it('the size slider: a tenth of the real radius to ten times it, even in the logarithm, the real size exactly near the middle', () => {
+    expect(SIZE_DECADES).toBe(1);
+    expect(sizeFactor(0)).toBe(1);
+    expect(sizeFactor(0.005)).toBe(1);
+    expect(sizeFactor(0.5)).toBeCloseTo(Math.sqrt(10), 12);
+    expect(sizeFactor(-1)).toBeCloseTo(0.1, 12);
+    expect(sizeFactor(4)).toBeCloseTo(10, 12);
+    for (const f of [0.1, 0.37, 1, 2.5, 10]) expect(sizeFactor(sizeSlider(f))).toBeCloseTo(f, 12);
+    // (a thousand times the volume either way: the same range as the mass, so that at the same density the two go together)
+    expect(sizeFactor(1) ** 3).toBeCloseTo(10 ** 3, 9);
+  });
+
+  it('at the same density the radius goes as the cube root of the mass: five Earths of rock, 1.71 times the Earth', () => {
+    expect(sameDensity(6371e3, 5) / 6371e3).toBeCloseTo(1.71, 2);
+    expect(sameDensity(6371e3, 1000) / 6371e3).toBeCloseTo(10, 12);
+    expect(sameDensity(6371e3, 1)).toBe(6371e3);
+  });
+
+  it('in words: the radius, and a factor on the real size', () => {
+    expect(radiusWords(6371e3)).toBe('6,371 km');
+    expect(radiusWords(69_911e3)).toBe('69,911 km');
+    expect(radiusWords(5.6e3)).toBe('5.6 km');
+    expect(timesWords(1, 'size')).toBe('its real size');
+    expect(timesWords(3, 'size')).toBe('3 times its real size');
+    expect(timesWords(0.5, 'size')).toBe('0.5 of its real size');
   });
 });
 
@@ -310,6 +339,18 @@ describe('saying things', () => {
     expect(rateWords(-1200 * 365.25 * DAY)).toBe('1,200 years a second');
   });
 
+  it('what ends the path ahead, where it ends and on the card: a world taken over is that one\'s from then on, not one that goes round it in so long', () => {
+    expect(aheadWords({ kind: 'hit', other: 'Earth', when: 'in 1.6 days' })).toEqual({ there: 'hits Earth in 1.6 days', line: 'With every pull counted, it hits Earth in 1.6 days.' });
+    expect(aheadWords({ kind: 'leaves', from: 'Sun' })).toEqual({ there: 'leaves the Sun for good', line: 'With every pull counted, it leaves the Sun for good.' });
+    expect(aheadWords({ kind: 'leaves', from: null }).line).toBe('With every pull counted, it flies off for good.');
+    // ("goes round the Sun in 3.2 days" read as a year of 3.2 days)
+    expect(aheadWords({ kind: 'round', around: 'Sun', when: 'in 3.2 days' })).toEqual({
+      there: 'in 3.2 days it is the Sun\'s',
+      line: 'With every pull counted, in 3.2 days it is the Sun\'s: from then on it goes round the Sun.',
+    });
+    expect(aheadWords({ kind: 'round', around: 'Jupiter', when: 'in 2031' }).line).toBe('With every pull counted, in 2031 it is Jupiter\'s: from then on it goes round Jupiter.');
+  });
+
   it('a stretch of time in the unit a person counts it in', () => {
     expect(spanWords(51 * DAY)).toBe('51 days');
     expect(spanWords(6.6 * 3600)).toBe('6.6 hours');
@@ -471,6 +512,20 @@ describe('two worlds that meet', () => {
     // not within the time asked: none
     expect(soonestContact([earth, moon, mars, away], 0.5 * hit.zone, 8)).toBeNull();
     expect(soonestContact([earth, moon, away], 1e9, 8)).toBeNull();
+    // (the Earth's pull holds sway out to its Hill sphere about the Sun, 1.5 million km: Mars inside it is looked at)
+    expect(soonestContact([{ ...earth, reach: 1.5e9 }, mars], 1e5, 8)?.b).toBe('Mars');
+  });
+
+  it('passes over two moons of a planet far apart, whose two-body orbit about each other is no guide: their pulls hold sway a few thousand km out', () => {
+    // (Tethys and Rhea of Saturn, 230,000 km apart, the line of their motion against each other running through both: a hit,
+    // were the two alone; in their orbits round Saturn they never come near)
+    const at = (gm: number, radius: number, pos: number[], vel: number[], body: string, reach?: number) => ({ body, gm, radius, pos, vel, reach });
+    const tethys = at(4.12e10, 531e3, [0, 0, 0], [0, 0, 0], 'Tethys', 2.1e6), rhea = at(1.54e11, 764e3, [2.3e8, 0, 0], [-3e3, 0, 0], 'Rhea', 5.8e6);
+    expect(soonestContact([{ ...tethys, reach: undefined }, { ...rhea, reach: undefined }], 1e5, 8)?.b).toBe('Rhea');
+    expect(soonestContact([tethys, rhea], 1e5, 8)).toBeNull();
+    // (come within their zone, eight times their radii, they are looked at again, wherever the line of each sway)
+    const near = at(1.54e11, 764e3, [9e6, 0, 0], [-3e3, 0, 0], 'Rhea', 5.8e6);
+    expect(soonestContact([tethys, near], 1e5, 8)?.b).toBe('Rhea');
   });
 
   it('says what a hit was: Mars into the Earth at 13 km/s, against the Sun\'s light and what holds Mars together, and what a rule of thumb says, labelled', () => {

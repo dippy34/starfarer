@@ -1,4 +1,4 @@
-import { ESCAPE_EDGE, isOpen } from '../astro/kepler';
+import { isOpen } from '../astro/kepler';
 import { jdToCalendar, tdbToUtc } from '../core/time';
 import { AU, formatDistance } from '../core/units';
 import { bindingEnergy, fmtDuration, G, L_SUN, M_EARTH, M_JUPITER, M_SUN, mainSequence } from '../sim/physics';
@@ -57,12 +57,44 @@ export function starMassWords(kg: number): string {
   return kg >= 0.1 * M_SUN ? massWords(kg) : `${count(kg / M_SUN, 'Sun')} (${massWords(kg)})`;
 }
 
-/** A factor on a body's real mass, in words. */
-export function timesWords(factor: number): string {
-  if (factor === 1) return 'its real mass';
-  if (factor > 1) return `${round(factor)} times its real mass`;
-  if (factor >= 0.095) return `${round(factor)} of its real mass`;
-  return `1/${Number((1 / factor).toPrecision(2)).toLocaleString('en-US')} of its real mass`;
+/** A factor on a body's real mass (or its real `what`: its size), in words. */
+export function timesWords(factor: number, what = 'mass'): string {
+  if (factor === 1) return `its real ${what}`;
+  if (factor > 1) return `${round(factor)} times its real ${what}`;
+  if (factor >= 0.095) return `${round(factor)} of its real ${what}`;
+  return `1/${Number((1 / factor).toPrecision(2)).toLocaleString('en-US')} of its real ${what}`;
+}
+
+// ---------------------------------------------------------------- a size, changed and said
+
+/** the size slider runs this many powers of ten either side of the real size (a thousand times the volume either way, as the mass) */
+export const SIZE_DECADES = 1;
+/** this near the middle (in powers of ten) it means the real size exactly */
+const SIZE_SNAP = 0.01;
+
+/** The factor on a body's real radius for a place on the size slider (-SIZE_DECADES to SIZE_DECADES, even in the logarithm). */
+export function sizeFactor(slider: number): number {
+  const s = Math.max(-SIZE_DECADES, Math.min(SIZE_DECADES, slider));
+  return Math.abs(s) < SIZE_SNAP ? 1 : Math.pow(10, s);
+}
+
+/** Where on the size slider a factor on the radius is. */
+export function sizeSlider(factor: number): number {
+  return Math.max(-SIZE_DECADES, Math.min(SIZE_DECADES, Math.log10(factor)));
+}
+
+/**
+ * The radius a body has at the same density with another mass (`factor` times its real mass):
+ * R = R₀ (M / M₀)^⅓, as a ball of rock would. (A real giant planet stops growing above about a
+ * Jupiter's mass, its insides squeezed by its own weight: said where this simplification is.)
+ */
+export function sameDensity(radius: number, factor: number): number {
+  return radius * Math.cbrt(factor);
+}
+
+/** A radius in words: "6,371 km", "0.13 km". */
+export function radiusWords(m: number): string {
+  return m >= 10e3 ? `${Math.round(m / 1e3).toLocaleString('en-US')} km` : `${Number((m / 1e3).toPrecision(2))} km`;
 }
 
 /** hydrogen fuses above about this (a star), deuterium above this (a brown dwarf), in Jupiters */
@@ -493,7 +525,8 @@ export function frameDistance(radius: number, halfX: number, halfY: number): num
  * h = 0: one falling straight at the other) among them.
  */
 function inbound(d: number, rv: number, mu: number, energy: number, h2: number, e: number, x: number): number {
-  if (Math.abs(energy) < ESCAPE_EDGE * (mu / d)) {
+  // (nearer nothing than 10⁻¹² of μ/d the formulas of the ellipse and the hyperbola lose their digits)
+  if (Math.abs(energy) < 1e-12 * (mu / d)) {
     // a parabola (Barker): from where it would be at its nearest, t = √(p³/μ)/2 (D + D³/3), D = tan(ν/2); a straight one falls
     // in as r^(3/2)
     if (rv >= 0) return NaN;
@@ -535,8 +568,12 @@ export function contactTimes(r: Vec, v: Vec, mu: number, touch: number, zone: nu
   return { contact, zone: d <= zone ? 0 : Math.min(contact, inbound(d, rv, mu, energy, h2, e, zone)) };
 }
 
-/** A world as the look for a hit has it: G times its mass (m³/s²), its radius (m), where it is (m) and how it moves (m/s). */
-export interface Meeting<T> { body: T; gm: number; radius: number; pos: Vec; vel: Vec }
+/**
+ * A world as the look for a hit has it: G times its mass (m³/s²), its radius (m), where it is (m)
+ * and how it moves (m/s), and how far its own pull holds sway (`reach`, m: its Hill sphere about
+ * what it goes round; none given, everywhere).
+ */
+export interface Meeting<T> { body: T; gm: number; radius: number; pos: Vec; vel: Vec; reach?: number }
 /** Two worlds that will hit: when they touch and when they come within `zone` of each other (s from now). */
 export interface Approach<T> { a: T; b: T; contact: number; zone: number }
 
@@ -544,7 +581,11 @@ export interface Approach<T> { a: T; b: T; contact: number; zone: number }
  * The first hit ahead among `worlds`, if one comes within `within` seconds of their coming `zone`
  * times their radii added apart (contactTimes), the two-body orbit of each pair being what is
  * looked at. Pairs that cannot come that near so soon, at the most speed falling together could
- * give them, are passed over unworked.
+ * give them, are passed over unworked; so are two farther apart than either's pull holds sway
+ * (`reach`) and than their zone, where what they go round steers them, not each other: two moons
+ * of Saturn hundreds of thousands of kilometres apart, whose two-body orbit about each other is
+ * nearly a straight line that may run through both (with frames long on a loaded machine, and so
+ * far ahead looked, it did, and their "hit" took the frame of a watch elsewhere).
  */
 export function soonestContact<T>(worlds: readonly Meeting<T>[], within: number, zone: number): Approach<T> | null {
   let best: Approach<T> | null = null;
@@ -555,6 +596,7 @@ export function soonestContact<T>(worlds: readonly Meeting<T>[], within: number,
       const q = worlds[j], mu = p.gm + q.gm, touch = p.radius + q.radius, near = zone * touch;
       for (let c = 0; c < 3; c++) { r[c] = q.pos[c] - p.pos[c]; v[c] = q.vel[c] - p.vel[c]; }
       const d = Math.hypot(r[0], r[1], r[2]);
+      if (d > Math.max(p.reach ?? Infinity, q.reach ?? Infinity, near)) continue;
       if (d - near > Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + (2 * mu) / near) * within) continue;
       const t = contactTimes(r, v, mu, touch, near);
       if (t && t.zone <= within && (!best || t.contact < best.contact)) best = { a: p.body, b: q.body, contact: t.contact, zone: t.zone };
@@ -641,6 +683,27 @@ export function spanWords(seconds: number): string {
 /** When something will happen, `seconds` from now, on `jd` (TDB): "in 43 days" within a year, "in 2031" beyond. */
 export function whenWords(seconds: number, jd: number): string {
   return seconds < 365.25 * 86_400 ? `in ${spanWords(seconds)}` : `in ${jdToCalendar(tdbToUtc(jd)).year}`;
+}
+
+/** What ends the path ahead of a world (src/app/Foresight.ts), by name: it hits `other`, leaves `from` (null: nothing) for good, or `around` takes it over; `when` in words (whenWords). */
+export type AheadEnd =
+  | { kind: 'hit'; other: string; when: string }
+  | { kind: 'leaves'; from: string | null }
+  | { kind: 'round'; around: string; when: string };
+
+/**
+ * What ends the path ahead, in words: where the path ends (`there`: "hits Earth in 1.6 days",
+ * "leaves the Sun for good", "in 3.2 days it is the Sun's") and on the card (`line`: "With every
+ * pull counted, it hits Earth in 1.6 days."). One taken over by another is that one's from then on:
+ * "it goes round the Sun in 3.2 days" read as a year of 3.2 days.
+ */
+export function aheadWords(end: AheadEnd): { there: string; line: string } {
+  if (end.kind === 'round') {
+    const owner = the(end.around);
+    return { there: `${end.when} it is ${owner}'s`, line: `With every pull counted, ${end.when} it is ${owner}'s: from then on it goes round ${owner}.` };
+  }
+  const there = end.kind === 'hit' ? `hits ${the(end.other)} ${end.when}` : end.from ? `leaves ${the(end.from)} for good` : 'flies off for good';
+  return { there, line: `With every pull counted, it ${there}.` };
 }
 
 /** A speed in words for an event: "12 km/s", "340 m/s". */
