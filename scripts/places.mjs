@@ -328,6 +328,32 @@ st = await volume();
 const farGlow = await page.evaluate(() => window.app.deepSky.group.children.some((m) => m.material?.name === 'nebula-far' && m.visible));
 check('far from the nebula, the volume gives way to its glow', !st && farGlow, `volume ${st}, glow ${farGlow}`);
 
+// 10. the map budget (render/Bodies.ts): a tour of five worlds keeps the full maps of three at the most,
+// a world left behind is drawn with its small map, and Mars, come back to, is sharp again (its full map)
+{
+  const big = () => page.evaluate(() => {
+    const bl = window.app.bodies, out = new Set();
+    for (const m of bl.meshes.values()) for (const f of ['uMap', 'uNight', 'uClouds', 'uRelief']) { const t = m.material.uniforms[f]?.value; if (t?.image?.width >= 2048) out.add(m.name); }
+    return [...out];
+  });
+  const visit = async (name) => {
+    await page.evaluate((n) => { const a = window.app; const o = a.findByName(n); a.select(o); a.goTo(o); }, name);
+    await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 600000 });
+    await page.waitForFunction((n) => { const a = window.app; const b = a.system.bodies.find((x) => x.name === n); return ['full', 'hi'].includes(a.bodies.mapTier?.(b)); }, name, { timeout: 180000 }).catch(() => undefined);
+  };
+  const tier = (n) => page.evaluate((n) => { const a = window.app; return a.bodies.mapTier?.(a.system.bodies.find((x) => x.name === n)) ?? 'none'; }, n);
+  const resident = [];
+  for (const w of ['Mars', 'Jupiter', 'Io', 'Saturn', 'Titan']) { await visit(w); resident.push(await big()); }
+  // (the release waits FULL_RELEASE_S: ten seconds of the page's clock)
+  await page.waitForTimeout(12000);
+  const marsAway = await tier('Mars');
+  const most = Math.max(...resident.map((r) => r.length));
+  await visit('Mars');
+  const marsBack = await tier('Mars');
+  check('the map budget: no more than three worlds\' full maps at once, a world left behind on its small map, sharp again on coming back',
+    most <= 3 && marsAway === 'small' && ['full', 'hi'].includes(marsBack), JSON.stringify({ resident, marsAway, marsBack }));
+}
+
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 const failed = results.filter((r) => !r.ok).length;
 console.log(`${results.length - failed}/${results.length} passed`);
