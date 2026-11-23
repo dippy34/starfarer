@@ -284,9 +284,8 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
   await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 300000 }).catch(() => undefined);
   { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + 5, { timeout: 600000 }); }
   // the eye settled on the night (the faintest stars named are set by it): the magnitude limit no longer moving
-  // from one ten frames to the next. (On GitHub's runners the ground's tiles came in before the eye had opened
-  // again after the checks before: they measured with a limit of -16, and one name in the sky. It runs before the
-  // space station's check, which times out now and then on the runners and ends the run.)
+  // from one ten frames to the next. (It runs before the space station's check, which times out now and then on
+  // GitHub's runners and ends the run.)
   for (let k = 0, last = -99; k < 60; k++) {
     const f = await page.evaluate(() => window.app.frameCount);
     await page.waitForFunction((x) => window.app.frameCount >= x, f + 10, { timeout: 600000 });
@@ -341,6 +340,32 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
   // (at the Apollo 17 site there are names both under its ground and just over its ridges to be tried)
   const ok = r.wrong.length === 0 && r.lost.length === 0 && (place !== 'Apollo 17 landing site' || (r.under > 0 && r.ridge.length > 0));
   check(`walking at ${place}: no star's name over the ground, none lost over the sky (just over a ridge either)`, ok, JSON.stringify(r));
+  // 5c2. At night in the valley, the view turned to where the Sun is, under the horizon: the stars stay out.
+  // (The eye there is 2.6 km under the Moon's mean radius, and the Moon was counted as hiding nothing from inside
+  // its mean ball: the Sun, 7.9 degrees under the horizon, was in sight and took the limit to -16. Which way the
+  // walker happened to face came from the checks before: on GitHub's runners it was towards the Sun.)
+  if (place === 'Apollo 17 landing site') {
+    const face = async (away) => {
+      await page.evaluate((away) => {
+        const a = window.app, W = a.walk, RT = W.R.clone().transpose();
+        const up = a.rig.upos.sub(W.centre, a.rig.vel.clone()).normalize().applyMatrix3(RT);
+        const s = a.system.sun.upos.sub(a.rig.upos, a.rig.vel.clone()).normalize().applyMatrix3(RT);
+        s.addScaledVector(up, -s.dot(up)).normalize();
+        if (away) s.negate();
+        W.fwd.copy(s); W.pitch = 0;
+      }, away);
+      const f = await page.evaluate(() => window.app.frameCount);
+      await page.waitForFunction((x) => window.app.frameCount >= x, f + 90, { timeout: 600000 });
+      return page.evaluate(() => {
+        const a = window.app, rel = a.system.sun.upos.sub(a.rig.upos, a.rig.vel.clone());
+        const up = a.rig.upos.sub(a.walk.centre, a.rig.vel.clone()).normalize();
+        return { mLim: +a.lastMLim.toFixed(2), sunUp: +((Math.asin(rel.clone().normalize().dot(up)) * 180) / Math.PI).toFixed(1), sunInSight: +a.inSight(rel, a.system.sun.radius).toFixed(3) };
+      });
+    };
+    const away = await face(true), toward = await face(false);
+    check('walking at night in the Apollo 17 valley, facing where the Sun is under the horizon: the stars stay out',
+      toward.sunUp < -1 && toward.sunInSight === 0 && toward.mLim > away.mLim - 0.5, JSON.stringify({ away, toward }));
+  }
 }
 await page.evaluate((jd) => { const a = window.app; a.walk.exit(true); a.clock.jdTdb = jd; a.clock.paused = false; }, jdWalk);
 
