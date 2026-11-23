@@ -239,6 +239,37 @@ describe('the changed universe in a link', () => {
     }
   }, 240_000);
 
+  it('checked before the universe here is let go: in a changed universe, a damaged save is refused and nothing here changes; a sound one is accepted', async () => {
+    // a save from elsewhere: Mars sent at the Earth
+    const other = await universe();
+    SCENES['Mars sent at the Earth'](other);
+    const sound = decodeWorld(encodeWorld(other.physics.world()!));
+    // here: Earth 2 added and the Moon thrown, its prediction taken
+    const here = await universe();
+    SCENES['Earth 2 added'](here);
+    SCENES['the Moon thrown'](here);
+    const ahead = (u: U) => {
+      const moon = u.named('Moon'), f = new Foresight(), o = u.physics.orbit(moon);
+      f.start(u.physics.live!.sim.snapshot(), moon.id, moon.parent ? moon.parent.id : -1, o?.bound ? o.period : 30 * DAY);
+      for (let k = 0; !f.done && k < 1e5; k++) f.grow(50);
+      return JSON.stringify([f.end, f.count, f.times[f.count - 1]]);
+    };
+    const before = { bits: bits(here.physics.live!.sim), made: here.physics.made.map((b) => b.name), log: here.physics.log.length, ahead: ahead(here) };
+    // damaged: a body the catalogue does not have, a moon in another's family, a world made for what it cannot be
+    const damaged: ((w: LiveWorld) => void)[] = [(w) => { w.sim.ids[0] = 11; }, (w) => { w.carried.push([599, [301]]); }, (w) => { w.made.push({ ...here.physics.world()!.made[0], kind: 'moon' }); }];
+    for (const spoil of damaged) {
+      const w = structuredClone(sound);
+      spoil(w);
+      expect(() => here.physics.checkWorld(w)).toThrow(WorldError);
+    }
+    expect(bits(here.physics.live!.sim)).toEqual(before.bits);
+    expect([here.physics.made.map((b) => b.name), here.physics.log.length, ahead(here)]).toEqual([before.made, before.log, before.ahead]);
+    // the sound one checks out here too, though a world numbered as one made here (Earth 2) is in this universe
+    expect(() => here.physics.checkWorld(sound)).not.toThrow();
+    const made = decodeWorld(encodeWorld(here.physics.world()!));
+    expect(() => here.physics.checkWorld(made)).not.toThrow();
+  }, 240_000);
+
   it('fuzz: damaged changed universes never throw out of the reader but as WorldError, and never put NaN or Infinity into the simulation', async () => {
     let seed = 99;
     const r = () => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed / 2 ** 31; };

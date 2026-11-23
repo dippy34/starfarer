@@ -70,7 +70,7 @@ import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, im
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
-import { forgetFragment, handOn, linkFragment, onFragmentChange, pageLink, reloadPage } from '../platform/share';
+import { forgetFragment, handOn, linkFragment, onFragmentChange, pageLink } from '../platform/share';
 import { decodeLink, encodeLink, isoOf, type Named, type SceneView } from './SceneLink';
 import { decodeWorld, encodeWorld, fromBase64Url, type LiveWorld, type MadeRecord, toBase64Url, WorldError } from './SceneWorld';
 import { deleteScene, savedFragment, savedScenes, saveScene, SAVES_MOST } from './Saves';
@@ -473,8 +473,9 @@ export class App {
     app.applyUrl();
     // (a link to a scene, after the '#': it overrides what the query asked for)
     await app.openFragment(linkFragment());
-    // (another link opened into this tab while it is open changes only the '#': the page starts again with it)
-    onFragmentChange((f) => { if (f) reloadPage(); });
+    // (another link opened into this tab while it is open changes only the '#': it is opened in place, checked first, so
+    // that one which cannot be opened leaves the scene here as it was)
+    onFragmentChange((f) => { if (f) void app.openFragment(f); });
     app.showSaves();
     app.bindKeys();
     window.addEventListener('resize', () => app.resize());
@@ -765,6 +766,14 @@ export class App {
         return;
       }
       if (Math.abs(world.jd0 + world.sim.time / DAY - v.jd) * DAY > 1) { refuse('its date and its changed universe do not agree'); return; }
+      // (all of it checked against the catalogue before the universe here is let go for it: one that cannot be made
+      // again leaves the scene as it was)
+      try {
+        this.physics.checkWorld(world);
+      } catch (e) {
+        refuse(e instanceof WorldError ? e.message : 'its changed universe could not be made again');
+        return;
+      }
       // (the ephemeris of both dates: where the changes began, and where what rides on the simulation is now)
       await Promise.all([this.system.ephemeris.request(world.jd0), this.system.ephemeris.request(world.jd0 + world.sim.time / DAY)]);
     }

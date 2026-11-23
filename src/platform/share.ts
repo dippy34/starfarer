@@ -36,11 +36,6 @@ export function onFragmentChange(then: (fragment: string) => void): void {
   window.addEventListener('hashchange', () => then(linkFragment()));
 }
 
-/** Open the page again, from the start (a new scene asked for in this tab). */
-export function reloadPage(): void {
-  location.reload();
-}
-
 /** The address of this app with `fragment` after it: this page, without whatever the query asked of it. */
 export function pageLink(fragment: string): string {
   return `${location.origin}${location.pathname}#${fragment}`;

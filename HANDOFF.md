@@ -1231,6 +1231,28 @@ saves on this device and the link's preview.
   preview picture; the long-run agreement above; compression in a later form of `w` if links must
   get shorter (the byte planes are ready for it).
 
+### A scene that cannot be opened leaves the changed one as it was (done)
+
+The coordinator, from Part 2's leftovers: a save opened in a changed universe let that universe go
+before the save was checked against the catalogue, so a damaged one lost the scene the explorer
+was in; and a link opened into a tab already open reloaded the page, which lost it whatever the
+link held. Now:
+- `LivePhysics.checkWorld` checks all that `adoptWorld` relies on (every number against the
+  catalogue, the families, what was made for what, the simulation itself), against the catalogue
+  alone (what was made or changed here is left out of the reckoning) and without changing
+  anything. `App.openScene` decodes the link, reads the changed universe, checks it, fetches the
+  ephemeris, and only then lets the universe here go; a failure leaves the scene as it was, with
+  the note ("This saved scene could not be opened: its simulation has a body that is not here.
+  Here is Starfarer as it was.").
+- A link opened into a tab that is open (only the '#' changes) is opened in place, through the
+  same path, no longer by a reload. No other path replaces a changed universe (Back to reality
+  and Undo are the explorer's own).
+- Checked: `tests/sceneworld.test.ts` (in a changed universe, three kinds of damaged world are
+  refused and the simulation, the worlds made, the log and the Moon's look ahead are as before; a
+  sound one, and one numbered as the worlds made here, are accepted); `share.mjs` (+2 checks a
+  kind, phone and desk: a damaged save opened in a changed universe, and the same as a link come
+  in while the app is open; the changed universe to the bit and Europa's prediction the same).
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
