@@ -169,6 +169,24 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .walk-buttons { display: flex; flex-direction: column; gap: 10px; }
 #hud .walk-pad button { pointer-events: auto; width: 76px; height: 56px; border-radius: 18px; background: var(--solid); border: 1px solid var(--line); font-weight: 650; touch-action: manipulation; }
 #hud .walk-pad .walk-jump { height: 76px; border-radius: 38px; background: rgba(127, 178, 255, 0.25); color: #fff; border-color: rgba(127, 178, 255, 0.6); }
+/* free flight by touch (src/app/FreeFly.ts): the stick under the left thumb, Up, Down and Done under the right, over the
+   tab bar upright and beside it on its side; the card and the round buttons stand aside while it is on, and a sheet puts it away */
+.free-pad { position: absolute; left: var(--free-left, 12px); right: calc(var(--safe-r) + 12px); bottom: var(--free-bottom, 90px);
+  display: flex; align-items: flex-end; justify-content: space-between; pointer-events: none; }
+.free-pad[hidden] { display: none; }
+.free-stick { pointer-events: auto; position: relative; width: 120px; height: 120px; border-radius: 50%; touch-action: none;
+  background: rgba(14, 18, 30, 0.72); border: 1px solid rgba(127, 178, 255, 0.55); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+.free-stick i { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%;
+  background: rgba(127, 178, 255, 0.9); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
+.free-buttons { display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+#hud .free-pad button { pointer-events: auto; width: 64px; height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 16px;
+  background: rgba(14, 18, 30, 0.8); border: 1px solid rgba(127, 178, 255, 0.55); color: #fff; font-weight: 650; touch-action: none;
+  -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+#hud .free-pad .icon { width: 24px; height: 24px; }
+#hud .free-pad button[data-held] { background: rgba(127, 178, 255, 0.95); color: #04121e; }
+#hud .free-pad .free-done { height: 44px; touch-action: manipulation; border-color: rgba(255, 140, 120, 0.6); color: #ffb3a6; }
+#hud[data-free] .hud-fabs, #hud[data-free] .hud-slot > .sheet.card { display: none; }
+#hud:is([data-sheet='explore'], [data-sheet='time'], [data-sheet='more'], [data-sheet='flight']) .free-pad { display: none; }
 #hud.touch .walk-hud { top: calc(var(--safe-t) + 64px) !important; bottom: auto !important; white-space: normal !important; width: max-content; max-width: 90vw; }
 
 /* a notice with its action (night at a place: on to its sunrise) */
