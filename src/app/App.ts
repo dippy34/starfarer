@@ -57,7 +57,7 @@ import { fmtLight, fmtTime, MAX_RATE, spinOf, WARP_STEPS } from '../game/Flight'
 import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
-import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, TAU_STARS, type Frame } from './Exposure';
+import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, settleOn, TAU_STARS, type Frame } from './Exposure';
 import { canAdd, type Kind, MADE_FIRST_ID, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
 import { type LiveCheckpoint, LivePhysics } from './LivePhysics';
 import { Mover } from './Mover';
@@ -2084,10 +2084,14 @@ export class App {
     const look = (rel: Vector3, radius: number) => seen(rel, radius, this.meterView, this.seenScratch, this.meterInv);
     // what the eye settles on: the bright thing covering most of the frame, its radiance, and the
     // display level a frame-filling one is shown at
-    let wBest = 0, lBest = 1, keyBest = 0.45;
-    const settle = (coverage: number, radiance: number, key: number) => {
+    let wBest = 0, lBest = 1, keyBest = 0.45, meanBest = false;
+    // (`mean`: the eye follows the frame's mean light as the thing comes to fill it, Exposure.settleOn;
+    // a black hole's disk, a thousand million times brighter than the dark. Otherwise the eye goes
+    // from the dark's exposure to the thing's key in the logarithm, by its weight: a star's face
+    // coming in at the frame's edge does not take the eye over at a hundredth of the frame.)
+    const settle = (coverage: number, radiance: number, key: number, mean = false) => {
       const w = smoothstep(0.0015, 0.08, coverage);
-      if (w > wBest && radiance > 0) { wBest = w; lBest = radiance; keyBest = key; }
+      if (w > wBest && radiance > 0) { wBest = w; lBest = radiance; keyBest = key; meanBest = mean; }
     };
     // the limits (log exposure): a lit surface holds the surface exposure down, a sun or a
     // daylit sky the stars' too
@@ -2186,7 +2190,7 @@ export class App {
       const L = this.holes.radianceAt(hv.bh, nearest);
       const bright = look(hv.rel, Math.min(4 * nearest, hv.bh.diskOuter));
       if (bright.size / this.view.pixelAngle / this.view.pixelRatio <= 1.5) continue;
-      settle(bright.coverage, L, DISK_KEY);
+      settle(bright.coverage, L, DISK_KEY, true);
       // (a hot inner disk only takes over the eye once it covers part of the view)
       limitSurface((0.9 + 1.1 * glare) / Math.max(smoothstep(0.0015, 0.08, bright.coverage), 1e-6), L, whole.presence);
     }
@@ -2210,7 +2214,7 @@ export class App {
       lightLimit = Math.min(lightLimit, limit);
     }
 
-    const settled = wBest > 0 ? Math.min(open, open + (Math.log(keyBest / lBest) - open) * wBest) : open;
+    const settled = meanBest ? settleOn(open, wBest, lBest, keyBest) : wBest > 0 ? Math.min(open, open + (Math.log(keyBest / lBest) - open) * wBest) : open;
     const target = Math.min(settled, surfaceLimit);
     const lightTarget = Math.min(target, lightLimit);
     const first = this.frameCount < 3;

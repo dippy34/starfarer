@@ -440,6 +440,21 @@ export function adapt(current: number, target: number, dt: number, open = TAU_OP
 }
 
 /**
+ * What the eye settles on (log exposure) with a bright thing of `radiance` taking `weight` of the
+ * frame (0..1, as counted for settling), shown at `key` when it fills the frame, and `open` the
+ * exposure with nothing there: it is set by the frame's mean light, the thing's share and the
+ * dark's. (It was interpolated in the logarithm, from `open` to the key, by the weight: from a
+ * thing thousands of millions of times brighter than the dark, such as a black hole's disk, the
+ * last few hundredths of that weight moved it by e-folds, and the frame went dark by more than half
+ * in a few frames as the disk's middle grew past a twelfth of the frame: at Cygnus X-1, some 120
+ * of its radii out.)
+ */
+export function settleOn(open: number, weight: number, radiance: number, key: number): number {
+  if (!(weight > 0) || !(radiance > 0)) return open;
+  return Math.min(open, Math.log(key / (weight * radiance + (1 - weight) * key * Math.exp(-open))));
+}
+
+/**
  * A limit on the exposure (log) as its source leaves the frame: in full while it is in view,
  * released towards `open` (the exposure with nothing there) as its presence falls to nothing.
  */

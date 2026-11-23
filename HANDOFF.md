@@ -753,7 +753,7 @@ running (a build, not the dev server: an edit reloads the page under a running s
 `node scripts/<name>.mjs http://127.0.0.1:4173/ out`:
 `start` (the loading screen and the title screen; 34 checks), `touch` (a phone, real multi-touch;
 51), `interact` (mouse and keys; 17), `verify` (35 scenes), `exposure` (looking away from bright
-things and back, coming up to five black holes and going away again, and out of the galaxy; 78), `stars` (the faces
+things and back, coming up to five black holes and going away again, out of the galaxy, and to Cygnus X-1 slowly; 79), `stars` (the faces
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
 powers, each through the interface on a phone and at a desk, watching a change, Replay and
@@ -1526,6 +1526,25 @@ above is validated against JPL Horizons and stays as it is unless something is w
        names over it stay. `scripts/interact.mjs`: walking at the Apollo 17 site, in Valles
        Marineris and on Everest, each star's line of sight followed over the ground: no name over
        the ground, none lost over the sky, and at the Apollo 17 site names just over the massifs.
+     - *Cygnus X-1: the frame darkened in a few frames on the way in* (the trailer's
+       frame-to-frame scan: at about 105 horizon radii; here at about 120, on a phone's screen,
+       25 degrees above the disk: 16 % darker in one frame, 60 % in four). The eye "settles" on
+       the bright thing that covers most of the frame (`settle` in `App.updateExposure`), by its
+       weight (a smoothstep of its cover). That was an interpolation in the logarithm, from the
+       exposure with nothing there to the thing's key: for a disk a thousand million times
+       brighter than the dark the last few hundredths of the weight moved the eye by e-folds, all
+       at once as the disk's middle grew past a twelfth of the frame. Now the eye follows the
+       frame's mean light, the thing's share of it and the dark's (`Exposure.settleOn`): the same
+       at both ends, smooth between. Only for a black hole's disk: for a star's face (Cygnus X-1's
+       supergiant coming into the frame's edge on the far approach) the mean light took the eye
+       over at a hundredth of the frame, and the hole's light leapt 3.6 times in a frame; there the
+       eye still goes over in the logarithm. `scripts/exposure.mjs` comes up to Cygnus X-1 slowly, 1.5 %
+       a frame from 160 radii to 80 ("cygnus-slow"): x1.18 in a frame before, x1.02 now.
+       The other report, a step in the glow behind the hole across the vertical line through it
+       (seen from beside the star, 5,000 to 66,000 radii), was not reproduced on this build: read
+       before the tone curve along whole rows, the background there is a smooth, steep gradient
+       (the star's light, two and a half times across 90 px); the jet's line lies on it and makes
+       it look like a step. With the jets switched off the rows are smooth.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

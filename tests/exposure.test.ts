@@ -1,6 +1,6 @@
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { adapt, DAZZLE, diskLimit, diskMean, diskMiddle, diskSeen, FILL, GLINT_AREA, GLINT_LEVEL, hidden, MARGIN, meterFrame, middleLimit, released, seen, TAU_OPEN, TAU_SHUT, TAU_STARS, type Frame } from '../src/app/Exposure';
+import { adapt, DAZZLE, diskLimit, diskMean, diskMiddle, diskSeen, FILL, GLINT_AREA, GLINT_LEVEL, hidden, MARGIN, meterFrame, middleLimit, released, seen, settleOn, TAU_OPEN, TAU_SHUT, TAU_STARS, type Frame } from '../src/app/Exposure';
 
 // The turns below are cut fine, so that a step cannot hide between two views: tens of thousands
 // of views of 676 cells each, three seconds of arithmetic for the longest of them on a machine
@@ -517,6 +517,34 @@ describe('the middle of a disk, and the light it is drawn with', () => {
   it('a disk with no light in it sets no limit', () => {
     expect(middleLimit(from(100), () => 0, inner, hottest, level, pixel, open)).toBe(Infinity);
     expect(middleLimit(from(100), glow, inner, 0, level, pixel, open)).toBe(Infinity);
+  });
+});
+
+describe('what the eye settles on', () => {
+  const open = 13, key = 0.36;
+  it('is the dark exposure with nothing there, and the key with the thing filling the frame', () => {
+    expect(settleOn(open, 0, 1.6e9, key)).toBe(open);
+    expect(settleOn(open, 1, 1.6e9, key)).toBeCloseTo(Math.log(key / 1.6e9), 9);
+    expect(settleOn(open, 1, 2, key)).toBeCloseTo(Math.log(key / 2), 9);
+  });
+
+  it("follows the frame's mean light: no step as a very bright thing comes to fill the frame", () => {
+    // a black hole's disk, a thousand million times brighter than the dark: by the old rule (in the
+    // logarithm from the dark to the key) the last hundredth of its weight moved the eye 0.34 e-folds
+    for (const radiance of [1.6e9, 1e4, 3]) {
+      let worst = 0;
+      for (let w = 0.3; w < 1; w += 0.01) worst = Math.max(worst, Math.abs(settleOn(open, Math.min(1, w + 0.01), radiance, key) - settleOn(open, w, radiance, key)));
+      expect(worst).toBeLessThan(0.035);
+    }
+  });
+
+  it('never opens up as more of a bright thing comes into view', () => {
+    let last = Infinity;
+    for (let w = 0; w <= 1.0001; w += 0.02) {
+      const x = settleOn(open, Math.min(w, 1), 50, key);
+      expect(x).toBeLessThanOrEqual(last + 1e-12);
+      last = x;
+    }
   });
 });
 
