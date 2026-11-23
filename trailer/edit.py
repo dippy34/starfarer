@@ -31,6 +31,9 @@ def opt(name, default):
 
 SIZE = tuple(int(x) for x in opt('size', '1080x1920').split('x'))
 CRF = opt('crf', '18')
+# a part of the cut only (seconds, `--from 19.5 --to 26.25`), and with `none` for the score, a silent file:
+# for redoing one shot into a finished video (README: Redo one shot)
+T_FROM, T_TO = (float(opt('from', 0)), float(opt('to', 1e9)))
 W, H = SIZE
 K = W / 1080  # text and graphics are designed at 1080 wide
 
@@ -236,17 +239,20 @@ def text_alpha(t, start, end, fade=0.3):
 
 def main():
     folder, score, out = sys.argv[1:4]
-    shots = {c[0]: Shot(folder, c[0]) for c in CUTS}
+    # (only the shots the stretch asked for, by their frames)
+    shots = {c[0]: Shot(folder, c[0]) for c in CUTS if c[2] > T_FROM and round(c[1] * FPS) < T_TO * FPS - 1e-6}
     cards = [(s, e, style, render_card(style, lines)) for s, e, style, lines in TEXT]
     n = int(round(LENGTH * FPS))
+    k0, k1 = int(round(T_FROM * FPS)), min(n, int(round(T_TO * FPS)))
+    audio = ['-i', score, '-map', '0:v', '-map', '1:a'] if score != 'none' else ['-map', '0:v']
     cmd = ['ffmpeg', '-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
-           '-i', score, '-map', '0:v', '-map', '1:a',
+           *audio,
            '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p',
            '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'slow', '-crf', CRF, '-maxrate', '20M', '-bufsize', '40M',
            '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
-           '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', '-shortest', out]
+           *(['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2', '-shortest'] if score != 'none' else []), '-movflags', '+faststart', out]
     ff = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    for k in range(n):
+    for k in range(k0, k1):
         t = k / FPS
         # the shot on screen, and the one before it while a dissolve runs
         idx = max(i for i, c in enumerate(CUTS) if c[1] <= t + 1e-9)
@@ -268,7 +274,7 @@ def main():
         if t > LENGTH - FADE_OUT:
             img = img * max(0.0, (LENGTH - t) / FADE_OUT) ** 1.5
         ff.stdin.write((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8).tobytes())
-        if k % 150 == 0:
+        if k % 150 == 0 or k == k0:
             print(f'{t:5.1f} s', flush=True)
     ff.stdin.close()
     if ff.wait():

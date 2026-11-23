@@ -174,6 +174,7 @@ export const SHOTS = [
       },
     ],
     setup: async (T, a) => {
+      T.s = 0; // (a toast in the setup's own frames is told at the shot's time 0)
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const earth = T.body('Earth'), moon = T.body('Moon'), V = moon.pos.constructor;
       a.select(moon);
@@ -184,16 +185,22 @@ export const SHOTS = [
       const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab, #hud .hud-watch')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
       const open = (p) => !!p && p.x > 20 && p.x < innerWidth - 20 && p.y > 130 && p.y < innerHeight - 20 && walls.every((r) => p.x < r.left - 10 || p.x > r.right + 10 || p.y < r.top - 10 || p.y > r.bottom + 10);
       const seen = (p) => p.x > 8 && p.x < innerWidth - 8 && p.y > 8 && p.y < innerHeight - 8;
+      // (first with the finger, at the end of its pull, clear of the interface's buttons; else without that)
       let found = null;
-      for (const el of [75, 60]) for (const dist of [90, 120, 180, 260, 350]) for (let az = 0; az < 360; az += 15) {
+      for (const clearOfButtons of [true, false]) {
+        for (const el of [75, 60, 45]) for (const dist of [60, 90, 120, 180, 260, 350]) for (let az = 0; az < 360; az += 15) {
+          if (found) break;
+          a.placeNear(earth, dist * earth.radius, az, el);
+          a.frame();
+          const r = moon.pos.clone().sub(earth.pos), ahead = r.clone().cross(moon.vel.clone().sub(earth.vel)).cross(r).normalize();
+          const dot = a.project(moon.upos.sub(a.rig.upos, new V())), tip = a.project(moon.upos.sub(a.rig.upos, new V()).addScaledVector(ahead, 1e5));
+          if (!dot || !tip) continue;
+          const l = Math.hypot(tip.x - dot.x, tip.y - dot.y), ux = (tip.x - dot.x) / l, uy = (tip.y - dot.y) / l;
+          const back = { x: dot.x - ux * 152, y: dot.y - uy * 152 };
+          if ([0, 60, 120, 175].every((d) => open({ x: dot.x + ux * d, y: dot.y + uy * d })) && [60, 120, 175].every((d) => seen({ x: dot.x - ux * d, y: dot.y - uy * d }))
+            && (!clearOfButtons || walls.every((r) => back.x < r.left - 25 || back.x > r.right + 25 || back.y < r.top - 25 || back.y > r.bottom + 25))) found = { el, dist, az, ux, uy, clearOfButtons };
+        }
         if (found) break;
-        a.placeNear(earth, dist * earth.radius, az, el);
-        a.frame();
-        const r = moon.pos.clone().sub(earth.pos), ahead = r.clone().cross(moon.vel.clone().sub(earth.vel)).cross(r).normalize();
-        const dot = a.project(moon.upos.sub(a.rig.upos, new V())), tip = a.project(moon.upos.sub(a.rig.upos, new V()).addScaledVector(ahead, 1e5));
-        if (!dot || !tip) continue;
-        const l = Math.hypot(tip.x - dot.x, tip.y - dot.y), ux = (tip.x - dot.x) / l, uy = (tip.y - dot.y) / l;
-        if ([0, 60, 120, 175].every((d) => open({ x: dot.x + ux * d, y: dot.y + uy * d })) && [60, 120, 175].every((d) => seen({ x: dot.x - ux * d, y: dot.y - uy * d }))) found = { el, dist, az, ux, uy };
       }
       a.mover.stop();
       T.moonAt = () => a.project(a.bodies.views.get(moon).rel);
