@@ -378,10 +378,12 @@ await page.keyboard.press('Enter');
 await page.keyboard.type('Sirius');
 await page.waitForTimeout(300);
 await page.keyboard.press('Enter');
-await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 600000 });
-await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 });
+// (a wait that ends the suite, as a timeout here does, loses every check after it and says nothing of what it saw: this one is a
+// failed check that says: on a runner (45262156702) it timed out here once, after the three walks, and the suite ended)
+const arrived = await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 600000 }).then(() => true, () => false);
+await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 }).catch(() => undefined);
 await page.waitForTimeout(2500);
-st = await page.evaluate(() => ({ near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }));
+st = await page.evaluate((arrived) => ({ arrived, autopilot: !!window.app.rig.autopilot, near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }), arrived);
 check('search + goto Sirius; Sirius drawn by the near-star renderer', st.near.includes('Sirius'), JSON.stringify(st));
 await page.screenshot({ path: path.join(outDir, 'i2-sirius.png') });
 
