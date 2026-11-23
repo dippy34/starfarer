@@ -72,6 +72,7 @@ import { canvasRatio, leanDevice } from '../core/device';
 import { describe, distanceText, distanceTo, HOLES, moonWords, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
 import { Systems } from './Systems';
 import { VRSupport } from './VR';
+import { FreeFly } from './FreeFly';
 import { Walk } from './Walk';
 import { PERF } from '../perf/Perf';
 
@@ -209,6 +210,8 @@ export class App {
   game!: Game;
   /** walking on the ground (src/app/Walk.ts) */
   walk!: Walk;
+  /** free flight by touch: a stick and buttons over the view (src/app/FreeFly.ts) */
+  free!: FreeFly;
   /** other galaxies (SIMBAD) */
   galaxies!: GalaxiesLayer;
   /** nebulae and star clusters (SIMBAD) */
@@ -422,6 +425,7 @@ export class App {
     app.game = new Game(app);
     app.game.flight.setAtmospheres(atmoData);
     app.walk = new Walk(app); // walking hook
+    app.free = new FreeFly(app);
     app.awe = new Awe(app);
     setUploadRenderer(renderer.gl);
     bodies.uploader = (t) => { void uploadTexture(t); };
@@ -683,6 +687,7 @@ export class App {
       case 'ship-go': this.shipThere(); break;
       case 'sunrise': this.skipToSunrise(); break;
       case 'walk': this.walk.start(); break;
+      case 'free': this.free.toggle(); break;
       case 'menu': if (this.openMenu) { this.hud.closeSheet(); this.openMenu(); } break;
       case 'labels': this.labels.enabled = !this.labels.enabled; this.hud.toast(`Names ${this.labels.enabled ? 'on' : 'off'}`); break;
       case 'orbits': this.orbits.enabled = !this.orbits.enabled; this.hud.toast(`Orbits ${this.orbits.enabled ? 'on' : 'off'}`); break;
@@ -2759,6 +2764,8 @@ export class App {
     this.updateCentre(dt);
     if (this.vr.active) this.vr.updateInput(dt);
     this.rig.braking = this.input.keys.has('KeyX');
+    // free flight by touch (src/app/FreeFly.ts): the stick's push, or its end where the ship or walking has the controls
+    this.free.update(dt);
     // walking (src/app/Walk.ts) owns the camera while on foot; otherwise free flight
     if (this.walk.update(dt)) { this.glide = null; /* on foot */ }
     else if (flight.on) {
@@ -3077,6 +3084,7 @@ export class App {
       orbits: this.orbits.enabled,
       minor: this.orbits.showMinor,
       look: rig.touchDrag === 'look',
+      free: this.free.active,
       mode: this.walk.active ? 'walk' : this.game.active ? 'ship' : 'explore',
       touch: this.input.touch,
       ship: flight.on ? flight.timeReport() : null,
