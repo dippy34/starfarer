@@ -1,0 +1,44 @@
+{
+ "for": "stars",
+ "file": "t",
+ "license": "CC BY-SA 4.0 (from AT-HYG's types and colours) with the published scales cited",
+ "sources": [
+  "its colour (B-V)",
+  "the median colour of its spectral class (its B-V not known)",
+  "Pecaut & Mamajek 2013 (ApJS 208, 9), E. Mamajek's online table, version 2022.04.16",
+  "Martins, Schaerer & Hillier 2005 (A&A 436, 1049), observational scale, table 5 (luminosity class III)",
+  "Crowther, Lennon & Walborn 2006 (A&A 446, 279), their temperature scale of galactic early B Ia and Iab supergiants (the table labelled bstars), its mean column"
+ ],
+ "oSupergiants": "Martins, Schaerer & Hillier 2005 (A&A 436, 1049), observational scale, table 6 (luminosity class I)",
+ "layout": "records in slot order for the stars whose temperature is not from their colour or that are flagged: uint16 slot, uint8 code, uint8 E(B-V) in hundredths (little-endian)",
+ "code": {
+  "bits0to2": [
+   "colour",
+   "class colour",
+   "Pecaut & Mamajek 2013",
+   "Martins et al. 2005",
+   "Crowther et al. 2006"
+  ],
+  "8": "type flagged, not used",
+  "16": "reddened (type used)",
+  "32": "dwarf scale for a giant or supergiant",
+  "64": "redder than its type: dust or a wrong type",
+  "128": "composite spectrum"
+ },
+ "counts": {
+  "A-M redder than type": 40523,
+  "type": 20506,
+  "too bright for its type": 119,
+  "reddened": 5085,
+  "no type": 2195053,
+  "A-M": 266542,
+  "composite off its colour": 30,
+  "A-M composite off its colour": 339,
+  "A-M colour earlier than type": 1411,
+  "A-M dwarf brightness does not fit": 1351,
+  "type (no colour)": 10,
+  "A-M dwarf reddened": 1342,
+  "colour earlier than type": 5,
+  "O/B type off the scales": 2
+ }
+}
