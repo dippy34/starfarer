@@ -142,6 +142,28 @@ describe('a sun behind a world', () => {
     expect(h).toBeLessThan(0.2);
   });
 
+  it('is hidden by the ground from an eye under the world\'s mean radius (in a valley), as from its surface', () => {
+    // the Apollo 17 site, 2.6 km under the Moon's mean radius, the Sun `el` degrees over the level
+    const MOON = 1.7374e6;
+    const sunAt = (el: number) => hidden(new Vector3(Math.cos(el * deg), Math.sin(el * deg), 0).multiplyScalar(AU), SUN, new Vector3(0, -(MOON - 2600), 0), MOON);
+    // at night (7.9 degrees under the level, as when the walking check failed on GitHub's runners) all of it
+    expect(sunAt(-7.9)).toBe(1);
+    expect(sunAt(-1)).toBe(1);
+    // well up, none of it; on the level, half of it, coming up gradually
+    expect(sunAt(10)).toBe(0);
+    expect(sunAt(0)).toBeCloseTo(0.5, 2);
+    let prev = sunAt(-0.5);
+    for (let el = -0.5; el <= 0.5; el += 0.01) {
+      const h = sunAt(el);
+      expect(h).toBeLessThanOrEqual(prev + 1e-12);
+      expect(prev - h).toBeLessThan(0.05);
+      prev = h;
+    }
+    // (and on the surface itself the same as just under it)
+    const onIt = hidden(new Vector3(Math.cos(-7.9 * deg), Math.sin(-7.9 * deg), 0).multiplyScalar(AU), SUN, new Vector3(0, -MOON, 0), MOON);
+    expect(onIt).toBe(1);
+  });
+
   it('the stars come back sooner than the rest opens up', () => {
     expect(TAU_STARS).toBeLessThan(TAU_OPEN);
     // from a sun's exposure to the dark's, some twenty e-folds: within three of it in half a second

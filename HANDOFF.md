@@ -1911,6 +1911,53 @@ above is validated against JPL Horizons and stays as it is unless something is w
        before the tone curve along whole rows, the background there is a smooth, steep gradient
        (the star's light, two and a half times across 90 px); the jet's line lies on it and makes
        it look like a step. With the jets switched off the rows are smooth.
+     - *Distances from poor parallaxes* (#44): far off, a parallax is a fraction of a
+       milliarcsecond, about its error, and the distance from it is a guess; the catalogue's card
+       stated it, and the luminosity and size worked out from it, as fact (the Garnet Star, mu Cep,
+       8,402 pc from a Gaia parallax of 0.119 ± 0.264 mas: it is about a tenth as far, and was
+       shown at absolute magnitude -10.4). Each AT-HYG star is now graded by the
+       parallax its distance came from (AT-HYG's `dist_src`; Gaia DR3, or DR2, numbers from the
+       Gaia archive): good (the parallax at least five times its error) 2,507,264; poor 20,860;
+       Hipparcos only, beyond 500 pc, 84; not graded 4,330 (Hipparcos within 500 pc, Gliese, the
+       rest, and 220 the build could not match). No distance is changed. A poor one's card says
+       "distance uncertain (parallax x ± y mas)", its absolute magnitude, luminosity and estimated
+       radius "uncertain: from its distance", and its subtitle "(uncertain)"
+       (`CatalogStar.distanceGrade`, `StarCatalog.distanceGrade`). The grades are Gaia's numbers,
+       so they are kept apart under Gaia's licence in `public/data/stars-quality/` (a file a node,
+       2 bits a star and 4 bytes a poor star: 0.72 MB), fetched when a star is chosen, and not used
+       with `?gaia=0`. Not done: the Hipparcos stars' own parallax errors (VizieR, I/311, refuses
+       this machine, as SIMBAD does); and, a separate decision since it would move stars, Bailer-
+       Jones's geometric distances (Gaia archive, `external.gaiaedr3_distance`) as a better
+       estimate for the poor ones. `tests/distancegrade.test.ts`; `scripts/interact.mjs`.
+     - *A budget for the worlds' maps* (after the memory soak): every world visited kept all its
+       full maps on the GPU for good (each 4,096 x 2,048 colour, relief or night map some 43 MB
+       with its mip levels), so memory grew with the number of worlds seen, not with time: on a
+       phone (390 x 844 at 3x) a tour of twelve worlds took the GPU process from 866 to 1,458 MB,
+       with 21 big maps resident at the end. Now each map has a small copy, 1,024 x 512
+       (`pipeline/build_small_maps.py`, 30 maps, 4.07 MB), which a world keeps for good and is
+       drawn with from afar; its full maps are loaded once it is 128 px in radius on screen (half
+       the small map's width then spans the disc), the small ones shown meanwhile, and let go
+       10 s after it last was; and never more than 3 worlds' full maps at once, the one wanted
+       longest ago going first (`Bodies.wantFull`, `releaseFull`, `FULL_*`). The same tour now:
+       the GPU process 613 to 768 MB, at most 4 big maps resident (the Earth's day, night, clouds
+       and relief); the full map drawn 0.7 to 3.1 s after arrival (the Earth's, with its four
+       maps, 8.9 s), and the first world sharp again on coming back (1.0 s). `scripts/places.mjs`
+       checks the cap, the small map left behind and the full one on return. The 8k tier
+       (`hi`) works as before. Not changed, measured for a decision: the render targets at a
+       phone's pixel ratio 3 are some 111 MB (the HDR target 1,170 x 2,532, half floats, 2
+       samples: 90 MB; bloom 8 MB; the volume pass 13 MB), at pixel ratio 2 some 79 MB (the HDR
+       target 780 x 1,688 with 4 samples, 70 MB; bloom 3 MB; volume 6 MB).
+     - *The stars out at night in a valley* (interact's "walking at Apollo 17" failing on GitHub's
+       runners, the same numbers every run): at night at the Apollo 17 site, 2.6 km under the
+       Moon's mean radius, with the view turned to where the Sun is (7.9 degrees under the
+       horizon), the stars went out: a magnitude limit of -16 against 7.2 facing away. A world in
+       front of a sun is a ball of its mean radius (`Exposure.hidden`), and from an eye inside
+       that ball it was counted as hiding nothing, so the Sun was in sight through the ground;
+       which way the walker faced came from the checks before, towards the Sun on the runners.
+       From inside the ball the world now hides everything under the eye's level, as it does from
+       its surface. The same counts a world's night side as dark from a valley
+       (`App.updateExposure`'s `night`). `tests/exposure.test.ts`; `scripts/interact.mjs` turns
+       the walker to the Sun's bearing and away.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

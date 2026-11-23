@@ -220,27 +220,53 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     && st.proxima.filter((l) => /^Proxima Cen(tauri)?$/.test(l)).length === 1 && st.tour.join() === 'Sagittarius A*,M87*,Cygnus X-1', JSON.stringify(st));
 }
 
-// 5. Search and go to a star
-await page.keyboard.press('Enter');
-await page.keyboard.type('Sirius');
-await page.waitForTimeout(300);
-await page.keyboard.press('Enter');
-await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 60000 });
-await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 });
-await page.waitForTimeout(2500);
-st = await page.evaluate(() => ({ near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }));
-check('search + goto Sirius; Sirius drawn by the near-star renderer', st.near.includes('Sirius'), JSON.stringify(st));
-await page.screenshot({ path: path.join(outDir, 'i2-sirius.png') });
-
-// 5b. Beside the space station (400 km up, where the camera would otherwise start to turn with the Earth): it stays beside it
-await page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); a.select(s); a.goTo(s); });
-await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 120000 });
-await page.waitForTimeout(1000);
-const iss = () => page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); return { d: s.upos.sub(a.rig.upos).length(), anchor: a.rig.anchor?.name, alt: a.rig.altitude }; });
-const i0 = await iss();
-await page.waitForTimeout(3000);
-const i1 = await iss();
-check('beside the space station the camera stays beside it', /International/.test(i1.anchor ?? '') && Math.abs(i1.d - i0.d) < 0.5 && i0.d < 2000, JSON.stringify([i0, i1]));
+// 4f. A star whose distance is a poor parallax's says so on its card: the Garnet Star (μ Cephei), 8,400 pc in
+// the catalogue from a Gaia parallax of 0.119 ± 0.264 mas (it is about a tenth as far): its distance uncertain,
+// with the numbers, and its luminosity and estimated size, worked out from that distance, not stated as fact;
+// Deneb's (a good parallax) as before
+{
+  const card = (name) => page.evaluate(async (name) => {
+    const a = window.app, s = a.findByName(name);
+    a.select(s);
+    for (let i = 0; i < 100 && !s.distanceGrade; i++) await new Promise((r) => setTimeout(r, 100));
+    // (the card drawn for this star before its details are opened: the first frame that draws a new selection
+    // closes them, and closed they are not refreshed. On GitHub's runners the click came first, and the rows
+    // read were the star's before.) A frame drawn by hand: the app's own loop may be held by an earlier check.
+    for (let i = 0; i < 300 && document.querySelector('.card h2')?.textContent !== s.name; i++) {
+      a.frame();
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const det = document.querySelector('.card [data-details]');
+    if (det.getAttribute('aria-expanded') !== 'true') det.click();
+    // (the card as the app has drawn it for this star: its title, and its distance as the star itself states it;
+    // on a slow machine the card is a frame or more behind the selection)
+    const want = new Map(s.info()).get('Distance from Sun');
+    const read = () => {
+      const rows = {};
+      const dts = [...document.querySelectorAll('.card .facts dt')], dds = [...document.querySelectorAll('.card .facts dd')];
+      dts.forEach((dt, k) => { rows[dt.textContent] = dds[k]?.textContent ?? ''; });
+      return rows;
+    };
+    let rows = read();
+    for (let i = 0; i < 300 && (document.querySelector('.card h2')?.textContent !== s.name || rows['Distance from Sun'] !== want); i++) {
+      // (a frame drawn by hand: the app's own loop may be held by an earlier check)
+      a.frame();
+      await new Promise((r) => setTimeout(r, 100));
+      rows = read();
+    }
+    const hudRows = Object.fromEntries(a.hud.state?.selection?.rows ?? []);
+    return { grade: s.distanceGrade, title: document.querySelector('.card h2')?.textContent, selected: a.selection?.name, want, hud: hudRows['Distance from Sun'], detail: document.querySelector('.card .card-title p')?.textContent, rows };
+  }, name);
+  const garnet = await card('Garnet Star');
+  const deneb = await card('Deneb');
+  const g = garnet.rows;
+  check("a star with a poor parallax: its card says its distance is uncertain, with the numbers, and what follows from it is not stated as fact",
+    /distance uncertain \(parallax 0\.119 ± 0\.264 mas\)/.test(g['Distance from Sun'] ?? '') && /uncertain/.test(g['Luminosity (V)'] ?? '') && /uncertain/.test(g['Absolute mag (V)'] ?? '')
+      && /uncertain/.test(g.Radius ?? '') && /uncertain/.test(g.Scale ?? '') && /uncertain/.test(garnet.detail ?? '')
+      && !/uncertain/.test(`${deneb.rows['Distance from Sun']} ${deneb.rows['Luminosity (V)']} ${deneb.detail}`),
+    JSON.stringify({ garnet: { grade: garnet.grade, title: garnet.title, selected: garnet.selected, want: garnet.want, hud: garnet.hud, detail: garnet.detail, distance: g['Distance from Sun'], luminosity: g['Luminosity (V)'], radius: g.Radius, scale: g.Scale }, deneb: { grade: deneb.grade, distance: deneb.rows['Distance from Sun'] } }));
+  await page.evaluate(() => { const d = document.querySelector('.card [data-details]'); if (d?.getAttribute('aria-expanded') === 'true') d.click(); window.app.select(null); });
+}
 
 // 5c. Walking, star names stand only over the sky: none over the ground, at the bottom of a valley (the Apollo 17
 // site, in the Taurus-Littrow valley, 2.6 km under the Moon's mean radius), of a canyon (Valles Marineris, kilometres
@@ -257,6 +283,16 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
   { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + 20, { timeout: 600000 }); }
   await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 300000 }).catch(() => undefined);
   { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + 5, { timeout: 600000 }); }
+  // the eye settled on the night (the faintest stars named are set by it): the magnitude limit no longer moving
+  // from one ten frames to the next. (It runs before the space station's check, which times out now and then on
+  // GitHub's runners and ends the run.)
+  for (let k = 0, last = -99; k < 60; k++) {
+    const f = await page.evaluate(() => window.app.frameCount);
+    await page.waitForFunction((x) => window.app.frameCount >= x, f + 10, { timeout: 600000 });
+    const m = await page.evaluate(() => window.app.lastMLim);
+    if (Math.abs(m - last) < 0.05) break;
+    last = m;
+  }
   const r = await page.evaluate(() => {
     const a = window.app, T = a.terrain, c = T.current, e = c.orient.elements;
     const rel = a.rig.upos.sub(c.upos, a.rig.vel.clone());
@@ -296,7 +332,7 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
     // (from the Apollo 17 site, over the massifs round the valley)
     const ridge = over.filter((x) => el(x) > 0 && blocked(tilt(x.rel.clone().normalize(), -6)));
     return {
-      world: T.owner.name, below: Math.round(D - R), named: all.length, behindWorlds: all.filter(behindWorld).length, under: under.length, overEyeLevel: over.filter((x) => el(x) < 0).length,
+      world: T.owner.name, below: Math.round(D - R), mLim: +a.lastMLim.toFixed(2), labels: a.labels.enabled, frame: a.frameCount, jd: a.clock.jdTdb, sunUp: +((Math.asin(a.system.sun.upos.sub(a.rig.upos, a.rig.vel.clone()).normalize().dot(up)) * 180) / Math.PI).toFixed(1), named: all.length, behindWorlds: all.filter(behindWorld).length, under: under.length, overEyeLevel: over.filter((x) => el(x) < 0).length,
       ridge: ridge.map((x) => `${x.text} ${el(x)}°${has.has(x.text) ? '' : ' (unnamed)'}`),
       wrong: under.filter((x) => has.has(x.text)).map((x) => `${x.text} ${el(x)}°`), lost: over.filter((x) => !has.has(x.text)).map((x) => `${x.text} ${el(x)}°`),
     };
@@ -304,8 +340,56 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
   // (at the Apollo 17 site there are names both under its ground and just over its ridges to be tried)
   const ok = r.wrong.length === 0 && r.lost.length === 0 && (place !== 'Apollo 17 landing site' || (r.under > 0 && r.ridge.length > 0));
   check(`walking at ${place}: no star's name over the ground, none lost over the sky (just over a ridge either)`, ok, JSON.stringify(r));
+  // 5c2. At night in the valley, the view turned to where the Sun is, under the horizon: the stars stay out.
+  // (The eye there is 2.6 km under the Moon's mean radius, and the Moon was counted as hiding nothing from inside
+  // its mean ball: the Sun, 7.9 degrees under the horizon, was in sight and took the limit to -16. Which way the
+  // walker happened to face came from the checks before: on GitHub's runners it was towards the Sun.)
+  if (place === 'Apollo 17 landing site') {
+    const face = async (away) => {
+      await page.evaluate((away) => {
+        const a = window.app, W = a.walk, RT = W.R.clone().transpose();
+        const up = a.rig.upos.sub(W.centre, a.rig.vel.clone()).normalize().applyMatrix3(RT);
+        const s = a.system.sun.upos.sub(a.rig.upos, a.rig.vel.clone()).normalize().applyMatrix3(RT);
+        s.addScaledVector(up, -s.dot(up)).normalize();
+        if (away) s.negate();
+        W.fwd.copy(s); W.pitch = 0;
+      }, away);
+      const f = await page.evaluate(() => window.app.frameCount);
+      await page.waitForFunction((x) => window.app.frameCount >= x, f + 90, { timeout: 600000 });
+      return page.evaluate(() => {
+        const a = window.app, rel = a.system.sun.upos.sub(a.rig.upos, a.rig.vel.clone());
+        const up = a.rig.upos.sub(a.walk.centre, a.rig.vel.clone()).normalize();
+        return { mLim: +a.lastMLim.toFixed(2), sunUp: +((Math.asin(rel.clone().normalize().dot(up)) * 180) / Math.PI).toFixed(1), sunInSight: +a.inSight(rel, a.system.sun.radius).toFixed(3) };
+      });
+    };
+    const away = await face(true), toward = await face(false);
+    check('walking at night in the Apollo 17 valley, facing where the Sun is under the horizon: the stars stay out',
+      toward.sunUp < -1 && toward.sunInSight === 0 && toward.mLim > away.mLim - 0.5, JSON.stringify({ away, toward }));
+  }
 }
 await page.evaluate((jd) => { const a = window.app; a.walk.exit(true); a.clock.jdTdb = jd; a.clock.paused = false; }, jdWalk);
+
+// 5. Search and go to a star
+await page.keyboard.press('Enter');
+await page.keyboard.type('Sirius');
+await page.waitForTimeout(300);
+await page.keyboard.press('Enter');
+await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 60000 });
+await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 });
+await page.waitForTimeout(2500);
+st = await page.evaluate(() => ({ near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }));
+check('search + goto Sirius; Sirius drawn by the near-star renderer', st.near.includes('Sirius'), JSON.stringify(st));
+await page.screenshot({ path: path.join(outDir, 'i2-sirius.png') });
+
+// 5b. Beside the space station (400 km up, where the camera would otherwise start to turn with the Earth): it stays beside it
+await page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); a.select(s); a.goTo(s); });
+await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 120000 });
+await page.waitForTimeout(1000);
+const iss = () => page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); return { d: s.upos.sub(a.rig.upos).length(), anchor: a.rig.anchor?.name, alt: a.rig.altitude }; });
+const i0 = await iss();
+await page.waitForTimeout(3000);
+const i1 = await iss();
+check('beside the space station the camera stays beside it', /International/.test(i1.anchor ?? '') && Math.abs(i1.d - i0.d) < 0.5 && i0.d < 2000, JSON.stringify([i0, i1]));
 
 // 6. Frame timing (JS work only)
 const timing = await page.evaluate(async () => {

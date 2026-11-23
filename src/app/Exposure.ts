@@ -117,9 +117,12 @@ export function seen(rel: Vector3, radius: number, frame: Frame, scratch: Vector
  */
 export function hidden(rel: Vector3, radius: number, relOther: Vector3, radiusOther: number): number {
   const d = rel.length(), dO = relOther.length();
-  if (!(dO < d) || !(d > radius) || !(dO > radiusOther)) return 0;
+  if (!(dO < d) || !(d > radius)) return 0;
   const sep = Math.acos(Math.max(-1, Math.min(1, rel.dot(relOther) / (d * dO))));
-  return discCovered(Math.asin(radius / d), Math.asin(radiusOther / dO), sep);
+  // (an eye under the other's mean radius, in a valley of the world it walks on, has the ground
+  // below its level all round, as on the surface itself: half the sky. Counted as hiding nothing,
+  // a Sun under the horizon there was in sight, and put the stars out when the view turned to it.)
+  return discCovered(Math.asin(radius / d), dO > radiusOther ? Math.asin(radiusOther / dO) : Math.PI / 2, sep);
 }
 
 /** cells across the frame and its margin, each way, that a disk is looked for in */

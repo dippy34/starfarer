@@ -107,7 +107,13 @@ export class Awe {
 
   /** Info-card rows for the selection seen from `dist` (m). */
   rows(o: SpaceObject, dist: number): [string, string][] {
-    return scaleRows(o.radius, dist, this.app.view.fovY, o instanceof BlackHole);
+    const rows = scaleRows(o.radius, dist, this.app.view.fovY, o instanceof BlackHole);
+    // (a star's estimated size from an uncertain distance is as uncertain: its angular size, the size over the
+    // distance, much less so, but the Earths inside it go as the cube of the distance)
+    if (o instanceof CatalogStar && o.distanceUncertain && !o.measured && !o.shape) {
+      for (const r of rows) if (r[0] === 'Scale') r[1] = `${r[1]} (uncertain: from its distance)`;
+    }
+    return rows;
   }
 
   toggleEarth(): string {
