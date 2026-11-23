@@ -406,9 +406,12 @@ const centreOf = async (page, sel) => {
     await tapOn('.hud-tabs [data-tab="more"]');
     const row = await page.evaluate(() => { const b = document.querySelector('.more [data-act="screenshot"]'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
     const download = page.waitForEvent('download', { timeout: 60000 }).catch(() => null);
+    // (three seconds from when the toast was put up, not from when the download came: the picture is drawn in a frame, a second or
+    // more on a runner, and the toast is on for a wall-clock time)
+    await page.evaluate(() => { const t = document.querySelector('.hud-toast'); window.__toastAt = null; new MutationObserver(() => { if (t.classList.contains('show') && window.__toastAt === null) window.__toastAt = performance.now(); }).observe(t, { attributes: true, childList: true, characterData: true, subtree: true }); });
     await f.tap(row);
     const file = (await download)?.suggestedFilename() ?? null;
-    await page.waitForTimeout(3000);
+    await page.waitForFunction(() => window.__toastAt !== null && performance.now() - window.__toastAt >= 3000, null, { timeout: 60000, polling: 100 }).catch(() => undefined);
     const after = await page.evaluate(() => { const t = document.querySelector('.hud-toast'); return { toast: t.classList.contains('show') ? t.textContent : null }; });
     st = await state(page);
     check('Save a picture downloads it, closes the sheet and says where it went', !!file && /\.png$/.test(file) && st.sheet !== 'more' && !!after.toast && after.toast.includes('downloads') && after.toast.includes(file), JSON.stringify({ file, sheet: st.sheet, ...after }));
@@ -520,7 +523,9 @@ const centreOf = async (page, sel) => {
   check('a tap on Mars where it is drawn picks it', before === 'Jupiter' && after === 'Mars', JSON.stringify({ before, after }));
   // photo mode puts the interface away: the centre is the middle again, and Mars is there; a tap brings it all back
   await page.evaluate(() => window.app.act('photo'));
-  await page.waitForFunction(() => Math.abs(window.app.view.cx) < 1 && Math.abs(window.app.view.cy) < 1, null, { timeout: 60000 });
+  // (until the centre is the middle exactly: it eases there in steps of a tenth of a second at most and is set to it within 0.05 px,
+  // which is three frames from a pixel at a frame a second and a good many more at sixty: the check is that it is there)
+  await page.waitForFunction(() => window.app.view.cx === 0 && window.app.view.cy === 0, null, { timeout: 60000 });
   await f.frames(3);
   const photo = await view();
   [onMars, atMiddle] = await lum([[photo.p.x, photo.p.y, 3], [photo.W / 2 - 150, photo.H / 2 - 100, 3]]);
