@@ -1255,6 +1255,49 @@ link held. Now:
   passing on the runners (run 45270442532); on f99d31e the first of them fails and the run stops
   (run 45270442251), and the unit test cannot run there (no `checkWorld`).
 
+## Ground and level of detail (the test-health pass)
+
+What the ship's ground is, how much it moves as the terrain is refined, and the decision taken (the coordinator's: build A,
+keep B for later, C not needed with A).
+
+- **What the ship's ground follows.** `Flight.frameEnv` sets `core.groundR` each frame from `app.terrain.below(ship.upos).ground`
+  = `PlanetTerrain.groundRadius(dir)`: the drawn tile mesh itself (the triangle of the finest loaded leaf under the direction,
+  `tileGroundRadius`, geomorph factor included), built by the workers from the full elevation pyramid; and where no tile data
+  exists yet, a main-thread fallback, `baseRadius + ground.height(dir, 100)`. `ShipPhysics.contact` compares the ship's radius
+  with that constant `groundR`: below it is a contact, over 12 m/s a crash. It is not the elevation data at full resolution
+  (the main thread's `ground.height`, at any spacing, is up to ~200 m from the mesh, so following it would float the ship
+  over or sink it into what is drawn).
+- **The numbers** (probe, local build of the same code: the app's places and seeded random directions, descended through
+  20 km, 5 km, 1 km, 200 m, 50 m, 12 m over one spot, each stage waited until the terrain's job count was 0 and the ground
+  steady for 8 frames; "first" is the ground in the first frame at that altitude, "settled" after the streaming):
+  - arriving without the terrain there (a teleport, or anything faster than the streaming), first to settled: Moon, 13 sites:
+    20 km up to +1,208 m and -348 m (random sites), median ~40 m; 5 km median 5 m, worst -64 m (Copernicus); 1 km <= 1.5 m;
+    200 m and below <= 0.3 m. Earth, seven rugged places (Everest, Grand Canyon, Kilimanjaro, Matterhorn, Mauna Kea, Fuji,
+    Denali): 20 km 64 to 3,987 m; 5 km 80 to 346 m; 1 km 6 to 46 m; 200 m 3 to 8 m; 50 m <= 0.6 m; 12 m none. Flat places
+    (ocean, plain): 0 to 30 m.
+  - from one settled stage to the next (a gradual descent with everything loaded): Moon <= 1.5 m below 1 km; Earth: Matterhorn
+    +473 m (20 to 5 km) then +109 m (5 to 1 km), Denali +78 m at 1 km, Fuji +38, Mauna Kea -64, Kilimanjaro +26; at 200 m
+    <= 14 m; at 50 m <= 1 m.
+  - the fallback against the finest settled mesh at the same place: Moon -93 to +193 m, Earth -182 to +178 m.
+  - Found by the gentle-drop flake of flight.mjs and game.mjs (the ground under a ship hovering 12 m up moved by +14 to +33 m
+    and by -65 and -184 m while it fell on a runner: a fall of over 45 m is over the crash speed, 25.2 and 15.8 m/s).
+- **Decision: A, the ship rides with the refinement** (`src/game/GroundRide.ts`, `PlanetTerrain.watch` / `takeRefinement`,
+  `Flight.rideGround` / `watchGround`). `Flight.after` sets `terrain.watch` to the body-fixed direction under the ship (its own
+  column: the camera is the ship's position, the chase camera's offset is only drawn); `PlanetTerrain` sums what the ground at
+  that direction gains or loses across its own `update` (tiles chosen, morphing in, replaced, the first tile replacing the
+  coarse fallback) and across each worker message that brings tiles in (`receive`), and never what it gains by the watcher having
+  moved; `Flight.before` takes the sum and, for an airborne ship (not landed) within 3 km of the ground, moves it along the
+  vertical by as much (at most 1,000 m a frame), its velocity untouched: its height above the ground and speed are what they
+  were, so a level of detail is neither a fall nor a crash. A ship the explorer moved (a script, a search pick) is not carried
+  for that frame. Landed ships already follow the ground (`place`). Unit tests: tests/groundride.test.ts; flight.mjs section 7b
+  (the ground the terrain reports made to rise 800 m over a ship 600 m up falling at 20 m/s, then to sink 800 m, then 300 m,
+  each inside the terrain's update: it keeps its height and speed and does not crash; on the build before it crashes at the
+  first and jumps 651 m and 147 m at the others).
+- **Kept for later, if a slow phone still shows a visible step on arrival: B**, building ahead and not only under the ship:
+  want the column at the altitude the ship will have in a few seconds along its velocity (`chainLevel`, PlanetTerrain ~529) and
+  give the column under the ship's velocity line the reserved job slot. Fewer refinements, none removed; it does not help a
+  teleport. **C** (call a contact a crash only when the column has no job pending) is not needed while A is in.
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
