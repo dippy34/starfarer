@@ -388,7 +388,11 @@ export function buildShip(): ShipDesign {
     length: 17.4,
     span: 2 * (tipLamp.x + 0.15),
     cover: {
-      capsules: [[V(0, 0.1, -8.5), V(0, 0.1, -2.5), 1.25], [V(0, 0.1, -2.5), V(0, 0.1, 4.0), 1.0], [V(0, 0, 4.3), V(0, 0, 8.3), 1.15]],
+      // (the cabin narrows to its nose in three steps: one capsule 1.25 m round from -8.5 m reached
+      // 0.75 m beyond the tip and as far above and below it, sky taken for ship there, so an orbit
+      // line crossing just ahead of the nose counted as drawn over the ship)
+      capsules: [[V(0, 0.1, -8.55), V(0, 0.1, -7.9), 0.45], [V(0, 0.1, -7.9), V(0, 0.1, -6.6), 0.8], [V(0, 0.1, -6.6), V(0, 0.1, -2.5), 1.25],
+        [V(0, 0.1, -2.5), V(0, 0.1, 4.0), 1.0], [V(0, 0, 4.3), V(0, 0, 8.3), 1.15]],
       quads: [radQuad(1), radQuad(-1)],
     },
   };
