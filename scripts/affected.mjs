@@ -52,7 +52,7 @@ const RULES = [
   [/^[^/]+\.md$/, []],
   [/^LICENSE$/, []],
   [/^\.github\/workflows\/deploy-pages\.yml$/, []],
-  [/^scripts\/(affected|remote-test|bench|bench-decode|exoterrain-gpu)\.mjs$/, []],
+  [/^scripts\/(affected|remote-test|bench|bench-decode|exoterrain-gpu|og-image)\.mjs$/, []],
   [/^src\/perf\//, ['interact']],                       // the perf HUD and bench (bench.mjs is not in the set)
   // the scripts themselves
   [/^scripts\/lib\/browser\.mjs$/, null],
