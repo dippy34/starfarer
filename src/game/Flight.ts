@@ -471,7 +471,7 @@ export class Flight {
     if (no) {
       // (the next sensible thing, one touch away: the drive set as strong as the trip needs, and on)
       const weak = this.weakDrive();
-      if (weak && app.selection === target && !app.vr.active) app.hud.notice(`The drive at ${fmtG(ship.driveAccel / G0)} is too weak against gravity here (${weak.pull.toFixed(weak.pull < 10 ? 2 : 0)} m/s²)`, 'ship-go', 'Stronger drive, and go');
+      if (weak && app.selection === target && !app.vr.active) app.hud.notice(`Drive at ${fmtG(ship.driveAccel / G0)} is too weak here (${weak.pull.toFixed(1)} m/s²)`, 'ship-go', `Use ${fmtG(this.driveSetting(target))}, and go`);
       else app.hud.toast(no, 4);
       if (app.vr.active) app.vr.flash(no.split(':')[0]);
       return false;
@@ -563,6 +563,13 @@ export class Flight {
    */
   driveFor(target: SpaceObject): void {
     const ship = this.ship;
+    ship.drive = 'reactionless';
+    ship.driveAccel = this.driveSetting(target) * G0;
+  }
+
+  /** The setting (g) `driveFor` would choose for a trip to `target`. */
+  private driveSetting(target: SpaceObject): number {
+    const ship = this.ship;
     const d = Math.max(0, target.upos.sub(ship.upos, this.tmp).length() - this.arrivalRadius(target));
     const g = gravity.gravityAt(ship.upos, _g1).length();
     let pick = DRIVE_STEPS[DRIVE_STEPS.length - 1];
@@ -574,8 +581,7 @@ export class Flight {
       pick = x;
       break;
     }
-    ship.drive = 'reactionless';
-    ship.driveAccel = pick * G0;
+    return pick;
   }
 
   /**

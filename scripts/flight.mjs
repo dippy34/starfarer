@@ -812,7 +812,7 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-17; not indented, to keep the 
   await f.tap(await at('[data-act="go"]'));
   await f.frames(3);
   st = await phone.evaluate(() => { const n = document.querySelector('.hud-notice'), b = n.querySelector('.notice-act'); return { shown: !n.hidden, text: n.querySelector('span').textContent, act: b.hidden ? '' : b.textContent, ap: !!window.app.game.flight.autopilot, g: window.app.game.flight.ship.driveAccel / 9.80665 }; });
-  check('with the drive too weak to climb, Go there says so and offers a button: a stronger drive, and go', st.shown && /too weak/.test(st.text) && st.act === 'Stronger drive, and go' && !st.ap && st.g === 1, JSON.stringify(st));
+  check('with the drive too weak to climb, Go there says so and offers a button that names the drive it would use (5 g, enough to climb), and go', st.shown && /too weak/.test(st.text) && /^Use 5 g, and go$/.test(st.act) && !st.ap && st.g === 1, JSON.stringify(st));
   await phone.screenshot({ path: path.join(outDir, 'f27-phone-air-weak.png'), timeout: 180000 });
   await f.tap(await at('.hud-notice .notice-act'));
   await f.frames(4);
