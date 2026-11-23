@@ -265,6 +265,25 @@ function copyState(s: State): State {
 
 export type NBodySnapshot = Readonly<Record<string, unknown>>;
 
+/**
+ * The simulation as its bodies are, settled at `time` (see `settle`): what a new simulation needs
+ * to go on exactly as this one does after a change, and no more (the hierarchy, the step and the
+ * rest are planned again from it, as after any change). Plain numbers, per body in the order of
+ * `ids`: what a link carries (src/app/SceneWorld.ts), where `snapshot` is for this machine alone.
+ */
+export interface NBodyBodies {
+  time: number;
+  nextId: number;
+  ids: number[];
+  /** G x mass (m³/s²), radius and Schwarzschild radius (m), J₂R² (m²) and the pole it is about (three numbers a body) */
+  gm: number[]; radius: number[]; rs: number[]; zon: number[]; pole: number[];
+  /** 0 bound, 1 told unbound, 2 told past the edge; 1: what goes round it is always stepped; what it goes round, as last told (-1 nothing, -2 not yet known) */
+  free: number[]; pin: number[]; around: number[];
+  /** positions (m) and velocities (m/s), three numbers a body */
+  x: number[]; v: number[];
+  railsBelow: number; lightRailsBelow: number; railsCross: number; steps: number; edge: number;
+}
+
 export class NBody {
   /** positions (m) and velocities (m/s) of the bodies at `time`, three numbers each: filled by `read()` */
   pos = new Float64Array(0);
@@ -1788,6 +1807,59 @@ export class NBody {
   /** Everything the simulation is, as plain numbers and arrays: `restore` carries on from it exactly. */
   snapshot(): NBodySnapshot {
     return { state: copyState(this.s), railsBelow: this.limit, lightRailsBelow: this.lightLimit, railsCross: this.cross, steps: this.perTurn, edge: this.edge, review: this.review } as unknown as NBodySnapshot;
+  }
+
+  /**
+   * The bodies, settled (see NBodyBodies). Settling is what every change does: the run of equal
+   * steps ends here, and the next step is planned afresh. A simulation made from what this returns
+   * (`fromBodies`) and this one, made from it again, go on bit for bit alike.
+   */
+  bodies(): NBodyBodies {
+    this.settle();
+    const s = this.s, n = s.n, list = <T extends ArrayLike<number>>(a: T, k = 1) => Array.from({ length: k * n }, (_, i) => a[i]);
+    return {
+      time: s.time, nextId: s.nextId, ids: list(s.id), gm: list(s.gm), radius: list(s.radius), rs: list(s.rs), zon: list(s.zon), pole: list(s.pole, 3),
+      free: list(s.free), pin: list(s.pin), around: list(s.around), x: list(s.x, 3), v: list(s.v, 3),
+      railsBelow: this.limit, lightRailsBelow: this.lightLimit, railsCross: this.cross, steps: this.perTurn, edge: this.edge,
+    };
+  }
+
+  /**
+   * A simulation of the bodies `b` (as `bodies()` gives them), at their time, about to plan its
+   * first step. Throws if they do not make one: lists of other lengths, a number used twice, a
+   * mass, size or place that is not a finite number in range.
+   */
+  static fromBodies(b: NBodyBodies): NBody {
+    const n = b.ids.length;
+    const lengths = [b.gm, b.radius, b.rs, b.zon, b.free, b.pin, b.around].every((a) => a.length === n) && [b.pole, b.x, b.v].every((a) => a.length === 3 * n);
+    if (!lengths) throw new Error('the lists of bodies do not agree');
+    const fin = (x: number) => Number.isFinite(x);
+    if (![b.time, b.railsBelow, b.lightRailsBelow, b.railsCross, b.steps].every(fin) || !(b.edge > 0) || !(b.steps >= 1) || !(b.railsBelow >= 0) || !(b.lightRailsBelow >= 0) || !(b.railsCross >= 0)) throw new Error('the simulation\'s settings are out of range');
+    const seen = new Set<number>();
+    for (let i = 0; i < n; i++) {
+      const id = b.ids[i];
+      if (!Number.isInteger(id) || seen.has(id)) throw new Error(`body ${id}: not a number of its own`);
+      seen.add(id);
+      if (!(b.gm[i] >= 0 && fin(b.gm[i])) || !(b.radius[i] >= 0 && fin(b.radius[i])) || !(b.rs[i] >= 0 && fin(b.rs[i])) || !(b.zon[i] >= 0 && fin(b.zon[i]))) throw new Error(`body ${id}: a mass or size out of range`);
+      if (![0, 1, 2].includes(b.free[i]) || ![0, 1].includes(b.pin[i]) || !Number.isInteger(b.around[i]) || b.around[i] < -2) throw new Error(`body ${id}: its state could not be read`);
+      for (let c = 0; c < 3; c++) if (!fin(b.x[3 * i + c]) || !fin(b.v[3 * i + c]) || !fin(b.pole[3 * i + c])) throw new Error(`body ${id}: a place or motion out of range`);
+    }
+    for (let i = 0; i < n; i++) if (b.around[i] >= 0 && !seen.has(b.around[i])) throw new Error(`body ${b.ids[i]}: goes round a body that is not there`);
+    if (!Number.isInteger(b.nextId) || b.ids.some((id) => id >= b.nextId)) throw new Error('the numbering of bodies could not be read');
+    const sim = new NBody();
+    sim.room(Math.max(8, n));
+    const s = sim.s;
+    s.n = n;
+    for (let i = 0; i < n; i++) {
+      s.id[i] = b.ids[i]; s.gm[i] = b.gm[i]; s.radius[i] = b.radius[i]; s.rs[i] = b.rs[i]; s.zon[i] = b.zon[i];
+      s.free[i] = b.free[i]; s.pin[i] = b.pin[i]; s.around[i] = b.around[i];
+      for (let c = 0; c < 3; c++) { s.pole[3 * i + c] = b.pole[3 * i + c]; s.x[3 * i + c] = b.x[3 * i + c]; s.v[3 * i + c] = b.v[3 * i + c]; }
+    }
+    s.nextId = b.nextId;
+    s.time = s.at = s.t0 = b.time;
+    s.layout = 1;
+    sim.limit = b.railsBelow; sim.lightLimit = b.lightRailsBelow; sim.cross = b.railsCross; sim.perTurn = b.steps; sim.edge = b.edge;
+    return sim;
   }
 
   static restore(snap: NBodySnapshot): NBody {

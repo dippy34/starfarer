@@ -7,6 +7,27 @@
     <meta name="theme-color" content="#000000" />
     <meta name="color-scheme" content="dark" />
     <meta name="description" content="A real-scale universe to explore: 2.75 million real stars, every planet and moon, black holes, galaxies." />
+    <!--
+      The link's preview in a chat or a post (Open Graph, and X's card). A preview is fetched without
+      the part after '#', so every shared scene shows this one. %SITE_URL% is put in by vite.config.ts:
+      og:image and og:url must be absolute. The picture is the app's own, captured from it
+      (scripts/og-image.mjs), 1200 x 630.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Starfarer" />
+    <meta property="og:title" content="Starfarer: the real universe, to scale" />
+    <meta property="og:description" content="Every planet and moon where they really are, 2.75 million real stars, black holes and galaxies. Change a world and watch real gravity take over." />
+    <meta property="og:url" content="%SITE_URL%" />
+    <meta property="og:image" content="%SITE_URL%og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Saturn and its rings, lit by the Sun, as Starfarer draws them" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Starfarer: the real universe, to scale" />
+    <meta name="twitter:description" content="Every planet and moon where they really are, 2.75 million real stars, black holes and galaxies. Change a world and watch real gravity take over." />
+    <meta name="twitter:image" content="%SITE_URL%og-image.png" />
+    <meta name="twitter:image:alt" content="Saturn and its rings, lit by the Sun, as Starfarer draws them" />
     <!-- added to a phone's home screen it opens like an app, without the browser around it -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

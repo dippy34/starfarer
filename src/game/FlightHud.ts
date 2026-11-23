@@ -615,7 +615,7 @@ function readout(r: FlightReadout, plain = false): string {
   const row = (k: string, v: string, cls = '') => `<div class="row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
   const bound = c && c.e < 1;
   let orbit = '';
-  if (r.landed) orbit = row('status', `landed on ${r.landed}`, 'ok');
+  if (r.landed) orbit = row('status', `landed on ${esc(r.landed)}`, 'ok');
   // (past a tenth of light's speed a Newtonian orbit is not the ship's path: the speed says more)
   else if ((c || Number.isFinite(r.pe)) && r.properSpeed < 0.1 * C) {
     if (Number.isFinite(r.ap) && (bound || r.ap > 0)) orbit += row('apoapsis', `${fmtDist(r.ap)} <span class="k">in</span> ${fmtTime(r.tAp)}`);
@@ -624,7 +624,7 @@ function readout(r: FlightReadout, plain = false): string {
     if (c && bound) orbit += row('period · e · i', `${fmtTime(c.period)} · ${c.e.toFixed(3)} · ${(c.inc * 57.2958).toFixed(1)}°`);
   }
   if (Number.isFinite(r.tImpact) && !r.landed) orbit += row('impact in', fmtTime(r.tImpact), 'bad');
-  if (r.encounter) orbit += row('encounter', r.encounter, 'ok');
+  if (r.encounter) orbit += row('encounter', esc(r.encounter), 'ok');
   // the warp as it runs (measured from the clocks), and what was asked when that differs
   const warp = r.asked === 0 ? 'paused'
     : `${fmtWarp(r.pace)}${r.rails ? ' rails' : r.pace > 1.005 ? ' physics' : ''}${r.why ? ` <span class="k">(${r.asked < 0 ? 'reverse' : WARP_STEPS.includes(r.asked) ? fmtWarp(r.asked) : fmtPace(r.asked)} asked)</span>` : ''}`;
