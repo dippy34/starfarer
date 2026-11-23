@@ -228,7 +228,7 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   const card = (name) => page.evaluate(async (name) => {
     const a = window.app, s = a.findByName(name);
     a.select(s);
-    for (let i = 0; i < 100 && !s.distanceGrade; i++) await new Promise((r) => setTimeout(r, 100));
+    for (let i = 0; i < 100 && (!s.distanceGrade || !s.teffSource); i++) await new Promise((r) => setTimeout(r, 100));
     // (the card drawn for this star before its details are opened: the first frame that draws a new selection
     // closes them, and closed they are not refreshed. On GitHub's runners the click came first, and the rows
     // read were the star's before.) A frame drawn by hand: the app's own loop may be held by an earlier check.
@@ -240,7 +240,8 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     if (det.getAttribute('aria-expanded') !== 'true') det.click();
     // (the card as the app has drawn it for this star: its title, and its distance as the star itself states it;
     // on a slow machine the card is a frame or more behind the selection)
-    const want = new Map(s.info()).get('Distance from Sun');
+    const info = new Map(s.info());
+    const want = info.get('Distance from Sun');
     const read = () => {
       const rows = {};
       const dts = [...document.querySelectorAll('.card .facts dt')], dds = [...document.querySelectorAll('.card .facts dd')];
@@ -248,7 +249,7 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
       return rows;
     };
     let rows = read();
-    for (let i = 0; i < 300 && (document.querySelector('.card h2')?.textContent !== s.name || rows['Distance from Sun'] !== want); i++) {
+    for (let i = 0; i < 300 && (document.querySelector('.card h2')?.textContent !== s.name || rows['Distance from Sun'] !== want || rows.Temperature !== info.get('Temperature')); i++) {
       // (a frame drawn by hand: the app's own loop may be held by an earlier check)
       a.frame();
       await new Promise((r) => setTimeout(r, 100));
@@ -265,8 +266,54 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
       && /uncertain/.test(g.Radius ?? '') && /uncertain/.test(g.Scale ?? '') && /uncertain/.test(garnet.detail ?? '')
       && !/uncertain/.test(`${deneb.rows['Distance from Sun']} ${deneb.rows['Luminosity (V)']} ${deneb.detail}`),
     JSON.stringify({ garnet: { grade: garnet.grade, title: garnet.title, selected: garnet.selected, want: garnet.want, hud: garnet.hud, detail: garnet.detail, distance: g['Distance from Sun'], luminosity: g['Luminosity (V)'], radius: g.Radius, scale: g.Scale }, deneb: { grade: deneb.grade, distance: deneb.rows['Distance from Sun'] } }));
+  // 4g. Hot and reddened stars' temperatures: from their spectral type where the colour cannot tell (O and B
+  // stars; dust), with the card saying which scale; a catalogue type its colour does not bear out flagged, not
+  // trusted. (From their colour alone: Alnitak 13,561 K, Spica 14,492, Cygnus X-1's star 5,501.)
+  const t = {};
+  for (const [key, name] of [['alnitak', 'Alnitak'], ['spica', 'Spica'], ['cygx1', 'HIP 98298'], ['almach', 'Almach'], ['garnet', 'Garnet Star']]) {
+    const c = await card(name);
+    t[key] = { title: c.title, type: c.rows['Spectral type'], temperature: c.rows.Temperature, radius: c.rows.Radius };
+  }
+  check("hot and reddened stars: their temperature from their spectral type, the card naming the scale; a type its colour does not bear out flagged",
+    /^30,463 K \(from its spectral type \(Martins et al\. 2005\)\)$/.test(t.alnitak.temperature ?? '')
+      && /^26,000 K \(from its spectral type \(Pecaut & Mamajek 2013\)\)$/.test(t.spica.temperature ?? '')
+      && /^27,500 K \(from its spectral type \(Crowther et al\. 2006\); its light is reddened by dust, E\(B−V\) 1\.03\)$/.test(t.cygx1.temperature ?? '')
+      && /with the light the dust took/.test(t.cygx1.radius ?? '')
+      && /not used$/.test(t.almach.type ?? '') && /from its colour\)$/.test(t.almach.temperature ?? '')
+      && /redder: dust, or a wrong type/.test(t.garnet.type ?? ''),
+    JSON.stringify(t));
   await page.evaluate(() => { const d = document.querySelector('.card [data-details]'); if (d?.getAttribute('aria-expanded') === 'true') d.click(); window.app.select(null); });
 }
+
+// 5. Search and go to a star
+await page.keyboard.press('Enter');
+await page.keyboard.type('Sirius');
+await page.waitForTimeout(300);
+await page.keyboard.press('Enter');
+// (a flight that has not arrived in its minute is this check failed, with what the page was doing, and the
+// checks after it still run: on GitHub's runners these arrivals run out now and then, docs/notes/testing.md)
+const arrived = await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 60000 }).then(() => null, () => page.evaluate(() => {
+  const a = window.app, el = document.activeElement;
+  return { auto: !!a.rig.autopilot, selection: a.selection?.name ?? null, target: a.rig.target?.name ?? null, sheet: a.hud.sheet ?? null, active: `${el?.tagName}.${el?.className}`, frame: a.frameCount };
+}));
+if (arrived === null) {
+  await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 });
+  await page.waitForTimeout(2500);
+  st = await page.evaluate(() => ({ near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }));
+  check('search + goto Sirius; Sirius drawn by the near-star renderer', st.near.includes('Sirius'), JSON.stringify(st));
+  await page.screenshot({ path: path.join(outDir, 'i2-sirius.png') });
+} else check('search + goto Sirius; Sirius drawn by the near-star renderer', false, `the flight did not arrive in a minute: ${JSON.stringify(arrived)}`);
+
+// 5b. Beside the space station (400 km up, where the camera would otherwise start to turn with the Earth): it stays beside it
+await page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); a.select(s); a.goTo(s); });
+if (await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 120000 }).then(() => true, () => false)) {
+  await page.waitForTimeout(1000);
+  const iss = () => page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); return { d: s.upos.sub(a.rig.upos).length(), anchor: a.rig.anchor?.name, alt: a.rig.altitude }; });
+  const i0 = await iss();
+  await page.waitForTimeout(3000);
+  const i1 = await iss();
+  check('beside the space station the camera stays beside it', /International/.test(i1.anchor ?? '') && Math.abs(i1.d - i0.d) < 0.5 && i0.d < 2000, JSON.stringify([i0, i1]));
+} else check('beside the space station the camera stays beside it', false, 'the flight to it did not arrive in two minutes');
 
 // 5c. Walking, star names stand only over the sky: none over the ground, at the bottom of a valley (the Apollo 17
 // site, in the Taurus-Littrow valley, 2.6 km under the Moon's mean radius), of a canyon (Valles Marineris, kilometres
@@ -284,8 +331,7 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
   await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 300000 }).catch(() => undefined);
   { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + 5, { timeout: 600000 }); }
   // the eye settled on the night (the faintest stars named are set by it): the magnitude limit no longer moving
-  // from one ten frames to the next. (It runs before the space station's check, which times out now and then on
-  // GitHub's runners and ends the run.)
+  // from one ten frames to the next.
   for (let k = 0, last = -99; k < 60; k++) {
     const f = await page.evaluate(() => window.app.frameCount);
     await page.waitForFunction((x) => window.app.frameCount >= x, f + 10, { timeout: 600000 });
@@ -368,28 +414,6 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
   }
 }
 await page.evaluate((jd) => { const a = window.app; a.walk.exit(true); a.clock.jdTdb = jd; a.clock.paused = false; }, jdWalk);
-
-// 5. Search and go to a star
-await page.keyboard.press('Enter');
-await page.keyboard.type('Sirius');
-await page.waitForTimeout(300);
-await page.keyboard.press('Enter');
-await page.waitForFunction(() => !window.app.rig.autopilot && window.app.selection?.name === 'Sirius', null, { timeout: 60000 });
-await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 });
-await page.waitForTimeout(2500);
-st = await page.evaluate(() => ({ near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }));
-check('search + goto Sirius; Sirius drawn by the near-star renderer', st.near.includes('Sirius'), JSON.stringify(st));
-await page.screenshot({ path: path.join(outDir, 'i2-sirius.png') });
-
-// 5b. Beside the space station (400 km up, where the camera would otherwise start to turn with the Earth): it stays beside it
-await page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); a.select(s); a.goTo(s); });
-await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 120000 });
-await page.waitForTimeout(1000);
-const iss = () => page.evaluate(() => { const a = window.app; const s = a.findByName('ISS'); return { d: s.upos.sub(a.rig.upos).length(), anchor: a.rig.anchor?.name, alt: a.rig.altitude }; });
-const i0 = await iss();
-await page.waitForTimeout(3000);
-const i1 = await iss();
-check('beside the space station the camera stays beside it', /International/.test(i1.anchor ?? '') && Math.abs(i1.d - i0.d) < 0.5 && i0.d < 2000, JSON.stringify([i0, i1]));
 
 // 6. Frame timing (JS work only)
 const timing = await page.evaluate(async () => {
