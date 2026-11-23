@@ -129,6 +129,12 @@ carry restrictions on commercial use — check the caption of each PIA image bef
 
 * Scale heights, surface (or 1-bar) pressures and temperatures: **NASA NSSDCA Planetary Fact Sheets**
   (<https://nssdc.gsfc.nasa.gov/planetary/factsheet/>), `pipeline/fetch_atmospheres.py`.
+* The temperatures of worlds: their **Bond albedos** (the planets, the Moon, Pluto, and Charon on
+  Pluto's sheet), the sunlight at their mean distance from the Sun, the black-body temperature the
+  sheets give, and for Venus, the Earth and Mars the ground's mean temperature and pressure: **NASA
+  NSSDCA Planetary Fact Sheets**, as of November 2026 (<https://nssdc.gsfc.nasa.gov/planetary/factsheet/>
+  and each world's page, e.g. `earthfact.html`, `plutofact.html`), `pipeline/fetch_albedos.py` →
+  `public/data/solar/albedos.json`. No other world has a temperature shown: none is estimated.
 * Rayleigh scattering scales the Earth sea-level coefficients of Bruneton & Neyret (2008, *Computer
   Graphics Forum* 27(4)) by number density and gas refractivity. Aerosols (Earth haze, Mars dust, Venus
   upper haze, Titan haze), Venus cloud-top conditions and Titan's surface values (Huygens HASI,

@@ -821,8 +821,8 @@ temperature, and size as well as mass.
   simulation is run ahead on a copy of itself (`NBody.restore(live.sim.snapshot())`), every pull
   counted: a dashed orange path from the world, drawn from what it goes round (as the trails are),
   and, at the path's end and on the card under the orbit, what ends it: "With every pull counted,
-  it hits Earth in 1.6 days", "goes round the Sun in 3.2 days", "taken by Jupiter in 2031",
-  "leaves the Sun for good"; or "goes on like this for 78.3 days at least". It looks up to three
+  it hits Earth in 1.6 days", "in 3.2 days it is the Sun's: from then on it goes round the Sun"
+  (Part 4's words), "leaves the Sun for good"; or "goes on like this for 78.3 days at least". It looks up to three
   of the world's turns or a hundred years ahead and stops at the first hit, leaving, or change of
   what it goes round (the copy's own events). What goes round faster than a quarter of the world's
   turn is carried on rails, as live physics carries it while the change is watched (a watch runs at
@@ -839,7 +839,7 @@ temperature, and size as well as mass.
   to four times as far out as it is (or as its nearest point): a parabola at exactly the speed of
   escape, a hyperbola beyond, from q and the true anomaly (r = q (1 + e) / (1 + e cos ν): a parabola
   has no semi-major axis; `openPath` in `src/astro/kepler.ts`). Open or closed is the card's rule
-  (`isOpen`, moved there from Powers: an energy within 10⁻¹² of μ/r of nothing is open), so the line
+  (`isOpen`, moved there from Powers: since Part 4 an energy within 10⁻⁶ of μ/d of nothing is open), so the line
   and the card agree; closed orbits are drawn by the same code as before. A world of the
   simulation bound to nothing (thrown out of the Solar System) is drawn on its open path past the
   Sun, and the card says "Now on an open path past the Sun: it passes at 1 AU, then leaves." (it
@@ -887,6 +887,141 @@ temperature, and size as well as mass.
   ends it, as asked), so its path lies under the slingshot's arrow; breaking apart; a world's own
   heat and glow after a hit; the impact in the headset (its flash shows there, the card does not).
 
+### Part 4: its temperature, live; size as well as mass (done)
+
+First, three things the coordinator found in Part 3's pictures, each with a check:
+- *What ends the path ahead, in words* (`aheadWords` in `src/app/Powers.ts`). "With every pull counted,
+  it goes round the Sun in 3.2 days" read as a year of 3.2 days. A world taken over by another now
+  reads "With every pull counted, in 3.2 days it is the Sun's: from then on it goes round the Sun.",
+  and at the path's end "in 3.2 days it is the Sun's" (so too a world captured: "in 2031 it is
+  Jupiter's"; "taken by" is gone, and with it "it taken by", which the card would have said). "It
+  hits Earth in 1.6 days" and "leaves the Sun for good" stay.
+- *The words at the path's end stand clear of the slingshot* (`src/ui/aimShape.ts`; `avoid` and
+  `strokeMeets` in `src/render/Labels.ts`). The arrow's parts are worked out in one place for the
+  drawing (`Hud.setAim`) and for the names kept off it: its line as wide as its head, the marks and
+  their words, and the ring round the world being moved (48 px across). The words at the path's end
+  try each corner of the end, then places nudged off them 6 px at a time (outwards, up or down,
+  along), nearest first, wholly on the screen, never under the interface (the round buttons
+  included, as before); where nothing will do they go (the card says them). Other names are laid
+  out as before.
+- *At the mark of escape, open* (`OPEN_EDGE` and `isOpen` in `src/astro/kepler.ts`, one rule for the
+  card and the line). Mars thrown with its moons at the exact mark of escape came out e = 1 − 2.4×10⁻⁹
+  and the card showed an enormous closed orbit: the throw sets the centre of Mars and its moons at
+  the speed of escape (its e − 1 is 10⁻¹⁵), and Mars swings about that centre by some 3×10⁻⁵ m/s as
+  Phobos goes round. An orbit now counts as open when its energy is within 10⁻⁶ of μ/d of nothing:
+  a speed within half a millionth of the speed of escape; bound, its far end would be over a million
+  times as far out as it is. Chosen over snapping the speed after the moons are released, which
+  would hold for an instant (the swing changes e by ± 2.4×10⁻⁹ every 7.7 hours), and over a
+  tolerance on e itself, which would call a world falling straight in open (its e is 1 whatever its
+  energy). The time to a hit keeps its own, finer switch to Barker's parabola (10⁻¹²).
+
+*Its temperature, live* (`temperatureOf` in `src/app/Worked.ts`; `sunlight`, `sunlitTemp`,
+`boilingPoint`, `waterState` in `src/sim/physics.ts`; the data `public/data/solar/albedos.json`,
+fetched by `pipeline/fetch_albedos.py` from NASA's fact sheets, on `Body.climate`).
+- On the card of a planet, the Moon, Pluto or Charon, under its buttons, a line short enough for a
+  phone (46 letters at most); in its details the working, and what water does there. In the real
+  Solar System as the sheets have it: "15 °C, as measured. Without its air: −18 °C." (Venus "464 °C, as
+  measured. Without its air: −47 °C.", its water boiling; Mars −59 °C and −63 °C, its water ice; the
+  Moon "Temperature without air: −3 °C"; a giant "From sunlight alone: −163 °C", with a note that it
+  gives off heat of its own, which this leaves out). In live physics, where it is now, in the colour
+  of live physics, worked afresh with every update of the card (a tenth of a second): "Earth here:
+  112 °C. The oceans would boil." The card's room on an upright phone (`CARD_ROOM`, what the subject is
+  lifted above) counts the line: 225 px, from 196 (`touch`'s check that the Earth is in the middle of
+  the room the interface leaves; a card without the line has its subject some 14 px above that
+  middle). On a phone on its side, where a watch's chip (and a hit's card) leave the card too little
+  room even with its panel folded, the line folds too until another world is chosen (`Hud.makeRoom`;
+  live's watch block, "the card is whole beside it", found it). The temperature without air
+  is T = ((1 − A) S / 4σ)^¼, its heat spread all round it, S the sunlight: the sheet's at its mean
+  distance in the real Solar System; Σ L / 4πd² from every sun where it is now in live physics (a
+  sun's light 4πR²σT⁴ from its size and temperature: the Sun's 3.828×10²⁶ W; a made sun's its main
+  sequence's). For Venus, the Earth and Mars, whose air is thick enough to warm their ground (a
+  millibar or more), the warming their air gives as measured (the ground's mean against the sheet's
+  sunlight alone: 32.88 K for the Earth, 510 K for Venus, 4.2 K for Mars) is kept as it is wherever the
+  world goes: how its air would change is not worked out (said in the working, as a simplification).
+  What water does there: below the 0.006 bar of its triple point never liquid, ice below 0 °C, boiling
+  where Clausius and Clapeyron put it for the measured pressure (about 570 K under Venus's 92 bar; on
+  Mars it boils as soon as it melts). With no sun at all: "Earth here: no sun to warm it."
+- Data, real only: the Bond albedo (the share of all the sunlight it sends back: not the catalogue's
+  `albedo`, JPL's geometric albedo), the sunlight at the mean distance and the black-body temperature
+  of each sheet; Charon's Bond albedo is on Pluto's sheet, and its sunlight its planet's. A world with
+  no Bond albedo on a sheet has no line: nothing is estimated (Titan, measured air and all, has none
+  there, so none here). A world the explorer made has none either: a copy of the Earth has no air or
+  clouds, which set the Earth's albedo. The sheets' own black-body temperatures are reproduced within
+  0.2 K (`tests/physics.test.ts`), but for two: the Earth's 254.0 K and Pluto's 37.5 K follow from
+  albedos of about 0.306 and 0.49, older than the 0.294 and 0.72 the same sheets give; from those, the
+  formula's own 255.1 K and 32.2 K are used.
+- Decided against the research: a file of its own (`albedos.json`, loaded with `system.json` by
+  `SolarSystem.load`) rather than a field of `system.json`, which only a whole run of
+  `build_solar_system.py` writes (SBDB and all: it would have changed data this part has nothing to do
+  with). In the real Solar System the line is the sheets' (their mean), in live physics it is where
+  the world is now: Earth "here" on 1 October 2026 (1.001 AU) says 15 °C, at perihelion 17 °C.
+
+*Size, as well as mass* (`LivePhysics.setSize`, `realRadius`, `resized`; `sizeFactor`, `sizeSlider`,
+`sameDensity`, `radiusWords` in `src/app/Powers.ts`; the Size power in `src/ui/Hud.ts`).
+- **Size**, a power of its own beside Mass (five in a row on a phone, 64 px each): the radius in words
+  ("6,371 km", "3 times its real size"), Real size, a slider from a tenth to ten times the real radius
+  (a thousand times the volume either way, as the mass), and between its ends **Same density**: on, the
+  size follows the mass at the density it really has, R = R₀ (M / M₀)^⅓ (and moving the size moves the
+  mass, the cube of it; the Mass panel says "Its size follows: the same density"); turned on, the size
+  is made to follow the mass at once, as one change. Each slider gesture is one change, to undo and to
+  watch, as the mass's. For worlds of a known mass and a measured size; not for stars (a made sun's
+  size follows its mass; the Sun keeps its look). First built under the mass slider, in the same panel:
+  with the theory's words a phone had some 60 px of view left above the card, `freeArea` gave the
+  whole view instead (under 120 px it does), and `makeRoom` was fooled into leaving the panel open
+  through a watch (live's watch block, the finger taking the camera back, found it); `makeRoom` now
+  measures the clear part as it is (`freeBox`).
+- The radius goes to the simulation (`NBody.setMass(id, gm, radius)`), so a bigger world is easier to
+  hit (`tests/livephysics.test.ts`: the Moon sent past the Earth two of its radii from its centre
+  misses it, and hits it made three times as large); what rides on it is let go, so that a moon it
+  has grown round is not carried on through it. Its gravity at the ground, the speed of escape and
+  its density follow in its details; its face is drawn larger or smaller; its air keeps its measured
+  depth over its new ground (`Atmospheres` reads the radii every frame); Saturn's rings keep their
+  measured size; and there is no ground to land on over a world whose size has been changed (its
+  elevation is measured for its real size: `App` leaves its terrain candidate out, so Walk is not
+  offered). All said in what the simulation leaves out, with the simplification of Same density (a
+  real giant planet stops growing above about a Jupiter's mass, squeezed by its own weight).
+- Undo, Replay and Back to reality keep sizes as they keep masses (the checkpoint had them); a
+  checkpoint now also keeps each star's temperature and brightness.
+
+*A made sun's light follows its mass* (the coordinator: it kept its light when its mass was changed
+later with Mass). Its size, colour and light now follow its mass by the same main-sequence rules as
+when it was made (`App.shine`, shared with the making), whatever Mass gives it later, within the
+masses a sun can be made with (0.08 to 2 Suns: below, it would not shine as a star; the slider stops
+there). Its "size (made by you)" in the details is worked from the mass it has; another made world's
+from the mass it was made with, while it still has that size.
+
+- Checked: the type check; the unit tests (new: in `tests/powers.test.ts` the words at the path's end and
+  the size slider; `tests/labelsclear.test.ts`, strokes kept clear and the words at the end of Part 3's
+  picture set off the arrow; `tests/astro.test.ts`, the open rule; `tests/mover.test.ts`, Mars thrown at
+  escape either way, open; `tests/physics.test.ts`, NASA's black-body temperatures, the Earth's and Pluto's,
+  two suns, water; `tests/worked.test.ts`, the lines and their working in the real Solar System and in live
+  physics, and the worlds that have one; `tests/livephysics.test.ts`, a world made larger is hit, its size
+  through Undo and Back to reality). `live` with two new blocks, `warm` (the Earth's line as measured; dragged
+  two thirds of the way to the Sun, the line read at each step against what its distance gives, past 100 °C
+  the oceans boil; Undo) and `size` (the size beside the mass; three times: drawn so, its mass the same; its
+  gravity and escape speed; no ground to land on low over it, where the real Earth has it; Same density; Undo),
+  in `throw` the words at the path's end and where they stand, in `place` a made red dwarf given ten times its
+  mass with Mass. On the build pushed (merged with free flight by touch and the ship's assist): `live` 184 (on a
+  phone 92/92 in one run; at a desk 91/92, the frame's work at a thousand years a second over its share on a
+  loaded machine, its block 8/8 run alone), `touch` 99/99, `flight` 26/26 and 66/66; on Part 4's build before that
+  merge `whatif` 35/35, `interact` 20/20, `game` 21/21. The new checks fail on Part 3's build (072e4f0): the words
+  at the path's end and where they stand (on the Moon's ring there), the temperature's line and its steps, Size,
+  the made sun's mass; the new unit tests on its sources.
+- Found by the full `live` suite on a loaded machine and put right (Part 3's look for a hit): with frames long, the
+  look ahead reaches hours, and two moons of Saturn hundreds of thousands of kilometres apart were judged on their
+  two-body orbit about each other, nearly a straight line, which ran through both: a "hit" that slowed the Moon's
+  watch and took its frame to Tethys or Rhea. A pair is now looked at only within the reach of either's pull (its
+  Hill sphere about what it goes round; the Sun's everywhere) or their zone (`Meeting.reach` in
+  `soonestContact`): the Earth's reaches 1.5 million km, Rhea's 5,800 km. Live's jupiter block reads Ganymede's details
+  rather than Io's: with Jupiter twice as heavy the great moons' orbits cross, and which hits which goes as the stepping
+  does on the machine; at a desk Io had sometimes been taken in by then, and the search gave the asteroid Io and its card
+  (Part 3's flake). Ganymede, the heaviest, takes in any it meets. (`find` can now ask for what a row says under the
+  name, and `LIVE_KINDS=desk` runs the desk alone.)
+- Not done here: a world's temperature over its year on an eccentric orbit (the line is where it is now),
+  its day and night sides and its latitudes, a giant's own heat, how air would change with the warmth;
+  a temperature for Titan or any world whose Bond albedo NASA's sheets do not give; the size of a star;
+  a made sun below 0.08 Suns (the slider stops there); landing on a world whose size has changed.
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
@@ -911,8 +1046,9 @@ of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
 powers, each through the interface on a phone and at a desk, watching a change, Replay and
 Undo, upright and sideways, throwing a world and putting a new one in place, a world thrown out of
-the Solar System, Mars thrown at the Earth, the path ahead on a phone on its side; 160:
-`LIVE_ONLY=watch,jupiter,sun,moon,made,throw,open,hit,side,place` picks blocks),
+the Solar System, the Earth dragged sunwards and warming, a world's size, Mars thrown at the Earth, the
+path ahead on a phone on its side; 184:
+`LIVE_ONLY=watch,jupiter,sun,moon,made,throw,open,warm,size,hit,side,place` picks blocks),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
 `terrain` (15), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
 time on four cores (more

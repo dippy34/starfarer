@@ -12,6 +12,7 @@ python3 build_tiles.py             # 16k tile pyramids for close-ups -> public/d
 python3 build_thumbnails.py        # menu thumbnails rendered from the maps
 python3 build_milkyway.py          # NASA SVS Deep Star Maps Milky Way -> public/data/sky
 python3 fetch_atmospheres.py       # NASA fact sheets -> public/data/solar/atmospheres.json
+python3 fetch_albedos.py           # NASA fact sheets: Bond albedos, sunlight, ground temperatures -> public/data/solar/albedos.json
 python3 build_ephemeris.py         # JPL DE442S -> public/data/ephem
 python3 build_solar_system.py      # PCK, GM, JPL satellite elements, SBDB, PDS rings -> public/data/solar
 python3 fetch_horizons_moons.py    # JPL Horizons vectors for moon calibration (cached)

@@ -186,15 +186,23 @@ export function stateToElements(r: Vector3, v: Vector3, mu: number, jd: number):
 }
 
 /**
- * An orbit whose energy is nearer nothing than this share of μ/r is open: its far end would be some
- * 10¹² times as far away as it is now. A body thrown at exactly the speed of escape is on the edge,
- * which rounding would put on either side: it does not come back.
+ * An orbit whose energy is nearer nothing than this share of μ/d counts as open: one whose speed is
+ * within half a millionth of the speed of escape where it is (the energy against μ/d is
+ * (v / v_escape)² − 1). Bound, its far end would be over a million times as far out as it is now
+ * (2a = μ/|E|), reached in no time that matters. A world thrown at the speed of escape is on the
+ * edge, and rounding and what goes with it put it on either side: Mars thrown with its moons swings
+ * about their common centre by some 3×10⁻⁵ m/s (e = 1 ± 2.5×10⁻⁹). A tolerance on e itself would
+ * not do: a world falling straight in has e = 1, whatever its energy.
  */
-export const ESCAPE_EDGE = 1e-12;
+export const OPEN_EDGE = 1e-6;
 
-/** Is the orbit of a body `d` (m) from what it goes round, with `energy` (J/kg: v²/2 − μ/d) about `mu` (m³/s²), open? */
+/**
+ * Is the orbit of a body `d` (m) from what it goes round, with `energy` (J/kg: v²/2 − μ/d) about `mu`
+ * (m³/s²), open? One rule for what the card says (src/app/Powers.ts: orbitOf) and the line drawn
+ * (src/render/Orbits.ts).
+ */
 export function isOpen(energy: number, mu: number, d: number): boolean {
-  return !(energy < -ESCAPE_EDGE * (mu / d));
+  return !(energy < -OPEN_EDGE * (mu / d));
 }
 
 /**

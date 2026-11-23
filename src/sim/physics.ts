@@ -192,6 +192,24 @@ export function equilibriumTemp(lumW: number, dM: number, albedo: number): Deriv
   return derived(T, 'K', 'T_eq = (L(1 − A) / (16πσd²))^¼', `(${num(lumW)} W·(1 − ${num(albedo)}) / (16π·${num(SIGMA)}·(${num(dM)} m)²))^¼`);
 }
 
+/** The sunlight falling on a world from stars each of light `lumW` (W) at `dM` (m): S = Σ L / (4πd²), in W/m². */
+export function sunlight(lights: readonly { lumW: number; dM: number }[]): number {
+  let s = 0;
+  for (const l of lights) s += l.lumW / (4 * Math.PI * l.dM * l.dM);
+  return s;
+}
+
+/**
+ * The temperature sunlight `S` (W/m²) warms a world of Bond albedo `albedo` to, its heat spread
+ * all round it (as a world that turns quickly, or whose air carries the heat, spreads it):
+ * T = ((1 − A) S / 4σ)^¼. Under several suns S is the sum of theirs (sunlight), which is
+ * T = ((1 − A) Σ Lᵢ / (16πσdᵢ²))^¼, equilibriumTemp for one.
+ */
+export function sunlitTemp(S: number, albedo: number): Derived {
+  const T = Math.pow(((1 - albedo) * S) / (4 * SIGMA), 0.25);
+  return derived(T, 'K', 'T = ((1 − A) S / 4σ)^¼', `((1 − ${num(albedo)})·${num(S)} W/m² / (4·${num(SIGMA)}))^¼`, `${num(T)} K`);
+}
+
 /** Surface temperature with a greenhouse warming ΔT (K): T_s = T_eq + ΔT. */
 export function surfaceTemp(teq: number, greenhouseK: number): Derived {
   const T = teq + greenhouseK;
@@ -204,13 +222,23 @@ export function scaleHeight(tempK: number, molarKgMol: number, g: number): Deriv
   return derived(H / 1000, 'km', 'H = RT / (Mg)', `${num(R_GAS)}·${num(tempK)} K / (${num(molarKgMol)} kg/mol·${num(g)} m/s²)`);
 }
 
-/** What water does at a surface temperature (no pressure dependence beyond the triple point). */
-export function waterState(tempK: number, pressureBar: number): string {
-  if (pressureBar < 0.006) return 'no liquid water (pressure below the triple point)';
+/** What water does on the ground (waterState): the air is too thin for it to be liquid at all, or it is ice, liquid, or boils. */
+export type WaterPhase = 'thin' | 'ice' | 'liquid' | 'boils';
+
+/**
+ * What water does on ground at `tempK` under `pressureBar` of air: below the pressure of water's
+ * triple point (0.006 bar) it cannot be liquid at any temperature; above it, ice below 0 °C, and
+ * liquid up to where it boils (from Clausius and Clapeyron about 100 °C at a standard atmosphere).
+ */
+export function waterState(tempK: number, pressureBar: number): WaterPhase {
+  if (pressureBar < 0.006) return 'thin';
   if (tempK < 273.15) return 'ice';
-  // boiling point from Clausius-Clapeyron about 1 bar / 373 K
-  const boil = 1 / (1 / 373.15 - (R_GAS / 40660) * Math.log(Math.max(pressureBar, 1e-6) / 1.01325));
-  return tempK < boil ? 'liquid oceans possible' : 'water boils off (steam)';
+  return tempK < boilingPoint(pressureBar) ? 'liquid' : 'boils';
+}
+
+/** Where water boils under `pressureBar` of air (K): Clausius and Clapeyron about 373.15 K at a standard atmosphere, its heat of boiling 40.66 kJ/mol. */
+export function boilingPoint(pressureBar: number): number {
+  return 1 / (1 / 373.15 - (R_GAS / 40660) * Math.log(Math.max(pressureBar, 1e-6) / 1.01325));
 }
 
 /** Conservative habitable zone (Kopparapu-like fluxes 1.1 and 0.53 of the Earth's): d = √(L / S). */

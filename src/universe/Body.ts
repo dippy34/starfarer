@@ -19,6 +19,21 @@ export interface SpaceObject {
   info(): [string, string][];
 }
 
+/**
+ * What a world's temperature is worked out from, as NASA's fact sheets list it (pipeline/fetch_albedos.py:
+ * public/data/solar/albedos.json). Only worlds with a measured Bond albedo have one.
+ */
+export interface Climate {
+  /** its Bond albedo: the share of all the sunlight falling on it that it sends back */
+  bond: number;
+  /** the sunlight it gets at its mean distance from the Sun (W/m²), where the sheet lists it */
+  irradiance: number | null;
+  /** air thick enough to warm its ground: the ground's measured mean temperature (K) and the pressure there (bar) */
+  air: { tempK: number; bar: number } | null;
+  /** the sheet */
+  source: string;
+}
+
 export class Body implements SpaceObject {
   readonly key: string;
   readonly kind: BodyType;
@@ -45,6 +60,8 @@ export class Body implements SpaceObject {
   /** effective temperature for stars */
   teff = 0;
   absMag = 0;
+  /** what its temperature is worked out from (null: no Bond albedo measured, or made by the explorer) */
+  climate: Climate | null = null;
 
   /** position relative to the Solar System barycentre (m, ICRF) */
   readonly pos = new Vector3();

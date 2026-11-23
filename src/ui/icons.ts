@@ -34,6 +34,8 @@ export const ICON = {
   unmake: svg('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.6 3"/><path d="m9.3 9.3 5.4 5.4M14.7 9.3l-5.4 5.4"/>'),
   // the powers over a world, and live physics (src/app/LivePhysics.ts): a weight, arrows every way, a pulse, the way back
   mass: svg('<path d="M8.3 9h7.4l3 10.5H5.3z"/><circle cx="12" cy="6.2" r="2.6"/>'),
+  size: svg('<circle cx="12" cy="12" r="3.2"/><path d="M4.5 9V4.5H9M19.5 9V4.5H15M4.5 15v4.5H9M19.5 15v4.5H15"/>'),
+  link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>'),
   move: svg('<path d="M12 3v18M3 12h18"/><path d="m9.3 5.7 2.7-2.7 2.7 2.7M9.3 18.3l2.7 2.7 2.7-2.7M5.7 9.3 3 12l2.7 2.7M18.3 9.3 21 12l-2.7 2.7"/>'),
   live: svg('<path d="M2.5 12h4l2.5-6.5 4.5 13 2.5-6.5h5.5"/>'),
   back: svg('<path d="M9 5.5 4 10.5l5 5"/><path d="M4 10.5h10.5a5 5 0 0 1 0 10H11"/>'),

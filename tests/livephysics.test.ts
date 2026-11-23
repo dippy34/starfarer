@@ -209,6 +209,48 @@ describe('live physics', () => {
     expect(physics.takeHits()).toEqual([]);
   });
 
+  it('a world made larger is easier to hit: the Moon sent past the Earth two of its radii from its centre misses it, and hits it made three times as large', async () => {
+    for (const k of [1, 3]) {
+      const { sys, physics, named, run, left } = await setup();
+      const earth = named('Earth'), moon = named('Moon'), R = earth.radius, shape = earth.radii[2] / earth.radii[0];
+      physics.setMass(earth, earth.gm, JD);
+      if (k !== 1) {
+        physics.setSize(earth, k * R, JD);
+        // its size, its shape and its mass: the size is what was asked, the rest as they were
+        expect(earth.radius / R).toBeCloseTo(k, 12);
+        expect(earth.radii[2] / earth.radii[0]).toBeCloseTo(shape, 12);
+        expect(earth.gm).toBe(physics.realGm(earth));
+        expect(physics.realRadius(earth)).toBe(R);
+        expect(physics.resized(earth)).toBe(true);
+      } else expect(physics.resized(earth)).toBe(false);
+      // the Moon put 100,000 km from the Earth, coming in at 5 km/s on a path whose nearest point is 2 R from the Earth's centre
+      // (where the two would touch the Earth's size is 1.27 R out: a miss by some 4,600 km; made three times as large, 3.27 R)
+      const mu = earth.gm + moon.gm, r0 = 1e8, v = 5e3, q = 2 * R, vq = Math.sqrt(v * v + 2 * mu * (1 / q - 1 / r0)), vt = (q * vq) / r0, vr = Math.sqrt(v * v - vt * vt);
+      const sun = sys.sun.pos.clone().sub(earth.pos).normalize(), side = sun.clone().cross(earth.vel.clone().sub(sys.sun.vel)).normalize();
+      const at = earth.pos.clone().addScaledVector(side, r0), vel = earth.vel.clone().addScaledVector(side, -vr).addScaledVector(sun, vt);
+      physics.live!.sim.setState(moon.id, at.toArray(), vel.toArray());
+      run(JD + 0.5, 0.01);
+      expect(left, `${k} times as large`).toEqual(k === 1 ? [] : [['Moon', 'Earth']]);
+    }
+  });
+
+  it('the size kept for Undo and Back to reality: the real Earth again, and the simulation counts its real size', async () => {
+    const { physics, named, clock } = await setup();
+    const earth = named('Earth'), R = earth.radius, radii = [...earth.radii];
+    physics.setMass(earth, earth.gm, JD);
+    const cp = physics.checkpoint(clock.jdTdb);
+    physics.setSize(earth, 2 * R, JD);
+    const i = physics.live!.sim.indexOf(earth.id);
+    expect(physics.live!.sim.radius[i]).toBe(2 * R);
+    physics.restore(cp);
+    expect([earth.radius, ...earth.radii]).toEqual([R, ...radii]);
+    expect(physics.resized(earth)).toBe(false);
+    expect(physics.live!.sim.radius[physics.live!.sim.indexOf(earth.id)]).toBe(R);
+    physics.setSize(earth, 0.5 * R, JD);
+    physics.backToReality(clock);
+    expect([earth.radius, ...earth.radii]).toEqual([R, ...radii]);
+  });
+
   it('the Moon moved to twice its distance and left on a circle there: its month is the 2.83 months Kepler gives it', async () => {
     const { physics, named, run } = await setup();
     const earth = named('Earth'), moon = named('Moon');
@@ -411,6 +453,10 @@ describe('undo and replay', () => {
     expect(dropped).toEqual(["Earth's new moon"]);
     expect(sys.byId.has(MADE_FIRST_ID)).toBe(false);
     expect(physics.made).toEqual([]);
+  }, 60_000);
+
+  it('...after a world was made larger', async () => {
+    await undone(({ physics, named, clock }) => physics.setSize(named('Earth'), 4 * named('Earth').radius, clock.jdTdb));
   }, 60_000);
 
   it('...after a world was taken away, the Sun among them', async () => {

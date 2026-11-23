@@ -1,0 +1,86 @@
+{
+ "source": "NASA NSSDCA Planetary Fact Sheets, https://nssdc.gsfc.nasa.gov/planetary/factsheet/",
+ "bodies": {
+  "199": {
+   "name": "Mercury",
+   "bondAlbedo": 0.068,
+   "irradiance": 9082.7,
+   "blackBodyK": 439.6,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/mercuryfact.html"
+  },
+  "299": {
+   "name": "Venus",
+   "bondAlbedo": 0.77,
+   "irradiance": 2601.3,
+   "blackBodyK": 226.6,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/venusfact.html",
+   "surfaceBar": 92.0,
+   "surfaceK": 737.0
+  },
+  "399": {
+   "name": "Earth",
+   "bondAlbedo": 0.294,
+   "irradiance": 1361.0,
+   "blackBodyK": 254.0,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html",
+   "surfaceBar": 1.014,
+   "surfaceK": 288.0
+  },
+  "301": {
+   "name": "Moon",
+   "bondAlbedo": 0.11,
+   "irradiance": 1361.0,
+   "blackBodyK": 270.4,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html"
+  },
+  "499": {
+   "name": "Mars",
+   "bondAlbedo": 0.25,
+   "irradiance": 586.2,
+   "blackBodyK": 209.8,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+   "surfaceBar": 0.00636,
+   "surfaceK": 214.0
+  },
+  "599": {
+   "name": "Jupiter",
+   "bondAlbedo": 0.343,
+   "irradiance": 50.26,
+   "blackBodyK": 109.9,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html"
+  },
+  "699": {
+   "name": "Saturn",
+   "bondAlbedo": 0.342,
+   "irradiance": 14.82,
+   "blackBodyK": 81.0,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html"
+  },
+  "799": {
+   "name": "Uranus",
+   "bondAlbedo": 0.3,
+   "irradiance": 3.69,
+   "blackBodyK": 58.1,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uranusfact.html"
+  },
+  "899": {
+   "name": "Neptune",
+   "bondAlbedo": 0.29,
+   "irradiance": 1.508,
+   "blackBodyK": 46.6,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptunefact.html"
+  },
+  "999": {
+   "name": "Pluto",
+   "bondAlbedo": 0.72,
+   "irradiance": 0.873,
+   "blackBodyK": 37.5,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/plutofact.html"
+  },
+  "901": {
+   "name": "Charon",
+   "bondAlbedo": 0.25,
+   "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/plutofact.html"
+  }
+ }
+}
