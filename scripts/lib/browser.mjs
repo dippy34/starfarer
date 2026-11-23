@@ -8,7 +8,23 @@
 //                  (e.g. behind a TLS-intercepting proxy)
 import { chromium } from '@playwright/test';
 
-export function launchBrowser() {
+/**
+ * SLOW_FRAME_MS=n: every animation frame of every page takes at least n ms (the app's frame is held that long before it
+ * runs), as on a GitHub runner at a frame a second (SLOW_FRAME_MS=1000): to reproduce here what is frame-bound there.
+ */
+function slowFrames(browser, ms) {
+  const script = `(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => { const s = performance.now(); while (performance.now() - s < ${ms}); cb(t); }); })();`;
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (o) => { const c = await newContext(o); await c.addInitScript(script); return c; };
+  return browser;
+}
+
+export async function launchBrowser() {
+  const browser = await launchChromium();
+  return process.env.SLOW_FRAME_MS ? slowFrames(browser, Number(process.env.SLOW_FRAME_MS)) : browser;
+}
+
+function launchChromium() {
   return chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
     args: [
