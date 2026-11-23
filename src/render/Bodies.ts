@@ -35,6 +35,8 @@ interface MapInfo {
   regions?: MapRegion[];
   /** optional high-resolution tier, loaded only while the body fills a large part of the view */
   hi?: { file: string; width: number; height: number };
+  /** a small copy (1,024 x 512), all of the map a world far off keeps (pipeline/build_small_maps.py) */
+  small?: { file: string; width: number; height: number };
 }
 interface TextureManifest {
   maps: Record<string, MapInfo>;
@@ -45,6 +47,19 @@ const HI_WANT_PX = 260;
 const HI_KEEP_PX = 140;
 const HI_RELEASE_S = 20;
 const RELIEF_WANT_PX = 40;
+/**
+ * The map budget. A world keeps only the small copies of its maps (1,024 px wide: some 3 MB on the
+ * GPU, where a full 4,096 px map is some 43 MB with its mip levels) until it is FULL_WANT_PX in radius
+ * on screen: from there half the small map's width spans the disc and would start to look soft. Its
+ * full maps are then loaded, the small ones shown meanwhile; once it has not been that large for
+ * FULL_RELEASE_S they are let go again. And never more than FULL_CAP worlds' full maps at once (the
+ * world the explorer is at and the two nearest it was at or is coming to): the one wanted longest
+ * ago goes first. Before, every world visited kept all its maps for good, and a long tour of many
+ * worlds grew the GPU's memory by some 100 to 150 MB a world.
+ */
+const FULL_WANT_PX = 128;
+const FULL_RELEASE_S = 10;
+const FULL_CAP = 3;
 /**
  * the radiance the eye settles on where a world is seen by its own lights alone (no sun): about
  * that of the Earth's lit lands as BODY_FRAG draws them from afar. With nothing else lit the eye
@@ -156,6 +171,11 @@ export class BodiesLayer {
   private spheres = new Map<number, BufferGeometry>();
   private textures = new Map<string, Promise<{ tex: Texture; meanLum: number }>>();
   private loadedTex = new Map<string, { tex: Texture; meanLum: number }>();
+  /** the small copies of the maps (kept), by map key */
+  private smallTex = new Map<string, Promise<{ tex: Texture; meanLum: number }>>();
+  private smallLoaded = new Map<string, Texture>();
+  /** the worlds whose full maps are on the GPU or on their way, and when each was last wanted (s) */
+  private fullWanted = new Map<Body, number>();
   private loader = new TextureLoader();
   private hiTex = new Map<string, { tex: Texture | null; lastWanted: number }>();
   private glare: Mesh | null = null;
@@ -275,6 +295,111 @@ export class BodiesLayer {
     return p;
   }
 
+  /** A map's small copy (or the map itself where it has none), kept for good: what a world far off is drawn with. */
+  private smallMap(key: string): Promise<{ tex: Texture; meanLum: number }> {
+    const info = this.manifest.maps[key];
+    if (!info?.small) return this.texture(key);
+    let p = this.smallTex.get(key);
+    if (!p) {
+      const data = info.channels.startsWith('relief');
+      p = loadMap(`${this.texBase}/${info.small.file}`, { lum: !data, setup: (tex) => {
+        tex.wrapS = RepeatWrapping;
+        tex.wrapT = ClampToEdgeWrapping;
+        tex.minFilter = LinearMipmapLinearFilter;
+        tex.magFilter = LinearFilter;
+        tex.anisotropy = data ? 4 : 8;
+        tex.colorSpace = data ? NoColorSpace : '';
+      } }).then((v) => {
+        this.smallLoaded.set(key, v.tex);
+        return v;
+      });
+      this.smallTex.set(key, p);
+    }
+    return p;
+  }
+
+  /** The keys of a world's maps that the budget holds (its colour map, relief, and the Earth's night and clouds). */
+  private fullKeys(b: Body): string[] {
+    const out: string[] = [];
+    const key = b.kind === 'star' ? null : this.textureKey(b);
+    if (key && this.manifest.maps[key]?.small) out.push(key);
+    const rk = this.reliefKey(b);
+    if (rk && this.manifest.maps[rk]?.small) out.push(rk);
+    if (b.name === 'Earth') for (const k of ['earth_night', 'earth_clouds']) if (this.manifest.maps[k]?.small) out.push(k);
+    return out;
+  }
+
+  /** A world's full maps are wanted now: loaded if they are not. */
+  private wantFull(b: Body, now: number): void {
+    const was = this.fullWanted.has(b);
+    this.fullWanted.set(b, now);
+    if (was) return;
+    for (const k of this.fullKeys(b)) {
+      const relief = k === this.reliefKey(b);
+      (relief ? this.reliefFull(k) : this.texture(k)).then(() => {
+        // (let go of again before it came)
+        if (!this.fullWanted.has(b)) this.releaseKey(k);
+      }).catch((err) => console.warn('map failed', k, err));
+    }
+  }
+
+  /** A relief map, full size (data, not colour). */
+  private reliefFull(rk: string): Promise<{ tex: Texture; meanLum: number }> {
+    let p = this.textures.get(rk);
+    if (!p) {
+      p = this.loadData(rk).then((tex) => {
+        const v = { tex, meanLum: 0 };
+        this.loadedTex.set(rk, v);
+        return v;
+      });
+      this.textures.set(rk, p);
+    }
+    return p;
+  }
+
+  /** A full map let go: whatever showed it shows the small copy, and it leaves the GPU. */
+  private releaseKey(key: string): void {
+    const v = this.loadedTex.get(key);
+    this.textures.delete(key);
+    this.loadedTex.delete(key);
+    if (!v) return;
+    const small = this.smallLoaded.get(key) ?? null;
+    for (const m of this.meshes.values()) {
+      const u = (m.material as ShaderMaterial).uniforms;
+      for (const f of ['uMap', 'uNight', 'uClouds', 'uRelief']) if (u[f]?.value === v.tex) u[f].value = small;
+    }
+    if (this.clouds && key === 'earth_clouds' && small) this.clouds.setMap(small);
+    const img = v.tex.image as ImageBitmap | undefined;
+    v.tex.dispose();
+    img?.close?.();
+  }
+
+  /** Let go of the full maps of the worlds not wanted for a while, and of all but FULL_CAP. */
+  private releaseFull(now: number): void {
+    const order = [...this.fullWanted].sort((p, q) => q[1] - p[1]);
+    order.forEach(([b, at], k) => {
+      if (k < FULL_CAP && now - at < FULL_RELEASE_S) return;
+      this.fullWanted.delete(b);
+      for (const key of this.fullKeys(b)) this.releaseKey(key);
+    });
+  }
+
+  /** For tests and diagnostics: which of its colour map a world is drawn with now. */
+  mapTier(b: Body): 'none' | 'small' | 'full' | 'hi' {
+    const m = this.meshes.get(b);
+    const key = this.textureKey(b);
+    const t = m && (m.material as ShaderMaterial).uniforms.uMap.value;
+    if (!t || !key) return 'none';
+    if (t === this.hiTex.get(key)?.tex) return 'hi';
+    if (t === this.loadedTex.get(key)?.tex) return 'full';
+    return 'small';
+  }
+
+  /** For tests and diagnostics: the worlds whose full maps are kept. */
+  get fullResident(): string[] {
+    return [...this.fullWanted.keys()].map((b) => b.name);
+  }
+
   /** map key for a body: its catalogue texture, or a map named after it (e.g. the OPAL giant-planet maps) */
   textureKey(b: Body): string | null {
     if (b.noMap) return null;
@@ -329,6 +454,12 @@ export class BodiesLayer {
     for (const [key, e] of this.hiTex) {
       if (now - e.lastWanted < HI_RELEASE_S) continue;
       if (e.tex) {
+        // (whatever showed it shows the map below it: no material keeps a texture that has left the GPU)
+        const below = this.loadedTex.get(key)?.tex ?? this.smallLoaded.get(key) ?? null;
+        for (const m of this.meshes.values()) {
+          const u = (m.material as ShaderMaterial).uniforms;
+          if (u.uMap?.value === e.tex) u.uMap.value = below;
+        }
         const img = e.tex.image as ImageBitmap | undefined;
         e.tex.dispose();
         img?.close?.();
@@ -348,10 +479,8 @@ export class BodiesLayer {
     const key = this.textureKey(b);
     const tasks: Promise<unknown>[] = [];
     if (key && b.kind === 'star') this.requestFace(key, (mesh.material as ShaderMaterial).uniforms);
-    else if (key) tasks.push(this.texture(key));
-    if (b.name === 'Earth') tasks.push(this.texture('earth_night'), this.texture('earth_clouds'));
-    const rk = this.reliefKey(b);
-    if (rk) this.requestRelief(rk, (mesh.material as ShaderMaterial).uniforms);
+    // (the camera is on its way: the full maps, under the budget)
+    else this.wantFull(b, performance.now() / 1000);
     // (each map is complete on the GPU when its promise resolves)
     for (const t of tasks) t.catch(() => undefined);
   }
@@ -484,8 +613,9 @@ export class BodiesLayer {
       const lambertRho = Math.min(1, 1.5 * b.albedo);
       this.surfaceLook(b, u, texKey, mapInfo?.width ?? 0);
       if (texKey) {
-        this.texture(texKey).then(({ tex, meanLum }) => {
-          u.uMap.value = tex;
+        // (the small copy first, and its mean for the albedo: the full map comes when the world is near)
+        this.smallMap(texKey).then(({ tex, meanLum }) => {
+          if (!u.uMap.value) u.uMap.value = tex;
           u.uHasMap.value = 1;
           u.uAlbedoScale.value = known ? lambertRho / Math.max(meanLum, 1e-3) : 1;
         });
@@ -493,15 +623,14 @@ export class BodiesLayer {
         u.uAlbedoScale.value = lambertRho / Math.max(luminance(b.color), 1e-3);
       }
       if (b.name === 'Earth') {
-        this.texture('earth_night').then(({ tex }) => { u.uNight.value = tex; u.uHasNight.value = 1; });
+        this.smallMap('earth_night').then(({ tex }) => { if (!u.uNight.value) u.uNight.value = tex; u.uHasNight.value = 1; });
         // (the layer exists before its map loads, so the shader warm-up compiles it)
         const clouds = new CloudLayer(null, this.surfaceExposure);
         this.clouds = clouds;
         this.group.add(clouds.mesh);
-        this.texture('earth_clouds').then(({ tex }) => {
-          u.uClouds.value = tex;
+        this.smallMap('earth_clouds').then(({ tex }) => {
+          if (!u.uClouds.value) { u.uClouds.value = tex; clouds.setMap(tex); }
           u.uHasClouds.value = 1;
-          clouds.setMap(tex);
         });
       }
       const ring = this.rings_[b.name.toLowerCase()];
@@ -775,6 +904,7 @@ export class BodiesLayer {
     this.updateEclipses();
     this.updateGlare(viewQuat);
     this.releaseHi(now);
+    this.releaseFull(now);
     this.sprites.geometry.setDrawRange(0, n);
     (this.sprites.geometry.attributes.position as BufferAttribute).needsUpdate = true;
     (this.sprites.geometry.attributes.aIrr as BufferAttribute).needsUpdate = true;
@@ -945,33 +1075,43 @@ export class BodiesLayer {
       if (key && pixelRadius > FACE_WANT_PX) this.requestFace(key, u);
       return;
     }
-    if (key && this.manifest.maps[key]?.hi) {
+    if (pixelRadius > FULL_WANT_PX) this.wantFull(b, now);
+    if (key) {
+      const info = this.manifest.maps[key];
       const entry = this.hiTex.get(key);
-      const want = this.allowHi && (pixelRadius > HI_WANT_PX || (entry !== undefined && pixelRadius > HI_KEEP_PX));
+      const want = info?.hi && this.allowHi && (pixelRadius > HI_WANT_PX || (entry !== undefined && pixelRadius > HI_KEEP_PX));
       const hi = want ? this.wantHi(key, now) : null;
-      const lo = this.loadedTex.get(key)?.tex ?? null;
-      const tex = hi ?? lo;
+      const full = this.loadedTex.get(key)?.tex ?? null;
+      const tex = hi ?? full ?? this.smallLoaded.get(key) ?? null;
       if (tex && u.uMap.value !== tex) {
         u.uMap.value = tex;
         // close-up detail is scaled to the map in use
-        if ((u.uMapW.value as number) > 0) u.uMapW.value = hi ? this.manifest.maps[key].hi!.width : this.manifest.maps[key].width;
+        if ((u.uMapW.value as number) > 0) u.uMapW.value = hi ? info.hi!.width : full ? info.width : info.small?.width ?? info.width;
+      }
+    }
+    if (b.name === 'Earth') {
+      for (const [k, f] of [['earth_night', 'uNight'], ['earth_clouds', 'uClouds']] as const) {
+        const t = this.loadedTex.get(k)?.tex ?? this.smallLoaded.get(k) ?? null;
+        if (t && u[f].value !== t) {
+          u[f].value = t;
+          if (f === 'uClouds') this.clouds?.setMap(t);
+        }
       }
     }
     const rk = this.reliefKey(b);
-    if (rk && pixelRadius > RELIEF_WANT_PX) this.requestRelief(rk, u);
+    if (rk && pixelRadius > RELIEF_WANT_PX) {
+      const full = this.loadedTex.get(rk)?.tex ?? null;
+      if (!full && !this.manifest.maps[rk].small) this.reliefFull(rk);
+      else if (!this.smallLoaded.has(rk)) void this.smallMap(rk).catch((err) => console.warn('relief map failed', rk, err));
+      const t = full ?? this.smallLoaded.get(rk) ?? null;
+      if (t && u.uRelief.value !== t) {
+        u.uRelief.value = t;
+        u.uHasRelief.value = 1;
+        u.uWater.value = this.manifest.maps[rk].channels === 'relief+water' ? 1 : 0;
+      }
+    }
   }
 
-  private requestRelief(rk: string, u: Record<string, { value: unknown }>): void {
-    if (this.reliefRequested.has(rk)) return;
-    this.reliefRequested.add(rk);
-    const water = this.manifest.maps[rk].channels === 'relief+water';
-    this.loadData(rk).then((tex) => {
-      u.uRelief.value = tex;
-      u.uHasRelief.value = 1;
-      u.uWater.value = water ? 1 : 0;
-    }).catch((err) => console.warn('relief map failed', rk, err));
-  }
-  private reliefRequested = new Set<string>();
 
   /** A sun's own face, once for each: drawn (STAR_FRAG) from when its map is on the GPU; without it the face is the generated one. */
   private requestFace(key: string, u: Record<string, { value: unknown }>): void {

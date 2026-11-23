@@ -59,6 +59,8 @@ All from NASA/JPL or NASA PDS (U.S. Government works, freely available):
 Per-map source URLs and credits are in `public/data/textures/manifest.json` and shown in the app.
 Maps marked "8k" have a high-resolution tier that is loaded only while the body fills a large part of
 the view and is freed again afterwards.
+Each map also has a 1024 × 512 copy (`*_1k.jpg`, `pipeline/build_small_maps.py`), made from the map
+itself and under its credit, which a world is drawn with from afar.
 
 The moons, dwarf planets and asteroids are 4096 × 2048 maps area-averaged from the **full-resolution
 USGS Astrogeology mosaics** (`pipeline/fetch_moons_hires.py`; uncompressed GeoTIFFs read with HTTP range

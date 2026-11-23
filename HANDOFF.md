@@ -1861,6 +1861,24 @@ above is validated against JPL Horizons and stays as it is unless something is w
        this machine, as SIMBAD does); and, a separate decision since it would move stars, Bailer-
        Jones's geometric distances (Gaia archive, `external.gaiaedr3_distance`) as a better
        estimate for the poor ones. `tests/distancegrade.test.ts`; `scripts/interact.mjs`.
+     - *A budget for the worlds' maps* (after the memory soak): every world visited kept all its
+       full maps on the GPU for good (each 4,096 x 2,048 colour, relief or night map some 43 MB
+       with its mip levels), so memory grew with the number of worlds seen, not with time: on a
+       phone (390 x 844 at 3x) a tour of twelve worlds took the GPU process from 866 to 1,458 MB,
+       with 21 big maps resident at the end. Now each map has a small copy, 1,024 x 512
+       (`pipeline/build_small_maps.py`, 30 maps, 4.07 MB), which a world keeps for good and is
+       drawn with from afar; its full maps are loaded once it is 128 px in radius on screen (half
+       the small map's width then spans the disc), the small ones shown meanwhile, and let go
+       10 s after it last was; and never more than 3 worlds' full maps at once, the one wanted
+       longest ago going first (`Bodies.wantFull`, `releaseFull`, `FULL_*`). The same tour now:
+       the GPU process 613 to 768 MB, at most 4 big maps resident (the Earth's day, night, clouds
+       and relief); the full map drawn 0.7 to 3.1 s after arrival (the Earth's, with its four
+       maps, 8.9 s), and the first world sharp again on coming back (1.0 s). `scripts/places.mjs`
+       checks the cap, the small map left behind and the full one on return. The 8k tier
+       (`hi`) works as before. Not changed, measured for a decision: the render targets at a
+       phone's pixel ratio 3 are some 111 MB (the HDR target 1,170 x 2,532, half floats, 2
+       samples: 90 MB; bloom 8 MB; the volume pass 13 MB), at pixel ratio 2 some 79 MB (the HDR
+       target 780 x 1,688 with 4 samples, 70 MB; bloom 3 MB; volume 6 MB).
      - *The stars out at night in a valley* (interact's "walking at Apollo 17" failing on GitHub's
        runners, the same numbers every run): at night at the Apollo 17 site, 2.6 km under the
        Moon's mean radius, with the view turned to where the Sun is (7.9 degrees under the
