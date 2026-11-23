@@ -115,7 +115,9 @@ st = await state();
 check('hitting the Moon fast is a crash', crashed && st.ending === 'CRASHED', String(st.ending));
 await page.waitForTimeout(500);
 await shot('f4-crash.png');
-const respawned = await waitFor(() => window.app.game.flight.ending === null, null, 120000);
+// (the ending counts down 4.5 s of control steps, 0.1 s at most a frame: 45 frames, which on a runner, at 2 to 3 s a frame
+// over the Moon, are some 120 s: a wait of 120 s was too short for it once in six runs, "pe -1,735 km", still the crash)
+const respawned = await waitFor(() => window.app.game.flight.ending === null, null, 600000);
 st = await state();
 check('after the crash: respawn in a safe orbit', respawned && st.frame === 'Moon' && st.pe > 50e3, `pe ${(st.pe / 1e3).toFixed(0)} km`);
 
@@ -123,10 +125,24 @@ check('after the crash: respawn in a safe orbit', respawned && st.frame === 'Moo
 await page.evaluate(() => { const a = window.app; a.flightClock(); const m = a.findByName('Moon'); a.placeNear(m, m.radius + 5000, 200, 30); a.clock.paused = true; });
 await waitFor(() => window.app.terrain.owner === window.app.findByName('Moon') && !!window.app.terrain.below(window.app.rig.upos));
 // (time held while the terrain streams in: at a few frames a second the ship would otherwise fall the 5 km)
+// and held over the ground at 12 m until the ground under it has stopped changing: the terrain is built finer as the
+// eye comes near, column by column, and from 5 km up what is there at 12 m is the coarse ground, which the finer tiles then
+// move by tens of metres, 184 m in one of six runs on a runner: dropped while it streams in, the ship fell 45 m and more
+// and hit at over 12 m/s ("CRASHED" in one run of three, 25.2 and 15.8 m/s in two of six: the ground had sunk under it)
+await page.evaluate(() => { window.app.game.flight.hoverOverGround(12); });
+const settled = await waitFor(() => {
+  const a = window.app, s = (window.__settle ??= { n: 0, g: NaN, f: -1 });
+  if (a.frameCount === s.f) return false;
+  s.f = a.frameCount;
+  const b = a.terrain.below(a.rig.upos), g = b ? b.ground : NaN;
+  s.n = Number.isFinite(g) && Math.abs(g - s.g) < 0.01 && a.terrain.stats.pending === 0 ? s.n + 1 : 0;
+  s.g = g;
+  return s.n >= 8;
+}, null, 900000);
 await page.evaluate(() => { window.app.game.flight.hoverOverGround(12); window.app.clock.paused = false; });
 const landed = await waitFor(() => !!window.app.game.flight.readout.landed || window.app.game.flight.ending !== null, null, 240000);
 st = await state();
-check('a gentle drop is a landing', landed && st.landed === 'Moon' && !st.ending, JSON.stringify({ landed: st.landed, ending: st.ending }));
+check('a gentle drop is a landing', settled && landed && st.landed === 'Moon' && !st.ending, JSON.stringify({ settled, landed: st.landed, ending: st.ending }));
 await shot('f5-landed.png');
 
 // 8. a stellar black hole: tides near the limit, then torn apart inside it

@@ -130,6 +130,19 @@ check('thrust undocks', st.docked === null);
 await page.evaluate(() => { const a = window.app; const m = a.findByName('Moon'); a.select(m); a.placeNear(m, m.radius + 5000, 30, 20); a.clock.paused = true; });
 await page.waitForFunction(() => window.app.terrain.owner === window.app.findByName('Moon') && !!window.app.terrain.below(window.app.rig.upos), null, { timeout: 240000 }).catch(() => undefined);
 // (time held while the terrain streams in: at a few frames a second the ship would otherwise fall the 5 km)
+// (and held at 12 m until the ground under it has stopped changing: the terrain is built finer as the eye comes near, and
+// the finer ground can be tens of metres lower than the coarse ground seen from 5 km up, which makes the fall a crash:
+// see flight.mjs, section 7)
+await page.evaluate(() => { window.app.game.flight.hoverOverGround(12); });
+await page.waitForFunction(() => {
+  const a = window.app, s = (window.__settle ??= { n: 0, g: NaN, f: -1 });
+  if (a.frameCount === s.f) return false;
+  s.f = a.frameCount;
+  const b = a.terrain.below(a.rig.upos), g = b ? b.ground : NaN;
+  s.n = Number.isFinite(g) && Math.abs(g - s.g) < 0.01 && a.terrain.stats.pending === 0 ? s.n + 1 : 0;
+  s.g = g;
+  return s.n >= 8;
+}, null, { timeout: 900000 }).catch(() => undefined);
 await page.evaluate(() => { window.app.game.flight.hoverOverGround(12); window.app.clock.paused = false; });
 await page.waitForFunction(() => !!window.app.game.flight.readout.landed || !!window.app.game.flight.ending, null, { timeout: 240000 }).catch(() => undefined);
 await frames(4);
