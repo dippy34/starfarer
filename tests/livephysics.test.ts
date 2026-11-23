@@ -194,6 +194,19 @@ describe('live physics', () => {
     expect(told).toMatch(/^The Moon hit Earth at 1[345](\.\d)? km\/s and is part of it now\.$/);
     expect(physics.status()!.log[0].text).toBe(told);
     expect(physics.status()!.log[0].day).toBe('17 September 2026');
+    // two worlds met: what the hit was, for its card, the two as they were before it
+    const hits = physics.takeHits();
+    expect(hits).toHaveLength(1);
+    expect(hits[0].small).toEqual({ name: 'Moon', gm: moon.gm, radius: moon.radius });
+    expect(hits[0].big.name).toBe('Earth');
+    expect(hits[0].big.gm).toBeCloseTo(gm - moon.gm, -3);
+    expect(hits[0].into).toBe(earth);
+    expect(hits[0].told).toBe(told);
+    expect(hits[0].speed).toBeGreaterThan(13e3);
+    // (½μv², μ the two masses' product over their sum)
+    const mu = (moon.gm * (gm - moon.gm)) / gm / 6.6743e-11;
+    expect(hits[0].energy / (0.5 * mu * hits[0].speed ** 2)).toBeCloseTo(1, 6);
+    expect(physics.takeHits()).toEqual([]);
   });
 
   it('the Moon moved to twice its distance and left on a circle there: its month is the 2.83 months Kepler gives it', async () => {
@@ -311,8 +324,8 @@ describe('live physics', () => {
     const rows = physics.rows(named('Moon'));
     expect(rows[0]).toEqual(['Live physics', 'simulated since 16 September 2026']);
     expect(rows[1]).toEqual(['Goes round', 'Earth']);
-    expect(rows[2][1]).toMatch(/^a slightly stretched circle \(0\.0[3-7]\d?\)$/);
-    expect(rows[3][1]).toMatch(/^3[56]\d,\d\d\d km to 4[01]\d,\d\d\d km · 2[6-8](\.\d+)? d$/);
+    expect(rows[2]).toEqual(['Its orbit', expect.stringMatching(/^a slightly stretched circle, 3[56]\d,\d\d\d to 4[01]\d,\d\d\d km · 2[6-8](\.\d+)? d$/)]);
+    expect(rows[3]).toEqual(['How stretched', expect.stringMatching(/^0\.0[3-7]\d? \(0 is a circle, 1 and more an open path\)$/)]);
     expect(physics.rows(named('Carme'))).toEqual([['Live physics', 'not simulated: it keeps its real path round Jupiter (its mass is not known)']]);
     expect(physics.rows(named('Phobos'))).toEqual([['Live physics', 'not simulated: it keeps its real path round Mars (it is too light to matter until it or Mars is changed)']]);
     const status = physics.status()!;

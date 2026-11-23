@@ -111,6 +111,15 @@ export function escapeVelocity(massKg: number, R: number): Derived {
   return derived(v / 1000, 'km/s', 'v_esc = √(2GM / R)', `√(2·${num(G)}·${num(massKg)} kg / ${num(R)} m)`);
 }
 
+/**
+ * The energy that holds a body together against its own gravity, U = 3GM²/(5R): what it would take
+ * to take it apart and scatter every bit of it far away. For a ball of even density (J); a real
+ * world is denser at its centre and held more tightly (the Earth by about a tenth more).
+ */
+export function bindingEnergy(massKg: number, R: number): number {
+  return (3 * G * massKg * massKg) / (5 * R);
+}
+
 /** Flattening f = (a − c)/a from the equatorial and polar radii. */
 export function flattening(req: number, rpol: number): Derived {
   const f = (req - rpol) / req;

@@ -324,6 +324,10 @@ describe('the size of what is made, from its mass', () => {
     expect(madeAbsMag(half.lum!)).toBeCloseTo(4.831 + 2.5 * Math.log10(16), 9);
     expect(madeWords('sun', M_SUN, false).what).toBe('A star like the Sun');
     expect(madeWords('sun', 0.5 * M_SUN, false).what).toBe("A star, 0.57 times the Sun's size, 3,810 K");
+    // the lightest star the slider makes is said in Suns, as a star is, and in Jupiters as well
+    expect(MADE_MASS.sun[0]).toBeCloseTo(0.08 * M_SUN, -20);
+    expect(madeWords('sun', MADE_MASS.sun[0], false).mass).toBe('0.08 Suns (83.8 Jupiters)');
+    expect(madeWords('sun', 0.5 * M_SUN, false).mass).toBe('0.5 Suns');
   });
 
   it('a moon is a ball of rock, or of ice and rock beyond the frost line, as Add makes one', async () => {

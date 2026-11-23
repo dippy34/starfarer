@@ -1,5 +1,5 @@
 import { BufferAttribute, BufferGeometry, DynamicDrawUsage, Group, Line, Matrix3, ShaderMaterial, Vector3 } from 'three';
-import { perifocalMatrix, solveKeplerElliptic, stateToElements, type OrbitalElements } from '../astro/kepler';
+import { isOpen, openPath, perifocalMatrix, solveKeplerElliptic, stateToElements, type OrbitalElements } from '../astro/kepler';
 import { OBLIQUITY_J2000 } from '../core/frames';
 import { AU } from '../core/units';
 import type { UPos } from '../core/upos';
@@ -30,6 +30,8 @@ ${OUTPUT_FRAGMENT}
 const BASE_SAMPLES = 192;
 const REFINE = 14; // geometric refinement steps on each side of the body
 const MAX_VERTS = BASE_SAMPLES + 2 * REFINE + 2;
+/** an open path is drawn from the body on until it is this many times as far out as it is now (or as its nearest point) */
+const OPEN_REACH = 4;
 
 export const COLORS: Record<string, [number, number, number]> = {
   star: [1.0, 0.72, 0.5],
@@ -64,6 +66,7 @@ export class OrbitsLayer {
   simulated: ((b: Body) => boolean) | null = null;
   private objs = new Map<Body, OrbitObj>();
   private angles = new Float64Array(MAX_VERTS);
+  private flat = new Float64Array(2 * MAX_VERTS);
   private tmpR = new Vector3();
   private tmpV = new Vector3();
   private m3 = new Matrix3();
@@ -105,22 +108,40 @@ export class OrbitsLayer {
     return o;
   }
 
-  /** Orbit elements of `b` about its primary, plus the frame matrix to ICRF. */
-  private elements(b: Body, jd: number): { el: OrbitalElements; frame: Matrix3 } | null {
+  /**
+   * Orbit elements of `b` about its primary, plus the frame matrix to ICRF, and whether the orbit is
+   * open: a body of the simulation is on an open path when the orbit its card tells of is
+   * (src/app/Powers.ts: orbitOf, from the two masses alone), which a thrown body at exactly the speed
+   * of escape is.
+   */
+  private elements(b: Body, p: Body, jd: number): { el: OrbitalElements; frame: Matrix3; open: boolean } | null {
     const kind = this.simulated?.(b) ? 'simulated' : this.system.ephemerisKind(b);
-    if (kind === 'satellite' && b.id !== 301) return this.system.satelliteElements(b, jd);
+    if (kind === 'satellite' && b.id !== 301) {
+      const res = this.system.satelliteElements(b, jd);
+      return res && { ...res, open: res.el.e >= 1 };
+    }
     if (kind === 'kepler') {
       const el = this.system.heliocentricElements(b);
-      return el ? { el, frame: ECL_TO_EQU } : null;
+      return el ? { el, frame: ECL_TO_EQU, open: el.e >= 1 } : null;
     }
     // Osculating elements from the body's state (planets and the Moon from the ephemeris; any simulated body)
-    const p = b.parent;
-    if (!p) return null;
     const r = this.tmpR.copy(b.pos).sub(p.pos);
     const v = this.tmpV.copy(b.vel).sub(p.vel);
     const mu = (p.kind === 'star' ? p.gm : p.gm) + (b.systemGm || b.gm);
     const el = stateToElements(r, v, mu, jd);
-    return { el, frame: this.m3.identity() };
+    const d = r.length(), two = p.gm + b.gm;
+    return { el, frame: this.m3.identity(), open: kind === 'simulated' ? isOpen(v.lengthSq() / 2 - two / d, two, d) : el.e >= 1 };
+  }
+
+  /**
+   * A body of the simulation that goes round nothing (it is bound to nothing: src/app/LivePhysics.ts)
+   * is on an open path past the Sun, which it is leaving: its line is that path. Null for any other.
+   */
+  private leaving(b: Body): Body | null {
+    const sun = this.system.sun;
+    if (!this.simulated?.(b) || b === sun || !sun.valid) return null;
+    const r = this.tmpR.copy(b.pos).sub(sun.pos), v = this.tmpV.copy(b.vel).sub(sun.vel), d = r.length(), mu = sun.gm + b.gm;
+    return isOpen(v.lengthSq() / 2 - mu / d, mu, d) ? sun : null;
   }
 
   update(cam: UPos, pixelAngle: number, jd: number): void {
@@ -129,22 +150,23 @@ export class OrbitsLayer {
     const sun = this.system.sun;
     const camToSun = sun.upos.sub(cam, new Vector3()).length();
     for (const b of this.system.bodies) {
-      if (!b.valid || !b.parent) continue;
+      const p = b.valid ? b.parent ?? this.leaving(b) : null;
+      if (!p) continue;
       const isSel = b === this.selected;
       if (!isSel && (b.kind === 'asteroid' || b.kind === 'tno') && !this.showMinor) continue;
       // Small irregular moons (no measured size) only on request
       if (!isSel && b.kind === 'moon' && b.radiusEstimated && !this.showMinor) continue;
       // Screen size of the orbit: semi-major axis seen from the camera at the primary's distance
-      const pr = b.parent.upos.sub(cam, this.tmpR);
+      const pr = p.upos.sub(cam, this.tmpR);
       const dPrimary = Math.max(pr.length(), 1);
-      const orbitR = b.pos.distanceTo(b.parent.pos);
+      const orbitR = b.pos.distanceTo(p.pos);
       const px = orbitR / dPrimary / pixelAngle;
       if (!isSel && (px < 12 || (b.kind === 'moon' && px < 25))) continue;
-      if (!isSel && b.parent === sun && camToSun > 2e4 * AU) continue;
-      const res = this.elements(b, jd);
-      if (!res || res.el.e >= 1) continue;
+      if (!isSel && p === sun && camToSun > 2e4 * AU) continue;
+      const res = this.elements(b, p, jd);
+      if (!res) continue;
       const o = this.obj(b);
-      const n = this.fill(o, res.el, res.frame, jd);
+      const n = res.open ? this.fillOpen(o, res.el, res.frame, this.tmpR.copy(b.pos).sub(p.pos)) : this.fill(o, res.el, res.frame, jd);
       if (n < 2) continue;
       const rel = b.upos.sub(cam, this.tmpV);
       o.line.matrix.makeTranslation(rel.x, rel.y, rel.z);
@@ -155,8 +177,8 @@ export class OrbitsLayer {
       o.mat.uniforms.uColor.value.set(col[0], col[1], col[2]);
       // Near a planet or moon, de-emphasise orbits that belong to other systems
       const f = this.focus;
-      const local = !f || f.kind === 'star' || b === f || b.parent === f || f.parent === b
-        || (f.kind === 'moon' && b.parent === f.parent);
+      const local = !f || f.kind === 'star' || b === f || p === f || f.parent === b
+        || (f.kind === 'moon' && p === f.parent);
       const base = Math.min(0.45, 0.12 + px / 600) * (b.kind === 'planet' || b.kind === 'moon' ? 1 : 0.6);
       o.mat.uniforms.uAlpha.value = isSel ? 0.85 : local ? base : base * 0.25;
       o.line.visible = true;
@@ -190,6 +212,29 @@ export class OrbitsLayer {
       // difference in the perifocal plane computed directly (exact near the body)
       const dx = a * (Math.cos(E) - e) - xb;
       const dy = b * Math.sin(E) - yb;
+      pos[i * 3] = R[0] * dx + R[3] * dy;
+      pos[i * 3 + 1] = R[1] * dx + R[4] * dy;
+      pos[i * 3 + 2] = R[2] * dx + R[5] * dy;
+    }
+    return k;
+  }
+
+  /**
+   * An open path (a parabola at exactly the speed of escape, a hyperbola beyond): from the body on
+   * outwards, to OPEN_REACH times as far out as it is (where it went before it was thrown is no
+   * path of its own); `rel`, where it is from what it goes round (ICRF), places it on the path.
+   * Positions are written relative to the body.
+   */
+  private fillOpen(o: OrbitObj, el: OrbitalElements, frame: Matrix3, rel: Vector3): number {
+    const e = Math.max(1, el.e);
+    const R = perifocalMatrix(el.i, el.node, el.peri).premultiply(frame).elements; // column-major
+    // (its true anomaly: where it is, against the line to the nearest point, in the plane of the path)
+    const nu0 = Math.atan2(rel.x * R[3] + rel.y * R[4] + rel.z * R[5], rel.x * R[0] + rel.y * R[1] + rel.z * R[2]);
+    const flat = this.flat;
+    const k = openPath(el.q, e, nu0, OPEN_REACH * Math.max(rel.length(), el.q), BASE_SAMPLES, REFINE, flat);
+    const pos = o.positions;
+    for (let i = 0; i < k; i++) {
+      const dx = flat[2 * i], dy = flat[2 * i + 1];
       pos[i * 3] = R[0] * dx + R[3] * dy;
       pos[i * 3 + 1] = R[1] * dx + R[4] * dy;
       pos[i * 3 + 2] = R[2] * dx + R[5] * dy;

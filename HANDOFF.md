@@ -743,7 +743,133 @@ temperature, and size as well as mass.
 - Not done here: the flick's speeds tuned by a hand on an iPhone; the slingshot and placing in the
   headset; a made sun's light afterwards with the Mass power (it keeps the light it was made with);
   the arrow may run under the card (the finger's pull can go anywhere on the screen: it is the
-  world's throw that is drawn).
+  world's throw that is drawn; Part 3 stops it at the card's edge).
+
+### Part 3: impacts you can see, and the future drawn (done)
+
+- *Impacts you can see* (`src/app/Impacts.ts`; the arithmetic in `src/app/Powers.ts`: `contactTimes`,
+  `soonestContact`, `impactWords`; `bindingEnergy` in `src/sim/physics.ts`; `src/render/Flash.ts`).
+  - Each frame, while live physics runs forwards and changes are shown (More: Show me what
+    happens), the first hit ahead is looked for among the worlds that matter to what is seen
+    (`LivePhysics.weighty`, as the watch has them: stars, planets, dwarf planets, moons from Mimas
+    up, what was made; never a moonlet), on the two-body orbit of each pair about each other, as
+    far ahead as the frame's time reaches. Pairs that cannot come that near so soon, at the most
+    speed falling together could give them, are passed over unworked. The times are worked in
+    closed form from the energy's sign (an ellipse, a parabola by Barker's equation, a hyperbola;
+    straight falls among them, where `sim/Kepler.timeToRadius` gives none), checked against the
+    orbit stepped by Runge-Kutta in `tests/powers.test.ts`.
+  - Each hit ahead is judged once (`SlowMotion`), as the two come within 8 times their radii added
+    (`ZONE`). If the rest of their fall would take less than 3 seconds on the screen at the rate
+    time runs, the frame that reaches that distance stops there, and time then runs at the rate at
+    which the rest takes 3 seconds (`SHOW`), never slower than real time. The watch's chip says
+    "Slowed: 1.5 hours a second", the clock chip the rate. A fall that takes 3 s or more anyway is
+    left alone: slowing it again as the two came nearer would never let them meet. Once they have
+    met, time stays slow 1.2 s, then doubles every quarter second back to the rate asked for; a
+    pair that passes after all gives it back at once. One governor (`App.slowing`): it gives the
+    frame a share of the rate asked for, so the watch's rate, Stop and the explorer's rate are
+    untouched. Decided against the research (which slowed by the time to contact at the closing
+    speed): with a judgement per frame the slowing never ends (each frame takes a third of what is
+    left), and only the last of the fall needs it.
+  - The camera frames the two (`App.frameHit`, the watch's framing), round the heavier, unless both
+    are already in the part of the view the interface leaves clear and 40 px or more apart. Not in
+    the ship, on foot or in the headset.
+  - A flash where they met (`FlashLayer`): on the world they became, a white core in an orange glow
+    that swells and fades in 1.6 s, at least 90 CSS px across, drawn over what stands in front of it
+    at a brightness of its own: a depiction (said so in what the simulation leaves out), never
+    counted by the eye's metering (`Exposure` never sees it); none if the hit was more than a second
+    of screen time ago (at high rates a frame is long).
+  - A card above the world's card (`Hud.impact`), until it is closed, another hit takes its place,
+    or the change is undone or another begins: "Mars hit Earth at 9.4 km/s", "Energy 2.5×10³¹ J: as
+    much as the Sun gives off in 18.4 hours. 5.2 times the energy that holds Mars together." and,
+    smaller, "Prediction, by a rule of thumb (the energy against what holds each together): Mars
+    would break apart, Earth would not. Breaking apart is not simulated yet: the two become one."
+    The energy is ½μv² (the simulation's `heat`); what holds the lighter together is its binding
+    energy as a ball of even density, 3GM²/5R (the Earth's 2.24×10³² J; a real world is denser at
+    the centre, the Earth held about a tenth more tightly: said in what the simulation leaves out).
+    `LivePhysics.takeHits` gives the two as they were before they met. The toast no longer says the
+    same hit (the log keeps it); a moonlet's fall is still told in the toast alone. The card takes
+    room: an open panel of the world's card folds away where there is not room for both
+    (`Hud.makeRoom`), and where there still is not (a phone on its side with a watch's chip up) it
+    shows its first line, with More. Where it leaves less of the view clear while the camera is in a
+    watch's or a hit's frame, the frame is fitted again to what is left (`App.frameAsked`, let go
+    when a finger takes the camera). The toast now stands in front of the panels (a phone on its
+    side has them reach up to it; taps go through it).
+  - Decided: the hits ahead are foreseen rather than the simulation wound back after one. Near the
+    end of a fall the two-body orbit is what happens (from a day and a half out at 13 km/s the
+    Sun's tide moves the Earth and Mars a few hundred kilometres against each other), so time is
+    slowed for a hit at rates up to some 100 days a second; faster, a hit no frame foresaw shows its
+    card, and its flash if it is under a second old, without slowing. A graze foreseen as a miss
+    likewise.
+- *The future, drawn* (`src/app/Foresight.ts`, `src/render/Futures.ts`). While a finger holds a
+  world, aims a throw or is on the mass slider, or a world added waits to be put in place, the
+  simulation is run ahead on a copy of itself (`NBody.restore(live.sim.snapshot())`), every pull
+  counted: a dashed orange path from the world, drawn from what it goes round (as the trails are),
+  and, at the path's end and on the card under the orbit, what ends it: "With every pull counted,
+  it hits Earth in 1.6 days", "goes round the Sun in 3.2 days", "taken by Jupiter in 2031",
+  "leaves the Sun for good"; or "goes on like this for 78.3 days at least". It looks up to three
+  of the world's turns or a hundred years ahead and stops at the first hit, leaving, or change of
+  what it goes round (the copy's own events). What goes round faster than a quarter of the world's
+  turn is carried on rails, as live physics carries it while the change is watched (a watch runs at
+  an eighth of the quickest turn a second; rails below two seconds of that): when nothing else
+  changes, the path is the one time will then take, bit for bit (`tests/foresight.test.ts`; and
+  the Moon put on a circle at twice its distance goes round the Sun in live physics within a day
+  of when the look ahead said). It grows with the time the waiting stepping does not use (3 to 12 ms
+  a frame; 2 ms while time runs) and starts again from a change at most five times a second (each
+  start copies the simulation). It never touches the scene's bodies, nor what live physics tells.
+  The words at the path's end are left out where they would fall under the interface (the round
+  buttons often): the card says them anyway.
+- *Open paths drawn* (the coordinator, from Part 2's picture at the mark of escape: no line).
+  `Orbits` drew closed orbits only. A body on an open path is now drawn from where it is outwards,
+  to four times as far out as it is (or as its nearest point): a parabola at exactly the speed of
+  escape, a hyperbola beyond, from q and the true anomaly (r = q (1 + e) / (1 + e cos ν): a parabola
+  has no semi-major axis; `openPath` in `src/astro/kepler.ts`). Open or closed is the card's rule
+  (`isOpen`, moved there from Powers: an energy within 10⁻¹² of μ/r of nothing is open), so the line
+  and the card agree; closed orbits are drawn by the same code as before. A world of the
+  simulation bound to nothing (thrown out of the Solar System) is drawn on its open path past the
+  Sun, and the card says "Now on an open path past the Sun: it passes at 1 AU, then leaves." (it
+  had no line, and "Now it goes round nothing."). Found doing it: the Moon thrown at 1.6 times the
+  speed of a circle is free of the Earth at once and goes round the Sun (the simulation's own
+  pairing; Part 2's flick showed it), so its line is its orbit round the Sun, closed; the hyperbola
+  is a world leaving the Sun's (the Earth thrown at 1.6: e = 1.56, checked in the browser).
+- *Words* (the coordinator): the orbit on the card reads "a circle 369,335 km out · 25.7 d" where its
+  two ends come out the same, else "a slightly stretched circle, 365,709 to 382,840 km · 26.21 d"
+  (the unit once where both ends have it: `orbitWords`); no number in brackets. The details keep
+  the number and say what it means: "How stretched: 0.023 (0 is a circle, 1 and more an open
+  path)". A path whose nearest point is inside what it goes round: "Now on a path into Earth: it
+  hits it." The lightest star reads "0.08 Suns (83.8 Jupiters)" (`starMassWords`; the Mass power
+  says a star's mass so too).
+- *The slingshot's arrow* is drawn only in the part of the view the interface leaves clear
+  (`Hud.setAim`: a clip to `freeArea`): pulled towards the card, it stops at its edge instead of
+  running on under it.
+- Checked: the type check; the unit tests (new: `tests/impacts.test.ts`, the slowing; `tests/foresight.test.ts`,
+  the look ahead against live physics, bit for bit and in what it says; in `tests/powers.test.ts` the contact
+  times against the orbit stepped, the first hit ahead, the card's words, the orbit's words; open paths and the
+  open rule in `tests/astro.test.ts`; `bindingEnergy`; a world thrown out of the Solar System in
+  `tests/mover.test.ts`; the hit's record in `tests/livephysics.test.ts`; the light star in
+  `tests/whatif.test.ts`); `live` with two new blocks, `open` (the Earth aimed at 1.6: its hyperbola past the
+  Sun, the card, "leaves the Sun for good", let go where taken) and `hit` (Mars aimed at the Earth: the path
+  into it and when; let go: slowed with the chip saying so, the hit some 3.5 s on, the frame, the flash
+  measured on the screen, the card all in sight and the toast not saying it again, Undo), and in `throw` the
+  path ahead on a circle and at escape, the arrow stopping at the card, the parabola at escape drawn and read
+  off the screen; the wording checks of the moon, jupiter and made blocks; the red dwarf's mass words.
+  `whatif`, `interact`, `touch`, `game`, `flight`. The new checks fail on Part 2's build (02cc087), but for
+  "the camera frames the two", which the throw's own watch already did there. Merged with the landscape
+  work (the view centred on the part the interface leaves clear on a phone on its side): what this part
+  draws (the path ahead, the flash, the open paths) is drawn by the camera, and what it places on the
+  screen (the arrow, the words at the path's end, the frame of a hit) goes through `App.project` and
+  `frameOn`; `live`'s `side` block reads the path ahead and the orbit line off the screen of a phone on
+  its side, with the centre moved. (Once, at a desk, live's search gave the asteroid Io for the moon,
+  which share the name; the block passed run again.)
+  Found by the full `live` suite and put right: the moonlets of a Jupiter made twenty times heavier slowed
+  its watch at once and took its frame (hits are now those of the worlds the watch counts); on a phone on its
+  side the card of a hit left the world's card cut off under the screen's edge (it folds to its first line
+  there, with More); the toast stood behind the panels where they reach up to it (in front now: taps go
+  through it).
+- Not done here: the path ahead of a world while time runs on the mass slider is drawn from a
+  moment ago (it starts again five times a second, and Jupiter's own path is not what changes
+  most); the look ahead of the Moon at escape ends where the Sun takes it, three days on (the event
+  ends it, as asked), so its path lies under the slingshot's arrow; breaking apart; a world's own
+  heat and glow after a hit; the impact in the headset (its flash shows there, the card does not).
 
 ## Next
 
@@ -768,8 +894,9 @@ things and back, coming up to five black holes and going away again, out of the 
 of stars, measured from the frames; 18),
 `whatif` (the worked-out facts, a moon made and taken away; 35), `live` (live physics and the
 powers, each through the interface on a phone and at a desk, watching a change, Replay and
-Undo, upright and sideways, throwing a world and putting a new one in place; 133:
-`LIVE_ONLY=watch,jupiter,sun,moon,made,throw,place` picks blocks),
+Undo, upright and sideways, throwing a world and putting a new one in place, a world thrown out of
+the Solar System, Mars thrown at the Earth, the path ahead on a phone on its side; 160:
+`LIVE_ONLY=watch,jupiter,sun,moon,made,throw,open,hit,side,place` picks blocks),
 `vr` (IWER Quest 3 emulator; 32), `game` (21), `walk` (45), `places` (rings, comets, eclipses; 16),
 `terrain` (15), `flight` (34), `ship` (the ship's looks on a phone; 25). At most three at a
 time on four cores (more

@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
-  apsides, AU, breakupPeriod, circularSpeed, DAY, density, equilibriumTemp, escapeVelocity, flattening, G, habitableZone, hillRadius, isco,
+  apsides, AU, bindingEnergy, breakupPeriod, circularSpeed, DAY, density, equilibriumTemp, escapeVelocity, flattening, G, habitableZone, hillRadius, isco,
   L_SUN, luminosity, M_EARTH, M_SUN, mainSequence, massFromDensity, num, orbitalPeriod, photonSphere, R_EARTH, R_SUN, radiusFromDensity,
   rocheLimit, scaleHeight, schwarzschildRadius, semiMajorFromPeriod, surfaceGravity, surfaceTemp, T_SUN, waterState, YEAR,
 } from '../src/sim/physics';
 
 const rel = (a: number, b: number) => Math.abs(a - b) / Math.abs(b);
+
+describe('what holds a world together', () => {
+  it('as a ball of even density: the Earth 2.24×10³² J, Mars 4.9×10³⁰ J', () => {
+    expect(bindingEnergy(M_EARTH, R_EARTH) / 2.24e32).toBeCloseTo(1, 2);
+    expect(bindingEnergy(6.4171e23, 3389.5e3) / 4.86e30).toBeCloseTo(1, 2);
+    // (twice the mass in the same size is held four times as tightly)
+    expect(bindingEnergy(2 * M_EARTH, R_EARTH) / bindingEnergy(M_EARTH, R_EARTH)).toBeCloseTo(4, 12);
+  });
+});
 
 describe('the physics of the worked-out facts (textbook values)', () => {
   it('Earth: g, escape velocity, density, flattening', () => {

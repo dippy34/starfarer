@@ -3,7 +3,7 @@ import { AU, SUN_ABS_MAG } from '../core/units';
 import { G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER, R_SUN, radiusFromDensity } from '../sim/physics';
 import type { Body } from '../universe/Body';
 import type { BodyJson } from '../universe/SolarSystem';
-import { circularVelocity, M_MOON, massWords } from './Powers';
+import { circularVelocity, M_MOON, massWords, starMassWords } from './Powers';
 
 /**
  * What if: what the explorer adds to the worlds (the card's Add, src/ui/Hud.ts). A planet or a
@@ -232,7 +232,7 @@ const km = (m: number) => `${Math.round(m / 1e3).toLocaleString('en-US')} km`;
 
 /** What a body made as `kind` with `kg` of mass is, in words: its mass, and what it is and how big. */
 export function madeWords(kind: Kind, kg: number, icy: boolean): { mass: string; what: string } {
-  const s = madeSize(kind, kg, icy), mass = massWords(kg);
+  const s = madeSize(kind, kg, icy), mass = kind === 'sun' ? starMassWords(kg) : massWords(kg);
   switch (s.rule) {
     case 'rock': return { mass, what: `Rock, ${km(s.radius)} in radius` };
     case 'ice': return { mass, what: `Ice and rock, ${km(s.radius)} in radius` };

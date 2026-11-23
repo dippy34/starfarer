@@ -3,8 +3,8 @@ import type { Body } from '../universe/Body';
 import type { App } from './App';
 import type { Hold } from './Input';
 import {
-  AIM_PER_CIRCLE, AIM_SHORTEST, aimFactor, circularVelocity, dragPlane, type FingerAt, fingerVelocity, flickFactor, flickOf, onPlane,
-  reachWords, shapeWords, squareThrow, the, throwVelocity,
+  AIM_PER_CIRCLE, AIM_SHORTEST, aimFactor, circularVelocity, dragPlane, farWords, type FingerAt, fingerVelocity, flickFactor, flickOf, onPlane,
+  orbitWords, squareThrow, the, throwVelocity,
 } from './Powers';
 
 /**
@@ -36,7 +36,7 @@ const CLEAR = 1.05;
 /** a way on the screen is found in space by following it this far from the world (px) */
 const STEP = 24;
 
-type What = Pick<App, 'rig' | 'physics' | 'clock' | 'bodies' | 'view' | 'project' | 'tellNews' | 'beginChange' | 'endChange' | 'cancelChange' | 'placed'>;
+type What = Pick<App, 'rig' | 'physics' | 'system' | 'clock' | 'bodies' | 'view' | 'project' | 'tellNews' | 'beginChange' | 'endChange' | 'cancelChange' | 'placed'>;
 
 /** What a world being moved does where it is left: keeps the velocity it had, goes round in a circle, or is thrown. */
 export type Leave = 'keep' | 'circle' | 'throw';
@@ -261,11 +261,15 @@ export class Mover {
   describe(b: Body): { on: boolean; how: Leave; placing: boolean; plane: string; orbit: string } {
     const on = b === this.body;
     if (!on) return { on, how: 'keep', placing: false, plane: '', orbit: '' };
-    const o = this.app.physics.orbit(b);
-    const orbit = !b.parent ? 'Now it goes round nothing.'
+    const o = this.app.physics.orbit(b), sun = this.app.system.sun;
+    // (one bound to nothing is leaving: on an open path past the Sun, unless it is the Sun)
+    const free = !b.parent && b !== sun && sun.valid ? this.app.physics.orbit(b, sun) : null;
+    const orbit = !b.parent ? (free && !free.bound ? `Now on an open path past the Sun: it passes at ${farWords(free.peri)}, then leaves.` : 'Now it goes round nothing.')
       : !o ? `Now it goes round ${the(b.parent.name)}.`
-        : o.bound ? `Now round ${the(b.parent.name)}: ${shapeWords(o)}, ${reachWords(o)}.`
-          : `Now on an open path past ${the(b.parent.name)}: it ${reachWords(o)}.`;
+        // (its nearest is inside what it goes round: it falls into it)
+        : o.peri < b.parent.radius + b.radius ? `Now on a path into ${the(b.parent.name)}: it hits it.`
+          : o.bound ? `Now round ${the(b.parent.name)}: ${orbitWords(o)}.`
+            : `Now on an open path past ${the(b.parent.name)}: it passes at ${farWords(o.peri)}, then leaves.`;
     return { on, how: this.how, placing: this.placing, plane: this.plane(b).orbit ? 'It moves in the plane of its orbit.' : 'It moves across your view.', orbit };
   }
 

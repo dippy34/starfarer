@@ -21,6 +21,8 @@ import { Labels, type LabelCandidate } from '../render/Labels';
 import { EARTH_FOR_SCALE } from '../render/ScaleCues';
 import { NearStarsLayer } from '../render/NearStars';
 import { OrbitsLayer } from '../render/Orbits';
+import { FlashLayer } from '../render/Flash';
+import { FuturesLayer } from '../render/Futures';
 import { TrailsLayer } from '../render/Trails';
 import { ProceduralStarLayer } from '../render/ProceduralStarLayer';
 import { Renderer, type ViewInfo, VOLUMES } from '../render/Renderer';
@@ -59,9 +61,11 @@ import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, settleOn, TAU_STARS, type Frame } from './Exposure';
 import { canAdd, type Kind, MADE_FIRST_ID, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
-import { type LiveCheckpoint, LivePhysics } from './LivePhysics';
+import { AHEAD_MOST, Foresight } from './Foresight';
+import { SlowMotion, ZONE } from './Impacts';
+import { type Hit, type LiveCheckpoint, LivePhysics, weighty } from './LivePhysics';
 import { Mover } from './Mover';
-import { dayWords, farWords, FRAME_MARGIN, frameDistance, massFactor, massOf, massSlider, massTheory, massWords, rateWords, spanWords, the, timesWords, viewFrame } from './Powers';
+import { dayWords, farWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, rateWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
@@ -136,6 +140,10 @@ const LIVE_RATE = 365250 * DAY;
 const WATCH_MOST_TOUCH = 10 * 365.25 * DAY, WATCH_MOST = 100 * 365.25 * DAY;
 /** after the return to reality, Undo is offered at the top for this long (ms); then what was undone is let go */
 const REAL_AGAIN_MS = 20_000;
+/** two worlds about to hit, in the clear part of the view and at least this far apart on the screen (px), are seen coming together where they are */
+const SEEN_APART = 40;
+/** the look ahead starts again from a change at most this often (ms) */
+const AHEAD_AGAIN_MS = 200;
 
 /** The moment the world here was last the real one: the date, the rate of time, and whether the clock was following the present then. */
 interface Start { jd: number; rate: RateState; present: boolean }
@@ -245,6 +253,17 @@ export class App {
   readonly physics: LivePhysics;
   /** where the simulated bodies have been */
   readonly trails = new TrailsLayer();
+  /** live physics: a flash where two worlds met, and time slowed to see them meet (src/app/Impacts.ts) */
+  readonly flash = new FlashLayer();
+  readonly slow = new SlowMotion<Body>();
+  /** live physics: the simulation run ahead for the world held, aimed or weighed, and its path drawn (src/app/Foresight.ts) */
+  readonly ahead = new Foresight();
+  readonly futures = new FuturesLayer(AHEAD_MOST);
+  /** the world the look ahead is for (null: none now), what it was started from, when (ms), and where its path ends from the eye */
+  private aheadOf: Body | null = null;
+  private aheadFrom = '';
+  private aheadAt = 0;
+  private aheadEnd: Vector3 | null = null;
   /** the power to move a world with a finger (src/app/Mover.ts) */
   readonly mover: Mover;
   /** watching what a change does (src/app/Watch.ts): the rate of time while it runs, then Replay */
@@ -277,6 +296,8 @@ export class App {
    * with the Sun, and the Earth go out of the frame at days a second).
    */
   private framed: Body | null = null;
+  /** the frame the camera was last eased to (`frameOn`), until a finger or the pointer takes the camera back */
+  private frameAsked: { centre: Body; radius: number } | null = null;
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -302,7 +323,8 @@ export class App {
     this.mover = new Mover(this);
     orbits.simulated = (b) => this.physics.simulated(b);
     // (with the orbit lines: what hides them hides these)
-    orbits.group.add(this.trails.group);
+    orbits.group.add(this.trails.group, this.futures.group);
+    renderer.scene.add(this.flash.mesh);
   }
 
   /**
@@ -588,7 +610,7 @@ export class App {
 
   private bindKeys(): void {
     // (a finger on the view, or the wheel, takes the camera back from a watch at once: time keeps the watch's pace)
-    this.input.onDown = () => { this.glide = null; };
+    this.input.onDown = () => { this.glide = null; this.frameAsked = null; };
     this.input.grab = (x, y, touch, t) => this.mover.grab(x, y, touch, t);
     this.input.onTap = (x, y, touch) => {
       if (!touch && this.walk.onClick()) return; // walking: the click grabs the mouse
@@ -1120,6 +1142,7 @@ export class App {
     if (this.run.open && this.pending && (this.pending.kind !== kind || this.pending.body !== body)) this.endChange();
     if (!this.run.begin(performance.now(), held)) return;
     this.putRate(this.watch.clear());
+    this.forgetHits();
     this.glide = null;
     this.realAgain = 0;
     this.pending = { kind, body, before: this.checkpoint(what), count: this.physics.changes, sample: this.sample(body) };
@@ -1149,6 +1172,7 @@ export class App {
     this.physics.restore(c.before.live);
     this.clock.jdTdb = c.before.live.jd;
     this.trails.clear();
+    this.forgetHits();
     this.bodies.changed();
   }
 
@@ -1189,6 +1213,7 @@ export class App {
     this.putRate(cp.rate);
     this.begun = cp.begun;
     this.trails.clear();
+    this.forgetHits();
     this.bodies.changed();
   }
 
@@ -1249,6 +1274,7 @@ export class App {
     // (a world taken away is a point to look at, nothing to turn round)
     this.rig.target = centre.valid ? centre : null;
     this.framed = centre.valid ? centre : null;
+    this.frameAsked = { centre, radius };
     this.glide = new Glide(this.rig, centre, d, v.dir);
   }
 
@@ -1272,6 +1298,131 @@ export class App {
     }
   }
 
+  // ------------------------------------------------------------------ impacts you can see (src/app/Impacts.ts)
+  /**
+   * How much of a frame of `dt` seconds time runs for (a share of the rate asked for): all of it,
+   * unless two worlds are about to hit, when time slows for their last coming together to take a
+   * few seconds (SlowMotion), the camera framing them. Only while the explorer has changes shown
+   * (Show me: time and the view are not taken over otherwise), live physics is on and time runs on.
+   */
+  private slowing(dt: number): number {
+    const c = this.clock;
+    if (!this.physics.on || c.paused || !(c.rate > 0) || !this.showMe) {
+      if (this.slow.phase !== 'idle') this.slow.reset();
+      return 1;
+    }
+    const worlds: Meeting<Body>[] = [];
+    for (const b of this.physics.bodies()) {
+      if (b.valid && weighty(b) && b.radius > 0) worlds.push({ body: b, gm: b.gm, radius: b.radius, pos: [b.pos.x, b.pos.y, b.pos.z], vel: [b.vel.x, b.vel.y, b.vel.z] });
+    }
+    const next = soonestContact(worlds, c.rate * dt, ZONE);
+    const run = this.slow.run(dt, c.rate, next);
+    if (run.slowed && next) this.frameHit(next.a, next.b);
+    return run.seconds / (c.rate * dt);
+  }
+
+  /**
+   * Two worlds about to hit, time slowed for it: the camera frames them, round the heavier, unless
+   * they are in the clear part of the view already and far enough apart on the screen to be seen
+   * coming together. Not in the ship, on foot or in the headset.
+   */
+  private frameHit(a: Body, b: Body): void {
+    if (this.game.flight.on || this.walk.active || this.vr.active) return;
+    const [big, small] = a.gm >= b.gm ? [a, b] : [b, a];
+    const free = this.hud.freeArea(), rel = new Vector3();
+    const at = (x: Body) => this.project(x.upos.sub(this.rig.upos, rel));
+    const inside = (p: { x: number; y: number } | null) => !!p && p.x > free.left && p.x < free.right && p.y > free.top && p.y < free.bottom;
+    const p = at(big), q = at(small);
+    if (p && q && inside(p) && inside(q) && Math.hypot(p.x - q.x, p.y - q.y) >= SEEN_APART) return;
+    this.frameOn(big, 1.2 * big.pos.distanceTo(small.pos));
+  }
+
+  /**
+   * Worlds have met: what the newest hit was, on a card (Powers.impactWords), and a flash where
+   * they met, unless that was more than a second ago on the screen (at a hundred years a second a
+   * frame is a long time); time, if it was slowed for them, comes back after a moment. Returns
+   * what was said of the hit shown, which the card says better than the toast would.
+   */
+  private sawHits(hits: Hit[]): string {
+    const h = hits[hits.length - 1];
+    // (the interface as it is now first: the world taken in may have been the one chosen, its card open)
+    this.updateHud();
+    const was = this.hud.freeArea();
+    this.hud.impact(impactWords(h.small, h.big, h.speed, h.energy));
+    // (the card takes room above the world's card: where that leaves less of the view clear, a frame the camera is in for a
+    // watch or a hit is fitted again to what is left, round the world they became if it was round the one that is gone)
+    const f = this.frameAsked, now = this.hud.freeArea();
+    const less = Math.abs(now.top - was.top) + Math.abs(now.bottom - was.bottom) + Math.abs(now.left - was.left) + Math.abs(now.right - was.right) > 1;
+    if (f && less && (this.watch.watching || this.slow.phase !== 'idle')) this.frameOn(f.centre.valid ? f.centre : h.into, f.radius);
+    const rate = Math.min(Math.abs(this.clock.rate), this.slow.cap);
+    if (this.clock.paused || ((this.clock.jdTdb - h.jd) * DAY) / rate <= 1) this.flash.start(h.into);
+    this.slow.hit();
+    return h.told;
+  }
+
+  // ------------------------------------------------------------------ the future, drawn (src/app/Foresight.ts)
+  /** The world the look ahead is for: one a finger holds, aims or puts in place (time waits), or one whose mass slider is held. */
+  private touchedWorld(): Body | null {
+    const m = this.mover, c = this.pending;
+    if (m.body && (m.holding || m.placing)) return m.body;
+    return c && c.kind === 'mass' && this.run.open ? c.body : null;
+  }
+
+  /**
+   * Each frame: the simulation run ahead for the world touched, from how things are now, started
+   * again when that has changed (at most five times a second: a copy of the simulation is made each
+   * time), and grown with the time the stepping of the waiting simulation is not using (a little
+   * beside it while time runs).
+   */
+  private lookAhead(rawDt: number): void {
+    const b = this.touchedWorld(), live = this.physics.live;
+    if (!b || !live || !b.valid || !this.physics.simulated(b)) {
+      if (this.aheadOf) { this.ahead.stop(); this.aheadOf = null; }
+      return;
+    }
+    const from = `${b.id} ${live.sim.time} ${live.sim.layout} ${b.gm} ${b.pos.x} ${b.pos.y} ${b.pos.z} ${b.vel.x} ${b.vel.y} ${b.vel.z}`;
+    const now = performance.now();
+    if (b !== this.aheadOf || (from !== this.aheadFrom && now - this.aheadAt >= AHEAD_AGAIN_MS)) {
+      const p = b.parent, o = this.physics.orbit(b);
+      // (once round the orbit it is on; on an open path, the time a circle would take where it is)
+      const turn = o?.bound ? o.period : p ? 2 * Math.PI * Math.sqrt(b.pos.distanceTo(p.pos) ** 3 / (p.gm + b.gm)) : 365.25 * DAY;
+      this.ahead.start(live.sim.snapshot(), b.id, p ? p.id : -1, turn);
+      this.aheadOf = b;
+      this.aheadFrom = from;
+      this.aheadAt = now;
+    }
+    this.ahead.grow(this.clock.paused ? Math.max(3, Math.min(12, 250 * rawDt)) : 2);
+  }
+
+  /** What ends the path ahead, in words, said where it ends: "hits the Earth in 43 days", "goes round the Sun in 49 days", "taken by Jupiter in 2031". */
+  private aheadWords(): string | null {
+    const end = this.ahead.end, live = this.physics.live, b = this.aheadOf, sun = this.system.sun;
+    if (!live) return null;
+    // (one bound to nothing from the start, on an open path past the Sun, that nothing stops on its way: it is leaving)
+    if (!end) return this.ahead.done && b && !b.parent && b !== sun && this.physics.orbit(b, sun)?.bound === false ? 'leaves the Sun for good' : null;
+    const name = (id: number) => the(this.system.byId.get(id)?.name ?? '?');
+    const when = whenWords(end.time, live.jd0 + (this.ahead.from + end.time) / DAY);
+    if (end.kind === 'hit') return `hits ${name(end.other)} ${when}`;
+    if (end.kind === 'leaves') return this.ahead.around >= 0 ? `leaves ${name(this.ahead.around)} for good` : 'flies off for good';
+    // (what it went round goes round that too: it is left to it, as the Moon is to the Sun; else it is taken)
+    const was = this.system.byId.get(end.was);
+    return was && was.parent?.id === end.around ? `goes round ${name(end.around)} ${when}` : `taken by ${name(end.around)} ${when}`;
+  }
+
+  /** What the look ahead found, for the card: what ends the path, or how long it goes on as it is; nothing while it is still looking. */
+  private aheadLine(): string {
+    const said = this.aheadWords(), f = this.ahead;
+    if (said) return `With every pull counted, it ${said}.`;
+    return f.done && f.count > 1 ? `With every pull counted, it goes on like this for ${spanWords(f.times[f.count - 1] - f.from)} at least.` : '';
+  }
+
+  /** What was shown of a hit is over: a change undone or replayed, the way back to reality, a new change. */
+  private forgetHits(): void {
+    this.slow.reset();
+    this.flash.clear();
+    this.hud.impact(null);
+  }
+
   /** Replay: back to the moment just after the last change, watched again. The simulation goes the same way: it is the same event. */
   replay(): void {
     const r = this.replayFrom;
@@ -1282,6 +1433,7 @@ export class App {
     this.physics.restore(r.cp);
     this.clock.jdTdb = r.cp.jd;
     this.trails.clear();
+    this.forgetHits();
     this.bodies.changed();
     this.startWatch(r.frame);
   }
@@ -1315,7 +1467,9 @@ export class App {
    * The rest is in the log, in the Time sheet.
    */
   tellNews(wasOn = true): void {
-    const news = this.physics.takeNews().slice(0, 3);
+    const hits = this.physics.takeHits();
+    const carded = hits.length ? this.sawHits(hits) : '';
+    const news = this.physics.takeNews().filter((n) => n !== carded).slice(0, 3);
     if (!wasOn && this.physics.on) news.unshift('Live physics is on: from now on everything here pulls on everything else.');
     if (news.length) this.hud.toast(news.join('\n'), 3 + 1.5 * news.length);
   }
@@ -1364,6 +1518,7 @@ export class App {
     const begun = this.begun;
     let said = this.physics.backToReality(this.clock);
     this.trails.clear();
+    this.forgetHits();
     this.bodies.changed();
     if (begun) {
       this.putRate(begun.rate);
@@ -1389,7 +1544,7 @@ export class App {
     const terrain = [bodyObjs.find((m) => m.name === 'Saturn'), exoObjs[0]].filter((m) => !!m).map((m) => this.terrain.warmupMesh(m.material as ShaderMaterial));
     const air = this.atmospheres.warmupObjects()[0];
     if (air) terrain.push(this.terrain.warmupHaze(air.material as ShaderMaterial));
-    const objs = [...bodyObjs, ...terrain, ...this.atmospheres.warmupObjects(), ...this.holes.warmupObjects(), ...this.near.warmupObjects(), ...exoObjs, ...this.craft.warmupObjects(), ...this.game.warmupObjects(), ...this.deepSky.warmupObjects(), ...this.galaxies.warmupObjects(), ...this.rocks.warmupObjects(), this.mwVolume.mesh, ...this.cometTails.warmupObjects(), ...this.jets.warmupObjects(), ...this.awe.cues.warmupObjects(), (this.trailWarm ??= this.trails.warmupObject())];
+    const objs = [...bodyObjs, ...terrain, ...this.atmospheres.warmupObjects(), ...this.holes.warmupObjects(), ...this.near.warmupObjects(), ...exoObjs, ...this.craft.warmupObjects(), ...this.game.warmupObjects(), ...this.deepSky.warmupObjects(), ...this.galaxies.warmupObjects(), ...this.rocks.warmupObjects(), this.mwVolume.mesh, ...this.cometTails.warmupObjects(), ...this.jets.warmupObjects(), ...this.awe.cues.warmupObjects(), (this.trailWarm ??= this.trails.warmupObject()), this.futures.warmupObject(), this.flash.mesh];
     const was = objs.map((o) => o.visible);
     for (const o of objs) o.visible = true;
     // (into the HDR target the scene is drawn to: programs differ per output target)
@@ -2682,6 +2837,12 @@ export class App {
       const px = this.awe.cues.earthAngle / this.view.pixelAngle / dpr;
       if (p) out.push({ rel: earth.clone(), key: 'earth-for-scale', text: EARTH_FOR_SCALE, x: p.x, y: p.y, radius: px, priority: 2e4, cls: 'planet', over: true });
     }
+    // what ends the path ahead of a world touched, where it ends (the future, drawn)
+    const end = this.aheadEnd, said = end && this.aheadWords();
+    if (end && said) {
+      const p = this.project(end);
+      if (p) out.push({ rel: end.clone(), key: 'future-end', text: said, x: p.x, y: p.y, radius: 4, priority: 3e4, cls: 'future', over: true });
+    }
     return out;
   }
 
@@ -2707,7 +2868,10 @@ export class App {
     const flight = this.game.flight;
     const jd0 = this.clock.jdTdb;
     if (flight.on) this.clock.jdTdb += flight.before(rawDt, dt) / DAY;
-    else this.clock.advance(Math.min(rawDt, 1));
+    else {
+      const step = Math.min(rawDt, 1);
+      this.clock.advance(step * this.slowing(step));
+    }
     // (live physics: the simulation goes where the clock asks as far as a frame allows, and the clock shows where it got)
     this.physics.follow(this.clock, rawDt);
     this.tickWatch(Math.min(rawDt, 1), (this.clock.jdTdb - jd0) * DAY);
@@ -2722,6 +2886,7 @@ export class App {
       this.trails.record(this.physics.bodies());
       this.tellNews();
     }
+    this.lookAhead(rawDt);
     this.small.present = this.physics.sunAsWas;
     HITCH.lap('solarSystem');
     for (const h of this.blackHoles) h.update(jd);
@@ -2915,6 +3080,8 @@ export class App {
     this.trails.showMinor = this.orbits.showMinor;
     this.trails.selected = this.orbits.selected;
     this.trails.update(this.rig.upos, pixelAngle);
+    this.flash.update(this.rig.upos, this.view.quat, pixelAngle * this.view.pixelRatio, Math.min(rawDt, 0.1));
+    this.aheadEnd = this.futures.update(this.rig.upos, this.aheadOf && this.ahead, this.aheadOf);
     HITCH.lap('orbits');
     this.small.update(this.rig.upos, jd);
     HITCH.lap('smallBodies');
@@ -3012,11 +3179,11 @@ export class App {
       if (sel instanceof Body && sel.valid) {
         selection.rows.splice(1, 0, ...this.physics.rows(sel));
         selection.removable = true;
-        selection.move = this.mover.describe(sel);
+        selection.move = { ...this.mover.describe(sel), ahead: sel === this.aheadOf ? this.aheadLine() : '' };
         const real = this.physics.realGm(sel);
         if (real > 0) {
           const factor = sel.gm / real;
-          selection.mass = { slider: massSlider(factor), words: massWords(massOf(sel.gm)), times: timesWords(factor), theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '' };
+          selection.mass = { slider: massSlider(factor), words: (sel.kind === 'star' ? starMassWords : massWords)(massOf(sel.gm)), times: timesWords(factor), theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '' };
         }
         // a world just made, being put in place: its own mass slider, and what it is at that mass
         const as = sel.meta.madeAs as BodyJson['madeAs'];
@@ -3027,6 +3194,8 @@ export class App {
       }
     }
     const status = this.physics.status();
+    // (two worlds about to hit: time runs slower than asked, and the chips say how fast it runs)
+    const slowed = this.slow.cap < Math.abs(c.rate), runs = slowed ? this.slow.cap : c.rate;
     const kept = status && !c.paused && status.share < 0.9 ? c.rate * status.share : 0;
     const slow = kept ? `getting ${rateWords(kept)}` : '';
     // (the mark at the top has the room of a phone: while a change is watched its chip says the pace, and the watch slows
@@ -3061,7 +3230,7 @@ export class App {
       place,
       placeDetail,
       date: formatUtc(c.jdTdb),
-      rate: this.rateText(),
+      rate: this.rateText(runs),
       paused: c.paused,
       reversed: c.rate < 0,
       selection,
@@ -3069,7 +3238,7 @@ export class App {
       undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0),
       realAgain: !this.physics.on && this.realAgain > 0 && this.history.size > 0,
       watch: this.watch.state === 'idle' ? null
-        : this.watch.watching ? { text: `Watching: ${rateWords(this.watch.rate)}`, ended: false }
+        : this.watch.watching ? { text: slowed ? `Slowed: ${rateWords(runs)}` : `Watching: ${rateWords(this.watch.rate)}`, ended: false }
           : { text: `Watched: ${spanWords(this.watch.shown)}`, ended: true, replay: !!this.replayFrom },
       showMe: this.showMe,
       flying: rig.autopilot && t ? t.name : null,

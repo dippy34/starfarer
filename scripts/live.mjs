@@ -24,6 +24,10 @@
 //     and the end of the watch, put the rate of time back; Replay; a finger on the view takes the camera back
 //     - Undo, a change at a time, the date with it; "Back to reality" returns to the moment the first change was made
 //     and is itself undone by Undo for a moment; the Time sheet's buttons do not move when live physics comes on
+//   - the Moon thrown: the slingshot's marks, the orbit line at the speed of escape a parabola drawn from it, the path the
+//     simulation run ahead takes and what ends it on the card; the Earth aimed out of the Solar System: a hyperbola
+//   - Mars thrown at the Earth: time slows to show the last of the fall, the camera frames the two, a flash where they
+//     meet, a card with what the hit was; Undo brings Mars back
 // Usage: node scripts/live.mjs [baseUrl] [outDir]   (LIVE_ONLY=watch,sun: those blocks alone; see `want`)
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
@@ -151,6 +155,66 @@ const discLight = (page, name) => page.evaluate((name) => {
   return { mean: lum.reduce((s, x) => s + x, 0) / lum.length, median: lum[lum.length >> 1], top: lum[Math.floor(0.95 * lum.length)], px: lum.length };
 }, name);
 
+/**
+ * A world's orbit line as drawn (src/render/Orbits.ts): whether it is, where its first point is on the screen against
+ * where the world is, how far out on the screen it reaches, and its shape against what it goes round, `about`: the
+ * stretch e of the conic its points lie on (their distance r from `about` and angle ν from where the world is, at the
+ * nearest point of a throw square to the line from it: r (1 + e cos ν) = r₀ (1 + e), solved for e at each point), the
+ * most any point is off it, and the colour on the screen at the first point of it 30 px clear of the line `aim` (the
+ * slingshot's arrow, a unit vector on the screen from the world), and of the world.
+ */
+const drawnPath = (page, name, about, aim) => page.evaluate(([name, about, aim]) => {
+  const a = window.app, b = a.findByName(name), c = a.findByName(about), V = b.pos.constructor, line = a.orbits.objs.get(b)?.line;
+  if (!line?.visible) return { drawn: false };
+  a.frame();
+  const pos = line.geometry.attributes.position.array, n = line.geometry.drawRange.count;
+  const at = b.upos.sub(a.rig.upos, new V()), focus = c.upos.sub(a.rig.upos, new V()), dot = a.project(at);
+  const pts = Array.from({ length: n }, (_, k) => at.clone().add(new V(pos[3 * k], pos[3 * k + 1], pos[3 * k + 2])));
+  const screen = pts.map((p) => a.project(p));
+  const r0 = pts[0].clone().sub(focus), d0 = r0.length(), es = [];
+  for (const p of pts.slice(1)) {
+    const r = p.clone().sub(focus), d = r.length(), cos = r.dot(r0) / (d * d0);
+    if (Math.abs(1 - cos) > 1e-3) es.push((d - d0) / (d0 - d * cos));
+  }
+  const e = es.reduce((s, x) => s + x, 0) / es.length;
+  // (the colour of the line, read off the canvas where it is clear of the arrow, its marks and their words: its yellowest
+  // pixel there, the line being thin)
+  const gl = a.renderer.gl.domElement, k = gl.width / gl.clientWidth, cv = Object.assign(document.createElement('canvas'), { width: 9, height: 9 }), g = cv.getContext('2d');
+  const clear = (p) => Math.abs((p.x - dot.x) * aim.uy - (p.y - dot.y) * aim.ux) >= 30 && Math.hypot(p.x - dot.x, p.y - dot.y) >= 30;
+  const far = screen.find((p) => p && clear(p) && p.x > 10 && p.x < innerWidth - 10 && p.y > 10 && p.y < innerHeight - 10);
+  let lit = null;
+  if (far) {
+    g.drawImage(gl, Math.round(far.x * k) - 4, Math.round(far.y * k) - 4, 9, 9, 0, 0, 9, 9);
+    const d = g.getImageData(0, 0, 9, 9).data, yellow = (r, gr, b) => (r + gr) / 2 - b;
+    let best = [0, 0, 0];
+    for (let i = 0; i < d.length; i += 4) if (yellow(d[i], d[i + 1], d[i + 2]) > yellow(...best)) best = [d[i], d[i + 1], d[i + 2]];
+    lit = best;
+  }
+  return {
+    drawn: true, n, first: Math.hypot(screen[0].x - dot.x, screen[0].y - dot.y), reach: Math.max(...screen.filter(Boolean).map((p) => Math.hypot(p.x - dot.x, p.y - dot.y))),
+    e, off: Math.max(...es.map((x) => Math.abs(x - e))), far, lit,
+  };
+}, [name, about, aim]);
+
+/** How bright the screen is drawn round a world (the display's 0 to 255, the mean within `r` CSS px of it), a frame drawn first. */
+const glowAt = (page, name, r) => page.evaluate(([name, r]) => {
+  const a = window.app, b = a.findByName(name), V = b.pos.constructor;
+  a.frame();
+  const gl = a.renderer.gl.domElement, k = gl.width / gl.clientWidth, at = a.project(b.upos.sub(a.rig.upos, new V()));
+  if (!at) return null;
+  const R = Math.round(r * k), c = Object.assign(document.createElement('canvas'), { width: 2 * R, height: 2 * R }), g = c.getContext('2d');
+  g.drawImage(gl, Math.round(at.x * k) - R, Math.round(at.y * k) - R, 2 * R, 2 * R, 0, 0, 2 * R, 2 * R);
+  const d = g.getImageData(0, 0, 2 * R, 2 * R).data;
+  let sum = 0, n = 0;
+  for (let y = 0; y < 2 * R; y++) for (let x = 0; x < 2 * R; x++) {
+    if ((x - R) ** 2 + (y - R) ** 2 > R * R) continue;
+    const i = 4 * (y * 2 * R + x);
+    sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+    n++;
+  }
+  return { mean: sum / n, at };
+}, [name, r]);
+
 /** The watch of a change as the app has it, and as its chip shows it. */
 const watching = (page) => page.evaluate(() => {
   // (written to report on a build without the watch too, rather than stop: what the checks were first run against)
@@ -255,7 +319,7 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, place); the rest are left out */
+/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, hit, side, place); the rest are left out */
 const only = process.env.LIVE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 
@@ -534,8 +598,8 @@ for (const kind of ['phone', 'desk']) {
     await frames(page, 2);
     const facts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#hud .card .facts dl div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd').textContent])));
     check(on("Io's details say it is simulated and since when, what it goes round and the orbit it is on now"),
-      facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'Jupiter' && /^(an oval|a long oval) \(0\.\d\d\)$/.test(facts["Its orbit's shape"] ?? '') && / km to .* km · \d/.test(facts['Nearest to farthest · once round'] ?? ''),
-      `${facts['Live physics']}; round ${facts['Goes round']}; ${facts["Its orbit's shape"]}; ${facts['Nearest to farthest · once round']}`);
+      facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'Jupiter' && /^(an oval|a long oval), [\d,]+ to [\d,]+ km · [\d.]+ (d|h)$/.test(facts['Its orbit'] ?? '') && /^0\.\d\d \(0 is a circle, 1 and more an open path\)$/.test(facts['How stretched'] ?? ''),
+      `${facts['Live physics']}; round ${facts['Goes round']}; ${facts['Its orbit']}; ${facts['How stretched']}`);
 
     // back to reality: every body exactly where a system that was never touched has it at that date
     await press(page, '#hud .live-back');
@@ -712,7 +776,7 @@ for (const kind of ['phone', 'desk']) {
     // (twice as far out with the speed of its old orbit it is about at the speed of escape: on a long oval round the
     // Earth still, or let go of and on an orbit of its own round the Sun, as the date has it)
     check(on('while it is held the card says what orbit it would be on from there, and the line of that orbit is drawn'),
-      /^Now round (Earth|the Sun): .+ \(0(\.\d+)?\), .+ to .+ · .+\.$/.test(held.now) && held.line, `"${held.now}"`);
+      /^Now round (Earth|the Sun): (a circle .+ out|(nearly a circle|a slightly stretched circle|an oval|a long oval), .+ to .+) · [\d,.]+ (d|h)\.$/.test(held.now) && held.line, `"${held.now}"`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-move.png`) });
     if (touch) await touch.lift(); else await page.mouse.up();
     await frames(page, 3);
@@ -727,7 +791,7 @@ for (const kind of ['phone', 'desk']) {
       return { e: o.e, period: o.period, law: 2 * Math.PI * Math.sqrt(r ** 3 / (earth.gm + moon.gm)), was: view.period, parent: moon.parent?.name, now: document.querySelector('#hud .power-now').textContent, jd: a.clock.jdTdb, dir: moon.pos.clone().sub(earth.pos).normalize().toArray() };
     }, view);
     check(on('lifted, time runs on; asked to go in a circle there, the Moon is on one round the Earth, and its month is the one Kepler\'s law gives: about 2.8 of the old'),
-      let_[4] === false && circle.e < 1e-3 && circle.parent === 'Earth' && Math.abs(circle.period / circle.law - 1) < 1e-6 && circle.period / circle.was > 2.4 && circle.period / circle.was < 3.2 && /^Now round Earth: nearly a circle \(0\), /.test(circle.now),
+      let_[4] === false && circle.e < 1e-3 && circle.parent === 'Earth' && Math.abs(circle.period / circle.law - 1) < 1e-6 && circle.period / circle.was > 2.4 && circle.period / circle.was < 3.2 && /^Now round Earth: a circle [\d,]+ km out · [\d.]+ d\.$/.test(circle.now),
       `${(circle.period / 86400).toFixed(1)} d (it was ${(circle.was / 86400).toFixed(1)} d: ${(circle.period / circle.was).toFixed(2)} times); "${circle.now}"`);
     // ...and so it goes, at first: about a tenth of that month on, as far round as Kepler has it. (Not for long. Half
     // way to the edge of the Earth's reach the Sun pulls hard: within three weeks the Moon is 4 % ahead, within ten
@@ -788,8 +852,8 @@ for (const kind of ['phone', 'desk']) {
     await frames(page, 2);
     const facts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#hud .card .facts dl div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd').textContent])));
     check(on('its mass reads 1 Jupiter, and its details say it was made, is simulated, and what it goes round'),
-      mass === '1 Jupiter' && facts.Type === 'Planet (made by you)' && facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'the Sun' && /^nearly a circle/.test(facts["Its orbit's shape"] ?? ''),
-      `${mass}; ${facts.Type}; ${facts['Live physics']}; round ${facts['Goes round']}; ${facts["Its orbit's shape"]}`);
+      mass === '1 Jupiter' && facts.Type === 'Planet (made by you)' && facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'the Sun' && /^(a circle [\d.]+ AU out|nearly a circle, [\d.]+ to [\d.]+ AU) · /.test(facts['Its orbit'] ?? ''),
+      `${mass}; ${facts.Type}; ${facts['Live physics']}; round ${facts['Goes round']}; ${facts['Its orbit']}`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-jupiter2.png`) });
     await press(page, '#hud .hud-tabs [data-tab="explore"]');
     await press(page, '#hud .explore [data-cat="solar"]');
@@ -933,13 +997,46 @@ for (const kind of ['phone', 'desk']) {
       !!view && circle.shown && circle.labels === 'circle,escape' && circle.paused && !!circle.aim && Math.abs(circle.aim.ux * view.ux + circle.aim.uy * view.uy - 1) < 1e-3,
       `the arrow ${circle.aim ? `(${circle.aim.ux.toFixed(3)}, ${circle.aim.uy.toFixed(3)})` : 'none'}, the way ahead (${view?.ux.toFixed(3)}, ${view?.uy.toFixed(3)})`);
     check(on('near the mark of a circle it is the speed of a circle: the mark lights, and the card and the orbit line show a circle round the Earth before it is let go'),
-      circle.lit === 'circle' && circle.aim?.length === 110 && circle.e < 1e-6 && circle.parent === 'Earth' && circle.line && /^Now round Earth: nearly a circle \(0\), /.test(circle.now), `"${circle.now}", e ${circle.e.toExponential(1)}`);
+      circle.lit === 'circle' && circle.aim?.length === 110 && circle.e < 1e-6 && circle.parent === 'Earth' && circle.line && /^Now round Earth: a circle [\d,]+ km out · [\d.]+ d\.$/.test(circle.now), `"${circle.now}", e ${circle.e.toExponential(1)}`);
+    // the simulation run ahead, every pull counted: a dashed path from the Moon, and on the card how long it goes on so
+    await until(page, () => !window.app.ahead || window.app.ahead.done, null, 60);
+    await frames(page, 2);
+    const onCircle = await page.evaluate(() => {
+      const a = window.app, moon = a.findByName('Moon'), V = moon.pos.constructor, line = a.futures?.group.children[0], at = moon.upos.sub(a.rig.upos, new V());
+      const ahead = document.querySelector('#hud .card .power-ahead')?.textContent ?? '';
+      if (!line) return { drawn: false, n: 0, from: Infinity, ahead };
+      const m = line.matrix.elements;
+      return { drawn: line.visible, n: line.geometry.drawRange.count, from: Math.hypot(m[12] - at.x, m[13] - at.y, m[14] - at.z) / at.length(), ahead };
+    });
+    check(on('while it is aimed, the simulation is run ahead: a dashed path from the Moon, and the card says it goes on like that, every pull counted, for three of its months at least'),
+      onCircle.drawn && onCircle.n > 50 && onCircle.from < 1e-9 && /^With every pull counted, it goes on like this for (7\d|8\d)(\.\d)? days at least\.$/.test(onCircle.ahead), `${onCircle.n} places; "${onCircle.ahead}"`);
+    // (the arrow is drawn in the part of the view the interface leaves clear: pulled towards the card, it stops at its edge)
+    const clip = await page.evaluate(() => {
+      const v = (/inset\(([^)]*)\)/.exec(document.querySelector('#hud .aim').style.clipPath)?.[1] ?? '').split(' ').filter(Boolean).map(parseFloat);
+      const t = v[0], r = v[1] ?? t, b = v[2] ?? t, l = v[3] ?? r, card = document.querySelector('#hud .sheet.card').getBoundingClientRect();
+      return { box: v.length ? { left: l, top: t, right: innerWidth - r, bottom: innerHeight - b } : null, card: { left: card.left, top: card.top, right: card.right, bottom: card.bottom } };
+    });
+    check(on('the arrow is drawn only where the view is clear of the interface: it stops at the edge of the card rather than running on under it'),
+      !!clip.box && (clip.box.bottom <= clip.card.top || clip.box.left >= clip.card.right),
+      clip.box ? `drawn in ${clip.box.left.toFixed(0)}-${clip.box.right.toFixed(0)} x ${clip.box.top.toFixed(0)}-${clip.box.bottom.toFixed(0)}; the card at ${clip.card.left.toFixed(0)}-${clip.card.right.toFixed(0)} x ${clip.card.top.toFixed(0)}-${clip.card.bottom.toFixed(0)}` : 'drawn everywhere');
     await page.screenshot({ path: path.join(outDir, `live-${kind}-aim.png`) });
     for (let i = 1; i <= 4; i++) await hand.slide(along(107 + (53 * i) / 4));
     await frames(page, 2);
     const escape = await aimed();
     check(on('pulled on to the mark of escape it is the speed of escape: the card says it will not come back'),
       escape.lit === 'escape' && Math.abs(escape.aim?.length - 110 * Math.SQRT2) < 1e-9 && /^Now on an open path past Earth: it passes at .+, then leaves\.$/.test(escape.now), `"${escape.now}"`);
+    // its orbit line at the speed of escape: a parabola about the Earth (r (1 + cos ν) the same all along), drawn from the
+    // Moon outwards, through where it is on the screen (before, an open path was left out: no line at all)
+    const parabola = await drawnPath(page, 'Moon', 'Earth', { ux: view.ux, uy: view.uy });
+    // (the line of a world selected is yellow: (1, 0.9, 0.35); the path ahead is orange)
+    check(on('at the mark of escape its orbit line is drawn: a parabola about the Earth from the Moon outwards, starting where the Moon is on the screen, and there on the screen'),
+      parabola.drawn && parabola.first < 1 && parabola.reach > 200 && Math.abs(parabola.e - 1) < 1e-4 && parabola.off < 1e-4 && !!parabola.lit && parabola.lit[0] > 120 && parabola.lit[1] > 0.8 * parabola.lit[0] && parabola.lit[2] < parabola.lit[0] - 60,
+      parabola.drawn ? `${parabola.n} points from ${parabola.first.toFixed(2)} px off the Moon out to ${parabola.reach.toFixed(0)} px; e ${parabola.e.toFixed(6)} (all within ${parabola.off.toExponential(1)}); lit (${parabola.lit}) at (${parabola.far?.x.toFixed(0)}, ${parabola.far?.y.toFixed(0)})` : 'no line');
+    await until(page, () => !window.app.ahead || window.app.ahead.done, null, 60);
+    await frames(page, 2);
+    const leaving = await page.evaluate(() => ({ ahead: document.querySelector('#hud .card .power-ahead')?.textContent ?? '', end: window.app.ahead?.end }));
+    check(on('run ahead, every pull counted, the Moon thrown at escape is the Sun\'s within days (the edge of the Earth\'s reach), and the card says when'),
+      leaving.end?.kind === 'round' && /^With every pull counted, it goes round the Sun in \d(\.\d)? days\.$/.test(leaving.ahead), `"${leaving.ahead}"`);
     // back to the circle, and let go (the orbit read the moment the throw ends: then time runs, and within a day the
     // Sun's pull has stretched the circle by a hundredth, as it does the Moon's own orbit)
     for (let i = 1; i <= 4; i++) await hand.slide(along(160 - (52 * i) / 4));
@@ -1013,6 +1110,221 @@ for (const kind of ['phone', 'desk']) {
     await ctx.close();
   }
 
+  // ------------------------------------------------------------------ the Earth thrown out of the Solar System: its open path drawn
+  if (want('open')) {
+    const { ctx, page, touch } = await open(kind, 'target=Earth&dist=6');
+    const hand = await handOf(page, touch);
+    await find(page, 'Earth');
+    // (the camera is there already: the flight to it is over at once)
+    await until(page, () => !window.app.rig.autopilot, null, 60);
+    await press(page, '#hud .card [data-act="move"]');
+    await press(page, '#hud .card [data-act="move-throw"]');
+    await frames(page, 2);
+    // (setup, not a power: the eye above the Earth, with room ahead of it, square to the line from the Sun the way it goes
+    // round, for the arrow, and room behind it for the pull)
+    const view = await page.evaluate(() => {
+      const a = window.app, sun = a.findByName('Sun'), earth = a.findByName('Earth'), V = earth.pos.constructor;
+      const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab, #hud .hud-watch')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+      const clear = (p) => !!p && p.x > 20 && p.x < innerWidth - 20 && p.y > 130 && p.y < innerHeight - 20 && walls.every((r) => p.x < r.left - 10 || p.x > r.right + 10 || p.y < r.top - 10 || p.y > r.bottom + 10);
+      const seen = (p) => p.x > 8 && p.x < innerWidth - 8 && p.y > 8 && p.y < innerHeight - 8;
+      for (const el of [75, 60]) for (const dist of [120, 180, 260, 350]) for (let az = 0; az < 360; az += 15) {
+        a.placeNear(earth, dist * earth.radius, az, el);
+        a.frame();
+        const r = earth.pos.clone().sub(sun.pos), ahead = r.clone().cross(earth.vel.clone().sub(sun.vel)).cross(r).normalize();
+        const dot = a.project(earth.upos.sub(a.rig.upos, new V())), tip = a.project(earth.upos.sub(a.rig.upos, new V()).addScaledVector(ahead, 1e5));
+        if (!dot || !tip) continue;
+        const l = Math.hypot(tip.x - dot.x, tip.y - dot.y), ux = (tip.x - dot.x) / l, uy = (tip.y - dot.y) / l;
+        if ([0, 60, 120, 200].every((d) => clear({ x: dot.x + ux * d, y: dot.y + uy * d })) && [60, 120, 176].every((d) => seen({ x: dot.x - ux * d, y: dot.y - uy * d }))) {
+          return { dot, ux, uy, pos: earth.pos.toArray(), vel: earth.vel.toArray() };
+        }
+      }
+      return null;
+    });
+    await frames(page, 3);
+    const along = (d) => ({ x: view.dot.x - view.ux * d, y: view.dot.y - view.uy * d });
+    // pulled back 1.6 times as far as the mark of a circle: 1.6 times the speed of a circle round the Sun, past escape (1.41)
+    await hand.press(view.dot);
+    for (let i = 1; i <= 8; i++) await hand.slide(along((176 * i) / 8));
+    await frames(page, 3);
+    const out = await drawnPath(page, 'Earth', 'Sun', { ux: view.ux, uy: view.uy });
+    const card = await page.evaluate(() => ({ now: document.querySelector('#hud .power-now').textContent, parent: window.app.findByName('Earth').parent?.name ?? null }));
+    check(on('the Earth aimed at 1.6 times the speed of a circle round the Sun would leave it: the card says so, and its orbit line is drawn, a hyperbola about the Sun from the Earth outwards, starting where it is on the screen'),
+      !!view && card.parent === null && /^Now on an open path past the Sun: it passes at 1 AU, then leaves\.$/.test(card.now) && out.drawn && out.first < 1 && out.reach > 100 && Math.abs(out.e - 1.56) < 0.01 && out.off < 1e-3,
+      out.drawn ? `"${card.now}"; ${out.n} points from ${out.first.toFixed(2)} px off the Earth out to ${out.reach.toFixed(0)} px; e ${out.e.toFixed(4)} (all within ${out.off.toExponential(1)})` : `"${card.now}"; no line`);
+    await until(page, () => !window.app.ahead || window.app.ahead.done, null, 60);
+    await frames(page, 2);
+    const ahead = await text(page, '#hud .card .power-ahead');
+    check(on('run ahead, every pull counted, it leaves the Sun for good, and the card says so'), ahead === 'With every pull counted, it leaves the Sun for good.', `"${ahead}"`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-open.png`) });
+    // let go where it was taken hold of: nothing was thrown
+    for (let i = 1; i <= 8; i++) await hand.slide(along(176 * (1 - i / 8)));
+    await hand.lift();
+    await frames(page, 2);
+    const back = await page.evaluate((view) => {
+      const a = window.app, e = a.findByName('Earth');
+      return { off: Math.hypot(e.pos.x - view.pos[0], e.pos.y - view.pos[1], e.pos.z - view.pos[2]), dv: Math.hypot(e.vel.x - view.vel[0], e.vel.y - view.vel[1], e.vel.z - view.vel[2]), parent: e.parent?.name };
+    }, view);
+    check(on('let go where it was taken hold of, nothing is thrown: the Earth goes round the Sun as it did'), back.off === 0 && back.dv === 0 && back.parent === 'Sun', `${back.off} m, ${back.dv} m/s off; round ${back.parent}`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ Mars thrown at the Earth: time slowed to see it, the frame, the flash, the card
+  if (want('hit')) {
+    const { ctx, page, touch } = await open(kind, 'target=Earth&dist=6');
+    const hand = await handOf(page, touch);
+    // (setup, not a power: Mars put 40 Earth radii from the Earth, beside it square to the line from the Sun, moving with it,
+    // and 10 m/s sunwards: the plane of its orbit about the Earth, which a finger moves it in, has the Earth in it, so an
+    // arrow pointed at the Earth on the screen points at it in space, whichever way the eye looks)
+    await page.evaluate(() => {
+      const a = window.app, earth = a.findByName('Earth'), mars = a.findByName('Mars'), sun = a.findByName('Sun');
+      const r = earth.pos.clone().sub(sun.pos), side = r.clone().cross(earth.vel.clone().sub(sun.vel)).cross(r).normalize();
+      const sunward = r.clone().normalize().negate();
+      a.physics.move(mars, earth.pos.clone().addScaledVector(side, 40 * earth.radius).toArray(), earth.vel.clone().addScaledVector(sunward, 10).toArray(), a.clock.jdTdb);
+      a.tellNews(false);
+    });
+    await find(page, 'Mars');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    await press(page, '#hud .card [data-act="move"]');
+    await press(page, '#hud .card [data-act="move-throw"]');
+    await frames(page, 2);
+    // (setup: the eye over the two, Mars with room behind it, away from the Earth, for the pull)
+    const view = await page.evaluate(() => {
+      const a = window.app, earth = a.findByName('Earth'), mars = a.findByName('Mars'), V = mars.pos.constructor;
+      const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab, #hud .hud-watch')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+      const clear = (p) => !!p && p.x > 20 && p.x < innerWidth - 20 && p.y > 130 && p.y < innerHeight - 20 && walls.every((r) => p.x < r.left - 10 || p.x > r.right + 10 || p.y < r.top - 10 || p.y > r.bottom + 10);
+      for (const el of [75, 60, 45]) for (const dist of [60, 80, 100, 130]) for (let az = 0; az < 360; az += 15) {
+        a.placeNear(earth, dist * earth.radius, az, el);
+        a.frame();
+        const m = a.project(mars.upos.sub(a.rig.upos, new V())), e = a.project(earth.upos.sub(a.rig.upos, new V()));
+        if (!m || !e) continue;
+        const l = Math.hypot(e.x - m.x, e.y - m.y), ux = (e.x - m.x) / l, uy = (e.y - m.y) / l;
+        // (and the plane of Mars's orbit about the Earth seen from well out of it: a finger moves it in that plane, which
+        // has the Earth in it; seen edge on it would be moved across the view, in a plane the Earth is not in)
+        const flat = a.mover.describe(mars).plane === 'It moves in the plane of its orbit.';
+        if (flat && l > 80 && clear(m) && clear(e) && [40, 80].every((d) => clear({ x: m.x - ux * d, y: m.y - uy * d }))) return { m, ux, uy };
+      }
+      return null;
+    });
+    await frames(page, 3);
+    // (Mars as it is before it is taken hold of: the throw is given it at once, while the finger aims)
+    const before = await page.evaluate(() => { const a = window.app, m = a.findByName('Mars'); return { pos: m.pos.toArray(), vel: m.vel.toArray(), gm: m.gm, jd: a.clock.jdTdb }; });
+    // the slingshot pulled back from Mars, away from the Earth: the arrow points at the Earth
+    await hand.press(view.m);
+    for (let i = 1; i <= 8; i++) await hand.slide({ x: view.m.x - (view.ux * 66 * i) / 8, y: view.m.y - (view.uy * 66 * i) / 8 });
+    await until(page, () => !window.app.ahead || window.app.ahead.done, null, 60);
+    await frames(page, 2);
+    const aim = await page.evaluate(() => ({ now: document.querySelector('#hud .power-now').textContent, ahead: document.querySelector('#hud .card .power-ahead')?.textContent ?? '' }));
+    check(on('Mars aimed at the Earth: the card says its path goes into the Earth, and, run ahead with every pull counted, that it hits it, and when'),
+      !!view && aim.now === 'Now on a path into Earth: it hits it.' && /^With every pull counted, it hits Earth in [\d.]+ (hours|days)\.$/.test(aim.ahead), `"${aim.now}" "${aim.ahead}"`);
+    // let go: watched, it falls at the Earth
+    await listen(page);
+    await hand.lift();
+    await until(page, () => window.app.slow?.phase === 'coming', null, 120);
+    const slowed = await page.evaluate(() => {
+      const a = window.app, V = a.findByName('Earth').pos.constructor, at = (n) => a.project(a.findByName(n).upos.sub(a.rig.upos, new V()));
+      return { t: performance.now(), phase: a.slow?.phase, cap: a.slow?.cap, rate: a.clock.rate, watch: a.watch.state, chip: document.querySelector('#hud .watch-text').textContent, framed: a.framed?.name ?? null, earth: at('Earth'), mars: at('Mars'), free: a.hud.freeArea() };
+    });
+    const dim = await glowAt(page, 'Earth', 30);
+    await until(page, () => window.app.flash?.showing, null, 60);
+    const bright = await glowAt(page, 'Earth', 30);
+    const hit = await page.evaluate(() => {
+      const a = window.app, box = document.querySelector('#hud .hud-impact');
+      return { t: performance.now(), mars: a.findByName('Mars').valid, free: a.hud.freeArea(), card: !box || box.hidden ? null : { head: box.querySelector('b').textContent, body: box.querySelector('span').textContent, small: box.querySelector('small').textContent, close: box.querySelector('[data-impact-close]').getBoundingClientRect().height, whole: getComputedStyle(box.querySelector('span')).display !== 'none' && getComputedStyle(box.querySelector('small')).display !== 'none' } };
+    });
+    check(on('let go, Mars falls at the Earth, watched; as the two come near, time slows, and the chip says how slow, so that the last of the fall takes about three seconds'),
+      slowed.phase === 'coming' && slowed.watch === 'watching' && slowed.cap < slowed.rate && /^Slowed: [\d.]+ (minutes|hours) a second$/.test(slowed.chip) && hit.t - slowed.t > 2500 && !hit.mars,
+      `"${slowed.chip}" (the watch at ${(slowed.rate / 3600).toFixed(1)} h/s); the hit ${((hit.t - slowed.t) / 1000).toFixed(1)} s later`);
+    check(on('the camera frames the two, round the Earth, in the part of the view the interface leaves clear'),
+      (slowed.framed === 'Earth' || (within(slowed.earth, slowed.free) && within(slowed.mars, slowed.free))) && within(bright?.at, hit.free),
+      `framed round ${slowed.framed}; at the hit the Earth at (${bright?.at.x.toFixed(0)}, ${bright?.at.y.toFixed(0)}) in ${hit.free.left.toFixed(0)}-${hit.free.right.toFixed(0)} x ${hit.free.top.toFixed(0)}-${hit.free.bottom.toFixed(0)}`);
+    check(on('where they meet a flash shows: the screen round the Earth many times as bright'), !!dim && !!bright && bright.mean > 3 * dim.mean + 20, `${dim?.mean.toFixed(1)} before, ${bright?.mean.toFixed(1)} at the flash (of 255)`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-hit.png`) });
+    const said = await heard(page);
+    check(on('a card says what the hit was, all of it in sight: how fast, the energy against the Sun\'s light and what holds Mars together, a labelled prediction, and that breaking apart is not simulated yet; the toast does not say it again'),
+      !!hit.card && /^Mars hit Earth at \d+(\.\d)? km\/s$/.test(hit.card.head) && /^Energy \d(\.\d)?×10³¹ J: as much as the Sun gives off in [\d.]+ (hours|days)\. [\d.]+ times the energy that holds Mars together\.$/.test(hit.card.body)
+        && /^Prediction, by a rule of thumb \(the energy against what holds each together\): Mars would break apart, Earth would not\. Breaking apart is not simulated yet: the two become one\.$/.test(hit.card.small) && hit.card.close >= 44 && hit.card.whole && !said.some((t) => /Mars hit Earth/.test(t)),
+      hit.card ? `"${hit.card.head}" / "${hit.card.body}" / "${hit.card.small}"; toasts: "${said.join('" then "')}"` : 'no card');
+    // Undo: Mars as it was before the throw
+    await listen(page);
+    await press(page, '#hud .live-mark .live-undo');
+    await frames(page, 2);
+    const undone = await page.evaluate((before) => {
+      const a = window.app, m = a.findByName('Mars');
+      return { valid: m.valid, gone: a.system.isGone(m), off: Math.hypot(m.pos.x - before.pos[0], m.pos.y - before.pos[1], m.pos.z - before.pos[2]), dv: Math.hypot(m.vel.x - before.vel[0], m.vel.y - before.vel[1], m.vel.z - before.vel[2]), gm: m.gm, jd: a.clock.jdTdb, card: !!document.querySelector('#hud .hud-impact:not([hidden])'), flash: !!a.flash?.showing };
+    }, before);
+    const told = await heard(page);
+    check(on('Undo brings Mars back, where it was and as it was moving before it was thrown, at that date; the card goes'),
+      undone.valid && !undone.gone && undone.off === 0 && undone.dv === 0 && undone.gm === before.gm && undone.jd === before.jd && !undone.card && !undone.flash && told.includes('Undone: throwing Mars'),
+      `"${told.join('" then "')}"; ${undone.off} m, ${undone.dv} m/s off`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ a phone on its side: the path ahead and the orbit line where the world is
+  if (want('side') && kind === 'phone') {
+    const { ctx, page, touch } = await open(kind, 'target=Earth&dist=6');
+    await page.setViewportSize({ width: 844, height: 390 });
+    await frames(page, 6);
+    const hand = await handOf(page, touch);
+    await find(page, 'Moon');
+    await page.locator('#hud .hud-flight [data-act="stop"]').first().tap({ timeout: 3000 }).catch(() => undefined);
+    await press(page, '#hud .card [data-act="move"]');
+    await press(page, '#hud .card [data-act="move-throw"]');
+    // (the optical centre eases to the middle of the part of the view the card leaves clear, in some 0.3 s)
+    await frames(page, 30);
+    // (setup, not a power: the eye over the Earth, the Moon in the clear part with room ahead of it for the arrow and the
+    // path, and behind it for the pull)
+    const view = await page.evaluate(() => {
+      const a = window.app, earth = a.findByName('Earth'), moon = a.findByName('Moon'), V = moon.pos.constructor, free = a.hud.freeArea();
+      const clear = (p) => !!p && p.x > free.left + 10 && p.x < free.right - 10 && p.y > free.top + 10 && p.y < free.bottom - 10;
+      const seen = (p) => p.x > 8 && p.x < innerWidth - 8 && p.y > 8 && p.y < innerHeight - 8;
+      for (const el of [75, 60]) for (const dist of [120, 180, 260]) for (let az = 0; az < 360; az += 15) {
+        a.placeNear(earth, dist * earth.radius, az, el);
+        a.frame();
+        const r = moon.pos.clone().sub(earth.pos), ahead = r.clone().cross(moon.vel.clone().sub(earth.vel)).cross(r).normalize();
+        const dot = a.project(moon.upos.sub(a.rig.upos, new V())), tip = a.project(moon.upos.sub(a.rig.upos, new V()).addScaledVector(ahead, 1e5));
+        if (!dot || !tip) continue;
+        const l = Math.hypot(tip.x - dot.x, tip.y - dot.y), ux = (tip.x - dot.x) / l, uy = (tip.y - dot.y) / l;
+        if ([0, 40, 80, 120].every((d) => clear({ x: dot.x + ux * d, y: dot.y + uy * d })) && [60, 110].every((d) => seen({ x: dot.x - ux * d, y: dot.y - uy * d }))) return { dot, ux, uy, centre: { ...a.rig.centre } };
+      }
+      return null;
+    });
+    await frames(page, 3);
+    const along = (d) => ({ x: view.dot.x - view.ux * d, y: view.dot.y - view.uy * d });
+    await hand.press(view.dot);
+    for (let i = 1; i <= 8; i++) await hand.slide(along((107 * i) / 8));
+    await until(page, () => window.app.ahead.done, null, 60);
+    await frames(page, 2);
+    // the path ahead as drawn: its first place on the Moon, and the line lit on the canvas where App.project puts its places
+    const drawn = await page.evaluate((aim) => {
+      const a = window.app, moon = a.findByName('Moon'), V = moon.pos.constructor, line = a.futures.group.children[0];
+      a.frame();
+      const at = moon.upos.sub(a.rig.upos, new V()), dot = a.project(at), m = line.matrix.elements, base = new V(m[12], m[13], m[14]);
+      const pos = line.geometry.attributes.position.array, n = line.geometry.drawRange.count;
+      const screen = Array.from({ length: n }, (_, k) => a.project(base.clone().add(new V(pos[3 * k], pos[3 * k + 1], pos[3 * k + 2]))));
+      const gl = a.renderer.gl.domElement, s = gl.width / gl.clientWidth, cv = Object.assign(document.createElement('canvas'), { width: 7, height: 7 }), g = cv.getContext('2d');
+      const lit = (p) => {
+        g.clearRect(0, 0, 7, 7);
+        g.drawImage(gl, Math.round(p.x * s) - 3, Math.round(p.y * s) - 3, 7, 7, 0, 0, 7, 7);
+        const d = g.getImageData(0, 0, 7, 7).data;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 140 && d[i] > d[i + 1] + 25 && d[i + 1] > d[i + 2] + 15) return true;
+        return false;
+      };
+      // (places clear of the arrow's line, its marks and their words, and of the Moon's own disc and ring)
+      const free = a.hud.freeArea();
+      const away = screen.filter((p) => p && Math.abs((p.x - dot.x) * aim.uy - (p.y - dot.y) * aim.ux) > 30 && Math.hypot(p.x - dot.x, p.y - dot.y) > 40 && p.x > free.left && p.x < free.right && p.y > free.top && p.y < free.bottom);
+      const tried = away.filter((_, k) => k % Math.max(1, Math.floor(away.length / 12)) === 0).slice(0, 12);
+      return { drawn: line.visible, first: Math.hypot(screen[0].x - dot.x, screen[0].y - dot.y), tried: tried.length, lit: tried.filter(lit).length, centre: { ...a.rig.centre } };
+    }, { ux: view.ux, uy: view.uy });
+    const orbit = await drawnPath(page, 'Moon', 'Earth', { ux: view.ux, uy: view.uy });
+    check(on('held on its side, the view centred on the part the card leaves clear: the path ahead starts on the Moon where it is on the screen, and is drawn where its places are said to be; so is the orbit line'),
+      !!view && Math.abs(drawn.centre.x) > 50 && drawn.drawn && drawn.first < 1 && drawn.tried >= 6 && drawn.lit >= drawn.tried / 3 && orbit.drawn && orbit.first < 1 && !!orbit.lit && orbit.lit[0] > 120 && orbit.lit[1] > 0.8 * orbit.lit[0],
+      `the centre ${drawn.centre.x.toFixed(0)}, ${drawn.centre.y.toFixed(0)} px off the middle; the path from ${drawn.first.toFixed(2)} px off the Moon, lit at ${drawn.lit} of ${drawn.tried} places tried; the orbit line from ${orbit.first?.toFixed(2)} px, lit (${orbit.lit})`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-side-ahead.png`) });
+    for (let i = 1; i <= 8; i++) await hand.slide(along(107 * (1 - i / 8)));
+    await hand.lift();
+    await ctx.close();
+  }
+
   // ------------------------------------------------------------------ a world made, put in place, its mass set; Done
   if (want('place')) {
     const { ctx, page, touch } = await open(kind, 'target=Sun&dist=473&el=40');
@@ -1062,8 +1374,11 @@ for (const kind of ['phone', 'desk']) {
     await press(page, '#hud .card .place-done');
     await frames(page, 2);
     const p3 = await watching(page);
-    const left = await page.evaluate(() => ({ placing: window.app.mover.placing, panel: !document.querySelector('#hud .card [data-panel="move"]').hidden }));
-    check(on('Done: time runs, and what follows is watched'), p3.state === 'watching' && !p3.paused && /^Watching: [\d.]+ (days|hours) a second$/.test(p3.text) && !left.placing && !left.panel, `"${p3.text}"`);
+    const left = await page.evaluate(() => {
+      const a = window.app, pair = a.slow?.pair;
+      return { placing: a.mover.placing, panel: !document.querySelector('#hud .card [data-panel="move"]').hidden, slowed: pair && `${a.slow.phase} for ${pair.map((b) => b.name).join(' and ')}, ${(pair[0].pos.distanceTo(pair[1].pos) / 1e3).toFixed(0)} km apart` };
+    });
+    check(on('Done: time runs, and what follows is watched'), p3.state === 'watching' && !p3.paused && /^Watching: [\d.]+ (days|hours) a second$/.test(p3.text) && !left.placing && !left.panel, `"${p3.text}"${left.slowed ? `; slowed ${left.slowed}` : ''}`);
     // (Undo ends the watch, whether or not its fifteen seconds are over)
     await listen(page);
     await press(page, '#hud .live-mark .live-undo');
@@ -1088,7 +1403,7 @@ for (const kind of ['phone', 'desk']) {
     });
     check(on('a second sun made as light as a star can be is a red dwarf: smaller, cooler and fainter, as the main sequence has it, and the card says so'),
       dwarf.name === 'Sun 2' && Math.abs(dwarf.suns - 0.08) < 1e-3 && dwarf.teff > 2400 && dwarf.teff < 2700 && Math.abs(dwarf.radius - 0.08 ** 0.8) < 2e-3 && dwarf.lit < 1e-3 && dwarf.drawn
-        && /^A star, 0\.13 times the Sun's size, 2,5\d0 K$/.test(dwarf.what),
+        && /^A star, 0\.13 times the Sun's size, 2,5\d0 K$/.test(dwarf.what) && dwarf.read === '0.08 Suns (83.8 Jupiters)',
       `"${dwarf.read}", "${dwarf.what}"; ${dwarf.teff.toFixed(0)} K, ${dwarf.radius.toFixed(3)} of the Sun's radius, ${dwarf.lit.toExponential(2)} of its light`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-red-dwarf.png`) });
     await ctx.close();

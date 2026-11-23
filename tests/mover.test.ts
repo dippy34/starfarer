@@ -41,7 +41,7 @@ async function setup(eye: (s: SolarSystem) => Vector3, aim: (s: SolarSystem) => 
   const placed: boolean[] = [];
   const mover = new Mover({
     rig: { ray: (x: number, y: number) => new Vector3((x - 500) * PIXEL, (500 - y) * PIXEL, -1).normalize().applyQuaternion(quat), upos: { toVector3: () => at.clone() } },
-    physics, clock, bodies: { views }, view: { quat, pixelRatio: 1 }, project, tellNews: () => { told++; },
+    physics, system: sys, clock, bodies: { views }, view: { quat, pixelRatio: 1 }, project, tellNews: () => { told++; },
     beginChange: () => { begun++; }, endChange: () => { ended++; }, cancelChange: () => { cancelled++; }, placed: (done: boolean) => { placed.push(done); },
   } as unknown as ConstructorParameters<typeof Mover>[0]);
   /** the pixel at which a place (m from the system's centre) is seen */
@@ -108,7 +108,7 @@ describe('moving a world with a finger', () => {
     expect(now.clone().normalize().dot(r.clone().normalize())).toBeCloseTo(1, 9);
     expect(moon.vel.distanceTo(v)).toBeLessThan(1e-6);
     // twice as far out with the speed of its old orbit: about escape speed there, and the card says what it is on now
-    expect(mover.describe(moon).orbit).toMatch(/^Now (round Earth: a long oval \(0\.\d\d\), .* km to .*\.|on an open path past Earth: it passes at .*, then leaves\.)$/);
+    expect(mover.describe(moon).orbit).toMatch(/^Now (round Earth: a long oval, .* to .* · .*\.|on an open path past Earth: it passes at .*, then leaves\.)$/);
   });
 
   it('left on a circle, it goes round what holds sway where it was put, the way it was going; asked back, it has its own velocity again', async () => {
@@ -129,7 +129,8 @@ describe('moving a world with a finger', () => {
     expect(o.e).toBeLessThan(1e-6);
     expect(o.period / (2 * Math.PI * Math.sqrt((2 * r.length()) ** 3 / (earth.gm + moon.gm)))).toBeCloseTo(1, 6);
     expect(moon.pos.clone().sub(earth.pos).cross(moon.vel.clone().sub(earth.vel)).normalize().dot(turning)).toBeCloseTo(1, 9);
-    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: nearly a circle \(0\), [78]\d\d,\d\d\d km to [78]\d\d,\d\d\d km · [78]\d(\.\d+)? d\.$/);
+    // (its two ends come out the same: a circle, so far out)
+    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [78]\d\d,\d\d\d km out · [78]\d(\.\d+)? d\.$/);
     mover.leave('keep');
     expect(moon.vel.distanceTo(v)).toBeLessThan(1e-6);
     expect(mover.describe(moon).how).toBe('keep');
@@ -201,7 +202,7 @@ describe('throwing a world', () => {
     expect(o.bound && o.e < 1e-9).toBe(true);
     expect(o.peri / r.length()).toBeCloseTo(1, 9);
     expect(moon.pos.clone().sub(earth.pos).cross(moon.vel.clone().sub(earth.vel)).normalize().dot(turning)).toBeCloseTo(1, 9);
-    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: nearly a circle \(0\)/);
+    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [\d,]+ km out · /);
     expect(gestures()).toEqual([1, 1]);
   });
 
@@ -279,7 +280,7 @@ describe('throwing a world', () => {
     // ahead, at the speed of a circle (taken for a flick it would have gone backwards, at 0.83 of it)
     expect(rel.length() / Math.sqrt((earth.gm + moon.gm) / moon.pos.distanceTo(earth.pos))).toBeCloseTo(1, 12);
     expect(moon.pos.clone().sub(earth.pos).cross(rel).normalize().dot(turning)).toBeCloseTo(1, 9);
-    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: nearly a circle \(0\)/);
+    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [\d,]+ km out · /);
   });
 });
 
@@ -319,5 +320,26 @@ describe('putting a world just made in place', () => {
     mover.stop(true);
     expect(placed).toEqual([true]);
     expect(mover.body).toBeNull();
+  });
+});
+
+describe('a world thrown out', () => {
+  it('past the speed of escape from the Sun it goes round nothing, and the card says it is on an open path past the Sun', async () => {
+    const { named, mover, physics, sys } = await setup(aboveTheMoon, (s) => s.byId.get(399)!.pos.clone());
+    const earth = named('Earth'), sun = sys.sun;
+    const r = earth.pos.clone().sub(sun.pos), w = earth.vel.clone().sub(sun.vel);
+    const square = r.clone().cross(w).cross(r).normalize().negate();
+    // (1.6 times the speed of a circle, the way it goes: e = 1.56)
+    const v = square.multiplyScalar(1.6 * Math.sqrt((sun.gm + earth.gm) / r.length()));
+    physics.move(earth, earth.pos.toArray(), sun.vel.clone().add(v).toArray(), JD);
+    expect(earth.parent).toBeNull();
+    const o = physics.orbit(earth, sun)!;
+    expect(o.bound).toBe(false);
+    expect(o.e).toBeCloseTo(1.56, 2);
+    mover.toggle(earth);
+    expect(mover.describe(earth).orbit).toBe(`Now on an open path past the Sun: it passes at ${(o.peri / 149_597_870_700).toPrecision(3).replace(/0+$/, '').replace(/\.$/, '')} AU, then leaves.`);
+    // the Sun itself goes round nothing, and is on no path
+    mover.toggle(sun);
+    expect(mover.describe(sun).orbit).toBe('Now it goes round nothing.');
   });
 });

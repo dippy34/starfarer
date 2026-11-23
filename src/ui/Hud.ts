@@ -87,7 +87,8 @@ export interface HudState {
      * (keeps its speed, goes in a circle, or is thrown), whether it has just been made and is being
      * put in place, which plane the finger moves it in and the orbit it is on now, both in words.
      */
-    move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string } | null;
+    /** `ahead`: what the simulation run ahead says of where it goes (src/app/Foresight.ts), when it has said */
+    move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string; ahead: string } | null;
     /** It has just been made and is being put in place: where its mass slider stands (0 to 1), its mass and what it is at that mass, in words. */
     place: { slider: number; mass: string; what: string } | null;
   } | null;
@@ -224,6 +225,11 @@ const TEMPLATE = `
     <div class="hud-slot">
       <div class="hud-notice" role="status" hidden><span></span><button class="notice-act" type="button"></button><button class="icon-btn" type="button" data-notice-close aria-label="Close">${ICON.close}</button></div>
       <div class="hud-flight" hidden><span></span><button type="button" data-act="stop">${ICON.stop}Stop</button></div>
+      <div class="hud-impact" role="status" hidden>
+        <div class="impact-text"><b></b><span></span><small></small></div>
+        <button class="impact-more" type="button" data-impact-more>More</button>
+        <button class="icon-btn" type="button" data-impact-close aria-label="Close">${ICON.close}</button>
+      </div>
       <div class="hud-watch" role="status" hidden>
         <span class="watch-text"></span>
         <button class="watch-stop" type="button" data-act="watch-stop">${ICON.stop}Stop</button>
@@ -270,6 +276,7 @@ const TEMPLATE = `
             <button type="button" data-act="move-throw" aria-pressed="false">Throw</button>
           </div>
           <p class="power-now"></p>
+          <p class="power-ahead"></p>
         </div>
         <div class="power-panel" data-panel="add" hidden>
           <button class="row" type="button" data-act="add-moon">${ICON.moon}<span class="row-text"><b>A moon</b><small>A new one, on a circle round it, between you and it</small></span></button>
@@ -664,11 +671,14 @@ export class Hud {
   setAim(aim: AimView | null): void {
     const svg = this.$('.aim');
     const draw = !!aim && aim.length > 0;
-    const key = draw ? [aim.x, aim.y, aim.edge, aim.ux, aim.uy, aim.length].map((v) => v.toFixed(1)).join() + aim.snapped : '';
+    // (it stops at the edge of the part of the view the interface leaves clear: it never runs on under the card or the chips)
+    const free = draw ? this.freeArea() : null;
+    const key = draw ? [aim.x, aim.y, aim.edge, aim.ux, aim.uy, aim.length, free!.left, free!.top, free!.right, free!.bottom].map((v) => v.toFixed(1)).join() + aim.snapped : '';
     if (key === this.aimKey) return;
     this.aimKey = key;
     svg.toggleAttribute('hidden', !draw);
     if (!draw) return;
+    svg.style.clipPath = `inset(${free!.top.toFixed(1)}px ${(window.innerWidth - free!.right).toFixed(1)}px ${(window.innerHeight - free!.bottom).toFixed(1)}px ${free!.left.toFixed(1)}px)`;
     const { ux, uy } = aim, nx = -uy, ny = ux;
     const x0 = aim.x + ux * aim.edge, y0 = aim.y + uy * aim.edge, at = (d: number) => [x0 + ux * d, y0 + uy * d];
     const line = (el: Element, a: number[], b: number[]) => { el.setAttribute('x1', a[0].toFixed(1)); el.setAttribute('y1', a[1].toFixed(1)); el.setAttribute('x2', b[0].toFixed(1)); el.setAttribute('y2', b[1].toFixed(1)); };
@@ -774,6 +784,26 @@ export class Hud {
 
   clearNotice(): void {
     this.$('.hud-notice').hidden = true;
+  }
+
+  /**
+   * Two worlds have met (live physics): who hit whom and how fast, the energy and what it compares
+   * with, and, smaller, the prediction and what is not simulated (Powers.impactWords). Above the
+   * card until it is closed, another hit takes its place, or the change is undone (null). It takes
+   * room: an open panel of the card folds away where there is not room for both, and where there
+   * is still not (a phone on its side, a watch's chip up too) it shows its first line, with More.
+   */
+  impact(w: { head: string; energy: string; holds: string; foretold: string; simulated: string } | null): void {
+    const el = this.$('.hud-impact');
+    el.hidden = !w;
+    el.classList.remove('brief');
+    if (!w) return;
+    setText(el.querySelector('b')!, w.head);
+    setText(el.querySelector('span')!, `${w.energy} ${w.holds}`);
+    setText(el.querySelector('small')!, `${w.foretold} ${w.simulated}`);
+    this.makeRoom();
+    const card = this.$('.card');
+    if (card.offsetParent && (card.scrollHeight > card.clientHeight + 1 || card.getBoundingClientRect().bottom > window.innerHeight)) el.classList.add('brief');
   }
 
   /** The missions in the More sheet: how many are done, and the list (rebuilt only when it changes). */
@@ -896,6 +926,7 @@ export class Hud {
       const { how, placing } = sel.move;
       setText(movePanel.querySelector('.move-plane')!, sel.move.plane);
       setText(movePanel.querySelector('.power-now')!, sel.move.orbit);
+      setText(movePanel.querySelector('.power-ahead')!, sel.move.ahead);
       // (a world just made, being put in place: its mass, Done, and how a finger puts it; otherwise the choice of what it does where it is left)
       movePanel.querySelector<HTMLElement>('.hint-move')!.hidden = placing || how === 'throw';
       movePanel.querySelector<HTMLElement>('.hint-throw')!.hidden = placing || how !== 'throw';
@@ -1008,6 +1039,8 @@ export class Hud {
     else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
     else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
     else if ('noticeClose' in d) this.clearNotice();
+    else if ('impactClose' in d) this.impact(null);
+    else if ('impactMore' in d) this.$('.hud-impact').classList.remove('brief');
     else if ('help' in d) this.$('.more .help-title').scrollIntoView({ block: 'start', behavior: 'smooth' });
     else if ('massReal' in d) { this.slider.value = '0'; this.host.massHeld(true); this.host.setMass(0); this.host.massHeld(false); }
     else if ('live' in d) { if (this.state?.live) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); } }

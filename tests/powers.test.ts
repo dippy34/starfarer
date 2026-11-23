@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  affected, AIM_PER_CIRCLE, aimFactor, circularVelocity, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf,
-  FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords,
-  reachWords, shapeWords, snapThrow, spanWords, squareThrow, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
+  affected, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
+  FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, starMassWords,
+  orbitWords, powerWords, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
   WATCH_SLOWEST, watchPlan, watchRate,
 } from '../src/app/Powers';
-import { M_EARTH, M_JUPITER, M_SUN } from '../src/sim/physics';
+import { G, L_SUN, M_EARTH, M_JUPITER, M_SUN, R_EARTH } from '../src/sim/physics';
 
 const AU = 149_597_870_700, GM_SUN = 1.32712440018e20, DAY = 86_400;
 
@@ -37,6 +37,10 @@ describe('a mass in words', () => {
   it('is said in the worlds a person has a feel for', () => {
     expect(massWords(0.5 * M_SUN)).toBe('0.5 Suns');
     expect(massWords(M_SUN)).toBe('1 Sun');
+    // a star lighter than a tenth of the Sun: in Suns all the same, and in Jupiters as well
+    expect(starMassWords(0.08 * M_SUN)).toBe('0.08 Suns (83.8 Jupiters)');
+    expect(starMassWords(0.001 * M_SUN)).toBe('0.001 Suns (1 Jupiter)');
+    expect(starMassWords(0.5 * M_SUN)).toBe('0.5 Suns');
     expect(massWords(1000 * M_SUN)).toBe('1,000 Suns');
     expect(massWords(1.3 * M_JUPITER)).toBe('1.3 Jupiters');
     expect(massWords(M_JUPITER)).toBe('1 Jupiter');
@@ -96,8 +100,9 @@ describe('the orbit a body is on', () => {
     expect(o.peri / AU).toBeCloseTo(1, 7);
     expect(o.apo / AU).toBeCloseTo(1, 7);
     expect(o.period / year).toBeCloseTo(1, 12);
-    expect(shapeWords(o)).toBe('nearly a circle (0)');
-    expect(reachWords(o)).toBe('1 AU to 1 AU · 365.3 d');
+    // (its two ends come out the same: a circle, so far out, without a number to puzzle over)
+    expect(orbitWords(o)).toBe('a circle 1 AU out · 365.3 d');
+    expect(stretchWords(o)).toBe('0 (0 is a circle, 1 and more an open path)');
   });
 
   it('an oval: from the nearest point, in any plane', () => {
@@ -108,7 +113,20 @@ describe('the orbit a body is on', () => {
     expect(o.peri / AU).toBeCloseTo(0.5, 12);
     expect(o.apo / AU).toBeCloseTo(1.5, 10);
     expect(o.period / year).toBeCloseTo(1, 10);
-    expect(shapeWords(o)).toBe('an oval (0.50)');
+    // (the unit said once where both ends have it)
+    expect(orbitWords(o)).toBe('an oval, 0.5 to 1.5 AU · 365.3 d');
+    expect(stretchWords(o)).toBe('0.50 (0 is a circle, 1 and more an open path)');
+  });
+
+  it('a circle stretched a little: its shape in words and its two ends, the number left to the details', () => {
+    // the Moon after a throw a little off the speed of a circle: 365,709 to 382,840 km
+    const gm = 3.986004418e14 * (1 + 1 / 81.3), peri = 365_709e3, apo = 382_840e3, a = (peri + apo) / 2;
+    const o = orbitOf([peri, 0, 0], [0, Math.sqrt(gm * (2 / peri - 1 / a)), 0], gm);
+    expect(orbitWords(o)).toBe('a slightly stretched circle, 365,709 to 382,840 km · 26.21 d');
+    expect(stretchWords(o)).toBe('0.023 (0 is a circle, 1 and more an open path)');
+    // a world's orbit with its ends in different units says both
+    const sun = orbitOf([1e9, 0, 0], [0, Math.sqrt(GM_SUN * (2 / 1e9 - 1 / (0.5 * (1e9 + 0.05 * AU)))), 0], GM_SUN);
+    expect(orbitWords(sun)).toBe('a long oval, 1.000 million km to 0.05 AU · 41.83 h');
   });
 
   it('faster than escape: open, and it does not come back', () => {
@@ -118,14 +136,14 @@ describe('the orbit a body is on', () => {
     expect(o.apo).toBe(Infinity);
     expect(o.period).toBe(Infinity);
     expect(o.peri / AU).toBeCloseTo(1, 9);
-    expect(shapeWords(o)).toMatch(/^open \(3\.50\): it will not come back$/);
-    expect(reachWords(o)).toBe('passes at 1 AU, then leaves');
+    expect(orbitWords(o)).toBe('an open path: it passes at 1 AU, then leaves');
+    expect(stretchWords(o)).toBe('3.50 (0 is a circle, 1 and more an open path)');
   });
 
   it('a moon: kilometres and days', () => {
     const gm = 3.986004418e14 * (1 + 1 / 81.3), r = 384_400e3;
     const o = orbitOf([r, 0, 0], [0, Math.sqrt(gm / r), 0], gm);
-    expect(reachWords(o)).toBe('384,400 km to 384,400 km · 27.28 d');
+    expect(orbitWords(o)).toBe('a circle 384,400 km out · 27.28 d');
   });
 });
 
@@ -250,7 +268,7 @@ describe('a world thrown', () => {
     for (const dir of [square, [r[0] / d, r[1] / d, 0], [0.6 * square[0] + 0.8 * r[0] / d, 0.6 * square[1] + 0.8 * r[1] / d, 0]]) {
       const o = orbitOf(r, throwVelocity(r, GM_SUN, dir, Math.SQRT2), GM_SUN);
       expect(o.bound).toBe(false);
-      expect(reachWords(o)).toMatch(/then leaves$/);
+      expect(orbitWords(o)).toMatch(/then leaves$/);
     }
     // half a circle's speed, square: an oval with its far end where it was thrown
     const h = orbitOf(r, throwVelocity(r, GM_SUN, square, 0.5), GM_SUN);
@@ -389,5 +407,94 @@ describe('watching what a change does', () => {
     const panel = viewFrame({ left: 470, top: 64, right: 836, bottom: 382 }, 844, 390, 50);
     expect(panel.dir[0]).toBeGreaterThan(0.3);
     expect(Math.min(panel.halfX, panel.halfY)).toBeLessThan(Math.min(side.halfX, side.halfY));
+  });
+});
+
+describe('two worlds that meet', () => {
+  /** how long until two bodies are `x` apart, by stepping their two-body orbit (RK4, small steps): what contactTimes works out in closed form */
+  const stepped = (r0: number[], v0: number[], mu: number, x: number, most: number) => {
+    let r = [...r0], v = [...v0], t = 0;
+    const acc = (p: number[]) => { const d = Math.hypot(p[0], p[1], p[2]), k = -mu / (d * d * d); return [k * p[0], k * p[1], k * p[2]]; };
+    const d0 = Math.hypot(r[0], r[1], r[2]);
+    for (;;) {
+      const d = Math.hypot(r[0], r[1], r[2]), sp = Math.hypot(v[0], v[1], v[2]);
+      const h = Math.min(1e-4 * d / Math.max(sp, 1e-9), 1e-3 * Math.sqrt((d * d * d) / mu), Math.max((d - x) / Math.max(sp, 1e-9), 1e-9 * d0 / Math.max(sp, 1e-9)));
+      const add = (a: number[], b: number[], k: number) => a.map((y, i) => y + k * b[i]);
+      const k1r = v, k1v = acc(r);
+      const k2r = add(v, k1v, h / 2), k2v = acc(add(r, k1r, h / 2));
+      const k3r = add(v, k2v, h / 2), k3v = acc(add(r, k2r, h / 2));
+      const k4r = add(v, k3v, h), k4v = acc(add(r, k3r, h));
+      const nr = r.map((y, i) => y + (h / 6) * (k1r[i] + 2 * k2r[i] + 2 * k3r[i] + k4r[i]));
+      const nv = v.map((y, i) => y + (h / 6) * (k1v[i] + 2 * k2v[i] + 2 * k3v[i] + k4v[i]));
+      const nd = Math.hypot(nr[0], nr[1], nr[2]);
+      if (nd <= x) return t + h * (d - x) / (d - nd);
+      r = nr; v = nv; t += h;
+      if (t > most) return NaN;
+    }
+  };
+  const mu = 3.986e14 + 4.28e13, touch = R_EARTH + 3389.5e3, far = 3.844e8;
+
+  it('works out when two worlds touch, whatever their orbit about each other: falling straight in, from rest, thrown in, past the speed of escape, or at it; or askew', () => {
+    const vc = Math.sqrt(mu / far);
+    const cases: [string, number[]][] = [
+      ['from rest', [0, 0, 0]], ['thrown straight in', [-vc, 0, 0]], ['straight in, past escape', [-2 * vc, 0, 0]], ['straight in at escape', [-Math.SQRT2 * vc, 0, 0]],
+      ['askew, on an oval', [-0.5 * vc, 0.03 * vc, 0]], ['askew, past escape', [-1.5 * vc, 0.02 * vc, 0.01 * vc]], ['askew, at escape', [-vc, vc * 1e-3, 0]],
+    ];
+    for (const [how, v] of cases) {
+      // (at escape exactly: the speed of escape, all of it, whichever way it points)
+      const vel = how.endsWith('at escape') ? v.map((y) => (y * Math.SQRT2 * vc) / Math.hypot(v[0], v[1], v[2])) : v;
+      const t = contactTimes([far, 0, 0], vel, mu, touch, 8 * touch)!;
+      expect(t, how).not.toBeNull();
+      expect(t.contact / stepped([far, 0, 0], vel, mu, touch, 1e8), how).toBeCloseTo(1, 5);
+      expect(t.zone / stepped([far, 0, 0], vel, mu, 8 * touch, 1e8), how).toBeCloseTo(1, 5);
+    }
+    // going out on an oval that dips into the other: it comes back to hit it, once round less the way in
+    const out = contactTimes([far, 0, 0], [0.5 * vc, 0.03 * vc, 0], mu, touch, 8 * touch)!;
+    expect(out.contact / stepped([far, 0, 0], [0.5 * vc, 0.03 * vc, 0], mu, touch, 1e8)).toBeCloseTo(1, 4);
+    // a circle never touches; one going out past escape is gone; one already touching touches now; within the zone, it is there
+    expect(contactTimes([far, 0, 0], [0, vc, 0], mu, touch, 8 * touch)).toBeNull();
+    expect(contactTimes([far, 0, 0], [2 * vc, 0.01 * vc, 0], mu, touch, 8 * touch)).toBeNull();
+    expect(contactTimes([0.9 * touch, 0, 0], [0, 0, 0], mu, touch, 8 * touch)).toEqual({ contact: 0, zone: 0 });
+    expect(contactTimes([5 * touch, 0, 0], [-1e3, 0, 0], mu, touch, 8 * touch)!.zone).toBe(0);
+  });
+
+  it('finds the first hit ahead among worlds: Mars sent straight at the Earth, not the Moon on its circle, nor what cannot come near so soon', () => {
+    const at = (gm: number, radius: number, pos: number[], vel: number[], body: string) => ({ body, gm, radius, pos, vel });
+    const earth = at(3.986e14, R_EARTH, [0, 0, 0], [0, 0, 0], 'Earth');
+    const moon = at(4.9e12, 1737.4e3, [far, 0, 0], [0, Math.sqrt(3.99e14 / far), 0], 'Moon');
+    const mars = at(4.28e13, 3389.5e3, [0, -1e8, 0], [0, 13e3, 0], 'Mars');
+    const away = at(1.267e17, 69_911e3, [5 * 1.496e11, 0, 0], [0, -13e3, 0], 'Jupiter');
+    const hit = soonestContact([earth, moon, mars, away], 1e5, 8)!;
+    expect([hit.a, hit.b]).toEqual(['Earth', 'Mars']);
+    expect(hit.contact / stepped([0, -1e8, 0], [0, 13e3, 0], 3.986e14 + 4.28e13, R_EARTH + 3389.5e3, 1e6)).toBeCloseTo(1, 5);
+    expect(hit.zone).toBeLessThan(hit.contact);
+    // not within the time asked: none
+    expect(soonestContact([earth, moon, mars, away], 0.5 * hit.zone, 8)).toBeNull();
+    expect(soonestContact([earth, moon, away], 1e9, 8)).toBeNull();
+  });
+
+  it('says what a hit was: Mars into the Earth at 13 km/s, against the Sun\'s light and what holds Mars together, and what a rule of thumb says, labelled', () => {
+    const mars = { name: 'Mars', gm: 4.2828e13, radius: 3389.5e3 }, earth = { name: 'Earth', gm: 3.986e14, radius: R_EARTH };
+    const mu = (mars.gm / G) * (earth.gm / G) / ((mars.gm + earth.gm) / G), energy = 0.5 * mu * 13e3 ** 2;
+    expect(energy / 4.9e31).toBeCloseTo(1, 1);
+    const w = impactWords(mars, earth, 13e3, energy);
+    expect(w.head).toBe('Mars hit Earth at 13 km/s');
+    expect(w.energy).toBe(`Energy 4.9×10³¹ J: as much as the Sun gives off in ${spanWords(energy / L_SUN)}.`);
+    expect(spanWords(energy / L_SUN)).toBe('1.5 days');
+    expect(w.holds).toBe('10.1 times the energy that holds Mars together.');
+    expect(w.foretold).toBe('Prediction, by a rule of thumb (the energy against what holds each together): Mars would break apart, Earth would not.');
+    expect(w.simulated).toBe('Breaking apart is not simulated yet: the two become one.');
+    // slowly, a small moon into its planet: a share of what holds it together, and less than a second of sunlight
+    const soft = impactWords({ name: 'Moon', gm: 4.9e12, radius: 1737.4e3 }, earth, 10, 0.5 * 7.3e22 * 100);
+    expect(soft.holds).toBe('1/34,000 of the energy that holds the Moon together.');
+    expect(soft.energy).toBe('Energy 3.6×10²⁴ J: as much as the Sun gives off in 1/105 of a second.');
+    expect(soft.foretold).toMatch(/: neither would break apart\.$/);
+    expect(soft.head).toBe('The Moon hit Earth at 10 m/s');
+  });
+
+  it('writes a number in powers of ten', () => {
+    expect(powerWords(4.896e31)).toBe('4.9×10³¹');
+    expect(powerWords(3e24)).toBe('3×10²⁴');
+    expect(powerWords(2.5e-7)).toBe('2.5×10⁻⁷');
   });
 });
