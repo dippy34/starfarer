@@ -138,10 +138,20 @@ function circle(orbit: number, mu: number, normal: Triple, eye: ArrayLike<number
 
 // ---------------------------------------------------------------- what is made: its mass, and the size that follows
 
-/** worlds like the Earth are made of rock at the Earth's mean density, up to this mass (kg) */
+/** worlds like the Earth are made of rock and iron as the Earth is, up to this mass (kg) */
 export const ROCKY_MOST = 10 * M_EARTH;
-/** the Earth's mean density (kg/m³; NASA's planetary fact sheet): R = R⊕ (M / M⊕)^⅓ is a ball of it */
-export const EARTH_DENSITY = 5514;
+/**
+ * How a world of rock and iron like the Earth's grows with its mass: Zeng, Sasselov & Jacobsen
+ * (2016, ApJ 819:127, arXiv:1512.08827), eq. 1, fitted to their models of planets built on the
+ * Earth's own seismic model (PREM): R / R⊕ = (1.07 − 0.21 CMF) (M / M⊕)^(1/3.7), for a core of CMF of
+ * the mass, from 0 to 0.4, and masses from 1 to 8 Earths, within about 0.01 R⊕ of their models. The
+ * Earth's CMF by it is 0.07 / 0.21 = 1/3 (their section 3.1), which makes the factor exactly 1: the
+ * Earth's own mass gives the Earth's size. Rock is squeezed by its own weight: five Earths make a
+ * world 1.54 times the Earth's size, not the 1.71 of rock as dense as the Earth's.
+ */
+export const ROCK_POWER = 1 / 3.7;
+/** the masses the relation was fitted for (Earths): outside them it is carried on, and the working says so */
+export const ROCK_FITTED: readonly [number, number] = [1, 8];
 /** from this mass (kg) a giant planet is about Jupiter's size: its insides are squeezed so hard that more mass makes it no larger */
 export const GIANT_FROM = 0.3 * M_JUPITER;
 /** from here (kg) deuterium fuses in a giant's core: a brown dwarf, still about Jupiter's size */
@@ -175,23 +185,24 @@ export interface Sized {
 }
 
 /** the radius of a rock of ROCKY_MOST (m), and the power of the mass that takes it to Jupiter's at GIANT_FROM */
-const ROCK_TOP = R_EARTH * Math.cbrt(ROCKY_MOST / M_EARTH);
+const ROCK_TOP = R_EARTH * Math.pow(ROCKY_MOST / M_EARTH, ROCK_POWER);
 const BETWEEN = Math.log(R_JUPITER / ROCK_TOP) / Math.log(GIANT_FROM / ROCKY_MOST);
 
 /**
  * The size of a body made as `kind` with `kg` of mass (`icy`: a moon made beyond the frost line):
  * - a moon: a ball of rock (3,000 kg/m³), or of ice and rock (1,500), as newMoon makes one;
- * - a world like the Earth: rock at the Earth's mean density, R = R⊕ (M / M⊕)^⅓ (5 Earths: 1.71 R⊕);
+ * - a world like the Earth: rock and iron as the Earth's, squeezed by its own weight, R = R⊕ (M / M⊕)^(1/3.7)
+ *   (Zeng, Sasselov & Jacobsen 2016: ROCK_POWER; 5 Earths: 1.54 R⊕);
  * - a giant from 0.3 Jupiters on, and a brown dwarf: about Jupiter's size;
  * - between 10 Earths and 0.3 Jupiters, where a world's size depends on how much gas it has
  *   gathered: the straight line between the two in the logarithm, from the rock of 10 Earths
- *   (2.15 R⊕) to Jupiter's size (Neptune's 17 Earths come out 3.2 R⊕; it measures 3.9);
+ *   (1.86 R⊕) to Jupiter's size (Neptune's 17 Earths come out 2.8 R⊕; it measures 3.9);
  * - a sun: a star of the main sequence of that mass: its radius, temperature and light.
  */
 export function madeSize(kind: Kind, kg: number, icy: boolean): Sized {
   switch (kind) {
     case 'moon': return { radius: radiusFromDensity(kg, icy ? ICE : ROCK), rule: icy ? 'ice' : 'rock' };
-    case 'earth': return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
+    case 'earth': return { radius: R_EARTH * Math.pow(kg / M_EARTH, ROCK_POWER), rule: 'earth' };
     case 'jupiter':
       if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: kg >= BROWN_DWARF_FROM ? 'brown dwarf' : 'giant' };
       return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
@@ -253,8 +264,14 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
       const rho = s.rule === 'ice' ? ICE : ROCK;
       return { label, text, math: `R = (3M / 4πρ)^⅓ = (3·${num(kg)} kg / (4π·${rho.toLocaleString('en-US')} kg/m³))^⅓ = ${text}: a ball of ${s.rule === 'ice' ? 'ice and rock (beyond the frost line)' : 'rock'}` };
     }
-    case 'earth':
-      return { label, text, math: `R = R⊕ (M / M⊕)^⅓ = 6,371 km·(${num(kg / M_EARTH)})^⅓ = ${text}: rock at the Earth's mean density, ${EARTH_DENSITY.toLocaleString('en-US')} kg/m³` };
+    case 'earth': {
+      // (to the figures said: a copy of the Earth has the catalogue's mass, which is not M⊕ to the last digit)
+      const earths = kg / M_EARTH, fitted = earths >= ROCK_FITTED[0] * (1 - 1e-3) && earths <= ROCK_FITTED[1] * (1 + 1e-3);
+      return {
+        label, text,
+        math: `R = R⊕ (M / M⊕)^(1/3.7) = 6,371 km·(${num(earths)})^(1/3.7) = ${text}: rock and iron as the Earth's (a third of its mass in its core), squeezed by its own weight (Zeng, Sasselov & Jacobsen 2016, fitted from 1 to 8 Earths${fitted ? '' : `; ${num(earths)} Earths is beyond that, and carried on`})`,
+      };
+    }
     case 'between':
       return { label, text, math: `R = R₁₀ (M / 10 M⊕)^${num(BETWEEN, 3)} = ${km(ROCK_TOP)}·(${num(kg / ROCKY_MOST)})^${num(BETWEEN, 3)} = ${text}: between a rock of 10 Earths and Jupiter's size at 0.3 Jupiters (a world's size here depends on how much gas it has gathered)` };
     case 'giant': case 'brown dwarf':

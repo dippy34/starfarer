@@ -147,8 +147,25 @@ describe('the temperature of a world', () => {
     expect([venus, mars].map((w) => w.worked[2].text)).toEqual(['boils', 'ice']);
     // (a line a phone has room for: 46 letters at most)
     for (const w of [t, venus, mars]) expect(w.line.length).toBeLessThanOrEqual(46);
-    expect(temperatureOf({ name: 'Moon', giant: false, oceans: false }, climate(301), { listed: 1361.0 }).line).toBe('Temperature without air: −3 °C');
-    expect(temperatureOf({ name: 'Jupiter', giant: true, oceans: false }, climate(599), { listed: 50.26 }).line).toBe('From sunlight alone: −163 °C');
+    // (a world without air: the sheet's line is its year's average, and says so: live physics's is where it is now)
+    expect(temperatureOf({ name: 'Moon', giant: false, oceans: false }, climate(301), { listed: 1361.0 }).line).toBe('On average, without air: −3 °C');
+    expect(temperatureOf({ name: 'Jupiter', giant: true, oceans: false }, climate(599), { listed: 50.26 }).line).toBe('On average, from sunlight alone: −163 °C');
+    for (const [id, name, giant] of [[199, 'Mercury', false], [301, 'Moon', false], [599, 'Jupiter', true], [899, 'Neptune', true], [999, 'Pluto', false]] as const) {
+      expect(temperatureOf({ name, giant, oceans: false }, climate(id), { listed: sheets.bodies[String(id)].irradiance! }).line.length).toBeLessThanOrEqual(46);
+    }
+  });
+
+  it('the Moon the moment live physics starts, nothing moved: where it is now, and beside it in the working its year\'s average, each said to be which', () => {
+    // (the trailer's date, 21 November 2026, the Moon some 0.987 AU from the Sun: sunlight 2.6 % above the mean)
+    const real = temperatureOf({ name: 'Moon', giant: false, oceans: false }, climate(301), { listed: 1361.0 });
+    const now = temperatureOf({ name: 'Moon', giant: false, oceans: false }, climate(301), { suns: [{ name: 'Sun', lumW: L, dM: 0.9875 * AU }], mean: 1361.0 });
+    expect(real.line).toBe('On average, without air: −3 °C');
+    expect(now.line).toBe('The Moon here: −1 °C');
+    expect(real.worked[0].math).toContain('its year\'s average');
+    expect(now.worked[0].math).toContain('where it is now');
+    expect(now.worked[0].math).toContain('on average over the year, at its mean distance from the Sun (1361 W/m², NASA\'s fact sheet), it is −3 °C');
+    // (no mean to say where the sheet gives none)
+    expect(temperatureOf({ name: 'Moon', giant: false, oceans: false }, climate(301), { suns: [{ name: 'Sun', lumW: L, dM: AU }] }).worked[0].math).not.toContain('on average');
   });
 
   it('in live physics, where it is now under every sun, the warming of its air kept as measured: the Earth at half its distance boils its oceans', () => {

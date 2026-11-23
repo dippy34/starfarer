@@ -5,8 +5,8 @@ import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { LivePhysics } from '../src/app/LivePhysics';
 import {
-  canAdd, EARTH_DENSITY, GIANT_FROM, MADE_FIRST_ID, MADE_MASS, MADE_MOST, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, madeWorking,
-  newMoon, newTwin, type Plan, ROCKY_MOST, STAR_FROM,
+  canAdd, GIANT_FROM, MADE_FIRST_ID, MADE_MASS, MADE_MOST, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, madeWorking,
+  newMoon, newTwin, type Plan, ROCK_FITTED, ROCKY_MOST, STAR_FROM,
 } from '../src/app/WhatIf';
 import { workedOut } from '../src/app/Worked';
 import { OBLIQUITY_J2000 } from '../src/core/frames';
@@ -278,15 +278,30 @@ describe('a planet or a sun made for a star', () => {
 });
 
 describe('the size of what is made, from its mass', () => {
-  it('a world like the Earth is rock at the Earth\'s density: 5 Earths have 1.71 times its radius; the Earth\'s own mass gives the Earth\'s size', () => {
-    expect(madeSize('earth', 5 * M_EARTH, false)).toEqual({ radius: R_EARTH * Math.cbrt(5), rule: 'earth' });
-    expect(madeSize('earth', 5 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(1.71, 2);
+  it('a world like the Earth is rock and iron squeezed by its own weight (Zeng, Sasselov & Jacobsen 2016): 1, 2, 5 and 10 Earths; the Earth\'s own mass gives the Earth\'s size', () => {
+    // their eq. 1, R / R⊕ = (1.07 − 0.21 CMF) (M / M⊕)^(1/3.7), with the Earth's core mass fraction by it, 0.07 / 0.21
+    const zeng = (earths: number) => (1.07 - 0.21 * (0.07 / 0.21)) * earths ** (1 / 3.7);
+    for (const earths of [1, 2, 5, 10]) {
+      const s = madeSize('earth', earths * M_EARTH, false);
+      expect(s.rule).toBe('earth');
+      expect(s.radius / R_EARTH).toBeCloseTo(zeng(earths), 12);
+    }
     expect(madeSize('earth', M_EARTH, false).radius).toBe(R_EARTH);
-    // (a ball of 5,514 kg/m³)
-    const r = madeSize('earth', 3 * M_EARTH, false).radius;
-    expect((3 * M_EARTH) / ((4 / 3) * Math.PI * r ** 3)).toBeCloseTo(EARTH_DENSITY, -1);
-    expect(madeWords('earth', 5 * M_EARTH, false)).toEqual({ mass: '5 Earths', what: "Rock, 1.71 times the Earth's size" });
+    expect(madeSize('earth', 2 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(1.2060, 4);
+    expect(madeSize('earth', 5 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(1.5449, 4);
+    expect(madeSize('earth', 10 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(1.8632, 4);
+    // against their own models (their Table 2, a core of 30 % iron) where the fit holds, 1 to 8 Earths: within 0.02 R⊕
+    for (const [earths, table] of [[1, 1.005], [2, 1.22], [4, 1.47], [8, 1.75]] as const) expect(Math.abs(madeSize('earth', earths * M_EARTH, false).radius / R_EARTH - table)).toBeLessThan(0.02);
+    // (rock is denser the more of it there is: 5 Earths of it are no longer the Earth's 5,514 kg/m³)
+    const r = madeSize('earth', 5 * M_EARTH, false).radius;
+    expect((5 * M_EARTH) / ((4 / 3) * Math.PI * r ** 3)).toBeGreaterThan(1.3 * 5514);
+    expect(ROCK_FITTED).toEqual([1, 8]);
+    expect(madeWords('earth', 5 * M_EARTH, false)).toEqual({ mass: '5 Earths', what: "Rock, 1.54 times the Earth's size" });
     expect(madeWords('earth', M_EARTH, false).what).toBe("Rock, the Earth's size");
+    // the working says where the fit holds, and when it is carried on beyond it
+    expect(madeWorking('earth', 5 * M_EARTH, false).math).toBe("R = R⊕ (M / M⊕)^(1/3.7) = 6,371 km·(5)^(1/3.7) = 9,843 km: rock and iron as the Earth's (a third of its mass in its core), squeezed by its own weight (Zeng, Sasselov & Jacobsen 2016, fitted from 1 to 8 Earths)");
+    expect(madeWorking('earth', 10 * M_EARTH, false).math).toMatch(/fitted from 1 to 8 Earths; 10 Earths is beyond that, and carried on\)$/);
+    expect(madeWorking('earth', 0.1 * M_EARTH, false).math).toMatch(/0\.1 Earths is beyond that, and carried on\)$/);
   });
 
   it('a giant from 0.3 Jupiters, and a brown dwarf, are about Jupiter\'s size (the catalogue\'s mean radius); between 10 Earths and 0.3 Jupiters the size goes from one to the other', async () => {
@@ -295,9 +310,9 @@ describe('the size of what is made, from its mass', () => {
     expect(madeSize('jupiter', 5 * M_JUPITER, false)).toEqual({ radius: R_JUPITER, rule: 'giant' });
     expect(madeSize('jupiter', 20 * M_JUPITER, false)).toEqual({ radius: R_JUPITER, rule: 'brown dwarf' });
     expect(madeSize('jupiter', GIANT_FROM, false).radius).toBe(R_JUPITER);
-    // at 10 Earths it is the rock of 10 Earths; Neptune's 17 Earths come out 3.2 Earth radii (it measures 3.9)
+    // at 10 Earths it is the rock of 10 Earths; Neptune's 17 Earths come out 2.8 Earth radii (it measures 3.9)
     expect(madeSize('jupiter', ROCKY_MOST, false).radius).toBeCloseTo(madeSize('earth', ROCKY_MOST, false).radius, 3);
-    expect(madeSize('jupiter', 17.15 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(3.2, 1);
+    expect(madeSize('jupiter', 17.15 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(2.85, 2);
     expect(madeSize('jupiter', 17.15 * M_EARTH, false).rule).toBe('between');
     // never smaller for more mass
     let last = 0;
@@ -363,7 +378,7 @@ describe('the size of what is made, from its mass', () => {
     const earth2 = make(newTwin(named('Earth'), 'earth_day', sun, [0, 2 * AU, 0], 0, MADE_FIRST_ID), sun);
     const line = workedOut(earth2).find((w) => w.label === 'Its size (made by you)')!;
     expect(line.text).toBe('6,371 km');
-    expect(line.math).toBe("R = R⊕ (M / M⊕)^⅓ = 6,371 km·(1)^⅓ = 6,371 km: rock at the Earth's mean density, 5,514 kg/m³");
+    expect(line.math).toBe("R = R⊕ (M / M⊕)^(1/3.7) = 6,371 km·(1)^(1/3.7) = 6,371 km: rock and iron as the Earth's (a third of its mass in its core), squeezed by its own weight (Zeng, Sasselov & Jacobsen 2016, fitted from 1 to 8 Earths)");
     expect(madeWorking('jupiter', 5 * M_JUPITER, false).math).toMatch(/^R ≈ R♃ = 69,911 km: a giant planet is about Jupiter's size/);
     expect(madeWorking('sun', 0.5 * M_SUN, false).math).toMatch(/^R = M\^0\.8 R☉ = 0\.5\^0\.8 R☉ = 0\.5743 R☉ .*: a star of the main sequence/);
     expect(madeWorking('jupiter', 30 * M_EARTH, false).math).toMatch(/: between a rock of 10 Earths and Jupiter's size at 0\.3 Jupiters/);

@@ -107,9 +107,10 @@ function ofBody(b: Body, catalogue: Catalogued | null): Worked[] {
 /**
  * The sunlight on a world, for its temperature: as its fact sheet lists it at its mean distance from
  * the Sun (`listed`, W/m²: the real Solar System), or from each sun where it is now (`suns`: their
- * light, W, and how far each is, m).
+ * light, W, and how far each is, m; `mean`: the sheet's sunlight at its mean distance, to say beside
+ * it what its year's average would be).
  */
-export type Sunlit = { listed: number } | { suns: readonly { name: string; lumW: number; dM: number }[] };
+export type Sunlit = { listed: number } | { suns: readonly { name: string; lumW: number; dM: number }[]; mean?: number | null };
 
 /** A temperature as a person reads it: "−18 °C", "15 °C". */
 export function celsius(K: number): string {
@@ -139,17 +140,21 @@ export function temperatureOf(world: { name: string; giant: boolean; oceans: boo
   const here = `${capital(the(world.name))} here`;
   if (!(S > 0)) return { line: `${here}: no sun to warm it.`, worked: [] };
   const bare = sunlitTemp(S, climate.bond), T = bare.value, air = climate.air;
+  // (in live physics the line is where the world is now, which is not its year's average: the sheet's mean is said beside it,
+  // so that the two are not taken for one another: the Moon's −3 °C on average is −1 °C at the Earth's nearest to the Sun)
+  const meanS = 'suns' in sun ? sun.mean ?? null : null, mean = meanS ? sunlitTemp(meanS, climate.bond).value : null;
   const from = 'suns' in sun
     ? `S = Σ L / (4πd²) = ${sun.suns.map((s) => `${num(s.lumW)} W / (4π·(${num(s.dM)} m)²)`).join(' + ')} = ${num(S)} W/m², the sunlight where it is now (${sun.suns.map((s) => the(s.name)).join(' and ')}); `
-    : `S = ${num(S)} W/m², the sunlight at its mean distance from the Sun (NASA's fact sheet); `;
+    : `S = ${num(S)} W/m², the sunlight at its mean distance from the Sun (NASA's fact sheet): its year's average; `;
   const spread = `A = ${num(climate.bond)}, its Bond albedo (NASA's fact sheet: the share of the sunlight it sends back); its heat spread all round it`;
   const worked: Worked[] = [{
     label: world.giant ? 'Temperature from sunlight alone' : 'Temperature without air',
     text: celsius(T),
-    math: `${from}${bare.math} (${celsius(T)}): ${spread}${world.giant ? '. A giant planet gives off heat of its own besides (Uranus hardly any), which this leaves out' : ''}`,
+    math: `${from}${bare.math} (${celsius(T)}): ${spread}${world.giant ? '. A giant planet gives off heat of its own besides (Uranus hardly any), which this leaves out' : ''}${mean !== null ? `. This is where it is now; on average over the year, at its mean distance from the Sun (${num(meanS!)} W/m², NASA's fact sheet), it is ${celsius(mean)}` : ''}`,
   }];
   if (!air) {
-    const line = live ? `${here}: ${celsius(T)}${world.giant ? ', from sunlight alone' : ''}` : `${world.giant ? 'From sunlight alone' : 'Temperature without air'}: ${celsius(T)}`;
+    // (the real Solar System's line is the year's average, the sheet's; live physics's is here and now: each says which)
+    const line = live ? `${here}: ${celsius(T)}${world.giant ? ', from sunlight alone' : ''}` : `On average, ${world.giant ? 'from sunlight alone' : 'without air'}: ${celsius(T)}`;
     return { line, worked };
   }
   // the warming its air gives, as measured: the ground's mean against what the sheet's sunlight alone gives

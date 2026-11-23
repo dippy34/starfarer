@@ -40,7 +40,7 @@ describe('names and the slingshot\'s arrow', () => {
     const aim: AimView = { x: 200, y: 400, edge: 12, ux: -Math.SQRT1_2, uy: -Math.SQRT1_2, length: 110 * Math.SQRT2, circle: 110, escape: 110 * Math.SQRT2, snapped: 'escape' };
     const shape = aimShape(aim, 390), strokes = aimStrokes(aim, 390);
     const near = (x: number, y: number) => strokes.some((s) => strokeMeets(s, x - 0.5, y - 0.5, 1, 1));
-    for (const [x, y] of [...shape.guide, ...shape.head, ...shape.marks.flatMap((m) => [...m.line, m.word])]) expect(near(x, y)).toBe(true);
+    for (const [x, y] of [...shape.guide, ...shape.head, ...shape.marks.flatMap((m) => [...m.line, m.word!])]) expect(near(x, y)).toBe(true);
     // (half way along, a little to the side of the line: the head is as wide as that; well to the side the marks have no words)
     const mid = [(shape.guide[0][0] + shape.guide[1][0]) / 2, (shape.guide[0][1] + shape.guide[1][1]) / 2];
     expect(near(mid[0] - 6 * Math.SQRT1_2, mid[1] + 6 * Math.SQRT1_2)).toBe(true);
@@ -62,10 +62,39 @@ describe('names and the slingshot\'s arrow', () => {
     const escape = shape.marks.find((m) => m.which === 'escape')!;
     expect(escape.line[0][0]).toBeLessThan(26);
     // (its left end, some 23 px from its middle, inside the 8 px the arrow's clip keeps from the edge)
-    expect(escape.word[0] - 23).toBeGreaterThanOrEqual(8);
+    expect(escape.word![0] - 23).toBeGreaterThanOrEqual(8);
     // (where there is room it stands right beside its mark, as before: 22 px out along the normal)
     const circle = shape.marks.find((m) => m.which === 'circle')!;
-    expect(circle.word[0]).toBeCloseTo((circle.line[0][0] + circle.line[1][0]) / 2 - 22 * aim.uy, 6);
+    expect(circle.word![0]).toBeCloseTo((circle.line[0][0] + circle.line[1][0]) / 2 - 22 * aim.uy, 6);
+  });
+
+  it('a mark near the edge of the clear part of the view (the mark of live physics above it) keeps its word: below it, along the arrow, wholly in the clear part', () => {
+    // (the trailer's Moon thrown on a phone: the arrow up, the mark of escape 3 px under the top of the part of the view the
+    // interface leaves clear; beside it, as before, "escape" was cut off by the arrow's clip at the mark of live physics)
+    const aim: AimView = { x: 200, y: 320, edge: 15, ux: 0, uy: -1, length: 155.6, circle: 110, escape: 155.6, snapped: 'escape' };
+    const mark = 320 - 15 - 155.6, free = { left: 0, top: mark - 3, right: 390, bottom: 560 };
+    const before = aimShape(aim, 390), after = aimShape(aim, 390, free);
+    const box = (w: [number, number]) => ({ l: w[0] - 22, t: w[1] - 10, r: w[0] + 22, b: w[1] + 3 });
+    const old = box(before.marks.find((m) => m.which === 'escape')!.word!);
+    expect(old.t).toBeLessThan(free.top);
+    const escape = after.marks.find((m) => m.which === 'escape')!, circle = after.marks.find((m) => m.which === 'circle')!;
+    expect(escape.word).not.toBeNull();
+    const e = box(escape.word!), c = box(circle.word!);
+    // wholly in the clear part, near its mark (below it, back along the arrow), and clear of the circle's word
+    expect(e.t >= free.top && e.b <= free.bottom && e.l >= free.left && e.r <= free.right).toBe(true);
+    expect(Math.hypot(escape.word![0] - 200, escape.word![1] - mark)).toBeLessThan(45);
+    expect(escape.word![1]).toBeGreaterThan(mark);
+    expect(e.r <= c.l || e.l >= c.r || e.b <= c.t || e.t >= c.b).toBe(true);
+    // clear of the arrow's line and of the marks across it
+    const strokes = aimStrokes(aim, 390, free).filter((s) => s.r !== 6);
+    expect(strokes.some((s) => strokeMeets({ ...s, r: Math.min(s.r, 3) }, e.l, e.t, e.r - e.l, e.b - e.t))).toBe(false);
+    // where there is room beside the mark it stands there as always
+    const roomy = aimShape(aim, 390, { left: 0, top: 0, right: 390, bottom: 844 }).marks.find((m) => m.which === 'escape')!;
+    expect(Math.abs(roomy.word![1] - (mark + 4))).toBeLessThan(1e-9);
+    // and where nothing fits (a sliver of clear view) it is left out rather than cut off
+    const none = aimShape(aim, 390, { left: 0, top: mark - 3, right: 390, bottom: mark + 6 }).marks.find((m) => m.which === 'escape')!;
+    expect(none.word).toBeNull();
+    expect(aimStrokes(aim, 390, { left: 0, top: mark - 3, right: 390, bottom: mark + 6 }).length).toBeGreaterThan(0);
   });
 
   it('the words at the end of the path ahead are set clear of the arrow, at another corner of it or nudged off it; where nothing will do they go', () => {

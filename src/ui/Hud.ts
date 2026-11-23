@@ -731,7 +731,7 @@ export class Hud {
     if (!draw) return;
     svg.style.clipPath = `inset(${free!.top.toFixed(1)}px ${(window.innerWidth - free!.right).toFixed(1)}px ${(window.innerHeight - free!.bottom).toFixed(1)}px ${free!.left.toFixed(1)}px)`;
     // (where each part goes is worked out once, for the drawing and for the names kept off it: src/ui/aimShape.ts)
-    const shape = aimShape(aim, window.innerWidth), f = (v: number) => v.toFixed(1);
+    const shape = aimShape(aim, window.innerWidth, free!), f = (v: number) => v.toFixed(1);
     const line = (el: Element, [a, b]: [number, number][]) => { el.setAttribute('x1', f(a[0])); el.setAttribute('y1', f(a[1])); el.setAttribute('x2', f(b[0])); el.setAttribute('y2', f(b[1])); };
     line(svg.querySelector('.aim-guide')!, shape.guide);
     line(svg.querySelector('.aim-shaft')!, shape.shaft);
@@ -741,8 +741,13 @@ export class Hud {
       const mark = shape.marks.find((m) => m.which === g.dataset.mark)!;
       line(g.querySelector('line')!, mark.line);
       const text = g.querySelector('text')!;
-      text.setAttribute('x', f(mark.word[0]));
-      text.setAttribute('y', f(mark.word[1]));
+      // (a word with no room for it in the clear part of the view is left out, not cut off: src/ui/aimShape.ts)
+      // (an SVG element: the hidden attribute is the page's own only for HTML, so its display is set)
+      text.style.display = mark.word ? '' : 'none';
+      if (mark.word) {
+        text.setAttribute('x', f(mark.word[0]));
+        text.setAttribute('y', f(mark.word[1]));
+      }
       g.classList.toggle('on', aim.snapped === mark.which);
     }
   }

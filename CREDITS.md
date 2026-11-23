@@ -467,6 +467,13 @@ No data: methods, and the textbook figures quoted as predictions. The code is th
 * That a moon half way out to the edge of its planet's reach is not kept (the Moon moved to twice
   its distance): the simulation's own result; the limit for such orbits is in D. P. Hamilton & J.
   A. Burns, "Orbital stability zones about asteroids", *Icarus* 92, 118 (1991).
+* The size of a world made like the Earth, from its mass (`src/app/WhatIf.ts`, `madeSize`,
+  `ROCK_POWER`): L. Zeng, D. Sasselov & S. Jacobsen, "Mass-Radius Relation for Rocky Planets
+  based on PREM", *The Astrophysical Journal* 819, 127 (2016), arXiv:1512.08827, their eq. 1,
+  R/R⊕ = (1.07 − 0.21 CMF)(M/M⊕)^(1/3.7), fitted for cores of 0 to 40 % of the mass and 1 to 8
+  Earth masses, with the Earth's core fraction by it (0.07/0.21, their section 3.1); checked in
+  `tests/whatif.test.ts` against their own model radii (their Table 2). Read from the paper's
+  source as posted on arXiv (November 2026).
 
 ## Algorithms and code
 

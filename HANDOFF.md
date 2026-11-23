@@ -1255,6 +1255,67 @@ link held. Now:
   passing on the runners (run 45270442532); on f99d31e the first of them fails and the run stops
   (run 45270442251), and the unit test cannot run there (no `checkWorld`).
 
+## God mode, wave 2: breaking and hitting (godmode worker)
+
+The plan's step 2 (the research: its section 4, "Wave 2", items 2.1 to 2.3): until now a world could
+be dragged anywhere and hit anything, and only ever merged ("Breaking apart is not simulated yet: the
+two become one"). Four parts, each live before the next: three follow-ups from wave 1; a moon torn
+apart by tides into a ring; fragments from violent hits (Leinhardt & Stewart 2012); a comet to throw.
+The browser checks of this wave are in `scripts/whatif.mjs` (a 6-minute job on the runners, where
+`live` takes 64): each runs on a phone upright, on its side and at a desk (`WHATIF_ONLY=escape,warm,size`
+picks blocks, `WHATIF_KINDS=desk` screens). Not a suite of its own: the full set is 19 jobs of a
+shared pool of 20.
+
+### Part 1: three follow-ups (done)
+
+- *The word of the mark of escape is no longer dropped* (`src/ui/aimShape.ts`; `Hud.setAim`, and
+  `App.labelCandidates` for the words the path's end keeps off). The arrow is clipped to the part of
+  the view the interface leaves clear, and each mark's word stood beside its mark whatever that clip
+  was: in the trailer's Moon throw the mark of escape sat under the mark of live physics, and its
+  word was cut off there. `aimShape` now takes that part (`free`) and tries, in turn: beside the mark
+  as always (4 px farther out at a time where the arrow is steep, until the word clears the line and
+  the mark: beside a near-upright arrow the word had touched its own mark), the other side, back along
+  the arrow towards the world (18, 34 px), past the mark, back 50, straight below and above the mark,
+  then farther out; the first wholly inside the clear part, clear of the line, the head, both marks,
+  the ring round the world and the other word. Escape, the key target, is placed first. Where none
+  fits (a sliver of clear view) the word is left out rather than cut off (`word: null`, drawn with
+  `display: none`). Where there is room the word stands where it always did (the unit test's).
+- *The temperature line says which it is* (`src/app/Worked.ts`). Decided: say which, not one basis.
+  The real Solar System's line is the year's average from NASA's sheet ("On average, without air:
+  −3 °C", "On average, from sunlight alone: −163 °C"; with air it already said "as measured"); live
+  physics's is where the world is now ("The Moon here: −1 °C" at the Earth's nearest to the Sun), and
+  its working now says the average beside it ("This is where it is now; on average over the year, at
+  its mean distance from the Sun (1361 W/m², NASA's fact sheet), it is −3 °C"). Not one basis: the
+  average in live physics would hide the drag towards the Sun (live's `warm` block checks the line
+  against the distance at each step), and the distance now in the real Solar System would turn the
+  sheet's measured means into something else.
+- *A world made like the Earth is rock squeezed by its own weight* (`WhatIf.madeSize`, `ROCK_POWER`,
+  `ROCK_FITTED`, `madeWorking`). Zeng, Sasselov & Jacobsen (2016, ApJ 819:127, arXiv:1512.08827: read
+  from the paper's source), eq. 1: R/R⊕ = (1.07 − 0.21 CMF)(M/M⊕)^(1/3.7), fitted for cores of 0 to
+  40 % of the mass and 1 to 8 Earths, within about 0.01 R⊕ of their models; with the Earth's core
+  fraction by it (0.07/0.21, their section 3.1) the factor is exactly 1, so the Earth's mass gives the
+  Earth's size. 2, 5 and 10 Earths: 1.206, 1.545 and 1.863 R⊕ (were 1.260, 1.710, 2.154 at the Earth's
+  density); against their own Table 2 (30 % iron) at 1, 2, 4, 8 Earths within 0.015 R⊕. Outside 1 to 8
+  Earths (the slider runs 0.05 to 10) it is carried on, and the working says so ("10 Earths is beyond
+  that, and carried on"); their table differs from it there by 4 % at 0.125 Earths and 2.7 % at 16.
+  The bridge to Jupiter's size starts where the rock now ends (1.86 R⊕ at 10 Earths), so Neptune's 17
+  Earths come out 2.8 R⊕ (was 3.2; it measures 3.9): a known shortfall of the bridge, left as it was
+  decided. In CREDITS.
+- *Same density's rocky branch, checked.* Same density keeps a world's density, R = R₀ (M/M₀)^⅓, as
+  its name says, and stays so; what was wrong was its words ("grows as a ball of rock would"). Now
+  `ALSO_LEFT_OUT` says a real world does not keep its density (an Earth five times as heavy would grow
+  to 1.54 times its size, not 1.71) and a giant stops growing above about a Jupiter's mass.
+- Checked: unit tests (new: the mark's word at the top of the clear part and left out where nothing
+  fits, `tests/labelsclear.test.ts`; the Moon's two lines and their workings, `tests/worked.test.ts`;
+  Zeng's relation at 1, 2, 5, 10 Earths and against their table, `tests/whatif.test.ts`); `whatif`'s
+  new blocks `escape` (the Moon aimed with its mark of escape at the top of the clear part, under the
+  mark of live physics: the word whole in the clear part, by its mark, clear of the arrow and of
+  "circle"), `warm` (the Moon's line in the real Solar System and the moment live physics starts with
+  the Moon not moved, and its working) and `size` (five Earths, 1.54 times, and the rule in its
+  details), each on a phone upright, on its side and at a desk: 7/7 here. live's `place` check now asks
+  for 1.5x times the Earth's size and R ∝ M^(1/3.7) (it asked for 1.7x and the cube root: the same
+  check of the new rule, not a looser one).
+
 ## Next
 
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,

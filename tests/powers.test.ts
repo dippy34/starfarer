@@ -90,7 +90,7 @@ describe('a size beside the mass', () => {
     expect(sizeFactor(-0.175)).toBeCloseTo(10 ** -0.175, 12);
   });
 
-  it('at the same density the radius goes as the cube root of the mass: five Earths of rock, 1.71 times the Earth', () => {
+  it('at the same density the radius goes as the cube root of the mass: five Earths\' mass kept at the Earth\'s density, 1.71 times the Earth (real rock, squeezed, would be 1.54: WhatIf.madeSize)', () => {
     expect(sameDensity(6371e3, 5) / 6371e3).toBeCloseTo(1.71, 2);
     expect(sameDensity(6371e3, 1000) / 6371e3).toBeCloseTo(10, 12);
     expect(sameDensity(6371e3, 1)).toBe(6371e3);

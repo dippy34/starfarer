@@ -102,8 +102,10 @@ export function sizeSlider(factor: number): number {
 
 /**
  * The radius a body has at the same density with another mass (`factor` times its real mass):
- * R = R₀ (M / M₀)^⅓, as a ball of rock would. (A real giant planet stops growing above about a
- * Jupiter's mass, its insides squeezed by its own weight: said where this simplification is.)
+ * R = R₀ (M / M₀)^⅓, what the explorer's Same density asks for. A real world does not keep its
+ * density: rock is squeezed by its own weight (an Earth five times as heavy, 1.54 times its size
+ * by src/app/WhatIf.ts's ROCK_POWER, not 1.71), and a giant planet stops growing above about a
+ * Jupiter's mass. Said where this simplification is (LivePhysics' ALSO_LEFT_OUT).
  */
 export function sameDensity(radius: number, factor: number): number {
   return radius * Math.cbrt(factor);

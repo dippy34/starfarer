@@ -3158,7 +3158,7 @@ export class App {
     const end = this.aheadEnd, said = end && this.aheadSaid();
     if (end && said) {
       const p = this.project(end);
-      if (p) out.push({ rel: end.clone(), key: 'future-end', text: said.there, x: p.x, y: p.y, radius: 4, priority: 3e4, cls: 'future', over: true, avoid: [...ringStrokes(this.handleNow), ...aimStrokes(this.aimNow, this.view.width)] });
+      if (p) out.push({ rel: end.clone(), key: 'future-end', text: said.there, x: p.x, y: p.y, radius: 4, priority: 3e4, cls: 'future', over: true, avoid: [...ringStrokes(this.handleNow), ...aimStrokes(this.aimNow, this.view.width, this.aimNow ? this.hud.freeArea() : undefined)] });
     }
     return out;
   }
@@ -3491,7 +3491,7 @@ export class App {
     if (!climate || !b.valid) return null;
     const listed = climate.irradiance ?? b.parent?.climate?.irradiance ?? null;
     const sun: Sunlit = !this.physics.on && listed !== null ? { listed }
-      : { suns: this.system.suns.filter((s) => s !== b && s.valid && s.radius > 0 && s.teff > 0).map((s) => ({ name: s.name, lumW: luminosity(s.radius, s.teff).value * L_SUN, dM: s.pos.distanceTo(b.pos) })) };
+      : { suns: this.system.suns.filter((s) => s !== b && s.valid && s.radius > 0 && s.teff > 0).map((s) => ({ name: s.name, lumW: luminosity(s.radius, s.teff).value * L_SUN, dM: s.pos.distanceTo(b.pos) })), mean: listed };
     return temperatureOf({ name: b.name, giant: b.isGasGiant, oceans: b.name === 'Earth' }, climate, sun);
   }
 
