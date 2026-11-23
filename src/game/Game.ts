@@ -84,6 +84,8 @@ export class Game {
       setThrottle: (x) => this.flight.setThrottle(x),
       stop: () => { this.flight.stop(); },
       toggleView: () => this.setMode(this.mode === 'chase' ? 'cockpit' : 'chase'),
+      setSas: (mode) => this.flight.setSas(mode),
+      setRcs: (x, y, z) => this.flight.touchRcs.set(x, y, z),
     });
     this.missions = new Missions(app);
     this.art = new ShipArt(app, this);

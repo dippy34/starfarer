@@ -163,7 +163,7 @@ const TOUCH_HELP: [string, string][] = [
   ['Twist', 'Roll the view'],
   ['Tap', 'Select what you tapped (its name works too)'],
   ['Double-tap', 'Fly there; on the world you are at, come closer'],
-  ['In the ship', 'Drag to turn it (a twist rolls it, a pinch zooms) · the lever is the thrust · Stop brakes to rest · Chase / Cockpit switches the view · tap the instruments for all of them'],
+  ['In the ship', 'Drag to turn it (a twist rolls it, a pinch zooms) · the lever is the thrust · Assist sets what the nose holds to (a list of modes) · RCS opens the side thrusters (held to push) · Stop brakes to rest · Chase / Cockpit switches the view · tap the instruments for all of them'],
 ];
 
 const KEY_HELP: [string, string][] = [
