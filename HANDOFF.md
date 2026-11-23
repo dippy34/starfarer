@@ -1843,6 +1843,24 @@ above is validated against JPL Horizons and stays as it is unless something is w
        before the tone curve along whole rows, the background there is a smooth, steep gradient
        (the star's light, two and a half times across 90 px); the jet's line lies on it and makes
        it look like a step. With the jets switched off the rows are smooth.
+     - *Distances from poor parallaxes* (#44): far off, a parallax is a fraction of a
+       milliarcsecond, about its error, and the distance from it is a guess; the catalogue's card
+       stated it, and the luminosity and size worked out from it, as fact (the Garnet Star, mu Cep,
+       8,402 pc from a Gaia parallax of 0.119 ± 0.264 mas: it is about a tenth as far, and was
+       shown at absolute magnitude -10.4). Each AT-HYG star is now graded by the
+       parallax its distance came from (AT-HYG's `dist_src`; Gaia DR3, or DR2, numbers from the
+       Gaia archive): good (the parallax at least five times its error) 2,507,264; poor 20,860;
+       Hipparcos only, beyond 500 pc, 84; not graded 4,330 (Hipparcos within 500 pc, Gliese, the
+       rest, and 220 the build could not match). No distance is changed. A poor one's card says
+       "distance uncertain (parallax x ± y mas)", its absolute magnitude, luminosity and estimated
+       radius "uncertain: from its distance", and its subtitle "(uncertain)"
+       (`CatalogStar.distanceGrade`, `StarCatalog.distanceGrade`). The grades are Gaia's numbers,
+       so they are kept apart under Gaia's licence in `public/data/stars-quality/` (a file a node,
+       2 bits a star and 4 bytes a poor star: 0.72 MB), fetched when a star is chosen, and not used
+       with `?gaia=0`. Not done: the Hipparcos stars' own parallax errors (VizieR, I/311, refuses
+       this machine, as SIMBAD does); and, a separate decision since it would move stars, Bailer-
+       Jones's geometric distances (Gaia archive, `external.gaiaedr3_distance`) as a better
+       estimate for the poor ones. `tests/distancegrade.test.ts`; `scripts/interact.mjs`.
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its

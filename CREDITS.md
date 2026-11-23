@@ -11,10 +11,12 @@ No SpaceEngine files, textures or data are used.
 | **AT-HYG v4.0** (Augmented Tycho-HYG), David Nash / astronexus — <https://codeberg.org/astronexus/athyg> | 2,532,538 stars: positions, distances (mostly Gaia DR3), magnitudes, colours, IDs, IAU names | **CC BY-SA 4.0** | `public/data/stars/` |
 | **HYG v4.4**, David Nash / astronexus — <https://codeberg.org/astronexus/hyg> | Hipparcos-based V magnitudes and B−V for AT-HYG stars whose Tycho photometry saturates | **CC BY-SA 4.0** | merged into `public/data/stars/` |
 | **Gaia DR3**, ESA/Gaia/DPAC — queried via the ESA Gaia Archive TAP service <https://gea.esac.esa.int/tap-server/tap> | 218,626 additional stars within 100 pc (parallax > 10 mas, parallax/error > 10, RUWE < 1.4) not in AT-HYG | **CC BY-NC 3.0 IGO** (non-commercial) — <https://www.cosmos.esa.int/web/gaia-users/license> | `public/data/stars-gaia/` (kept separate; disable with `?gaia=0`) |
+| **Gaia DR3 and DR2 parallaxes**, ESA/Gaia/DPAC — the ESA Gaia Archive TAP service (`gaiadr3.gaia_source`; for AT-HYG's DR2 distances `gaiadr2.gaia_source` through `gaiadr3.dr2_neighbourhood`), joined on the Gaia source ids AT-HYG gives; which parallax each distance came from: AT-HYG's `dist_src` | how far each AT-HYG star's distance can be trusted: its parallax over its error (good at 5 or more), and for the 20,860 poor ones the parallax and its error, shown on the star's card (`pipeline/fetch_distance_parallaxes.py`, `pipeline/build_distance_quality.py`) | **CC BY-NC 3.0 IGO** (non-commercial) | `public/data/stars-quality/` (kept separate; not used with `?gaia=0`) |
 
 The derived star tiles in `public/data/stars/` are an adaptation of AT-HYG/HYG and are shared under
-CC BY-SA 4.0. The tiles in `public/data/stars-gaia/` are an adaptation of Gaia DR3 and may only be
-used non-commercially.
+CC BY-SA 4.0. The tiles in `public/data/stars-gaia/` and the distance grades in
+`public/data/stars-quality/` are adaptations of Gaia DR3 (and DR2) and may only be used
+non-commercially.
 
 Required Gaia acknowledgement: *This work has made use of data from the European Space Agency (ESA)
 mission Gaia (https://www.cosmos.esa.int/gaia), processed by the Gaia Data Processing and Analysis

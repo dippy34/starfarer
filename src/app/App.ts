@@ -362,7 +362,11 @@ export class App {
     const stars = progress.run('stars', Promise.all([
       StarCatalog.load('athyg', `${DATA}/stars`),
       useGaia ? StarCatalog.load('gaia', `${DATA}/stars-gaia`) : Promise.resolve(null),
-    ]), ([a, g]) => count(a.totalStars + (g?.totalStars ?? 0), 'star'));
+    ]).then(([a, g]) => {
+      // (how far each star's distance can be trusted: Gaia's parallaxes, so only with Gaia's data)
+      if (useGaia) a.qualityBase = `${DATA}/stars-quality`;
+      return [a, g] as const;
+    }), ([a, g]) => count(a.totalStars + (g?.totalStars ?? 0), 'star'));
     const names = progress.run('named', NamedStars.load(`${DATA}/stars`), (n) => n.list.length.toLocaleString('en-US'));
     const exo = progress.run('exo', without('exoplanets', systems.load(DATA), undefined),
       () => (systems.loaded ? `${count(systems.planetCount, 'planet')} of ${count(systems.count, 'star')}` : 'not available'));
@@ -1061,7 +1065,7 @@ export class App {
     if (obj !== this.mover.body) this.mover.stop();
     this.selection = obj;
     this.orbits.selected = obj instanceof Body ? obj : null;
-    if (obj instanceof CatalogStar) obj.resolve(this.named, () => undefined);
+    if (obj instanceof CatalogStar) { obj.resolve(this.named, () => undefined); obj.gradeDistance(() => undefined); }
   }
 
   // ------------------------------------------------------------------ what if (src/app/WhatIf.ts)

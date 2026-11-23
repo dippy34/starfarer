@@ -4,7 +4,7 @@ import { UPos } from '../core/upos';
 import { LY, PC, SUN_ABS_MAG, SUN_RADIUS } from '../core/units';
 import type { SpaceObject } from './Body';
 import { estimateStarRadius, measuredStar, type MeasuredStar } from './StarRadii';
-import type { StarRef } from './StarCatalog';
+import type { DistanceGrade, StarRef } from './StarCatalog';
 import { shapeFlattening, starShape, type StarShape } from './StarShapes';
 
 /** Notable stars (proper names, Bayer/Flamsteed, HR, Gliese) used for labels, search and the info panel. */
@@ -64,6 +64,9 @@ export class CatalogStar implements SpaceObject {
   designations: string[];
   /** filled asynchronously for stars without a classical designation */
   private resolving = false;
+  /** how far its distance can be trusted (StarCatalog.distanceGrade), once asked for (gradeDistance) */
+  distanceGrade: DistanceGrade | null = null;
+  private grading = false;
 
   constructor(
     readonly key: string,
@@ -117,21 +120,44 @@ export class CatalogStar implements SpaceObject {
     }).catch(() => { this.resolving = false; }); // (asked again the next time it is chosen)
   }
 
+  /** Ask the catalogue how good its distance is (once; `onDone` when it is known). */
+  gradeDistance(onDone: () => void): void {
+    if (!this.ref || this.grading || this.distanceGrade) return;
+    this.grading = true;
+    this.ref.catalog.distanceGrade(this.ref).then((g) => {
+      this.grading = false;
+      if (!g) return;
+      this.distanceGrade = g;
+      onDone();
+    }).catch(() => { this.grading = false; });
+  }
+
+  /** its distance is a poor parallax's, or Hipparcos's alone from far off: what follows from it is not known */
+  get distanceUncertain(): boolean {
+    return this.distanceGrade?.grade === 'poor' || this.distanceGrade?.grade === 'hipFar';
+  }
+
   info(): [string, string][] {
     const rows: [string, string][] = [['Type', 'Star']];
+    const unsure = this.distanceUncertain;
+    // (what is worked out from its distance is said to be as uncertain as the distance is)
+    const fromDistance = unsure ? ' (uncertain: from its distance)' : '';
     if (this.spect) rows.push(['Spectral type', this.spect]);
     rows.push(['Temperature', `${Math.round(this.teff).toLocaleString()} K${this.measured?.teff ? ` (measured: ${this.measured.source})` : ''}`]);
-    rows.push(['Absolute mag (V)', this.absMag.toFixed(2)]);
-    rows.push(['Luminosity (V)', `${Math.pow(10, -0.4 * (this.absMag - SUN_ABS_MAG)).toPrecision(3)} L☉`]);
+    rows.push(['Absolute mag (V)', `${this.absMag.toFixed(2)}${fromDistance}`]);
+    rows.push(['Luminosity (V)', `${Math.pow(10, -0.4 * (this.absMag - SUN_ABS_MAG)).toPrecision(3)} L☉${fromDistance}`]);
     const shape = this.shape;
     if (shape) {
       const tilt = (shape.incl * 180) / Math.PI;
       rows.push(['Radius', `${(shape.rEq / SUN_RADIUS).toPrecision(3)} R☉ across the equator, ${(shape.rPol / SUN_RADIUS).toPrecision(3)} R☉ at the poles (measured)`]);
       rows.push(['Shape', `Flattened ${Math.round(100 * shapeFlattening(shape))} % by its spin; from the Sun it is seen ${
         tilt < 25 ? 'nearly pole-on' : tilt > 75 ? 'nearly equator-on' : `${Math.round(tilt)}° from pole-on`} (${shape.source})`]);
-    } else rows.push(['Radius', `${(this.radius / SUN_RADIUS).toPrecision(3)} R☉ ${this.measured ? `(measured: ${this.measured.source})` : '(estimated)'}`]);
+    } else rows.push(['Radius', `${(this.radius / SUN_RADIUS).toPrecision(3)} R☉ ${this.measured ? `(measured: ${this.measured.source})` : unsure ? '(estimated from its brightness and an uncertain distance)' : '(estimated)'}`]);
     const d = this.posPc.length();
-    rows.push(['Distance from Sun', `${d.toPrecision(4)} pc (${((d * PC) / LY).toPrecision(4)} ly)`]);
+    const g = this.distanceGrade;
+    const how = g?.grade === 'poor' ? ` — distance uncertain (parallax ${g.parallaxMas.toFixed(3)} ± ${g.errorMas.toFixed(3)} mas)`
+      : g?.grade === 'hipFar' ? ' — distance uncertain (from Hipparcos alone, this far off)' : '';
+    rows.push(['Distance from Sun', `${d.toPrecision(4)} pc (${((d * PC) / LY).toPrecision(4)} ly)${how}`]);
     rows.push(['RA / Dec (from Sun)', formatRaDec(this.posPc)]);
     if (this.designations.length > 1) rows.push(['Designations', this.designations.slice(1, 6).join(', ')]);
     if (this.ref) rows.push(['Catalogue', `${this.ref.catalog.source.split(' (')[0]} — ${this.ref.catalog.license}`]);
