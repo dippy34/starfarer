@@ -372,6 +372,15 @@ for (const kind of kinds) {
       await until(page, () => window.app.watch.state !== 'watching', null, 240);
       end = await watching(page);
     } else {
+      // (Stop is pressed on a watch that is on, and the watch is held on until it is: it counts its fifteen seconds in
+      // frames of a second at most and the camera eases in steps of a tenth, so at a frame a second the watch is over
+      // after fifteen frames, before the camera has finished easing out, and a Stop pressed through the interface's
+      // own checks of the button ("element is not visible") is no longer there: the suite ended there at
+      // SLOW_FRAME_MS=1000, as it did on a loaded machine. The watch's own end is what the phone's run checks. If it
+      // is over already, Replay, which is checked next, starts it again.)
+      const hold = () => page.evaluate(() => { const w = window.app.watch; if (w.state !== 'watching') return false; w.left = 1e6; return true; });
+      let held = await hold();
+      for (let k = 0; !held && k < 5; k++) { await press(page, '#hud .hud-watch .watch-replay'); held = await hold(); }
       await press(page, '#hud .hud-watch .watch-stop');
       await frames(page, 2);
       end = await watching(page);
