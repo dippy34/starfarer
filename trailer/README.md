@@ -207,12 +207,41 @@ touch phone to the app (`isMobile`, `hasTouch`), so it gets what a phone gets: t
 3. Put it in `CUTS` in `timeline.py` on the grid (and a text card in `TEXT` if it needs one),
    capture it alone with `--only`, re-render the score if the length changed, and edit again.
 
+## Redo one shot
+
+When one shot has to be filmed again after the rest is made (the app's words changed under it),
+film it alone (`--only throw`), render only its stretch of the cut without sound, and splice it
+into the finished video without re-encoding the rest, if the cuts around it are hard cuts that
+the encoder made keyframes of (`ffprobe -show_entries packet=pts_time,flags` lists them):
+
+```bash
+python3 trailer/edit.py $OUT/frames none seg.mp4 --size 1080x1920 --from 19.5 --to 26.26666
+# (--to is the first frame of the next shot: 26.2667 s is frame 788; the stretch is frames 585 to 787)
+ffmpeg -i old.mp4 -an -c copy -frames:v 585 a.mp4          # the frames before the stretch
+ffmpeg -ss 26.2667 -i old.mp4 -an -c copy b.mp4            # from the keyframe that opens the next shot
+printf "file 'a.mp4'\nfile 'seg.mp4'\nfile 'b.mp4'\n" > list.txt
+ffmpeg -f concat -safe 0 -i list.txt -an -c copy video.mp4
+ffmpeg -i video.mp4 -i old.mp4 -map 0:v -map 1:a -c copy -movflags +faststart new.mp4
+```
+
+(`-ss` must be at the keyframe's time or after it, not before: before, it opens on the keyframe
+before and the video gets that stretch twice.) Check it by decoding both videos and comparing the
+frames: all but the redone stretch should be identical. The file's video stream then ends a frame
+short in its header (53.967 s against 54.000 s of sound); the frame count is 1620 as before.
+
 ## As made
 
 Version 4 was filmed from commit 35fc045 (god mode with Throw, Add's planet, impacts you can see and
 the future drawn; the Milky Way's glow, Cygnus X-1's exposure and the ship's mask fixed since v3),
 production build, quality level 0, lean (phone) content. Every shot was filmed afresh; nothing is
 kept from version 3's frames.
+
+The Moon throw (the one shot that shows the card's words about where the path ends) was filmed
+again from 0fce693 (god mode part 4: "in 1.6 days it is the Sun's" placed off the arrow's line,
+the Moon's temperature under the card's buttons, a taller card), production build; every other
+shot is from 35fc045 (their frames were looked at against 0fce693's changes and show nothing
+it changed). The finished video had the new throw spliced
+in: see "Redo one shot" above.
 
 Changed from version 3: Titan, Cygnus X-1, both second-sun shots and Jupiter twenty times
 heavier are out; the Moon thrown, a world added and Mars thrown at the Earth
