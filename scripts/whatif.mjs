@@ -80,13 +80,18 @@ for (const kind of ['phone', 'desk']) {
   await frames(page, 2);
   c = await card(page);
   check(on('what can be added to a planet is a moon'), c.offers.join() === 'A moon', c.offers.join(', '));
-  const before = await page.evaluate(() => ({ bodies: window.app.system.bodies.length, moons: window.app.findByName('Earth').children.length, live: window.app.physics.on }));
+  // (where the eye is as Add is tapped: the new moon starts between it and the Earth; the camera may then ease out, to
+  // show the new moon clear of the card while it is put in place)
+  const before = await page.evaluate(() => {
+    const a = window.app, earth = a.findByName('Earth');
+    return { bodies: a.system.bodies.length, moons: earth.children.length, live: a.physics.on, eye: a.rig.upos.sub(earth.upos, new (a.rig.ray(0, 0).constructor)()).toArray() };
+  });
   await press(page, '#hud .card [data-act="add-moon"]');
   await frames(page, 6);
-  const made = await page.evaluate(() => {
+  const made = await page.evaluate((eyeThen) => {
     const a = window.app, m = a.selection, earth = a.findByName('Earth');
     const V = a.rig.ray(0, 0).constructor;
-    const rel = m.pos.clone().sub(earth.pos), eye = a.rig.upos.sub(earth.upos, new V());
+    const rel = m.pos.clone().sub(earth.pos), eye = new V(...eyeThen);
     const v = a.bodies.views.get(m);
     const p = a.project(m.upos.sub(a.rig.upos, new V()));
     return {
@@ -96,7 +101,7 @@ for (const kind of ['phone', 'desk']) {
       speed: m.vel.clone().sub(earth.vel).length(), circular: Math.sqrt((earth.gm + m.gm) / rel.length()),
       px: v?.pixelRadius ?? 0, resolved: !!v?.resolved, at: p, size: [innerWidth, innerHeight], radius: m.radius / earth.radius,
     };
-  });
+  }, before.eye);
   c = await card(page);
   check(on('taking the offer makes one: it is a body of the system, and selected'), made.bodies === before.bodies + 1 && made.moons === before.moons + 1 && made.made === 1 && made.name === "Earth's new moon" && c.title === made.name,
     `${made.name}; ${made.bodies} bodies (${before.bodies} before); the card: ${c.title}`);
