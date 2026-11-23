@@ -199,6 +199,22 @@ async function foresee(page, name, kind) {
   return said;
 }
 
+/**
+ * A scene's link (the part after the '#') with its changed universe damaged where only the catalogue can tell: its first
+ * simulated body (the Sun, 10) renumbered 11, a number the catalogue has not got. (The bytes: the form, then the
+ * simulation's next number, its steps and its count of bodies, then the first body's number: SceneWorld.ts.)
+ */
+function damage(fragment) {
+  const m = /&w=([A-Za-z0-9_-]+)$/.exec(fragment);
+  const b = Buffer.from(m[1], 'base64url');
+  let i = 1;
+  const skip = () => { while (b[i] & 128) i++; i++; };
+  skip(); skip(); skip();
+  if (b[i] !== 10) throw new Error('the first simulated body is not the Sun');
+  b[i] = 11;
+  return fragment.replace(m[1], b.toString('base64url'));
+}
+
 const only = process.env.SHARE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 const kinds = (process.env.SHARE_KINDS ?? 'phone,side,desk').split(',');
@@ -398,6 +414,8 @@ for (const kind of kinds) {
     const back = await liveState(page);
     check(on('a save opens again after the page is closed: the changed universe as it was, to the last bit, and a note'),
       back.on && back.ids.join() === sent.ids.join() && back.pos.every((x, i) => x === sent.pos[i]) && back.jd === sent.jd && /^A saved scene: Jupiter, /.test(await note(page)), `"${await note(page)}"`);
+    // (the save as it is kept, for the damaged one below)
+    const kept = await page.evaluate(() => { const [s] = JSON.parse(localStorage.getItem('starfarer-saves')); return localStorage.getItem(`starfarer-save-${s.id}`); });
     // deleted: one tap asks, a second deletes
     await press(page, '#hud .hud-tabs [data-tab="more"]');
     await press(page, '#hud .more .saves [data-save-delete]');
@@ -405,6 +423,33 @@ for (const kind of kinds) {
     await press(page, '#hud .more .saves [data-save-delete]');
     const left = await page.evaluate(() => document.querySelectorAll('#hud .more .saves .save-row').length);
     check(on('a save is deleted with two taps (the first asks)'), asked === 'Delete?' && left === 0, `"${asked}", ${left} left`);
+    // a damaged save (its first body one the catalogue has not got) opened in this changed universe: refused, plainly, and
+    // the changed universe here stays as it was, its prediction too; then the same as a link come in while the app is open
+    {
+      const bad = damage(kept);
+      await page.evaluate((frag) => {
+        localStorage.setItem('starfarer-save-damaged1', frag);
+        localStorage.setItem('starfarer-saves', JSON.stringify([{ id: 'damaged1', name: 'A damaged scene', saved: new Date().toISOString(), live: true }]));
+        window.app.showSaves();
+      }, bad);
+      await page.evaluate(() => { const a = window.app, e = a.findByName('Europa'); a.placeNear(e, 9 * e.radius * a.rig.framing, 35, 12); });
+      const was = await liveState(page), wasAhead = await foresee(page, 'Europa', kind);
+      await press(page, '#hud .hud-tabs [data-tab="more"]');
+      await press(page, '#hud .more .saves [data-save-open]');
+      await frames(page, 5);
+      const said = await note(page), now = await liveState(page), nowAhead = await foresee(page, 'Europa', kind);
+      const same = (x) => x.on && x.ids.join() === was.ids.join() && x.pos.every((v, i) => v === was.pos[i]) && x.vel.every((v, i) => v === was.vel[i]) && x.jd === was.jd && JSON.stringify(x.log) === JSON.stringify(was.log);
+      check(on('a damaged save opened in a changed universe is refused, plainly, and the changed universe here stays as it was, its prediction too'),
+        /^This saved scene could not be opened: its simulation has a body that is not here\. Here is Starfarer as it was\.$/.test(said) && same(now) && !!wasAhead && wasAhead === nowAhead, `"${said}"; "${wasAhead}" / "${nowAhead}"`);
+      await page.evaluate((frag) => { location.hash = frag.replace(/^#?/, ''); }, bad);
+      await page.waitForFunction(() => !location.hash, null, { timeout: 60000 }).catch(() => undefined);
+      await frames(page, 5);
+      const said2 = await note(page), now2 = await liveState(page);
+      check(on('the same, as a link come in while the app is open: refused, plainly, and the changed universe here as it was'),
+        /^This link could not be opened: its simulation has a body that is not here\. Here is Starfarer as usual\.$/.test(said2) && same(now2), `"${said2}"`);
+      await page.evaluate(() => { localStorage.removeItem('starfarer-save-damaged1'); localStorage.setItem('starfarer-saves', '[]'); window.app.showSaves(); });
+      if (!(await shown(page, '#hud .sheet.more.on'))) await press(page, '#hud .hud-tabs [data-tab="more"]');
+    }
     // the browser's storage full: saying so, nothing lost
     // (filled to the last few characters: large pieces while they go in, then ever smaller ones)
     await page.evaluate(() => { let i = 0; for (let size = 1 << 18; size >= 1; size >>= 1) { try { for (;;) localStorage.setItem(`filler-${i++}`, 'x'.repeat(size)); } catch { /* full at this size */ } } });
