@@ -229,6 +229,13 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     const a = window.app, s = a.findByName(name);
     a.select(s);
     for (let i = 0; i < 100 && !s.distanceGrade; i++) await new Promise((r) => setTimeout(r, 100));
+    // (the card drawn for this star before its details are opened: the first frame that draws a new selection
+    // closes them, and closed they are not refreshed. On GitHub's runners the click came first, and the rows
+    // read were the star's before.) A frame drawn by hand: the app's own loop may be held by an earlier check.
+    for (let i = 0; i < 300 && document.querySelector('.card h2')?.textContent !== s.name; i++) {
+      a.frame();
+      await new Promise((r) => setTimeout(r, 100));
+    }
     const det = document.querySelector('.card [data-details]');
     if (det.getAttribute('aria-expanded') !== 'true') det.click();
     // (the card as the app has drawn it for this star: its title, and its distance as the star itself states it;
