@@ -187,6 +187,14 @@ export class PlanetTerrain {
   vr = false;
   /** counts changes of the drawn ground near the explorer: things placed on it re-place themselves */
   serial = 0;
+  /**
+   * A place on the current world (a body-fixed unit direction) whose ground is watched: what the ground there gains or
+   * loses as tiles come in, morph and are replaced is summed for `takeRefinement`, never what it gains by the watcher
+   * having moved (the ship's, GroundRide.ts: it is set where the ship is, and the terrain is updated, and tiles
+   * come in, before it moves again). Null: nothing watched.
+   */
+  watch: Vector3 | null = null;
+  private refined = 0;
   /** the Solar System's heights (render/Bodies.ts terrainSource), for building tiles in workers */
   source: TerrainSource | null = null;
   /** the view (App.view): direction and pixel size, for refinement */
@@ -350,8 +358,33 @@ export class PlanetTerrain {
 
   // ------------------------------------------------------------------------------ per frame
 
+  /** The ground radius at the watched place now, or NaN (nothing watched, no terrain). */
+  private watched(): number {
+    if (!this.watch || !this.current || !this.world) return NaN;
+    const r = this.groundRadius(this.watch);
+    return r > 0 ? r : NaN;
+  }
+
+  /** What the ground at the watched place changed by since the last call (m, positive: it rose), from the tiles alone. */
+  takeRefinement(): number {
+    const r = this.refined;
+    this.refined = 0;
+    return r;
+  }
+
+  /** `from` and `to`: the watched ground before and after something that may have refined it; the same world throughout */
+  private refine(from: number, to: number, world: World | null, ground: Ground | null): void {
+    if (Number.isFinite(from) && Number.isFinite(to) && world === this.world && ground === (this.current?.ground ?? null)) this.refined += to - from;
+  }
+
   /** Per frame, with the nearest world that could have terrain (or null). */
   update(c: TerrainCandidate | null): void {
+    const before = this.watched(), world = this.world, ground = this.current?.ground ?? null;
+    this.updateTiles(c);
+    this.refine(before, this.watched(), world, ground);
+  }
+
+  private updateTiles(c: TerrainCandidate | null): void {
     const now = performance.now();
     const dt = Math.min(0.25, (now - this.lastT) / 1000);
     this.lastT = now;
@@ -764,7 +797,13 @@ export class PlanetTerrain {
     if (n.job !== msg.job) return;
     n.job = 0;
     if (!msg.data || j.world !== this.world) return;
-    this.accept(j.world, n, msg.data);
+    const before = this.watched(), world = this.world, ground = this.current?.ground ?? null;
+    this.take(j, n, msg);
+    this.refine(before, this.watched(), world, ground);
+  }
+
+  private take(j: { node: Node; world: World }, n: Node, msg: { data: TileData | null; chain?: { level: number; x: number; y: number; data: TileData }[] }): void {
+    this.accept(j.world, n, msg.data!);
     // the column below it, built in the same job
     // (entries come level by level, the four children of one tile each; descend into the parent's
     // child that has the next level's tiles)
