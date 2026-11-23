@@ -796,7 +796,9 @@ if (part !== 'desk') { // (FLIGHT_ONLY: phone, 13-18; not indented, to keep the 
         // (against the ground: what the drive's push gives in the time aboard since the autopilot began, and a little)
         w.over = Math.max(w.over, r.surfSpeed - (fl.ship.driveAccel * (fl.ship.shipTime - w.t0) + 5));
         w.temp = Math.max(w.temp, r.hullTemp);
-        if (/climbing/.test(r.apState) && !w.glance) w.glance = document.querySelector('.fl-glance').textContent.replace(/\s+/g, ' ');
+        // (the instruments' words are looked at all the way up until they say so: read at the first frame of the climb they still
+        // said "Autopilot: turning" once on a runner, 1 m up, run 45252506409; the check is that they say it while it climbs)
+        if (/climbing/.test(r.apState) && !/Autopilot: climbing/.test(w.glance)) w.glance = document.querySelector('.fl-glance').textContent.replace(/\s+/g, ' ');
         w.prev = fl.ship.upos.clone();
       } else w.prev = null;
       requestAnimationFrame(tick);
