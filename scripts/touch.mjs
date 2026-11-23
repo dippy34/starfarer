@@ -561,6 +561,217 @@ const centreOf = async (page, sel) => {
   await ctx.close();
 }
 
+// ---------------------------------------------------------------- 15. flying freely by touch
+// (on a keyboard W A S D R F, Shift for ten times; speed in proportion to the height): More's "Fly freely"
+// brings a stick under the left thumb, Up and Down, and Done; one finger looks around meanwhile; tap,
+// double-tap and pinch are as they were; Done puts everything back. Upright and on its side.
+const W_ = (l) => (l ? 844 : 390), H_ = (l) => (l ? 390 : 844);
+for (const landscape of [false, true]) {
+  const ctx = await phoneContext(browser, { landscape });
+  const page = await open(ctx, '?menu=0&time=2026-10-01T20:00:00Z');
+  await ready(page);
+  const f = await fingers(page);
+  const tag = landscape ? 'on its side' : 'upright';
+  const side = landscape ? 'side' : 'up';
+  if (await page.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await centreOf(page, '.hud-coach [data-coach]'));
+  await f.frames(3);
+  const free = () => page.evaluate(() => {
+    const a = window.app, r = a.rig, pad = document.querySelector('.free-pad');
+    const box = (e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height }; };
+    const shown = !!pad && !pad.hidden && getComputedStyle(pad).display !== 'none' && pad.getBoundingClientRect().width > 0;
+    return {
+      shown, active: !!a.free?.active, drag: r.touchDrag, attr: document.getElementById('hud').hasAttribute('data-free'),
+      stick: shown ? box(pad.querySelector('.free-stick')) : null,
+      buttons: shown ? [...pad.querySelectorAll('button')].map((b) => ({ what: b.className, ...box(b) })) : [],
+      W: innerWidth, H: innerHeight,
+    };
+  });
+  // the switch in More: touch only, off to begin with; touching it shuts the sheet and brings the controls
+  await f.tap(await centreOf(page, '.hud-tabs [data-tab="more"]'));
+  await f.frames(3);
+  await page.evaluate(() => document.querySelector('.switch[data-act="free"]')?.scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(300);
+  let st = await page.evaluate(() => { const b = document.querySelector('.switch[data-act="free"]'); return b ? { text: b.textContent.trim(), on: b.getAttribute('aria-checked'), seen: b.getBoundingClientRect().height > 0 } : null; });
+  check(`${tag}: More has a "Fly freely" switch, off to begin with`, !!st && /^Fly freely/.test(st.text) && st.on === 'false' && st.seen, JSON.stringify(st));
+  check(`${tag}: nothing of free flight is over the view before it is switched on`, !(await free()).shown, '');
+  if (!st) { await ctx.close(); continue; } // (an app without the switch fails above, once)
+  await f.tap(await centreOf(page, '.switch[data-act="free"]'));
+  await f.frames(4);
+  let fr = await free();
+  check(`${tag}: the switch shuts the sheet and brings a stick, Up, Down and Done, all on the screen and finger-sized; one finger now looks`,
+    fr.shown && fr.active && fr.attr && fr.drag === 'look' && ['card', undefined].includes(await page.evaluate(() => document.getElementById('hud').dataset.sheet))
+    && fr.stick.w >= 100 && fr.stick.l >= 0 && fr.stick.r <= fr.W && fr.stick.b <= fr.H
+    && fr.buttons.length === 3 && fr.buttons.every((b) => b.w >= 44 && b.h >= 44 && b.l >= 0 && b.r <= fr.W && b.b <= fr.H && b.t >= 0), JSON.stringify(fr));
+  // (in More the switch now says on)
+  await f.tap(await centreOf(page, '.hud-tabs [data-tab="more"]'));
+  await f.frames(3);
+  const swOn = await page.evaluate(() => { const s = document.querySelector('.switch[data-act="free"]'); return s.getAttribute('aria-checked'); });
+  const during = (await free()).shown;
+  await f.tap(await centreOf(page, '.hud-tabs [data-tab="more"]'));
+  await f.frames(3);
+  check(`${tag}: More shows it on, and with that sheet open the stick is put away`, swOn === 'true' && !during, JSON.stringify({ swOn, during }));
+  // the pad lies on nothing of the interface
+  st = await page.evaluate(() => {
+    const box = (e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
+    const mine = [...document.querySelectorAll('.free-stick, .free-buttons button')].map((e) => ({ what: e.className, ...box(e) }));
+    const theirs = [...document.querySelectorAll('#hud .hud-top .chip, #hud .hud-tabs, #hud .hud-slot > .on, #hud .hud-fabs > *')].filter((e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden').map((e) => ({ what: e.className.slice(0, 30), ...box(e) }));
+    const meet = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    return { hits: mine.flatMap((m) => theirs.filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`)), n: mine.length, theirs: theirs.length };
+  });
+  await f.frames(2);
+  check(`${tag}: the stick and buttons lie on no chip, tab, card or round button`, st.hits.length === 0 && st.n === 4, JSON.stringify(st));
+  await page.screenshot({ path: path.join(outDir, `touch-15-free-${side}.png`), timeout: 300000 });
+
+  // the stick moves the camera as the keys do: forward, in proportion to the height, ten times at the rim
+  const stickAt = async (dx, dy) => { const s = (await free()).stick; return { c: { x: (s.l + s.r) / 2, y: (s.t + s.b) / 2 }, R: s.w / 2, p: { x: (s.l + s.r) / 2 + dx, y: (s.t + s.b) / 2 + dy } }; };
+  const motion = async () => page.evaluate(() => {
+    const r = window.app.rig, v = r.vel.clone(), m = v.length() || 1, ray = (u) => u.x * v.x / m + u.y * v.y / m + u.z * v.z / m;
+    const fwd = r.forward(), up = r.up(), right = r.right();
+    return { ratio: r.speed / r.altitude, fwd: ray(fwd), up: ray(up), right: ray(right), alt: r.altitude };
+  });
+  const hold = async (dx, dy, frames = 8) => {
+    await page.evaluate(() => window.app.rig.stop());
+    await f.frames(1);
+    const s = await stickAt(0, 0);
+    await f.press(s.c);
+    await f.slide({ x: s.c.x + dx * s.R, y: s.c.y + dy * s.R });
+    await f.frames(frames);
+    const m = await motion();
+    await f.lift();
+    await f.frames(3);
+    return m;
+  };
+  const half = await hold(0, -0.5);
+  check(`${tag}: pushing the stick up flies the camera forward, at about 0.8 of the height a second (as W does), in proportion to the push`, half.fwd > 0.98 && half.ratio > 0.5 * 0.8 * 0.45 && half.ratio < 1.4 * 0.8 * 0.5, JSON.stringify(half));
+  const rim = await hold(0, -1);
+  const near = await hold(0, -0.88);
+  check(`${tag}: all the way is ten times faster (Shift), just short of it is not`, rim.fwd > 0.98 && near.fwd > 0.98 && rim.ratio / near.ratio > 8 && rim.ratio / near.ratio < 14, `rim ${rim.ratio.toFixed(2)} /s, just short ${near.ratio.toFixed(2)} /s`);
+  // (twice as far out: the same push, the same share of the height, so twice the speed)
+  const left = await hold(-0.6, 0);
+  const back = await hold(0, 0.6);
+  check(`${tag}: left flies left of where the camera looks, down on the stick flies back`, left.right < -0.98 && back.fwd < -0.98, JSON.stringify({ left: left.right, back: back.fwd }));
+  // up and down
+  const heldUp = async (cls) => { await page.evaluate(() => window.app.rig.stop()); await f.frames(1); await f.press(await centreOf(page, cls)); await f.frames(8); const m = await motion(); await f.lift(); await f.frames(3); return m; };
+  const up = await heldUp('.free-up');
+  const down = await heldUp('.free-down');
+  check(`${tag}: Up flies along the camera's up, Down against it`, up.up > 0.98 && down.up < -0.98 && up.ratio > 0.4, JSON.stringify({ up: up.up, down: down.up, ratio: up.ratio }));
+  // the same push twice as far out goes twice as fast (speed scales with the height, as with the keys)
+  await page.evaluate(() => { const a = window.app, e = a.findByName('Earth'); a.placeNear(e, e.radius * 60, 40, 10); });
+  await f.frames(6);
+  const far = await hold(0, -0.5);
+  check(`${tag}: the speed goes with the height: out at 60 radii the same push covers a far greater distance a second`, far.ratio > 0.5 * half.ratio && far.ratio < 1.6 * half.ratio && far.alt > 10 * half.alt, JSON.stringify({ near: half.alt, far: far.alt, nearRatio: half.ratio, farRatio: far.ratio }));
+  await page.evaluate(() => { const a = window.app; a.rig.stop(); a.act('home'); });
+  await f.frames(6);
+
+  // one finger drags the view: it looks (the camera does not move), nothing is taken for a tap
+  await page.evaluate(() => { const a = window.app, e = a.findByName('Earth'); a.placeNear(e, e.radius * 3.4, 40, 10); a.select(null); a.rig.stop(); });
+  await f.frames(8);
+  const s0 = await state(page);
+  await f.drag({ x: W_(landscape) / 2 - 40, y: H_(landscape) / 2 - 80 }, { x: W_(landscape) / 2 + 60, y: H_(landscape) / 2 - 60 });
+  const s1 = await state(page);
+  const turned = Math.acos(Math.min(1, s0.forward[0] * s1.forward[0] + s0.forward[1] * s1.forward[1] + s0.forward[2] * s1.forward[2]));
+  check(`${tag}: one finger dragged on the view looks around, the camera standing still`, turned > 0.05 && dist(s0.cam, s1.cam) < 1e-3 && s1.selection === null, `turned ${(turned * 57.3).toFixed(1)} deg, moved ${dist(s0.cam, s1.cam).toExponential(1)} m`);
+  // tap to pick, pinch to zoom, double-tap to fly: as they were
+  await page.evaluate(() => window.app.act('home'));
+  await f.frames(6);
+  const earth = await page.evaluate(() => window.probe.at('Earth'));
+  await f.tap({ x: earth.x, y: earth.y });
+  await f.frames(4);
+  const picked = await page.evaluate(() => window.app.selection?.name ?? null);
+  check(`${tag}: a tap on the Earth still selects it`, picked === 'Earth', String(picked));
+  const h0 = await page.evaluate(() => window.probe.from('Earth').height);
+  await f.pinch(earth, 120, 240);
+  const h1 = await page.evaluate(() => window.probe.from('Earth').height);
+  check(`${tag}: spreading two fingers still zooms in`, h1 / h0 > 0.4 && h1 / h0 < 0.7, `height x${(h1 / h0).toFixed(3)}`);
+  // (a double-tap on the world you are at comes six times closer to the spot, as without free flight)
+  await page.evaluate(() => { const a = window.app; a.rig.cancelGoto(); a.act('home'); });
+  await f.frames(6);
+  const far0 = await page.evaluate(() => window.probe.from('Earth'));
+  const spot = { x: W_(landscape) / 2 + 30, y: H_(landscape) / 2 };
+  f.wait(1);
+  await f.doubleTap(spot);
+  // (until the glide has ended, not for a fixed time: a runner's frames are slow)
+  await f.frames(2);
+  await settle(page);
+  await f.frames(3);
+  const near0 = await page.evaluate(() => ({ from: window.probe.from('Earth'), flying: window.app.rig.autopilot, still: window.app.free.active }));
+  check(`${tag}: a double-tap on the world you are at still comes six times closer, and free flight stays on`, near0.still && !near0.flying && Math.abs(far0.height / near0.from.height - 6) < 0.3, JSON.stringify({ ratio: far0.height / near0.from.height, still: near0.still }));
+  await page.evaluate(() => window.app.rig.cancelGoto());
+  await f.frames(3);
+
+  // a sheet puts the stick away; closing it brings it back
+  await f.tap(await centreOf(page, '.hud-tabs [data-tab="time"]'));
+  await f.frames(4);
+  const hidden = !(await free()).shown;
+  await f.tap(await centreOf(page, '.hud-tabs [data-tab="time"]'));
+  await f.frames(4);
+  fr = await free();
+  check(`${tag}: a sheet (Time) puts the controls away while it is open, and they come back`, hidden && fr.shown, JSON.stringify({ hidden, back: fr.shown }));
+
+  // the ship has its own controls: boarding it puts free flight away, and the switch is refused there
+  await page.evaluate(() => window.app.game.setMode('chase'));
+  await f.frames(5);
+  fr = await free();
+  await page.evaluate(() => window.app.act('free'));
+  await f.frames(2);
+  const refused = await page.evaluate(() => ({ active: window.app.free.active, toast: document.querySelector('.hud-toast').textContent }));
+  check(`${tag}: in the ship free flight is put away and cannot be switched on`, !fr.active && !fr.shown && fr.drag === 'orbit' && !refused.active && /ship/.test(refused.toast), JSON.stringify({ fr: { active: fr.active, shown: fr.shown, drag: fr.drag }, refused }));
+  await page.evaluate(() => window.app.game.setMode('off'));
+  await f.frames(4);
+
+  // Done puts everything back: what one finger does, the interface's own buttons
+  await page.evaluate(() => window.app.act('free'));
+  await f.frames(3);
+  fr = await free();
+  check(`${tag}: switched on again (after the ship), the controls are there`, fr.shown && fr.active, JSON.stringify({ shown: fr.shown }));
+  await f.tap(await centreOf(page, '.free-done'));
+  await f.frames(4);
+  fr = await free();
+  const back2 = await page.evaluate(() => ({ fab: getComputedStyle(document.querySelector('.look-fab')).display, switch: document.querySelector('.switch[data-act="free"]').getAttribute('aria-checked') }));
+  check(`${tag}: Done puts the controls away and one finger does what it did (turn round the world)`, !fr.shown && !fr.active && !fr.attr && fr.drag === 'orbit' && back2.fab !== 'none', JSON.stringify({ shown: fr.shown, drag: fr.drag, back2 }));
+  const c0 = await state(page);
+  await f.drag({ x: W_(landscape) / 2 - 40, y: H_(landscape) / 2 - 80 }, { x: W_(landscape) / 2 + 60, y: H_(landscape) / 2 - 60 });
+  const c1 = await state(page);
+  check(`${tag}: and a drag turns round the world again (the camera goes round it)`, dist(c0.cam, c1.cam) > 1e3, `moved ${(dist(c0.cam, c1.cam) / 1e3).toFixed(0)} km`);
+  await ctx.close();
+}
+
+// ... on every phone size: the controls lie on nothing of the interface and are all on the screen
+{
+  const ctx = await phoneContext(browser);
+  const page = await open(ctx, '?menu=0&time=2026-10-01T20:00:00Z');
+  await ready(page);
+  const f = await fingers(page);
+  if (await page.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await centreOf(page, '.hud-coach [data-coach]'));
+  await page.evaluate(() => { window.app.act('free'); });
+  await f.frames(4);
+  const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
+  const bad = [];
+  for (const [w, h, inset] of sizes) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.evaluate((inset) => { const r = document.documentElement.style; r.setProperty('--safe-l', `${inset}px`); r.setProperty('--safe-r', `${inset}px`); }, inset);
+    await f.frames(3);
+    await page.waitForTimeout(400);
+    await f.frames(2);
+    const got = await page.evaluate(() => {
+      const box = (e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height }; };
+      const shown = (e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none';
+      const mine = [...document.querySelectorAll('.free-stick, .free-buttons button')].filter(shown).map((e) => ({ what: e.className.split(' ')[0], ...box(e) }));
+      const theirs = [...document.querySelectorAll('#hud .hud-top .chip, #hud .hud-tabs, #hud .hud-slot > .on, #hud .hud-fabs > *, #hud .hud-notice:not([hidden]), #hud .live-mark:not([hidden]), #hud .hud-flight:not([hidden])')].filter(shown).map((e) => ({ what: e.className.split(' ').slice(0, 2).join('.'), ...box(e) }));
+      return { mine, theirs, W: innerWidth, H: innerHeight };
+    });
+    const meet = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    const hits = got.mine.flatMap((m) => got.theirs.filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
+    const among = got.mine.flatMap((m, i) => got.mine.slice(i + 1).filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
+    const off = got.mine.filter((m) => m.l < 0 || m.t < 0 || m.r > got.W + 0.5 || m.b > got.H + 0.5).map((m) => `${m.what} off screen`);
+    if (hits.length || among.length || off.length || got.mine.length !== 4) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, n: got.mine.length, hits, among, off });
+    if (w === 360 && h === 640) await page.screenshot({ path: path.join(outDir, 'touch-16-free-small.png'), timeout: 300000 });
+    if (w === 844 && h === 280) await page.screenshot({ path: path.join(outDir, 'touch-17-free-side-bars.png'), timeout: 300000 });
+  }
+  check('free flight\'s stick and buttons, on every phone size (upright, on its side, bars or not), lie on nothing of the interface or of each other, and are all on the screen', bad.length === 0, JSON.stringify(bad).slice(0, 700));
+  await ctx.close();
+}
+
 console.log(errors.length ? `console errors:\n${errors.slice(0, 10).join('\n')}` : 'no console errors');
 check('no console errors', errors.length === 0);
 await browser.close();
