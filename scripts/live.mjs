@@ -1560,8 +1560,10 @@ for (const kind of kinds) {
     await hand.lift();
     await frames(page, 2);
     const p1 = await placing();
-    check(on('its mass set to 5 Earths, it is a rock of the Earth\'s density, 1.71 times the Earth\'s size, still on its circle, and the card says so'),
-      /^(4\.9|5|5\.1) Earths$/.test(p1.read) && /^Rock, 1\.7\d times the Earth's size$/.test(p1.what) && Math.abs(p1.earths - 5) < 0.15 && Math.abs(p1.ratio - Math.cbrt(p1.earths)) < 1e-4 && p1.e < 1e-6 && p1.paused && p1.placing,
+    // (rock and iron squeezed by its own weight: R = R⊕ (M / M⊕)^(1/3.7), Zeng, Sasselov & Jacobsen 2016; at the Earth's density
+    // it was 1.71 times, the cube root)
+    check(on('its mass set to 5 Earths, it is rock and iron squeezed by its own weight, 1.54 times the Earth\'s size, still on its circle, and the card says so'),
+      /^(4\.9|5|5\.1) Earths$/.test(p1.read) && /^Rock, 1\.5\d times the Earth's size$/.test(p1.what) && Math.abs(p1.earths - 5) < 0.15 && Math.abs(p1.ratio - p1.earths ** (1 / 3.7)) < 1e-4 && p1.e < 1e-6 && p1.paused && p1.placing,
       `"${p1.read}", "${p1.what}"; ${p1.earths.toFixed(3)} Earths, ${p1.ratio.toFixed(4)} of its radius`);
     // dragged out to 1.3 times as far from the Sun, the finger resting before it lifts
     const out = await page.evaluate(() => {
