@@ -36,6 +36,27 @@ export interface StarNode {
   cpuPos: Float64Array | null;
   ids: Uint32Array | null;
   idsState: 'none' | 'loading' | 'ready';
+  /** how good each star's distance is (`grade`), fetched with its designation when it is chosen */
+  quality?: Promise<Uint8Array | null>;
+}
+
+/**
+ * How far a star's distance can be trusted (pipeline/build_distance_quality.py): its parallax at
+ * least five times its error (`good`), less (`poor`, with the parallax and its error in mas), or the
+ * distance from Hipparcos alone, beyond 500 pc (`hipFar`); `ungraded` where no grade was made.
+ */
+export type DistanceGrade = { grade: 'good' | 'ungraded' | 'hipFar' } | { grade: 'poor'; parallaxMas: number; errorMas: number };
+const GRADES = ['ungraded', 'good', 'poor', 'hipFar'] as const;
+
+/** A star's grade from its node's quality file (2 bits a star, then each poor star's parallax and error in µas). */
+export function readGrade(q: Uint8Array, count: number, slot: number): DistanceGrade {
+  const at = (s: number) => (q[s >> 2] >> (2 * (s & 3))) & 3;
+  const g = GRADES[at(slot)];
+  if (g !== 'poor') return { grade: g };
+  let rank = 0;
+  for (let s = 0; s < slot; s++) if (at(s) === 2) rank++;
+  const v = new DataView(q.buffer, q.byteOffset + ((count + 3) >> 2) + 4 * rank, 4);
+  return { grade: 'poor', parallaxMas: v.getInt16(0, true) / 1000, errorMas: v.getUint16(2, true) / 1000 };
 }
 
 interface StarIndex {
@@ -70,6 +91,11 @@ export class StarCatalog {
 
   readonly license: string;
   readonly source: string;
+  /**
+   * Where the nodes' distance grades are (public/data/stars-quality: Gaia's numbers, under Gaia's
+   * licence, kept apart from the catalogue's tiles), if they are to be used; set by the app.
+   */
+  qualityBase: string | null = null;
 
   constructor(readonly id: string, private base: string, index: StarIndex) {
     this.license = index.license ?? '';
@@ -288,6 +314,16 @@ export class StarCatalog {
     const extra = await this.loadExtra();
     const s = extra[payload - this.notableCount] ?? '';
     return { code, text: /^\d+$/.test(s) ? `Gaia DR3 ${s}` : s, notable: null };
+  }
+
+  /** How good a star's distance is; null where the catalogue does not say. */
+  async distanceGrade(ref: StarRef): Promise<DistanceGrade | null> {
+    const n = ref.node;
+    if (!this.qualityBase) return null;
+    n.quality ??= fetch(`${this.qualityBase}/n/${n.id}.q`).then(async (r) => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null)).catch(() => null);
+    const q = await n.quality;
+    if (!q) { n.quality = undefined; return null; } // (asked again next time)
+    return readGrade(q, n.count, ref.slot);
   }
 
   private loadExtra(): Promise<string[]> {
