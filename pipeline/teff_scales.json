@@ -1,0 +1,950 @@
+{
+ "dwarfs": {
+  "source": "Pecaut & Mamajek 2013 (ApJS 208, 9), E. Mamajek's online table, version 2022.04.16",
+  "short": "Pecaut & Mamajek 2013",
+  "rows": [
+   {
+    "type": "O3V",
+    "letter": "O",
+    "sub": 3.0,
+    "teff": 44900.0,
+    "mv": -5.8,
+    "bv": -0.33
+   },
+   {
+    "type": "O4V",
+    "letter": "O",
+    "sub": 4.0,
+    "teff": 42900.0,
+    "mv": -5.5,
+    "bv": -0.326
+   },
+   {
+    "type": "O5V",
+    "letter": "O",
+    "sub": 5.0,
+    "teff": 41400.0,
+    "mv": -5.35,
+    "bv": -0.323
+   },
+   {
+    "type": "O5.5V",
+    "letter": "O",
+    "sub": 5.5,
+    "teff": 40500.0,
+    "mv": -5.2,
+    "bv": -0.322
+   },
+   {
+    "type": "O6V",
+    "letter": "O",
+    "sub": 6.0,
+    "teff": 39500.0,
+    "mv": -5.1,
+    "bv": -0.321
+   },
+   {
+    "type": "O6.5V",
+    "letter": "O",
+    "sub": 6.5,
+    "teff": 38300.0,
+    "mv": -4.95,
+    "bv": -0.319
+   },
+   {
+    "type": "O7V",
+    "letter": "O",
+    "sub": 7.0,
+    "teff": 37100.0,
+    "mv": -4.8,
+    "bv": -0.318
+   },
+   {
+    "type": "O7.5V",
+    "letter": "O",
+    "sub": 7.5,
+    "teff": 36100.0,
+    "mv": -4.65,
+    "bv": -0.317
+   },
+   {
+    "type": "O8V",
+    "letter": "O",
+    "sub": 8.0,
+    "teff": 35100.0,
+    "mv": -4.5,
+    "bv": -0.315
+   },
+   {
+    "type": "O8.5V",
+    "letter": "O",
+    "sub": 8.5,
+    "teff": 34300.0,
+    "mv": -4.35,
+    "bv": -0.314
+   },
+   {
+    "type": "O9V",
+    "letter": "O",
+    "sub": 9.0,
+    "teff": 33300.0,
+    "mv": -4.2,
+    "bv": -0.312
+   },
+   {
+    "type": "O9.5V",
+    "letter": "O",
+    "sub": 9.5,
+    "teff": 31900.0,
+    "mv": -4.05,
+    "bv": -0.307
+   },
+   {
+    "type": "B0V",
+    "letter": "B",
+    "sub": 0.0,
+    "teff": 31400.0,
+    "mv": -3.9,
+    "bv": -0.301
+   },
+   {
+    "type": "B0.5V",
+    "letter": "B",
+    "sub": 0.5,
+    "teff": 29000.0,
+    "mv": -3.5,
+    "bv": -0.289
+   },
+   {
+    "type": "B1V",
+    "letter": "B",
+    "sub": 1.0,
+    "teff": 26000.0,
+    "mv": -3.0,
+    "bv": -0.278
+   },
+   {
+    "type": "B1.5V",
+    "letter": "B",
+    "sub": 1.5,
+    "teff": 24500.0,
+    "mv": -2.6,
+    "bv": -0.252
+   },
+   {
+    "type": "B2V",
+    "letter": "B",
+    "sub": 2.0,
+    "teff": 20600.0,
+    "mv": -1.8,
+    "bv": -0.215
+   },
+   {
+    "type": "B2.5V",
+    "letter": "B",
+    "sub": 2.5,
+    "teff": 18500.0,
+    "mv": -1.5,
+    "bv": -0.198
+   },
+   {
+    "type": "B3V",
+    "letter": "B",
+    "sub": 3.0,
+    "teff": 17000.0,
+    "mv": -1.2,
+    "bv": -0.178
+   },
+   {
+    "type": "B4V",
+    "letter": "B",
+    "sub": 4.0,
+    "teff": 16400.0,
+    "mv": -1.0,
+    "bv": -0.165
+   },
+   {
+    "type": "B5V",
+    "letter": "B",
+    "sub": 5.0,
+    "teff": 15700.0,
+    "mv": -0.85,
+    "bv": -0.156
+   },
+   {
+    "type": "B6V",
+    "letter": "B",
+    "sub": 6.0,
+    "teff": 14500.0,
+    "mv": -0.55,
+    "bv": -0.14
+   },
+   {
+    "type": "B7V",
+    "letter": "B",
+    "sub": 7.0,
+    "teff": 14000.0,
+    "mv": -0.4,
+    "bv": -0.128
+   },
+   {
+    "type": "B8V",
+    "letter": "B",
+    "sub": 8.0,
+    "teff": 12300.0,
+    "mv": 0.0,
+    "bv": -0.109
+   },
+   {
+    "type": "B9V",
+    "letter": "B",
+    "sub": 9.0,
+    "teff": 10700.0,
+    "mv": 0.5,
+    "bv": -0.07
+   },
+   {
+    "type": "B9.5V",
+    "letter": "B",
+    "sub": 9.5,
+    "teff": 10400.0,
+    "mv": 0.6,
+    "bv": -0.05
+   },
+   {
+    "type": "A0V",
+    "letter": "A",
+    "sub": 0.0,
+    "teff": 9700.0,
+    "mv": 0.99,
+    "bv": 0.0
+   },
+   {
+    "type": "A1V",
+    "letter": "A",
+    "sub": 1.0,
+    "teff": 9300.0,
+    "mv": 1.16,
+    "bv": 0.035
+   },
+   {
+    "type": "A2V",
+    "letter": "A",
+    "sub": 2.0,
+    "teff": 8800.0,
+    "mv": 1.35,
+    "bv": 0.07
+   },
+   {
+    "type": "A3V",
+    "letter": "A",
+    "sub": 3.0,
+    "teff": 8600.0,
+    "mv": 1.7,
+    "bv": 0.1
+   },
+   {
+    "type": "A4V",
+    "letter": "A",
+    "sub": 4.0,
+    "teff": 8250.0,
+    "mv": 1.94,
+    "bv": 0.14
+   },
+   {
+    "type": "A5V",
+    "letter": "A",
+    "sub": 5.0,
+    "teff": 8100.0,
+    "mv": 2.01,
+    "bv": 0.16
+   },
+   {
+    "type": "A6V",
+    "letter": "A",
+    "sub": 6.0,
+    "teff": 7910.0,
+    "mv": 2.12,
+    "bv": 0.185
+   },
+   {
+    "type": "A7V",
+    "letter": "A",
+    "sub": 7.0,
+    "teff": 7760.0,
+    "mv": 2.23,
+    "bv": 0.21
+   },
+   {
+    "type": "A8V",
+    "letter": "A",
+    "sub": 8.0,
+    "teff": 7590.0,
+    "mv": 2.32,
+    "bv": 0.25
+   },
+   {
+    "type": "A9V",
+    "letter": "A",
+    "sub": 9.0,
+    "teff": 7400.0,
+    "mv": 2.43,
+    "bv": 0.27
+   },
+   {
+    "type": "F0V",
+    "letter": "F",
+    "sub": 0.0,
+    "teff": 7220.0,
+    "mv": 2.57,
+    "bv": 0.295
+   },
+   {
+    "type": "F1V",
+    "letter": "F",
+    "sub": 1.0,
+    "teff": 7020.0,
+    "mv": 2.76,
+    "bv": 0.33
+   },
+   {
+    "type": "F2V",
+    "letter": "F",
+    "sub": 2.0,
+    "teff": 6820.0,
+    "mv": 2.97,
+    "bv": 0.37
+   },
+   {
+    "type": "F3V",
+    "letter": "F",
+    "sub": 3.0,
+    "teff": 6750.0,
+    "mv": 3.08,
+    "bv": 0.39
+   },
+   {
+    "type": "F4V",
+    "letter": "F",
+    "sub": 4.0,
+    "teff": 6670.0,
+    "mv": 3.2,
+    "bv": 0.41
+   },
+   {
+    "type": "F5V",
+    "letter": "F",
+    "sub": 5.0,
+    "teff": 6550.0,
+    "mv": 3.37,
+    "bv": 0.44
+   },
+   {
+    "type": "F6V",
+    "letter": "F",
+    "sub": 6.0,
+    "teff": 6350.0,
+    "mv": 3.69,
+    "bv": 0.486
+   },
+   {
+    "type": "F7V",
+    "letter": "F",
+    "sub": 7.0,
+    "teff": 6280.0,
+    "mv": 3.8,
+    "bv": 0.5
+   },
+   {
+    "type": "F8V",
+    "letter": "F",
+    "sub": 8.0,
+    "teff": 6180.0,
+    "mv": 4.05,
+    "bv": 0.53
+   },
+   {
+    "type": "F9V",
+    "letter": "F",
+    "sub": 9.0,
+    "teff": 6050.0,
+    "mv": 4.25,
+    "bv": 0.56
+   },
+   {
+    "type": "F9.5V",
+    "letter": "F",
+    "sub": 9.5,
+    "teff": 5990.0,
+    "mv": 4.35,
+    "bv": 0.58
+   },
+   {
+    "type": "G0V",
+    "letter": "G",
+    "sub": 0.0,
+    "teff": 5930.0,
+    "mv": 4.48,
+    "bv": 0.595
+   },
+   {
+    "type": "G1V",
+    "letter": "G",
+    "sub": 1.0,
+    "teff": 5860.0,
+    "mv": 4.62,
+    "bv": 0.622
+   },
+   {
+    "type": "G2V",
+    "letter": "G",
+    "sub": 2.0,
+    "teff": 5770.0,
+    "mv": 4.8,
+    "bv": 0.65
+   },
+   {
+    "type": "G3V",
+    "letter": "G",
+    "sub": 3.0,
+    "teff": 5720.0,
+    "mv": 4.87,
+    "bv": 0.66
+   },
+   {
+    "type": "G4V",
+    "letter": "G",
+    "sub": 4.0,
+    "teff": 5680.0,
+    "mv": 4.93,
+    "bv": 0.67
+   },
+   {
+    "type": "G5V",
+    "letter": "G",
+    "sub": 5.0,
+    "teff": 5660.0,
+    "mv": 4.98,
+    "bv": 0.68
+   },
+   {
+    "type": "G6V",
+    "letter": "G",
+    "sub": 6.0,
+    "teff": 5600.0,
+    "mv": 5.1,
+    "bv": 0.7
+   },
+   {
+    "type": "G7V",
+    "letter": "G",
+    "sub": 7.0,
+    "teff": 5550.0,
+    "mv": 5.2,
+    "bv": 0.71
+   },
+   {
+    "type": "G8V",
+    "letter": "G",
+    "sub": 8.0,
+    "teff": 5480.0,
+    "mv": 5.3,
+    "bv": 0.73
+   },
+   {
+    "type": "G9V",
+    "letter": "G",
+    "sub": 9.0,
+    "teff": 5380.0,
+    "mv": 5.55,
+    "bv": 0.775
+   },
+   {
+    "type": "K0V",
+    "letter": "K",
+    "sub": 0.0,
+    "teff": 5270.0,
+    "mv": 5.78,
+    "bv": 0.816
+   },
+   {
+    "type": "K1V",
+    "letter": "K",
+    "sub": 1.0,
+    "teff": 5170.0,
+    "mv": 5.95,
+    "bv": 0.857
+   },
+   {
+    "type": "K2V",
+    "letter": "K",
+    "sub": 2.0,
+    "teff": 5100.0,
+    "mv": 6.07,
+    "bv": 0.884
+   },
+   {
+    "type": "K3V",
+    "letter": "K",
+    "sub": 3.0,
+    "teff": 4830.0,
+    "mv": 6.5,
+    "bv": 0.99
+   },
+   {
+    "type": "K4V",
+    "letter": "K",
+    "sub": 4.0,
+    "teff": 4600.0,
+    "mv": 6.98,
+    "bv": 1.09
+   },
+   {
+    "type": "K5V",
+    "letter": "K",
+    "sub": 5.0,
+    "teff": 4440.0,
+    "mv": 7.28,
+    "bv": 1.15
+   },
+   {
+    "type": "K6V",
+    "letter": "K",
+    "sub": 6.0,
+    "teff": 4300.0,
+    "mv": 7.64,
+    "bv": 1.24
+   },
+   {
+    "type": "K7V",
+    "letter": "K",
+    "sub": 7.0,
+    "teff": 4100.0,
+    "mv": 8.16,
+    "bv": 1.34
+   },
+   {
+    "type": "K8V",
+    "letter": "K",
+    "sub": 8.0,
+    "teff": 3990.0,
+    "mv": 8.43,
+    "bv": 1.363
+   },
+   {
+    "type": "K9V",
+    "letter": "K",
+    "sub": 9.0,
+    "teff": 3930.0,
+    "mv": 8.56,
+    "bv": 1.4
+   },
+   {
+    "type": "M0V",
+    "letter": "M",
+    "sub": 0.0,
+    "teff": 3850.0,
+    "mv": 8.8,
+    "bv": 1.42
+   },
+   {
+    "type": "M0.5V",
+    "letter": "M",
+    "sub": 0.5,
+    "teff": 3770.0,
+    "mv": 9.2,
+    "bv": 1.445
+   },
+   {
+    "type": "M1V",
+    "letter": "M",
+    "sub": 1.0,
+    "teff": 3660.0,
+    "mv": 9.64,
+    "bv": 1.485
+   },
+   {
+    "type": "M1.5V",
+    "letter": "M",
+    "sub": 1.5,
+    "teff": 3620.0,
+    "mv": 9.85,
+    "bv": 1.495
+   },
+   {
+    "type": "M2V",
+    "letter": "M",
+    "sub": 2.0,
+    "teff": 3560.0,
+    "mv": 10.21,
+    "bv": 1.505
+   },
+   {
+    "type": "M2.5V",
+    "letter": "M",
+    "sub": 2.5,
+    "teff": 3470.0,
+    "mv": 10.61,
+    "bv": 1.522
+   },
+   {
+    "type": "M3V",
+    "letter": "M",
+    "sub": 3.0,
+    "teff": 3430.0,
+    "mv": 11.15,
+    "bv": 1.53
+   },
+   {
+    "type": "M3.5V",
+    "letter": "M",
+    "sub": 3.5,
+    "teff": 3270.0,
+    "mv": 12.1,
+    "bv": 1.6
+   },
+   {
+    "type": "M4V",
+    "letter": "M",
+    "sub": 4.0,
+    "teff": 3210.0,
+    "mv": 12.61,
+    "bv": 1.65
+   },
+   {
+    "type": "M4.5V",
+    "letter": "M",
+    "sub": 4.5,
+    "teff": 3110.0,
+    "mv": 13.58,
+    "bv": 1.69
+   },
+   {
+    "type": "M5V",
+    "letter": "M",
+    "sub": 5.0,
+    "teff": 3060.0,
+    "mv": 14.15,
+    "bv": 1.83
+   },
+   {
+    "type": "M5.5V",
+    "letter": "M",
+    "sub": 5.5,
+    "teff": 2930.0,
+    "mv": 15.3,
+    "bv": 1.94
+   },
+   {
+    "type": "M6V",
+    "letter": "M",
+    "sub": 6.0,
+    "teff": 2810.0,
+    "mv": 16.32,
+    "bv": 2.01
+   },
+   {
+    "type": "M6.5V",
+    "letter": "M",
+    "sub": 6.5,
+    "teff": 2740.0,
+    "mv": 17.1,
+    "bv": 2.07
+   },
+   {
+    "type": "M7V",
+    "letter": "M",
+    "sub": 7.0,
+    "teff": 2680.0,
+    "mv": 17.7,
+    "bv": 2.12
+   },
+   {
+    "type": "M7.5V",
+    "letter": "M",
+    "sub": 7.5,
+    "teff": 2630.0,
+    "mv": 18.16,
+    "bv": 2.14
+   },
+   {
+    "type": "M8V",
+    "letter": "M",
+    "sub": 8.0,
+    "teff": 2570.0,
+    "mv": 18.6,
+    "bv": 2.15
+   },
+   {
+    "type": "M8.5V",
+    "letter": "M",
+    "sub": 8.5,
+    "teff": 2420.0,
+    "mv": 19.2,
+    "bv": 2.16
+   },
+   {
+    "type": "M9V",
+    "letter": "M",
+    "sub": 9.0,
+    "teff": 2380.0,
+    "mv": 19.4,
+    "bv": 2.17
+   },
+   {
+    "type": "M9.5V",
+    "letter": "M",
+    "sub": 9.5,
+    "teff": 2350.0,
+    "mv": 19.75,
+    "bv": null
+   }
+  ]
+ },
+ "oGiants": {
+  "source": "Martins, Schaerer & Hillier 2005 (A&A 436, 1049), observational scale, table 5 (luminosity class III)",
+  "short": "Martins et al. 2005",
+  "rows": [
+   {
+    "type": "O3 III",
+    "letter": "O",
+    "sub": 3.0,
+    "teff": 44537.0,
+    "mv": -6.13
+   },
+   {
+    "type": "O4 III",
+    "letter": "O",
+    "sub": 4.0,
+    "teff": 42422.0,
+    "mv": -5.98
+   },
+   {
+    "type": "O5 III",
+    "letter": "O",
+    "sub": 5.0,
+    "teff": 40307.0,
+    "mv": -5.84
+   },
+   {
+    "type": "O5.5 III",
+    "letter": "O",
+    "sub": 5.5,
+    "teff": 39249.0,
+    "mv": -5.76
+   },
+   {
+    "type": "O6 III",
+    "letter": "O",
+    "sub": 6.0,
+    "teff": 38192.0,
+    "mv": -5.69
+   },
+   {
+    "type": "O6.5 III",
+    "letter": "O",
+    "sub": 6.5,
+    "teff": 37134.0,
+    "mv": -5.62
+   },
+   {
+    "type": "O7 III",
+    "letter": "O",
+    "sub": 7.0,
+    "teff": 36077.0,
+    "mv": -5.54
+   },
+   {
+    "type": "O7.5 III",
+    "letter": "O",
+    "sub": 7.5,
+    "teff": 35019.0,
+    "mv": -5.47
+   },
+   {
+    "type": "O8 III",
+    "letter": "O",
+    "sub": 8.0,
+    "teff": 33961.0,
+    "mv": -5.4
+   },
+   {
+    "type": "O8.5 III",
+    "letter": "O",
+    "sub": 8.5,
+    "teff": 32904.0,
+    "mv": -5.32
+   },
+   {
+    "type": "O9 III",
+    "letter": "O",
+    "sub": 9.0,
+    "teff": 31846.0,
+    "mv": -5.25
+   },
+   {
+    "type": "O9.5 III",
+    "letter": "O",
+    "sub": 9.5,
+    "teff": 30789.0,
+    "mv": -5.18
+   }
+  ]
+ },
+ "oSupergiants": {
+  "source": "Martins, Schaerer & Hillier 2005 (A&A 436, 1049), observational scale, table 6 (luminosity class I)",
+  "short": "Martins et al. 2005",
+  "rows": [
+   {
+    "type": "O3 I",
+    "letter": "O",
+    "sub": 3.0,
+    "teff": 42233.0,
+    "mv": -6.35
+   },
+   {
+    "type": "O4 I",
+    "letter": "O",
+    "sub": 4.0,
+    "teff": 40422.0,
+    "mv": -6.34
+   },
+   {
+    "type": "O5 I",
+    "letter": "O",
+    "sub": 5.0,
+    "teff": 38612.0,
+    "mv": -6.33
+   },
+   {
+    "type": "O5.5 I",
+    "letter": "O",
+    "sub": 5.5,
+    "teff": 37706.0,
+    "mv": -6.33
+   },
+   {
+    "type": "O6 I",
+    "letter": "O",
+    "sub": 6.0,
+    "teff": 36801.0,
+    "mv": -6.32
+   },
+   {
+    "type": "O6.5 I",
+    "letter": "O",
+    "sub": 6.5,
+    "teff": 35895.0,
+    "mv": -6.31
+   },
+   {
+    "type": "O7 I",
+    "letter": "O",
+    "sub": 7.0,
+    "teff": 34990.0,
+    "mv": -6.31
+   },
+   {
+    "type": "O7.5 I",
+    "letter": "O",
+    "sub": 7.5,
+    "teff": 34084.0,
+    "mv": -6.3
+   },
+   {
+    "type": "O8 I",
+    "letter": "O",
+    "sub": 8.0,
+    "teff": 33179.0,
+    "mv": -6.3
+   },
+   {
+    "type": "O8.5 I",
+    "letter": "O",
+    "sub": 8.5,
+    "teff": 32274.0,
+    "mv": -6.29
+   },
+   {
+    "type": "O9 I",
+    "letter": "O",
+    "sub": 9.0,
+    "teff": 31368.0,
+    "mv": -6.29
+   },
+   {
+    "type": "O9.5 I",
+    "letter": "O",
+    "sub": 9.5,
+    "teff": 30463.0,
+    "mv": -6.28
+   }
+  ]
+ },
+ "bSupergiants": {
+  "source": "Crowther, Lennon & Walborn 2006 (A&A 446, 279), their temperature scale of galactic early B Ia and Iab supergiants (the table labelled bstars), its mean column",
+  "short": "Crowther et al. 2006",
+  "rows": [
+   {
+    "type": "O9.5 Ia",
+    "letter": "O",
+    "sub": 9.5,
+    "teff": 29000.0
+   },
+   {
+    "type": "O9.7 Ia",
+    "letter": "O",
+    "sub": 9.7,
+    "teff": 28500.0
+   },
+   {
+    "type": "B0 Ia",
+    "letter": "B",
+    "sub": 0.0,
+    "teff": 27500.0
+   },
+   {
+    "type": "B0.5 Ia",
+    "letter": "B",
+    "sub": 0.5,
+    "teff": 26000.0
+   },
+   {
+    "type": "B0.7 Ia",
+    "letter": "B",
+    "sub": 0.7,
+    "teff": 22500.0
+   },
+   {
+    "type": "B1 Ia",
+    "letter": "B",
+    "sub": 1.0,
+    "teff": 21500.0
+   },
+   {
+    "type": "B1.5 Ia",
+    "letter": "B",
+    "sub": 1.5,
+    "teff": 20500.0
+   },
+   {
+    "type": "B2 Ia",
+    "letter": "B",
+    "sub": 2.0,
+    "teff": 18500.0
+   },
+   {
+    "type": "B2.5 Ia",
+    "letter": "B",
+    "sub": 2.5,
+    "teff": 16500.0
+   },
+   {
+    "type": "B3 Ia",
+    "letter": "B",
+    "sub": 3.0,
+    "teff": 15500.0
+   }
+  ]
+ }
+}

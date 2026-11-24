@@ -4,8 +4,32 @@ import { UPos } from '../core/upos';
 import { LY, PC, SUN_ABS_MAG, SUN_RADIUS } from '../core/units';
 import type { SpaceObject } from './Body';
 import { estimateStarRadius, measuredStar, type MeasuredStar } from './StarRadii';
-import type { DistanceGrade, StarRef } from './StarCatalog';
+import type { DistanceGrade, StarRef, TeffSource } from './StarCatalog';
 import { shapeFlattening, starShape, type StarShape } from './StarShapes';
+
+/**
+ * The dust's extinction in V for a reddening E(B-V): R_V = 3.1, the diffuse interstellar medium's
+ * mean (Cardelli, Clayton & Mathis 1989, ApJ 345, 245). A star whose type is taken though its colour
+ * is reddened is that much brighter than it looks, and its size is worked out from that.
+ */
+export const R_V = 3.1;
+
+/** Where a star's temperature came from, for its card (TeffSource). */
+export function teffSourceText(t: TeffSource): string {
+  const src = t.source === 'colour' ? 'from its colour'
+    : t.source === 'classColour' ? 'from the usual colour of its spectral class (its own is not known)'
+      : t.source === 'gaia' ? 'Gaia DR3, from its spectrum'
+        : t.source === 'dwarfs' ? (t.dwarfScale ? "from its spectral type, on the dwarfs' scale (Pecaut & Mamajek 2013; none for its class here)" : 'from its spectral type (Pecaut & Mamajek 2013)')
+          : `from its spectral type (${t.source === 'martins' ? 'Martins et al. 2005' : 'Crowther et al. 2006'})`;
+  return t.reddened ? `${src}; its light is reddened by dust, E(B−V) ${t.ebv.toFixed(2)}` : src;
+}
+
+/** What is said of a catalogue type that the temperature does not follow (TeffSource), or ''. */
+export function spectNote(t: TeffSource): string {
+  if (t.flagged) return t.composite ? ' — of two stars (a composite spectrum), and not matching its colour: not used' : ' — does not match its colour or its brightness: not used';
+  if (t.redder) return " — its colour is redder: dust, or a wrong type (its colour's temperature used)";
+  return '';
+}
 
 /** Notable stars (proper names, Bayer/Flamsteed, HR, Gliese) used for labels, search and the info panel. */
 export interface NamedStar {
@@ -67,6 +91,9 @@ export class CatalogStar implements SpaceObject {
   /** how far its distance can be trusted (StarCatalog.distanceGrade), once asked for (gradeDistance) */
   distanceGrade: DistanceGrade | null = null;
   private grading = false;
+  /** where its temperature comes from (StarCatalog.teffSource), once asked for (describeTemperature) */
+  teffSource: TeffSource | null = null;
+  private sourcing = false;
 
   constructor(
     readonly key: string,
@@ -132,6 +159,24 @@ export class CatalogStar implements SpaceObject {
     }).catch(() => { this.grading = false; });
   }
 
+  /**
+   * Ask the catalogue where its temperature comes from (once; `onDone` when it is known). Gaia's,
+   * where that is the one used, becomes its temperature (unless one was measured); a star whose
+   * type is taken though dust has reddened it is sized for the light the dust took.
+   */
+  describeTemperature(onDone: () => void): void {
+    if (!this.ref || this.sourcing || this.teffSource) return;
+    this.sourcing = true;
+    this.ref.catalog.teffSource(this.ref).then((t) => {
+      this.sourcing = false;
+      if (!t) return;
+      this.teffSource = t;
+      if (t.gaiaTeff !== null && !this.measured?.teff) this.teff = t.gaiaTeff;
+      if (!this.shape && !this.measured) this.radius = estimateStarRadius(this.absMag - (t.reddened ? R_V * t.ebv : 0), this.teff);
+      onDone();
+    }).catch(() => { this.sourcing = false; });
+  }
+
   /** its distance is a poor parallax's, or Hipparcos's alone from far off: what follows from it is not known */
   get distanceUncertain(): boolean {
     return this.distanceGrade?.grade === 'poor' || this.distanceGrade?.grade === 'hipFar';
@@ -142,8 +187,9 @@ export class CatalogStar implements SpaceObject {
     const unsure = this.distanceUncertain;
     // (what is worked out from its distance is said to be as uncertain as the distance is)
     const fromDistance = unsure ? ' (uncertain: from its distance)' : '';
-    if (this.spect) rows.push(['Spectral type', this.spect]);
-    rows.push(['Temperature', `${Math.round(this.teff).toLocaleString()} K${this.measured?.teff ? ` (measured: ${this.measured.source})` : ''}`]);
+    const ts = this.teffSource;
+    if (this.spect) rows.push(['Spectral type', `${this.spect}${ts ? spectNote(ts) : ''}`]);
+    rows.push(['Temperature', `${Math.round(this.teff).toLocaleString('en-US')} K${this.measured?.teff ? ` (measured: ${this.measured.source})` : ts ? ` (${teffSourceText(ts)})` : ''}`]);
     rows.push(['Absolute mag (V)', `${this.absMag.toFixed(2)}${fromDistance}`]);
     rows.push(['Luminosity (V)', `${Math.pow(10, -0.4 * (this.absMag - SUN_ABS_MAG)).toPrecision(3)} L☉${fromDistance}`]);
     const shape = this.shape;
@@ -152,7 +198,7 @@ export class CatalogStar implements SpaceObject {
       rows.push(['Radius', `${(shape.rEq / SUN_RADIUS).toPrecision(3)} R☉ across the equator, ${(shape.rPol / SUN_RADIUS).toPrecision(3)} R☉ at the poles (measured)`]);
       rows.push(['Shape', `Flattened ${Math.round(100 * shapeFlattening(shape))} % by its spin; from the Sun it is seen ${
         tilt < 25 ? 'nearly pole-on' : tilt > 75 ? 'nearly equator-on' : `${Math.round(tilt)}° from pole-on`} (${shape.source})`]);
-    } else rows.push(['Radius', `${(this.radius / SUN_RADIUS).toPrecision(3)} R☉ ${this.measured ? `(measured: ${this.measured.source})` : unsure ? '(estimated from its brightness and an uncertain distance)' : '(estimated)'}`]);
+    } else rows.push(['Radius', `${(this.radius / SUN_RADIUS).toPrecision(3)} R☉ ${this.measured ? `(measured: ${this.measured.source})` : unsure ? '(estimated from its brightness and an uncertain distance)' : ts?.reddened ? '(estimated, with the light the dust took)' : '(estimated)'}`]);
     const d = this.posPc.length();
     const g = this.distanceGrade;
     const how = g?.grade === 'poor' ? ` — distance uncertain (parallax ${g.parallaxMas.toFixed(3)} ± ${g.errorMas.toFixed(3)} mas)`

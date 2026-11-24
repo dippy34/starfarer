@@ -38,6 +38,10 @@ export interface StarNode {
   idsState: 'none' | 'loading' | 'ready';
   /** how good each star's distance is (`grade`), fetched with its designation when it is chosen */
   quality?: Promise<Uint8Array | null>;
+  /** where each star's temperature comes from (`teffSource`), fetched when one of them is made */
+  teffSrc?: Promise<Uint8Array | null>;
+  /** Gaia's temperatures for some of its stars (slot, K), with Gaia's data: fetched with the node */
+  gaiaTeff?: Promise<Uint8Array | null>;
 }
 
 /**
@@ -57,6 +61,52 @@ export function readGrade(q: Uint8Array, count: number, slot: number): DistanceG
   for (let s = 0; s < slot; s++) if (at(s) === 2) rank++;
   const v = new DataView(q.buffer, q.byteOffset + ((count + 3) >> 2) + 4 * rank, 4);
   return { grade: 'poor', parallaxMas: v.getInt16(0, true) / 1000, errorMas: v.getUint16(2, true) / 1000 };
+}
+
+/**
+ * Where a star's temperature comes from (pipeline/build_star_teff.py): its colour (B-V); the usual
+ * colour of its spectral class (its own not known); its spectral type, on Pecaut & Mamajek's scale
+ * for dwarfs (2013), Martins, Schaerer & Hillier's for O giants and supergiants (2005) or Crowther,
+ * Lennon & Walborn's for early B supergiants (2006); or Gaia DR3's analysis of hot stars' spectra
+ * (ESP-HS). `flagged`: its catalogue type matches neither its colour nor its brightness, and is not
+ * used; `reddened`: its type is used though dust has reddened its colour by `ebv`, E(B-V);
+ * `dwarfScale`: the dwarfs' scale for a giant or supergiant, for want of one for its class;
+ * `redder`: its colour is redder than its type, which may be dust or a wrong type (its colour kept);
+ * `composite`: its type is of a composite spectrum, two stars'.
+ */
+export interface TeffSource {
+  source: 'colour' | 'classColour' | 'dwarfs' | 'martins' | 'crowther' | 'gaia';
+  flagged: boolean; reddened: boolean; dwarfScale: boolean; redder: boolean; composite: boolean;
+  ebv: number;
+  /** Gaia's temperature (K), where it is the one used */
+  gaiaTeff: number | null;
+}
+const TEFF_SOURCES = ['colour', 'classColour', 'dwarfs', 'martins', 'crowther'] as const;
+
+/** The 4-byte record (uint16 slot, ...) of `slot` in a node's file of records in slot order, or -1. */
+function findRecord(buf: Uint8Array, slot: number): number {
+  const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let lo = 0, hi = (buf.byteLength >> 2) - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1, s = v.getUint16(4 * mid, true);
+    if (s === slot) return 4 * mid;
+    if (s < slot) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return -1;
+}
+
+/** A star's temperature source from its node's file (records: uint16 slot, uint8 code, uint8 E(B-V) in hundredths); none: its colour. */
+export function readTeffSource(t: Uint8Array, slot: number, gaia: Uint8Array | null = null): TeffSource {
+  const at = findRecord(t, slot);
+  const code = at < 0 ? 0 : t[at + 2];
+  const g = gaia ? findRecord(gaia, slot) : -1;
+  const gaiaTeff = g < 0 ? null : new DataView(gaia!.buffer, gaia!.byteOffset + g + 2, 2).getUint16(0, true);
+  return {
+    source: gaiaTeff !== null ? 'gaia' : TEFF_SOURCES[code & 7] ?? 'colour',
+    flagged: (code & 8) !== 0, reddened: (code & 16) !== 0, dwarfScale: (code & 32) !== 0, redder: (code & 64) !== 0, composite: (code & 128) !== 0,
+    ebv: at < 0 ? 0 : t[at + 3] / 100, gaiaTeff,
+  };
 }
 
 interface StarIndex {
@@ -96,12 +146,24 @@ export class StarCatalog {
    * licence, kept apart from the catalogue's tiles), if they are to be used; set by the app.
    */
   qualityBase: string | null = null;
+  /** where the nodes' temperature sources are (public/data/stars/t: the catalogue's own), if it has them; set by the app */
+  teffBase: string | null = null;
+  /**
+   * Gaia's temperatures of hot stars (public/data/stars-teff-gaia: under Gaia's licence, kept apart
+   * from the catalogue's tiles), if they are to be used: where, and the nodes that have any. A node
+   * of these is drawn with them (its temperature bytes replaced as it comes in). Set by the app.
+   */
+  gaiaTeff: { base: string; nodes: Set<number> } | null = null;
+  private teffMin: number;
+  private teffMax: number;
 
   constructor(readonly id: string, private base: string, index: StarIndex) {
     this.license = index.license ?? '';
     this.source = index.source ?? '';
     this.absMin = index.absMag.min;
     this.absStep = index.absMag.step;
+    this.teffMin = index.teff.min;
+    this.teffMax = index.teff.max;
     this.totalStars = index.stars;
     this.notableCount = index.idCode.notableCount;
     this.nodes = index.nodes.map((n) => ({
@@ -179,12 +241,15 @@ export class StarCatalog {
       if (n.state !== 'none') continue;
       n.state = 'loading';
       this.inflight++;
+      const gaia = this.gaiaTeffOf(n);
       fetch(`${this.base}/n/${n.id}.bin`)
         .then((r) => {
           if (!r.ok) throw new Error(`star node ${n.id}: HTTP ${r.status}`);
           return r.arrayBuffer();
         })
-        .then((buf) => {
+        .then(async (buf) => [buf, gaia ? await gaia : null] as const)
+        .then(([buf, g]) => {
+          if (g) this.patchTeff(n, buf, g);
           this.decode(n, buf);
           n.state = 'ready';
           this.loadedStars += n.count;
@@ -198,6 +263,29 @@ export class StarCatalog {
           this.inflight--;
           this.pump();
         });
+    }
+  }
+
+  /** a node's Gaia temperatures, if it has any and they are used (fetched once) */
+  private gaiaTeffOf(n: StarNode): Promise<Uint8Array | null> | null {
+    if (!this.gaiaTeff?.nodes.has(n.id)) return null;
+    n.gaiaTeff ??= fetch(`${this.gaiaTeff.base}/n/${n.id}.g`).then(async (r) => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null)).catch(() => null);
+    return n.gaiaTeff;
+  }
+
+  /** The temperature byte of the tiles for a temperature (K): build_stars.py's encoding. */
+  teffCode(teff: number): number {
+    const u = (Math.log(teff) - Math.log(this.teffMin)) / (Math.log(this.teffMax) - Math.log(this.teffMin));
+    return Math.max(0, Math.min(255, Math.round(u * 255)));
+  }
+
+  /** Put Gaia's temperatures (records: uint16 slot, uint16 K) into a node's tile before it is read. */
+  private patchTeff(n: StarNode, buf: ArrayBuffer, g: Uint8Array): void {
+    const bytes = new Uint8Array(buf), v = new DataView(g.buffer, g.byteOffset, g.byteLength);
+    const [stride, at] = n.enc === 'u' ? [8, 7] : [16, 13];
+    for (let k = 0; k + 4 <= g.byteLength; k += 4) {
+      const slot = v.getUint16(k, true);
+      if (slot < n.count) bytes[slot * stride + at] = this.teffCode(v.getUint16(k + 2, true));
     }
   }
 
@@ -324,6 +412,16 @@ export class StarCatalog {
     const q = await n.quality;
     if (!q) { n.quality = undefined; return null; } // (asked again next time)
     return readGrade(q, n.count, ref.slot);
+  }
+
+  /** Where a star's temperature comes from; null where the catalogue does not say. */
+  async teffSource(ref: StarRef): Promise<TeffSource | null> {
+    const n = ref.node;
+    if (!this.teffBase) return null;
+    n.teffSrc ??= fetch(`${this.teffBase}/t/${n.id}.t`).then(async (r) => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null)).catch(() => null);
+    const [t, g] = await Promise.all([n.teffSrc, this.gaiaTeffOf(n)]);
+    if (!t) { n.teffSrc = undefined; return null; } // (asked again next time)
+    return readTeffSource(t, ref.slot, g ?? null);
   }
 
   private loadExtra(): Promise<string[]> {

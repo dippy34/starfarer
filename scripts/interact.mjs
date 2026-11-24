@@ -232,7 +232,7 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   const card = (name) => page.evaluate(async (name) => {
     const a = window.app, s = a.findByName(name);
     a.select(s);
-    for (let i = 0; i < 100 && !s.distanceGrade; i++) await new Promise((r) => setTimeout(r, 100));
+    for (let i = 0; i < 100 && (!s.distanceGrade || !s.teffSource); i++) await new Promise((r) => setTimeout(r, 100));
     // (the card drawn for this star before its details are opened: the first frame that draws a new selection
     // closes them, and closed they are not refreshed. On GitHub's runners the click came first, and the rows
     // read were the star's before.) A frame drawn by hand: the app's own loop may be held by an earlier check.
@@ -244,7 +244,8 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     if (det.getAttribute('aria-expanded') !== 'true') det.click();
     // (the card as the app has drawn it for this star: its title, and its distance as the star itself states it;
     // on a slow machine the card is a frame or more behind the selection)
-    const want = new Map(s.info()).get('Distance from Sun');
+    const info = new Map(s.info());
+    const want = info.get('Distance from Sun');
     const read = () => {
       const rows = {};
       const dts = [...document.querySelectorAll('.card .facts dt')], dds = [...document.querySelectorAll('.card .facts dd')];
@@ -252,7 +253,7 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
       return rows;
     };
     let rows = read();
-    for (let i = 0; i < 300 && (document.querySelector('.card h2')?.textContent !== s.name || rows['Distance from Sun'] !== want); i++) {
+    for (let i = 0; i < 300 && (document.querySelector('.card h2')?.textContent !== s.name || rows['Distance from Sun'] !== want || rows.Temperature !== info.get('Temperature')); i++) {
       // (a frame drawn by hand: the app's own loop may be held by an earlier check)
       a.frame();
       await new Promise((r) => setTimeout(r, 100));
@@ -269,6 +270,22 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
       && /uncertain/.test(g.Radius ?? '') && /uncertain/.test(g.Scale ?? '') && /uncertain/.test(garnet.detail ?? '')
       && !/uncertain/.test(`${deneb.rows['Distance from Sun']} ${deneb.rows['Luminosity (V)']} ${deneb.detail}`),
     JSON.stringify({ garnet: { grade: garnet.grade, title: garnet.title, selected: garnet.selected, want: garnet.want, hud: garnet.hud, detail: garnet.detail, distance: g['Distance from Sun'], luminosity: g['Luminosity (V)'], radius: g.Radius, scale: g.Scale }, deneb: { grade: deneb.grade, distance: deneb.rows['Distance from Sun'] } }));
+  // 4g. Hot and reddened stars' temperatures: from their spectral type where the colour cannot tell (O and B
+  // stars; dust), with the card saying which scale; a catalogue type its colour does not bear out flagged, not
+  // trusted. (From their colour alone: Alnitak 13,561 K, Spica 14,492, Cygnus X-1's star 5,501.)
+  const t = {};
+  for (const [key, name] of [['alnitak', 'Alnitak'], ['spica', 'Spica'], ['cygx1', 'HIP 98298'], ['almach', 'Almach'], ['garnet', 'Garnet Star']]) {
+    const c = await card(name);
+    t[key] = { title: c.title, type: c.rows['Spectral type'], temperature: c.rows.Temperature, radius: c.rows.Radius };
+  }
+  check("hot and reddened stars: their temperature from their spectral type, the card naming the scale; a type its colour does not bear out flagged",
+    /^30,463 K \(from its spectral type \(Martins et al\. 2005\)\)$/.test(t.alnitak.temperature ?? '')
+      && /^26,000 K \(from its spectral type \(Pecaut & Mamajek 2013\)\)$/.test(t.spica.temperature ?? '')
+      && /^27,500 K \(from its spectral type \(Crowther et al\. 2006\); its light is reddened by dust, E\(B−V\) 1\.03\)$/.test(t.cygx1.temperature ?? '')
+      && /with the light the dust took/.test(t.cygx1.radius ?? '')
+      && /not used$/.test(t.almach.type ?? '') && /from its colour\)$/.test(t.almach.temperature ?? '')
+      && /redder: dust, or a wrong type/.test(t.garnet.type ?? ''),
+    JSON.stringify(t));
   await page.evaluate(() => { const d = document.querySelector('.card [data-details]'); if (d?.getAttribute('aria-expanded') === 'true') d.click(); window.app.select(null); });
 }
 

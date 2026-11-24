@@ -2167,6 +2167,36 @@ above is validated against JPL Horizons and stays as it is unless something is w
        its surface. The same counts a world's night side as dark from a valley
        (`App.updateExposure`'s `night`). `tests/exposure.test.ts`; `scripts/interact.mjs` turns
        the walker to the Sun's bearing and away.
+     - *Temperatures of hot and reddened stars* (#49): a catalogue star's temperature was from its
+       B-V alone (Ballesteros 2012), which hardly changes above about 10,000 K and is reddened by
+       dust: Alnitak (O9.5 Ib) 13,561 K, Mintaka 13,011, Naos 15,515, Spica 14,492, Cygnus X-1's
+       star (B0 Ib, behind a magnitude of reddening) 5,501 K. Now (`pipeline/build_star_teff.py`)
+       an O or B star takes its spectral type's temperature from a published scale, the card
+       naming it: Pecaut & Mamajek 2013 (Mamajek's online table) for dwarfs and stars with no
+       class, Martins, Schaerer & Hillier 2005 for O giants (II taken as III) and supergiants,
+       Crowther, Lennon & Walborn 2006 for supergiants from O9.7 to B3, and the dwarfs' scale,
+       said so, for the classes those leave out (B giants, B supergiants after B3: Rigel). A type
+       is checked against the colour (the colour's own type on Mamajek's sequence): more than a
+       class bluer than its type cannot be dust, and is flagged and not used (Bunda); more than a
+       class redder is dust for an O or B star unless it is over 1.5 mag brighter than its type
+       allows (Almach, carrying its companion's B8V: flagged), and for an A-M dwarf if its
+       brightness fits its type dimmed by that dust (R_V 3.1); an A-M giant's colour is kept and
+       its type said to be redder ("dust, or a wrong type": the Garnet Star's G5 Ib); a composite
+       spectrum's type off its colour is flagged (Dubhe). A reddened star's E(B-V) is on its card
+       and its radius is worked out from its brightness before the dust. The drawn colour follows
+       (the tiles' temperature byte; 26,535 stars changed). Gaia DR3's ESP-HS temperatures are
+       used, with Gaia's data only (`public/data/stars-teff-gaia/`, CC BY-NC, off with `?gaia=0`,
+       patched into a node's tile as it loads), for 97,094 stars ESP-HS is sure are O or B
+       (`flags_esphs` second digit 1 or 2) with no type of their own or one their colour does not
+       bear out; against the spectral-type temperatures of 19,569 others: median ratio 1.002, 85 %
+       within 20 %. Sources decided with the coordinator: O and B giants and supergiants from the
+       two papers' TeX sources on arXiv (option 1; the raw files deleted); no new source for A-M
+       giants and supergiants for now (possible later: Alonso et al. 1999 for FGK giants,
+       Schmidt-Kaler 1982, Landolt-Börnstein VI/2b); Gaia's teff_esphs as a cross-check and for the
+       reddened hot stars it measured. Not used: GSP-Phot's temperatures (Cygnus X-1's star has
+       32,499 K there but no ESP-HS value). The late M dwarfs' colour still saturates (about
+       3,170 K at the least); Proxima's measured temperature stands. `tests/startemp.test.ts`;
+       `scripts/interact.mjs` (Alnitak, Spica, Cygnus X-1's star, Almach, the Garnet Star).
 7. **Touch for the rest** (carried over from part 2): free flight (a thumb-stick), landing and
    walking, missions and the benchmark as screens of the app. Done: the ship on a phone (its
    instruments at a glance with the full read-out a tap away, the Time chip and sheet telling its
