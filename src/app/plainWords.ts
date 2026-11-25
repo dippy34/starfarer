@@ -59,7 +59,9 @@ export function plainLine(app: App, o: SpaceObject): string {
     const kind: Record<string, string> = { planet: 'Planet', dwarf: 'Dwarf planet', asteroid: 'Asteroid', tno: 'Icy world beyond Neptune', comet: 'Comet' };
     return `${kind[o.kind] ?? capital(o.kind)}${made} · ${away}`;
   }
-  // (galaxies, nebulae, black holes, spacecraft, places: their line as the lists have it)
+  // (a black hole's line as the lists have it gave its distance in AU)
+  if (o instanceof BlackHole) return `Black hole · ${blackHoleMass(o.massSun)} · ${away}`;
+  // (galaxies, nebulae, spacecraft, places: their line as the lists have it)
   return capital(describe(app, o));
 }
 
@@ -74,7 +76,7 @@ export function plainFacts(app: App, o: SpaceObject): [string, string][] {
     const sure = o.shape || o.measured ? '' : unsure || ' (estimated)';
     rows.push(['Size', `${times(across)} as wide as the Sun${sure}`]);
     const lum = Math.pow(10, -0.4 * (o.absMag - SUN_ABS_MAG));
-    rows.push(['Brightness', `${times(lum)} as bright as the Sun${unsure}`]);
+    rows.push(['Brightness', `${brightnessWords(lum)}${unsure}`]);
     rows.push(['Surface', `about ${celsiusWords(o.teff)}`]);
     return rows;
   }
@@ -88,7 +90,7 @@ export function plainFacts(app: App, o: SpaceObject): [string, string][] {
     return rows;
   }
   if (o instanceof BlackHole) {
-    rows.push(['Mass', o.massSun >= 1e6 ? `${sig(o.massSun / 1e6)} million Suns` : `${sig(o.massSun)} Suns`]);
+    rows.push(['Mass', blackHoleMass(o.massSun)]);
     return rows;
   }
   if (o instanceof Body && o.radius > 0) {
@@ -111,6 +113,23 @@ export function plainFacts(app: App, o: SpaceObject): [string, string][] {
 /** A star's colour, from its temperature (as the eye sees a star of it). */
 function starColour(teff: number): string {
   return teff >= 10_000 ? 'Blue-white' : teff >= 7_500 ? 'White' : teff >= 6_000 ? 'Yellow-white' : teff >= 5_200 ? 'Yellow' : teff >= 3_700 ? 'Orange' : 'Red';
+}
+
+/**
+ * A star's light against the Sun's: "23 times as bright", "80% as bright", "1,800 times fainter".
+ * (A red dwarf such as TRAPPIST-1, 0.00055 of the Sun, read "0 times as bright" at two decimals.)
+ * Two figures for the faint: a brightness from a magnitude is good to a few per cent at best.
+ */
+export function brightnessWords(lum: number): string {
+  if (lum >= 0.95 && lum < 1.05) return 'about as bright as the Sun';
+  if (lum >= 1) return `${times(lum)} as bright as the Sun`;
+  if (lum >= 0.1) return `${percent(lum)} as bright as the Sun`;
+  return `${Number((1 / lum).toPrecision(2)).toLocaleString('en-US')} times fainter than the Sun`;
+}
+
+/** a black hole's mass in Suns: "21.2 Suns", "4.3 million Suns" */
+function blackHoleMass(m: number): string {
+  return m >= 1e6 ? `${sig(m / 1e6)} million Suns` : `${sig(m)} Suns`;
 }
 
 /** "2.3 times", "120 times", "1,000 times" */

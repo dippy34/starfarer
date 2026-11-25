@@ -1,5 +1,39 @@
 [
  {
+  "id": "20261125-161657-a-test-that-visits-20-places-acr",
+  "at": "2026-11-25T16:16:57+00:00",
+  "kind": "tests",
+  "title": "A test that visits 20 places across space",
+  "text": "Every change is now checked at 20 places: planets, moons, stars, planets of other stars, black holes, a nebula and galaxies. At each it checks search, the card, Go there, tapping, the powers, Undo and share links. 141 of 144 checks pass; the other 3 wait for fixes already under way. Written by the cheap team (Kimi K3.1 Pro), checked and live.",
+  "link": "https://github.com/dippy34/starfarer/blob/claude/friendly-hypatia-up418z/scripts/everywhere.mjs",
+  "pictures": [
+   {
+    "src": "20261125-161657-a-test-that-visits-20-places-acr-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "The Moon"
+   },
+   {
+    "src": "20261125-161657-a-test-that-visits-20-places-acr-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "TRAPPIST-1"
+   },
+   {
+    "src": "20261125-161657-a-test-that-visits-20-places-acr-3.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Sagittarius A*"
+   },
+   {
+    "src": "20261125-161657-a-test-that-visits-20-places-acr-4.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Cygnus X-1"
+   }
+  ]
+ },
+ {
   "id": "20261125-160641-tap-a-galaxy-where-you-see-it",
   "at": "2026-11-25T16:06:41+00:00",
   "kind": "live",
