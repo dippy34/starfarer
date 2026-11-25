@@ -1,5 +1,45 @@
 [
  {
+  "id": "20261125-184634-search-finds-the-names-people-ty",
+  "at": "2026-11-25T18:46:34+00:00",
+  "kind": "live",
+  "title": "Search finds the names people type",
+  "text": "Alpha Centauri, Tau Ceti and Eta Carinae are found now, Sol gives the Sun first and ISS the space station, and made-up planets like Vega b come up too. Work by the cheap team (GLM 5.3 Flash), with the checker's fix to the constellation names.",
+  "link": "https://github.com/dippy34/starfarer/commits/claude/friendly-hypatia-up418z",
+  "pictures": [
+   {
+    "src": "20261125-184634-search-finds-the-names-people-ty-1.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "Before: Alpha Centauri"
+   },
+   {
+    "src": "20261125-184634-search-finds-the-names-people-ty-2.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: Alpha Centauri"
+   },
+   {
+    "src": "20261125-184634-search-finds-the-names-people-ty-3.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: Sol"
+   },
+   {
+    "src": "20261125-184634-search-finds-the-names-people-ty-4.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: ISS"
+   },
+   {
+    "src": "20261125-184634-search-finds-the-names-people-ty-5.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: Vega b"
+   }
+  ]
+ },
+ {
   "id": "20261125-161657-a-test-that-visits-20-places-acr",
   "at": "2026-11-25T16:16:57+00:00",
   "kind": "tests",
