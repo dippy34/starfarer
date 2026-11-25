@@ -1,2 +1,9 @@
-# Started by Claude, 25 Nov 2026: first try.
-# Started again, 25 Nov 2026: the first run stopped after 3 minutes, on a permission question nobody could answer (fixed in the workflow).
+# Started by Claude, 25 Nov 2026: first try (its pass ran out at 15:19, its work done but no report).
+# Second try, 25 Nov 2026: from the first try's work, as Claude's checker applied it; the review said NO-GO for the four points below.
+base: 3558520493619f2d0e4897241d213a63156a37a3
+Your first try is already in this copy: keep its folded strip, its plain units and its handling of the end-of-flight panel, which the review liked. Fix these four things:
+1. The lever column must not move when the strip's second line appears or disappears. Coasting, the strip has no status line (about 45 px); when "Thrust at 100 %" appears it grows about 16 px and the lever, Stop and view slide down under the thumb. Reserve the line's height always (the strip stays within 80 px) or anchor the lever and chips so a status line never shifts them. The existing flight-phone check "the lever at its foot cuts the thrust; Stop brakes the ship to rest" must pass unchanged. Add a check that the lever's top is the same coasting and thrusting.
+2. At 360x640 the assist list (.fl-modes) lies over the lever, Stop and view. Make the existing check "the chips, the thrusters' pad and the assist's list ... lie on nothing" pass at every size it lists.
+3. In your new "at a glance" check use /Above ground/i: innerText comes uppercased by the CSS.
+4. The drive tile cuts "tap to change" to "tap to ..." and the "view" label under "Cockpit" is clipped in its 40 px button: make both fit (shorter words, or let the tile grow).
+Then run the phone part of flight (FLIGHT_ONLY=phone) until no check fails, run the touch and ship suites, and write REPORT.md.

@@ -10,6 +10,9 @@ A note's text:
 
 - lines starting `#` are for the history only (when it was started, and why);
 - a line `model: opencode-go/<model>` picks the model (else the one the task names in `TASKS.md`);
+- a line `base: <a commit's full id>` starts the copy at that commit instead of the live branch: a
+  second try then starts from its first try's work (as Claude's checker applied it), and fixes what
+  the review found;
 - everything else goes to the AI as the reviewer's notes on its last try. A first try has none.
 
 The runs work on a read-only copy and push nothing: their changes come back as files attached to the

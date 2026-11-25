@@ -78,7 +78,7 @@ jobs:
           AFTER: ${{ github.sha }}
         run: |
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            jq -cn --arg t "$TASK_INPUT" --arg n "$NOTES_INPUT" --arg m "$MODEL_INPUT" '[{task: $t, notes: $n, model: $m}]' > tasks.json
+            jq -cn --arg t "$TASK_INPUT" --arg n "$NOTES_INPUT" --arg m "$MODEL_INPUT" '[{task: $t, notes: $n, model: $m, base: ""}]' > tasks.json
           else
             if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
               files=$(git diff-tree --no-commit-id --name-only --diff-filter=AM -r "$AFTER" -- .github/opencode/start/)
@@ -92,9 +92,11 @@ jobs:
               name=$(basename "$f" .txt)
               if ! printf '%s' "$name" | grep -Eq '^[a-z0-9][a-z0-9-]{0,48}$'; then echo "Not a task name: $f"; continue; fi
               model=$(grep -m1 -oE '^model: *opencode-go/[A-Za-z0-9._-]+' "$f" | sed 's/^model: *//' || true)
+              # (a second try starts from the first try's work: a commit of this repository, by its full id)
+              base=$(grep -m1 -oE '^base: *[0-9a-f]{40}$' "$f" | sed 's/^base: *//' || true)
               # (lines starting # are for the history only, such as when it was started)
-              notes=$(grep -v -e '^model:' -e '^#' "$f" | head -c 4000 || true)
-              jq -c --arg t "$name" --arg n "$notes" --arg m "$model" '. + [{task: $t, notes: $n, model: $m}]' tasks.json > next.json
+              notes=$(grep -v -e '^model:' -e '^base:' -e '^#' "$f" | head -c 4000 || true)
+              jq -c --arg t "$name" --arg n "$notes" --arg m "$model" --arg b "$base" '. + [{task: $t, notes: $n, model: $m, base: $b}]' tasks.json > next.json
               mv next.json tasks.json
               n=$((n + 1))
               if [ "$n" -ge 5 ]; then echo "At most 5 runs a push: the rest wait for the next."; break; fi
@@ -117,10 +119,20 @@ jobs:
       TASK: ${{ matrix.task }}
       NOTES: ${{ matrix.notes }}
       MODEL_INPUT: ${{ matrix.model }}
+      BASE: ${{ matrix.base }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      # a second try: the copy starts at the first try's work (a commit of this repository, given by its
+      # full id in the start note), so the AI fixes what the review found instead of starting over
+      - name: Start from the first try
+        if: env.BASE != ''
+        run: |
+          git fetch --depth=1 --no-tags origin "$BASE"
+          git checkout --detach FETCH_HEAD
+          git log -1 --format='Starting from %H: %s'
 
       - name: Check the task name
         run: |
