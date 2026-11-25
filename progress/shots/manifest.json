@@ -1,5 +1,45 @@
 [
  {
+  "id": "20261125-213250-the-ship-s-dashboard-in-plain-wo",
+  "at": "2026-11-25T21:32:50+00:00",
+  "kind": "live",
+  "title": "The ship's dashboard in plain words",
+  "text": "Flying, the instruments are one slim strip: speed in km/h, height above the ground in km, and a warning only when it matters. Every control is still there with plain names; the rest is one tap away. Work by the cheap team (Kimi K3.1 Pro) in two tries, checked and live.",
+  "link": "https://github.com/dippy34/starfarer/commits/claude/friendly-hypatia-up418z",
+  "pictures": [
+   {
+    "src": "20261125-213250-the-ship-s-dashboard-in-plain-wo-1.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "Before: at full thrust"
+   },
+   {
+    "src": "20261125-213250-the-ship-s-dashboard-in-plain-wo-2.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: at full thrust"
+   },
+   {
+    "src": "20261125-213250-the-ship-s-dashboard-in-plain-wo-3.jpg",
+    "w": 960,
+    "h": 444,
+    "caption": "Before: on its side"
+   },
+   {
+    "src": "20261125-213250-the-ship-s-dashboard-in-plain-wo-4.jpg",
+    "w": 960,
+    "h": 444,
+    "caption": "After: on its side"
+   },
+   {
+    "src": "20261125-213250-the-ship-s-dashboard-in-plain-wo-5.jpg",
+    "w": 720,
+    "h": 1280,
+    "caption": "After: small phone, steering list"
+   }
+  ]
+ },
+ {
   "id": "20261125-184634-search-finds-the-names-people-ty",
   "at": "2026-11-25T18:46:34+00:00",
   "kind": "live",
@@ -104,40 +144,6 @@
     "w": 780,
     "h": 1688,
     "caption": "After: Andromeda"
-   }
-  ]
- },
- {
-  "id": "20261125-152326-the-ship-s-dashboard-in-plain-wo",
-  "at": "2026-11-25T15:23:26+00:00",
-  "kind": "team",
-  "title": "The ship's dashboard in plain words",
-  "text": "The cheap team (Kimi K3.1 Pro) redid the ship's instruments: km/h instead of m/s, 'above ground' and 'hits the ground in', 'main drive', 'steering', 'side thrust', in the new look and a little smaller. Being checked now; not live yet.",
-  "link": "https://github.com/dippy34/starfarer/actions/runs/45630570762",
-  "pictures": [
-   {
-    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-1.jpg",
-    "w": 390,
-    "h": 844,
-    "caption": "Before: upright"
-   },
-   {
-    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-2.jpg",
-    "w": 390,
-    "h": 844,
-    "caption": "After: upright"
-   },
-   {
-    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-3.jpg",
-    "w": 844,
-    "h": 390,
-    "caption": "Before: on its side"
-   },
-   {
-    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-4.jpg",
-    "w": 844,
-    "h": 390,
-    "caption": "After: on its side"
    }
   ]
  },
