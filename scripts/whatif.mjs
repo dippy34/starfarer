@@ -41,6 +41,9 @@ const card = (page) => page.evaluate(() => {
 const details = async (page) => {
   if (await page.evaluate(() => document.querySelector('#hud .card .facts').hidden)) await page.locator('#hud .card [data-details]').tap().catch(() => page.locator('#hud .card [data-details]').click());
   await page.waitForSelector('#hud .card .facts:not([hidden])');
+  // (the facts as measured and their working are under More science, a tap below the plain lines)
+  if (await page.evaluate(() => document.querySelector('#hud .card .science')?.hidden)) await page.locator('#hud .card [data-science]').tap().catch(() => page.locator('#hud .card [data-science]').click());
+  await page.waitForSelector('#hud .card .science:not([hidden])');
   await frames(page, 2);
 };
 // (what is on the selection's card under its bar is a tap on the bar away: openCard)

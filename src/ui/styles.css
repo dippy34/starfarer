@@ -339,8 +339,9 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 }
 .card-title h2 { grid-column: 1; margin: 0; font: var(--sf-t-title); color: var(--sf-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-title p {
-  grid-column: 1; margin: 1px 0 0; font: var(--sf-t-small); color: var(--sf-ink-2);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+  grid-column: 1; margin: 1px 0 0; font: var(--sf-t-small); color: var(--sf-ink-2); font-variant-numeric: tabular-nums;
+  /* (the line is read whole: on a narrow phone it takes a second line rather than lose its end) */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
 }
 /* (the chevron is the button, and the whole name with it: a tap anywhere on the name opens the card) */
 #hud .card-more { grid-column: 2; grid-row: 1 / span 2; width: 28px; height: 28px; display: grid; place-items: center; color: var(--sf-ink-2); border-radius: var(--sf-r-key); }
@@ -348,7 +349,7 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .card-more .icon { width: 18px; height: 18px; transform: rotate(-90deg); transition: transform var(--sf-move) var(--sf-ease); }
 #hud .card.open .card-more .icon { transform: rotate(90deg); }
 #hud .card-title:active { opacity: 0.7; }
-#hud .btn.card-go { flex: none; min-height: var(--sf-touch); padding: 0 var(--sf-s3) 0 var(--sf-s2); border-radius: var(--sf-r-key); gap: var(--sf-s1); font-size: 15px; }
+#hud .card .btn.card-go { flex: none; min-height: var(--sf-touch); padding: 0 var(--sf-s3) 0 var(--sf-s2); border-radius: var(--sf-r-key); gap: var(--sf-s1); font-size: 15px; }
 #hud .card-bar .icon-btn { width: var(--sf-touch); height: var(--sf-touch); border-radius: var(--sf-r-key); }
 /* open: its second keys (its picture beside them), flat and squared */
 .card .card-actions { align-items: center; padding-right: var(--sf-s2); }
@@ -368,6 +369,8 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .science-toggle .icon { width: 16px; height: 16px; transform: rotate(90deg); transition: transform var(--sf-move) var(--sf-ease); }
 #hud .science-toggle[aria-expanded='true'] .icon { transform: rotate(-90deg); }
 .facts .science { padding-right: var(--sf-s1); }
+/* (the plain lines alone end where they end: the fade that says the list goes on is for the science) */
+.facts:has(> .science[hidden]) { -webkit-mask-image: none; mask-image: none; padding-bottom: 0; }
 /* with its details open the card may take more of the screen, and its list shows that it goes on */
 .card:has(.facts:not([hidden])) { max-height: min(74vh, 680px); }
 /* (upright, while the details are read, the round buttons step aside: the taller card would push them up over the chips) */
@@ -652,6 +655,11 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
 @media (max-width: 359px) {
   #hud .chip { gap: 6px; padding: 5px 10px 5px 8px; }
   #hud .chip.clock { padding: 5px 10px; }
+}
+/* a phone's panel: Go there on the card's bar keeps its word and gives its sign's room to the line */
+@container (max-width: 420px) {
+  #hud .card .btn.card-go .icon { display: none; }
+  #hud .card .btn.card-go { padding: 0 var(--sf-s3); }
 }
 /* a narrow panel (a small phone, either way up): the card's second buttons lose their icons */
 @container (max-width: 340px) {

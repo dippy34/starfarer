@@ -17,6 +17,85 @@ wants it to feel like SpaceEngine: visit "everything", black holes, beautiful st
 smooth travel. Real data wherever it exists (downloaded by `pipeline/`, credited in `CREDITS.md`),
 procedural generation for the rest. Never use SpaceEngine's own files.
 
+## Design
+
+The owner, November 2026: "the UI is taking up most of the screen", "way too nerdy: you should be able
+to understand what it is if you took 1 year of high school", and the crash screen "looks like AI a
+lot". "Make it simple" starts here (Part 0): an identity of its own, written down, proved on two screens.
+
+**The idea: a spacecraft's displays.** Real flight decks (the Space Shuttle's and Orion's glass
+cockpits, the station's laptops, a mission-control console) are built to be read in a second by
+someone busy and under stress. So they are calm, flat and exact: dark panels, words and numbers in
+one bright ink, a small label over each number, a hairline between parts, and colour kept for what it
+means. Starfarer borrows that, not the sci-fi version of it. The view of space is the star of the
+screen; the interface stands at its edges, as small as it can be, and folds away when not needed.
+
+**What that rules out** (the generic AI look): glassy blurred cards, neon accents and glows, emoji,
+everything centred, every corner rounded, gradients for decoration, and big dramatic words
+("CRASHED" spaced across the screen). An event says what happened, with its number, and what to do.
+
+**Plain words.** A ninth-grader reads the first layer of everything: km, km/h, °C, "times as wide as
+Earth", "your weight there", "light takes 8 minutes to reach you". Never AU, parsecs, kelvin,
+magnitudes, albedo or m/s on the first layer. The science stays, every value exactly as measured, one
+tap further in ("More science"). Plain numbers are worked from the same data, never rounded into
+something else, and keep its "(estimated)" or "(uncertain)".
+
+**The tokens** (`:root` in `src/ui/styles.css`, prefixed `--sf-`; every new or redone screen uses
+them, older rules keep their own values until their screen is redone):
+
+| | tokens | why |
+|---|---|---|
+| colour | `--sf-ink` (values), `--sf-ink-2` (labels), `--sf-ink-3` (units, scale); `--sf-panel` (0.94 opaque, no blur), `--sf-panel-2` (a well or key), `--sf-rule` (hairline) | readable over the Sun's glare and a white crash flash alike; flat, as a display is |
+| meaning | `--sf-accent` (can be pressed), `--sf-nominal` green, `--sf-caution` amber, `--sf-warning` red, `--sf-live` orange (what you changed) | one meaning per colour, as on a flight deck's caution and warning panel; red only when something went wrong |
+| type | `--sf-font` (the phone's own face: SF on an iPhone; Inter on the test runners), `--sf-mono`; `--sf-t-legend` 11 px capitals spaced 0.08em, `-small` 13, `-body` 15, `-title` 17, `-readout` 22, `-display` 28 | system fonts: nothing to download or license; numbers always `tabular-nums` so they do not jitter; the legend over a number is the instrument's label |
+| space | `--sf-s1`..`--sf-s6`: 4, 8, 12, 16, 24, 32 px; `--sf-touch` 44 px | one step; a finger gets 44 px |
+| corners | `--sf-r-key` 6 px, `--sf-r-panel` 10 px | squared like a panel of keys; round only for what is round (a planet's picture) |
+| elevation | none: `--sf-edge-line`, a hairline | a display is not a floating card |
+| motion | `--sf-quick` 120 ms, `--sf-move` 200 ms, `--sf-ease`; off under reduced motion | only to show where a thing came from; nothing blinks |
+
+**Layout.** Left-aligned, read down the left edge. A label above its number. On a phone the bars sit
+at the bottom under the thumb; a panel opens upward from its bar. Upright, on its side and at a desk
+the same parts in the same order.
+
+**The two screens done (Part 0).**
+
+- *The object card* (`src/ui/Hud.ts` renderCard, styles "the card of what is selected",
+  `src/app/plainWords.ts`). Folded by default to a bar of about 62 px: the name, one plain line
+  ("Earth's moon · 384,400 km away", "White star · 8.6 light years away"), Go there, close. A tap on
+  the name (or its chevron, `[data-details]`) opens the rest above it: Look at and Share, the powers,
+  its temperature, a few plain facts (How far, Its light takes, Size, Your weight there, Spins once
+  in; for a star Size and Brightness against the Sun and its surface in °C), and More science
+  (`[data-science]`): every row and worked line exactly as before. A new selection folds it again.
+  Kept as "Go there", not "Fly there": the ship's own button already says "Fly there in your ship",
+  and two buttons with one name would be the confusion we are removing. The suites open it with
+  `openCard` (`scripts/lib/browser.mjs`); their `press` helpers do so for the card's buttons.
+- *The end of a flight* (`src/game/FlightHud.ts` setEnd, `endReport` in `src/game/Flight.ts`). An
+  event display, as a caution and warning panel: a red edge and legend ("Crashed"), one sentence
+  ("You hit the Moon at 355 km/h."), the readouts (Your speed in red, Safe landing "under 43 km/h"),
+  a scale from 0 with the safe part green and the speed as a red bar, the one thing to do next, and a
+  countdown ("Back in orbit around the Moon in 4 s"). The numbers are the event's speed and the ship's
+  `crashSpeed` (12 m/s: 43.2 km/h, said as "under 43"). Burning up, being torn apart and the horizon
+  use the same panel in their own words. While it shows, the blinking banner and the (inert) ship
+  controls step aside. `ending.title` ("CRASHED" ...) stays as the event's code for the checks and VR.
+
+Checks that hold the design to its promises: touch "the card is a slim bar ..." (at most 9 % of an
+upright phone's height and 80 px, upright, on its side and at a desktop size), "one tap on it opens
+the rest ...", "More science unfolds every fact as measured"; live "Jupiter's card offers its powers
+one tap away"; share "Share is ... one tap on it away"; flight "the crash screen says, in km/h, how
+fast the ship hit and how slow a safe landing is, as the physics has them ...".
+
+**Next screens, in order** (Part 2 onwards, each with the tokens, plain words first, science a tap away):
+1. the ship's instruments on a phone (the glance panel, the drive chip, the lever, assist and RCS
+   chips: today most of the top half of the screen, in m/s, km up and g);
+2. the bottom tab bar and the round buttons (Search, Explore, Time, More; "Drag: orbit", "Fly there
+   in your ship"): fewer, smaller, one row;
+3. the top chips (where you are, the time) and the Time sheet;
+4. Explore and Search lists (their lines in the plain words of the card);
+5. the warnings and toasts in flight ("IMPACT IN 12 s — SLOW DOWN") and the touchdown message;
+6. More (settings, help) and the coach card;
+7. live physics: the mark at the top, the powers' panels, the impact card and the watch chip;
+8. the title screen and loading screen (`src/ui/start.css`, index.html).
+
 ## Done
 
 * Engine: Three.js + TypeScript + Vite, double-double positions, floating origin, log/reversed-Z depth,

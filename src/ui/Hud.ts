@@ -158,8 +158,12 @@ export interface ThumbSheet { url: string; cols: number; rows: number; bodies: R
 /** (`flight`: the ship's full read-out, opened from its instruments on a touch screen) */
 type Sheet = 'explore' | 'time' | 'more' | 'flight';
 
-/** the height the selection's card takes above the tab bar, with its gap (px): folded, a bar of its name, a line and Go there (styles.css, .card-bar) */
-const CARD_ROOM = 72;
+/**
+ * the room kept for the selection's card above the tab bar, with its gap (px). Folded the card is a bar
+ * of about 70 px (styles.css, .card-bar); the room is still that of the card with its buttons open (its
+ * actions, the powers, a world's temperature), so that the subject does not move when it is opened
+ */
+const CARD_ROOM = 225;
 /** a watch is given at least this share of an upright view's height: an open panel of the card folds away for it (makeRoom) */
 const FOLD_BELOW = 0.4;
 /** the clear part of the view: room kept round each part of the interface (px, as markers keep it), the least size worth holding a marker, how wide a rectangle is worth against its height, how much better a new one must be to take over, and the farthest its middle may be from the view's (of the view's size) */
