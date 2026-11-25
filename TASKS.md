@@ -187,8 +187,9 @@ need the OpenCode workspace's region set to Global.
   - The drive, the lever, Stop, the view, assist and the side thrusters all stay, with plain names,
     in less room. Don't remove a control: make it smaller, or move it into the opened part.
   - While the end-of-flight panel shows (a crash and the like, `setEnd`), the instruments step aside
-    too, as the lever and the chips already do: today the strip still says "Impact in 4 min" and
-    offers the drive's − and + under "You hit the Moon".
+    too, as the lever and the chips already do: today the phone's strip still says "Impact in 4 min"
+    and offers the drive's − and + under "You hit the Moon", and at a desk the read-out at the right
+    still says "impact in 27 s" (the flight suite's picture `f4-crash.png`).
   - Every number comes from the read-out the ship already gives (`FlightReadout` in
     `src/game/Flight.ts`); only the units and the words change. Keep each number with its unit (a
     no-break space, as `endReport` does).
