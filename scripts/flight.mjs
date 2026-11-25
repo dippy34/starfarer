@@ -127,6 +127,19 @@ check('hitting the Moon fast is a crash', crashed && st.ending === 'CRASHED', St
       && /Next time, point the engine at the ground/.test(end.text) && /Back in orbit around the Moon in \d+\u00a0s/.test(end.text) && !/m\/s/.test(end.text) && end.warn === 'none',
     JSON.stringify({ ...end, want, safe }));
 }
+// the wreck stays where it hit while the panel counts down, at rest on the Moon: it does not stay put in space while
+// the Moon moves on (it was 100 km up by the end of the count, its instruments reading a climb and a new impact)
+{
+  const at = () => page.evaluate(() => {
+    const a = window.app, f = a.game.flight, m = a.findByName('Moon'), rel = f.ship.upos.sub(m.upos);
+    return { h: rel.length() - m.radius, v: f.ship.vel.clone().sub(m.vel).length(), t: f.ending?.t ?? null };
+  });
+  const a0 = await at();
+  await frames(10);
+  const a1 = await at();
+  check('while the crash panel shows, the wreck stays where it hit, at rest on the Moon',
+    a0.t !== null && a1.t !== null && a1.t < a0.t && Math.abs(a1.h - a0.h) < 50 && a1.v < 50, JSON.stringify({ a0, a1 }));
+}
 await page.waitForTimeout(500);
 await shot('f4-crash.png');
 // (the ending counts down 4.5 s of control steps, 0.1 s at most a frame: 45 frames, which on a runner, at 2 to 3 s a frame
