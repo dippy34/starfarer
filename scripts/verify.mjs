@@ -1,5 +1,6 @@
 // Headless verification: loads scenarios in Chromium, waits for streaming to
-// settle, saves screenshots and fails on console/page errors.
+// settle, saves screenshots and fails on console/page errors, and on wrong
+// picks (real mouse clicks in the two galaxy scenarios).
 // Usage: node scripts/verify.mjs [baseUrl] [outDir] [scenarioName...]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
@@ -29,7 +30,8 @@ export const scenarios = [
   { name: '15-gaia-bh1', query: `time=${T}&paused=1&target=Gaia BH1&dist=25&fov=60` },
   { name: '16-cygnus-x1-far', query: `time=${T}&paused=1&target=Cygnus X-1&dist=3000` },
   { name: '17-galactic-core-in-plane', query: `time=${T}&paused=1&campc=603,-2659,22&look=Sagittarius A*&fov=80` },
-  { name: '18-milky-way-from-outside', query: `time=${T}&paused=1&campc=-35159,-15148,14226&look=Sagittarius A*&fov=60` },
+  { name: '18-milky-way-from-outside', query: `time=${T}&paused=1&campc=-35159,-15148,14226&look=Sagittarius A*&fov=60`,
+    picks: [{ target: 'Milky Way', at: 'centre' }] },
   { name: '19-proxima-b', query: `time=${T}&paused=1&target=Proxima Cen b&dist=3.5&az=40&el=10` },
   { name: '20-trappist-1e', query: `time=${T}&paused=1&target=TRAPPIST-1 e&dist=3.5&az=30&el=10` },
   { name: '21-hot-jupiter-51-peg-b', query: `time=${T}&paused=1&target=51 Peg b&dist=4&az=50&el=15` },
@@ -38,7 +40,8 @@ export const scenarios = [
   { name: '24-iss', query: `time=${T}&paused=1&target=ISS&dist=2.2&az=200&el=25` },
   { name: '25-jwst', query: `time=${T}&paused=1&target=JWST&dist=2.6&az=120&el=20` },
   { name: '26-voyager-1', query: `time=${T}&paused=1&target=Voyager 1&dist=4&az=150&el=15` },
-  { name: '27-andromeda', query: `time=${T}&paused=1&target=Andromeda Galaxy&dist=2.4&fov=60` },
+  { name: '27-andromeda', query: `time=${T}&paused=1&target=Andromeda Galaxy&dist=2.4&fov=60`,
+    picks: [{ target: 'Andromeda Galaxy', at: 'centre' }, { target: 'Andromeda Galaxy', at: 'disc' }, { target: 'Andromeda Galaxy', at: 'M32' }] },
   { name: '28-whirlpool', query: `time=${T}&paused=1&target=Whirlpool Galaxy&dist=2.4&fov=60` },
   { name: '29-local-group', query: `time=${T}&paused=1&campc=-900000,600000,700000&look=Andromeda Galaxy&fov=70` },
   { name: '30-cockpit-earth', query: `time=${T}&paused=1&target=Earth&dist=1.8&az=60&el=10&ship=cockpit&fov=70` },
@@ -72,6 +75,44 @@ for (const sc of scenarios) {
     await page.waitForTimeout(2500);
   } catch (e) {
     errors.push(`scenario error: ${e.message}`);
+  }
+  // (declared picks, when the scenario has them: a real mouse click where the app itself projects the
+  // point — not only a pickAt call — then three rendered frames later the selection must name the
+  // object. A point that cannot be resolved fails its own check with details and does not throw away
+  // the later ones; these fail the run apart from the console errors above.)
+  for (const tap of sc.picks ?? []) {
+    const point = await page.evaluate((tap) => {
+      const a = window.app;
+      if (!a) return null;
+      const css = (p) => (p ? { x: p.x, y: p.y } : null);
+      const target = a.findByName(tap.target);
+      if (tap.at === 'centre') return css(target && a.project(target.upos.sub(a.rig.upos)));
+      if (tap.at === 'disc') {
+        const v = target && a.galaxies.views.find((x) => x.galaxy === target);
+        const p = v && a.project(v.rel), r = v && v.pixelRadius / a.view.pixelRatio;
+        return p && r ? { x: p.x, y: p.y - 0.85 * r, r } : null;
+      }
+      if (tap.at === 'M32') {
+        const v = a.galaxies.views.find((x) => x.galaxy.name === 'M32');
+        return v ? css(a.project(v.rel)) : null;
+      }
+      return null;
+    }, tap).catch((e) => ({ error: String(e?.message ?? e) }));
+    let selected, error = point?.error;
+    if (point && !error) {
+      try {
+        await page.mouse.click(point.x, point.y);
+        // (a frame at most a second and slower still on a software GL runner: a bound, not a measure)
+        const before = await page.evaluate(() => window.app.frameCount);
+        await page.waitForFunction((n) => window.app.frameCount >= n + 3, before, { timeout: 600000 });
+        selected = await page.evaluate(() => window.app.selection?.name ?? null);
+      } catch (e) {
+        error = String(e?.message ?? e);
+      }
+    }
+    const ok = !error && selected === tap.target;
+    failed = failed || !ok;
+    console.log(`${ok ? 'PASS' : 'FAIL'} pick ${sc.name} ${tap.at} → ${tap.target}: selected ${JSON.stringify(selected ?? null)} at ${JSON.stringify(point ?? null)}${error ? ` (${error})` : ''}`);
   }
   const state = await page.evaluate(() => (window.app ? window.app.debugState() : null)).catch(() => null);
   const file = path.join(outDir, `${sc.name}.png`);

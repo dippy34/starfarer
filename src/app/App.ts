@@ -2743,6 +2743,21 @@ export class App {
       const s = d + bias;
       if (s < bestScore) { bestScore = s; best = obj; }
     };
+    // Overlapping galaxies are not a nearest-centre contest: the one the view is framed on wins,
+    // then the biggest on screen. Their whole drawn discs count, however far the centre is away.
+    const galaxy: { best?: { obj: SpaceObject; radiusPx: number; score: number } } = {};
+    const considerGalaxy = (obj: SpaceObject, p: { x: number; y: number } | null, radiusPx: number) => {
+      if (!p) return;
+      const d = Math.hypot(p.x - cx, p.y - cy);
+      if (d > Math.max(radiusPx, reach)) return;
+      const score = d + 2, framed = obj === this.rig.target;
+      if (galaxy.best) {
+        const oldFramed = galaxy.best.obj === this.rig.target;
+        if (oldFramed && !framed) return;
+        if (oldFramed === framed && (radiusPx < galaxy.best.radiusPx || (radiusPx === galaxy.best.radiusPx && score >= galaxy.best.score))) return;
+      }
+      galaxy.best = { obj, radiusPx, score };
+    };
     const mLim = this.lastMLim;
     for (const v of this.bodies.views.values()) {
       if (!v.resolved && v.apparentMag > mLim + 1.5 && !this.namedInTheDark(v)) continue;
@@ -2755,7 +2770,12 @@ export class App {
     }
     for (const ev of this.exo.views) if (this.exoShown(ev)) consider(ev.planet, this.project(ev.rel), ev.pixelRadius / this.view.pixelRatio, ev.pixelRadius > 2 ? -6 : -3);
     for (const cv of this.craft.views) if (this.craftShown(cv)) consider(cv.craft, this.project(cv.rel), cv.pixelRadius / this.view.pixelRatio, -5);
-    for (const gv of this.galaxies.views) if (gv.pixelRadius >= 2.5) consider(gv.galaxy, this.project(gv.rel), Math.min(gv.pixelRadius / this.view.pixelRatio, 80), 2);
+    for (const gv of this.galaxies.views) if (gv.pixelRadius >= 2.5) considerGalaxy(gv.galaxy, this.project(gv.rel), gv.pixelRadius / this.view.pixelRatio);
+    if (this.mwVolume.mesh.visible) {
+      const r = this.milkyWay.upos.sub(this.rig.upos, new Vector3());
+      const radiusPx = Math.atan2(this.milkyWay.radius, r.length()) / this.view.pixelAngle / this.view.pixelRatio;
+      if (radiusPx >= 2.5) considerGalaxy(this.milkyWay, this.project(r), radiusPx);
+    }
     for (const dv of this.deepSky.views) if (dv.pixelRadius >= 3 && dv.dist > dv.obj.radius) consider(dv.obj, this.project(dv.rel), Math.min(dv.pixelRadius / this.view.pixelRatio, 80), 1.5);
     for (const sh of [...this.game.traffic.ships, ...this.game.traffic.stations]) {
       const r = sh.upos.sub(this.rig.upos, new Vector3());
@@ -2763,6 +2783,7 @@ export class App {
     }
     for (const s of this.near.stars) consider(s, this.project(s.upos.sub(this.rig.upos, rel)), 0, -2);
     for (const { bh, rel: r, shadowPx } of this.labelledHoles()) consider(bh, this.project(r), shadowPx / this.view.pixelRatio, -4);
+    if (galaxy.best && galaxy.best.score < bestScore) best = galaxy.best.obj;
     if (best) return best;
     // Catalogue stars currently drawn
     let bestRef: { cat: StarCatalog; node: number; slot: number } | null = null;
