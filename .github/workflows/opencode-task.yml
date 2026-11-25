@@ -106,6 +106,7 @@ jobs:
           jq . tasks.json
 
   task:
+    name: task (${{ matrix.task }})
     needs: plan
     if: needs.plan.outputs.tasks != '[]'
     runs-on: ubuntu-24.04

@@ -212,7 +212,9 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/look-button`: the round "Drag: orbit" button sometimes misses a tap
 
-- **Status:** open. Small to medium. Flaky since the card redesign.
+- **Status:** on hold. Two tries (25 Nov) could not reproduce the miss: 14 runs of the check alone
+  passed. The check now prints what it saw (`mode`, `moved`, `turned`) when it fails; take this up
+  again with that evidence.
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** in `scripts/touch.mjs` (its section 2), the check `set to "Look", one finger looks
   around instead` failed in 2 of 4 runs since the card was redone (95946c0), and in none before. It
@@ -226,6 +228,41 @@ need the OpenCode workspace's region set to Global.
   own (not committed), passes 10 times in a row on your runner, and fails the old way before the fix
   if the cause was in the app; the touch suite passes; `npm run check` passes.
 - **Don't touch:** `src/game/` and `scripts/flight.mjs` (task/ship-instruments works there).
+
+### `task/powers-everywhere`: the same powers on every kind of object, with a reason where one can't work yet
+
+- **Status:** open. Medium. Read `docs/notes/works-everywhere.md` (plan step 2) and `HANDOFF.md`
+  "Design" first.
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **The problem:** the powers (Mass, Size, Move, Add, Remove) are offered only when the selection is
+  a Solar System body: the gate is `if (sel instanceof Body && sel.valid)` in `src/app/App.ts`, Add
+  is `canAdd(Body)`, and the card hides its whole powers row (`powers.hidden = !sel.mass &&
+  !sel.removable` in `src/ui/Hud.ts`). On a star, a planet of another star, a black hole or a galaxy
+  the card shows no powers at all, so a person can't tell that god mode exists there, or why it
+  doesn't work. The owner: "I want God mode to work everywhere."
+- **What to do:**
+  - Add `src/app/powersFor.ts`: one table, `powersFor(obj)`, that gives for every power either
+    "works" or one short sentence in plain words saying why not, for every kind of object: a Solar
+    System body (as today), the Sun (as today), a planet of another star (real or generated),
+    another star, a black hole, a comet or belt asteroid, a galaxy or nebula, a spacecraft, a place.
+  - Every sentence must be true today and at most 60 characters, for example "Live physics runs in
+    our Solar System only, so far" or "No measured mass for galaxies in our data". No promises of
+    dates, and no invented numbers.
+  - The opened card always shows the powers row. A power that can't work is shown dimmed (still a
+    44 px target), and a tap on it shows its sentence. One that works does exactly what it does
+    today. Don't change what any power does.
+  - App.ts's gate and Hud.ts's row read the table, so nothing else decides it.
+- **Done when:**
+  - A unit test covers `powersFor` for every kind above.
+  - `scripts/everywhere.mjs` checks the new table: at each place, which powers work and which show
+    a reason. Its old "powers offered" check is rewritten for that, never made weaker; the report
+    says how.
+  - The `live`, `touch` and `everywhere` suites pass (but for `everywhere`'s known failures in
+    `docs/notes/testing.md`), and `npm run check` passes.
+  - Pictures of the opened card, before and after, on a phone (390x844): the Moon, Sirius, TRAPPIST-1
+    e, Cygnus X-1 and the Andromeda Galaxy.
+- **Don't touch:** `src/game/` and `scripts/flight.mjs` (task/ship-instruments), and
+  `src/universe/CatalogSearch.ts`, `src/app/Systems.ts` and App.ts's search code (task/search-names).
 
 ## Adding a task
 
