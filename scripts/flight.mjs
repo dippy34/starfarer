@@ -3,7 +3,7 @@
 // tides and a supermassive one's horizon; the reactionless drive near light speed (never at it) and
 // the autopilot to another star; on a phone, boarding, the drive's setting and Go there by touch, the
 // instruments at a glance and the full read-out, the Time chip's rate in the ship, and flying by hand
-// (steering by a finger, the throttle lever, Stop), upright and on its side; Fly there in your ship from
+// (steering by a finger, the throttle lever, Stop), upright and on its side; Fly my ship there from
 // the ground in a planet's air (it climbs out under its own drive, then goes on); the steering assist's
 // modes and the side thrusters by touch. Usage: node scripts/flight.mjs [baseUrl] [outDir]
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
@@ -764,7 +764,7 @@ if (part !== 'desk' && part !== 'layout') { // (FLIGHT_ONLY: phone, 13-18; not i
   const shown = (q) => phone.evaluate((sel) => { const e = document.querySelector(sel); return !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden'; }, q);
   // the drag button says what one finger does now
   st = await phone.evaluate(() => document.querySelector('.look-fab span').textContent);
-  check('the drag button says what dragging does now', st === 'Drag: orbit', st);
+  check('the one-finger button says what dragging does now', st === 'Turning around it', st);
   // More: How to move at the top, the missions with their count, the start menu
   await f.tap(await at('.hud-tabs [data-tab="more"]'));
   await f.frames(2);
@@ -872,7 +872,7 @@ if (part !== 'desk' && part !== 'layout') { // (FLIGHT_ONLY: phone, 13-18; not i
   await f.tap(await at('.ship-fab'));
   await f.frames(4);
   st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, drive: fl.ship.drive, g: fl.ship.driveAccel / 9.80665, refusal: fl.autopilotRefusal(), fab: getComputedStyle(document.querySelector('.ship-fab')).display }; });
-  check('"Fly there in your ship": one tap boards the ship and its autopilot flies there, the drive set strong enough', label === 'Fly there in your ship' && st.mode === 'chase' && st.target === 'Moon' && st.drive === 'reactionless' && !st.refusal && st.fab === 'none', JSON.stringify({ label, ...st }));
+  check('"Fly my ship there": one tap boards the ship and its autopilot flies there, the drive set strong enough', label === 'Fly my ship there' && st.mode === 'chase' && st.target === 'Moon' && st.drive === 'reactionless' && !st.refusal && st.fab === 'none', JSON.stringify({ label, ...st }));
   await phone.screenshot({ path: path.join(outDir, 'f23-phone-ship-there.png'), timeout: 180000 });
 
   // the science one tap away says why a trip would take years, and what to do; the slim strip does not
@@ -899,7 +899,7 @@ if (part !== 'desk' && part !== 'layout') { // (FLIGHT_ONLY: phone, 13-18; not i
   await ctx.close();
 }
 
-// 17. "Fly there in your ship" from inside a planet's air (it was refused: "climb above 127 km first"):
+// 17. "Fly my ship there" from inside a planet's air (it was refused: "climb above 127 km first"):
 // from the ground at Earth with the Moon selected, one tap boards the ship and its autopilot climbs
 // out of the air on its own drive (hull kept cool, never faster than the drive can push it, nothing
 // jumping), then carries on to the Moon. With the drive too weak to climb, the refusal comes with a
@@ -943,7 +943,7 @@ if (part !== 'desk' && part !== 'layout') { // (FLIGHT_ONLY: phone, 13-18; not i
   await f.tap(await at('.ship-fab'));
   await f.frames(4);
   st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, refusal: fl.autopilotRefusal(), alt: fl.readout.altitude, toast: document.querySelector('.hud-toast').textContent }; });
-  check('"Fly there in your ship" from the ground in Earth\'s air: the autopilot takes the trip, and says it climbs first', label === 'Fly there in your ship' && st.mode === 'chase' && st.target === 'Moon' && !st.refusal && /climbing out of Earth's air first/.test(st.toast), JSON.stringify({ label, ...st }));
+  check('"Fly my ship there" from the ground in Earth\'s air: the autopilot takes the trip, and says it climbs first', label === 'Fly my ship there' && st.mode === 'chase' && st.target === 'Moon' && !st.refusal && /climbing out of Earth's air first/.test(st.toast), JSON.stringify({ label, ...st }));
   // (time quickened: the autopilot holds a frame to two seconds of flight in the air)
   await phone.evaluate(() => { window.app.clock.rate = 50; });
   const out = await until(() => { const fl = window.app.game.flight; return !!fl.ending || fl.readout.altitude > 127.5e3; }, 600000);

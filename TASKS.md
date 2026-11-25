@@ -272,7 +272,7 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/tab-bar`: the bottom bar and the round buttons, in the new design
 
-- **Status:** open. Medium. Design, Part 3 (`HANDOFF.md` "Design", "Next screens", item 2).
+- **Status:** in review (run 45705433565: pictures good; browser suites running on GitHub). Medium. Design, Part 3 (`HANDOFF.md` "Design", "Next screens", item 2).
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** at the foot of a phone the interface stacks a tab bar (Search, Explore, Time,
   More: `.hud-tabs`, 60 px with rounded "pill" styling the design rules out) and, above it, round

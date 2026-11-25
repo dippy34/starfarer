@@ -120,6 +120,9 @@ const centreOf = async (page, sel) => {
   check('the page is exactly the screen (nothing to scroll)', lay.scroll[0] <= lay.scroll[2] && lay.scroll[1] <= lay.scroll[3], JSON.stringify(lay.scroll));
   check('the chips are at the top, inside the screen, side by side', lay.place.l >= 0 && lay.clock.r <= W && lay.place.r < lay.clock.l && lay.place.t < 30, JSON.stringify([lay.place, lay.clock]));
   check('the tab bar is at the bottom, the card just above it', lay.tabs.b <= H && lay.tabs.b > H - 20 && lay.card.b <= lay.tabs.t && lay.card.b > lay.tabs.t - 20, JSON.stringify([lay.tabs, lay.card]));
+  const fabs = await page.evaluate(() => ({ look: document.querySelector('.look-fab span')?.textContent ?? '', ship: document.querySelector('.ship-fab span')?.textContent ?? '' }));
+  const bar = { h: Math.round(lay.tabs.b - lay.tabs.t), look: fabs.look, ship: fabs.ship };
+  check('the tab bar is slim, and the round buttons use plain words', bar.h <= 52 && !bar.look.includes('Drag:') && !bar.ship.includes('Drag:'), JSON.stringify(bar));
   check('upright, the view opens up (70 degrees) and the Earth fits across with room to spare', Math.abs(lay.fov - 70) < 0.5 && lay.radiusPx * 2 < W * 0.75 && lay.radiusPx * 2 > W * 0.45, `fov ${lay.fov.toFixed(1)}, disc ${(lay.radiusPx * 2).toFixed(0)} px of ${W}`);
   check('the Earth is clear of the chips and the card', lay.earth.y - lay.radiusPx > lay.place.b && lay.earth.y + lay.radiusPx < lay.card.t, JSON.stringify({ earth: lay.earth, r: lay.radiusPx, card: lay.card.t }));
   // (the room kept for the card is the card's opened to its buttons, 225 px over the tab bar, CARD_ROOM in src/ui/Hud.ts:
