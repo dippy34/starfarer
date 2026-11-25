@@ -45,7 +45,7 @@ const START = '2026-10-01T20:00:00Z';
 
 const frames = (page, n) => page.evaluate((n) => new Promise((done) => { const f0 = window.app.frameCount; const t = setInterval(() => { if (window.app.frameCount >= f0 + n) { clearInterval(t); done(); } }, 30); }), n);
 // (what is on the selection's card under its bar is a tap on the bar away: openCard)
-const press = async (page, sel) => { if (/\.card \[data-(power|act="(move|remove|share|centre)")/.test(sel)) await openCard(page); const b = page.locator(sel).first(); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
+const press = async (page, sel) => { if (/\.card \[data-(power|act="(move|remove|share|centre)")/.test(sel)) await openCard(page); const b = page.locator(sel).first(); await b.scrollIntoViewIfNeeded(); const force = (await b.getAttribute('aria-disabled')) === 'true'; await b.tap({ force }).catch(() => b.click({ force })); };
 const text = (page, sel) => page.evaluate((sel) => document.querySelector(sel)?.textContent ?? '', sel);
 const shown = (page, sel) => page.evaluate((sel) => { const el = document.querySelector(sel); return !!el && !el.hidden && !el.closest('[hidden]') && el.getBoundingClientRect().height > 0; }, sel);
 const toast = (page) => text(page, '#hud .hud-toast');
@@ -839,9 +839,12 @@ for (const kind of kinds) {
     const { ctx, page } = await open(kind, 'target=Sun&dist=473&el=40');
     await quiet(page);
     await openCard(page);
-    const lay = await page.evaluate(() => [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => { const r = b.getBoundingClientRect(); return { label: b.textContent, w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth }; }));
-    check(on("the Sun's card offers Add with the other powers, each a thumb high and all in sight"),
-      lay.map((b) => b.label).join() === 'Mass,Move,Add,Remove' && lay.every((b) => b.h >= 44 && b.w >= 60 && b.in), lay.map((b) => `${b.label} ${b.w.toFixed(0)} x ${b.h.toFixed(0)}`).join(', '));
+    const lay = await page.evaluate(() => [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => { const r = b.getBoundingClientRect(); return { label: b.textContent, w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth, disabled: b.getAttribute('aria-disabled') === 'true' }; }));
+    check(on("the Sun's card shows all five powers, with only Size dimmed, each a thumb high and all in sight"),
+      lay.map((b) => b.label).join() === 'Mass,Size,Move,Add,Remove' && lay.every((b) => b.h >= 44 && b.w >= 60 && b.in && b.disabled === (b.label === 'Size')), lay.map((b) => `${b.label} ${b.w.toFixed(0)} x ${b.h.toFixed(0)}${b.disabled ? ' dimmed' : ''}`).join(', '));
+    await press(page, '#hud .card [data-power="size"]');
+    const sizeReason = await page.evaluate(() => { const el = document.querySelector('#hud .card .power-reason'); return { text: el.textContent.trim(), shown: !el.hidden && el.getBoundingClientRect().height > 0 }; });
+    check(on("the Sun's Size says why it cannot work when tapped"), sizeReason.shown && sizeReason.text.length > 0 && sizeReason.text.length <= 60, sizeReason.text);
     await press(page, '#hud .card [data-power="add"]');
     await frames(page, 2);
     const offers = await page.evaluate(() => [...document.querySelectorAll('#hud .card [data-panel="add"] .row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => r.querySelector('b').textContent));

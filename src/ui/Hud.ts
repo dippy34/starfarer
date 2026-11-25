@@ -1,4 +1,5 @@
 import { CATEGORIES, type Category, type Destination, type Picture } from '../app/destinations';
+import type { PowerName, PowerTable } from '../app/powersFor';
 import { type Box, isClear, largestClear, worth } from '../core/clearArea';
 import { touchFirst } from '../core/device';
 import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
@@ -80,6 +81,8 @@ export interface HudState {
     worked: { label: string; text: string; math: string }[];
     /** its temperature in a line ('' where none is worked out: no Bond albedo measured) */
     warmth: string;
+    /** every power: whether it works here, or the short reason it does not (src/app/powersFor.ts) */
+    powers: PowerTable;
     /** what can be added to it (src/app/WhatIf.ts); nothing: an empty list */
     add: readonly ('moon' | 'earth' | 'jupiter' | 'sun')[];
     /**
@@ -274,6 +277,7 @@ const TEMPLATE = `
           <button class="power" type="button" data-power="add" aria-expanded="false">${ICON.add}<span>Add</span></button>
           <button class="power" type="button" data-act="remove">${ICON.unmake}<span>Remove</span></button>
         </div>
+        <p class="power-reason" role="status" hidden></p>
         <p class="card-warmth"></p>
         <div class="power-panel" data-panel="mass" hidden>
           <div class="power-read"><span><b></b><small></small></span><button type="button" data-mass-real>Real mass</button></div>
@@ -430,6 +434,8 @@ export class Hud {
   private moved = false;
   /** the power whose panel is open on the card */
   private power: 'mass' | 'size' | 'add' | null = null;
+  /** the unavailable power whose reason is showing */
+  private powerReason: PowerName | null = null;
   /** a finger is on the mass slider (or on the one of a world being put in place): where it stands is the finger's business */
   private sliding = false;
   private sizing = false;
@@ -985,6 +991,7 @@ export class Hud {
       this.science = false;
       this.warmthFolded = false;
       this.power = null;
+      this.powerReason = null;
       this.pictureStale = true;
       if (!this.moved) this.closeSheet();
       this.moved = false;
@@ -1001,22 +1008,28 @@ export class Hud {
     warmth.classList.toggle('live', !!s.live);
     warmth.hidden = this.warmthFolded;
     setText(card.querySelector('[data-act="go"] span')!, sel.here ? 'Recentre' : 'Go there');
-    // what can be done to it: its buttons, and the panel of the one that is open
+    // every power is present: one that cannot work is dimmed, and a tap explains why
     const powers = card.querySelector<HTMLElement>('.card-powers')!;
-    powers.hidden = !sel.mass && !sel.removable;
+    powers.hidden = false;
     const massButton = powers.querySelector<HTMLElement>('[data-power="mass"]')!;
-    massButton.hidden = !sel.mass;
     const sizeButton = powers.querySelector<HTMLElement>('[data-power="size"]')!;
-    sizeButton.hidden = !sel.size;
     const addButton = powers.querySelector<HTMLElement>('[data-power="add"]')!;
-    addButton.hidden = sel.add.length === 0;
-    powers.querySelector<HTMLElement>('[data-act="remove"]')!.hidden = !sel.removable;
-    const moving = sel.move?.on ?? false;
     const moveButton = powers.querySelector<HTMLElement>('[data-act="move"]')!;
-    moveButton.hidden = !sel.move;
+    const removeButton = powers.querySelector<HTMLElement>('[data-act="remove"]')!;
+    const buttons: [PowerName, HTMLElement][] = [['mass', massButton], ['size', sizeButton], ['move', moveButton], ['add', addButton], ['remove', removeButton]];
+    for (const [name, button] of buttons) {
+      button.hidden = false;
+      button.setAttribute('aria-disabled', String(!sel.powers[name].works));
+    }
+    if (this.powerReason && sel.powers[this.powerReason].works) this.powerReason = null;
+    const reasonStatus = this.powerReason ? sel.powers[this.powerReason] : null;
+    const reason = card.querySelector<HTMLElement>('.power-reason')!;
+    reason.hidden = !reasonStatus || reasonStatus.works;
+    setText(reason, reasonStatus && !reasonStatus.works ? reasonStatus.reason : '');
+    const moving = sel.move?.on ?? false;
     moveButton.setAttribute('aria-expanded', String(moving));
     // (one panel at a time: moving it takes the place of its mass, of what can be added and of its details)
-    if (moving || (this.power === 'mass' && !sel.mass) || (this.power === 'size' && !sel.size) || (this.power === 'add' && !sel.add.length)) this.power = null;
+    if (moving || (this.power === 'mass' && !sel.powers.mass.works) || (this.power === 'size' && !sel.powers.size.works) || (this.power === 'add' && !sel.powers.add.works)) this.power = null;
     if (moving) this.details = false;
     massButton.setAttribute('aria-expanded', String(this.power === 'mass'));
     sizeButton.setAttribute('aria-expanded', String(this.power === 'size'));
@@ -1068,7 +1081,7 @@ export class Hud {
     const facts = card.querySelector<HTMLElement>('.facts')!;
     facts.hidden = !this.details;
     // (folded, the card is a bar: its name, a line, Go there. Everything else is a tap on it away)
-    const open = this.details || this.power !== null || moving;
+    const open = this.details || this.power !== null || this.powerReason !== null || moving;
     card.classList.toggle('open', open);
     card.querySelector('[data-details]')!.setAttribute('aria-expanded', String(open));
     if (!this.details) return;
@@ -1158,13 +1171,25 @@ export class Hud {
     // a button pressed with a pointer does not keep the keyboard: Space is "pause", not "press again"
     if (e.detail > 0) b.blur();
     const d = b.dataset;
+    const requestedPower = (d.power ?? (d.act === 'move' || d.act === 'remove' ? d.act : undefined)) as PowerName | undefined;
+    if (requestedPower && this.state?.selection) {
+      const status = this.state.selection.powers[requestedPower];
+      if (!status.works) {
+        this.endMove();
+        this.power = null;
+        this.details = false;
+        this.powerReason = requestedPower;
+        this.renderCard(this.state);
+        return;
+      }
+    }
     if (d.id !== undefined) this.pick(d.id);
     else if (d.cat) { this.category = d.cat as Category; this.renderList(); }
     else if (d.tab) this.tab(d.tab);
     else if ('close' in d) this.closeSheet();
-    else if ('details' in d) { this.endMove(); this.details = !this.details; if (!this.details) this.science = false; this.power = null; if (this.state) this.renderCard(this.state); }
+    else if ('details' in d) { this.endMove(); this.details = !this.details; if (!this.details) this.science = false; this.power = null; this.powerReason = null; if (this.state) this.renderCard(this.state); }
     else if ('science' in d) { this.science = !this.science; if (this.state) this.renderCard(this.state); }
-    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'size' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
+    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'size' | 'add'); this.powerReason = null; this.details = false; if (this.state) this.renderCard(this.state); }
     else if ('noticeClose' in d) this.clearNotice();
     else if ('impactClose' in d) this.impact(null);
     else if ('impactMore' in d) this.$('.hud-impact').classList.remove('brief');
@@ -1181,6 +1206,7 @@ export class Hud {
     }
     else if ('fullscreen' in d) void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => this.toast('Full screen is not available here'));
     else if (d.act) {
+      if (d.act === 'move' || d.act === 'remove') this.powerReason = null;
       if (b.classList.contains('notice-act')) this.clearNotice();
       // (nothing is left open behind the picture, or the cockpit; a picture saved shows the view it saved)
       if (d.act === 'photo' || d.act === 'ship' || d.act === 'screenshot' || d.act === 'free') this.closeSheet();
