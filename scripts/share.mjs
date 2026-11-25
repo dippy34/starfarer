@@ -20,7 +20,7 @@
 //     with two taps; with the storage full, and where the browser keeps nothing, it says so
 // Usage: node scripts/share.mjs [baseUrl] [outDir]
 //   (SHARE_ONLY=view,running,broken,live,saves: those blocks alone; SHARE_KINDS=phone,side,desk)
-import { collectErrors, launchBrowser } from './lib/browser.mjs';
+import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,7 +35,8 @@ const errors = [];
 const START = '2026-10-01T20:00:00Z';
 
 const frames = (page, n) => page.evaluate((n) => new Promise((done) => { const f0 = window.app.frameCount; const t = setInterval(() => { if (window.app.frameCount >= f0 + n) { clearInterval(t); done(); } }, 30); }), n);
-const press = async (page, sel) => { const b = page.locator(sel).first(); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
+// (what is on the selection's card under its bar is a tap on the bar away: openCard)
+const press = async (page, sel) => { if (/\.card \[data-(power|act="(move|remove|share|centre)")/.test(sel)) await openCard(page); const b = page.locator(sel).first(); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
 const text = (page, sel) => page.evaluate((sel) => document.querySelector(sel)?.textContent ?? '', sel);
 const shown = (page, sel) => page.evaluate((sel) => { const el = document.querySelector(sel); return !!el && !el.hidden && !el.closest('[hidden]') && el.getBoundingClientRect().height > 0; }, sel);
 /** Is the middle of an element in the view and the topmost thing there (a finger landing on it lands on it)? */
@@ -136,7 +137,7 @@ async function share(page, kind, from) {
       await press(page, '#hud .hud-tabs [data-tab="more"]');
       await page.locator('#hud .sheet.more [data-act="share"]').first().click({ timeout: 10000 });
       await press(page, '#hud .sheet.more [data-close]');
-    } else await page.locator('#hud .card [data-act="share"]').first().click({ timeout: 10000 });
+    } else { await openCard(page); await page.locator('#hud .card [data-act="share"]').first().click({ timeout: 10000 }); }
   } catch {
     return { url: '', before: await scene(page), toast: '', sheet: null };
   }
@@ -232,7 +233,9 @@ for (const kind of kinds) {
     await page.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); a.rig.turn(0.15); a.rig.quat.multiply(a.rig.quat.clone().setFromAxisAngle(a.rig.forward().set(1, 0, 0), 0.05)); });
     await page.waitForFunction(() => document.querySelector('#hud').dataset.sheet === 'card' && document.querySelector('#hud .card h2').textContent === 'Moon', null, { timeout: 20000 });
     await frames(page, 3);
-    check(on('Share is on the card of what is selected, in reach (not hunted for)'), await reachable(page, '#hud .card [data-act="share"]'));
+    // (one tap on the card's bar, and Share is there)
+    await openCard(page);
+    check(on('Share is on the card of what is selected, one tap on it away and in reach (not hunted for)'), await reachable(page, '#hud .card [data-act="share"]'));
     await page.screenshot({ path: path.join(outDir, `share-${kind}-card.png`) });
     const from = kind === 'side' ? 'more' : 'card';
     if (from === 'more') {
