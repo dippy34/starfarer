@@ -153,7 +153,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/galaxy-picking`: tap a galaxy where you see it
 
-- **Status:** open. Small to medium.
+- **Status:** done, live in 25 Nov 2026's "Pick galaxies over their whole drawn disc" (the outside AI's
+  work, checked by Claude: the full browser set passed but for two known flaky checks).
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** beside the Milky Way, tapping its centre selects nothing. Beside Andromeda,
   tapping its centre selects M32, a small galaxy in front of it.
