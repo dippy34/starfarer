@@ -42,12 +42,14 @@ branches is reviewed at a time.
 
 ## Running a task on GitHub's computers (OpenCode)
 
-The owner starts it on GitHub: **Actions**, then **OpenCode task**, then **Run workflow**, and types
-the task name, e.g. `everest-summit`. Use `smoke-test` once first, to check that the sign-in works.
+Claude starts it by saving a start note, `.github/opencode/start/<task>.txt`, on the live branch
+(`.github/opencode/README.md` says how). The owner can also start one on GitHub: **Actions**, then
+**OpenCode task**, then **Run workflow**, and type the task name, e.g. `everest-summit`.
+`smoke-test` only checks that the sign-in works.
 The run works on a read-only copy and pushes nothing. It has a browser, the same as the test runs',
 so the AI can run the browser suites and look at its own work. Its changes come back as files
 attached to the run (`result.patch`, `REPORT.md`, `check.log`, and its pictures in `pictures/`).
-Give Claude the run's link, and Claude reviews it as above. For a second try, run it again with Claude's notes in the **notes** box.
+Claude reviews it as above. For a second try, Claude starts it again with its notes.
 (`.github/workflows/opencode-task.yml`)
 
 ## Which model does what

@@ -1,8 +1,12 @@
 # One outside-AI run for one task on TASKS.md, started by hand.
 #
-# Who starts it: the owner, from GitHub's Actions tab: "OpenCode task", then "Run workflow", then
-# type the task name (the part after task/ in TASKS.md, e.g. everest-summit). "smoke-test" only
-# checks that sign-in and the model work, and changes nothing.
+# Who starts it: Claude, by saving a start note, .github/opencode/start/<task>.txt, on the live branch
+# (the owner asked for that, 25 Nov 2026: "I want you to do everything"); every start is a commit in the
+# history. A note's text goes to the AI as the reviewer's notes on its last try (none on a first try),
+# a line "model: opencode-go/..." picks its model, and lines starting # are for the history only. A push that adds or changes notes starts one run for each (at most 5, 3 at a time).
+# The owner can still start one from GitHub's Actions tab: "OpenCode task", then "Run workflow", then
+# the task name (the part after task/ in TASKS.md, e.g. everest-summit). "smoke-test" only checks that
+# sign-in and the model work, and changes nothing.
 #
 # What it can touch: nothing outside this run. The repository is checked out read-only
 # (contents: read, and no git credentials are kept), so the AI's edits stay on this runner. They
@@ -33,13 +37,17 @@ on:
         required: false
         type: string
         default: ""
+  push:
+    branches: [claude/friendly-hypatia-up418z]
+    paths: ['.github/opencode/start/**']
 
 permissions:
   id-token: write
   contents: read
 
+# (one at a time per task started by hand; each push of start notes is its own group, so none is dropped)
 concurrency:
-  group: opencode-task-${{ inputs.task }}
+  group: opencode-task-${{ inputs.task || github.sha }}
   cancel-in-progress: false
 
 env:
@@ -47,13 +55,68 @@ env:
   CHROME_VERSION: 153.0.8010.12
 
 jobs:
+  # which tasks to run: the one started by hand, or one for each start note this push added or changed
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tasks: ${{ steps.pick.outputs.tasks }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github/opencode
+      - id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          TASK_INPUT: ${{ inputs.task }}
+          NOTES_INPUT: ${{ inputs.notes }}
+          MODEL_INPUT: ${{ inputs.model }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            jq -cn --arg t "$TASK_INPUT" --arg n "$NOTES_INPUT" --arg m "$MODEL_INPUT" '[{task: $t, notes: $n, model: $m}]' > tasks.json
+          else
+            if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              files=$(git diff-tree --no-commit-id --name-only --diff-filter=AM -r "$AFTER" -- .github/opencode/start/)
+            else
+              files=$(git diff --name-only --diff-filter=AM "$BEFORE" "$AFTER" -- .github/opencode/start/)
+            fi
+            echo '[]' > tasks.json
+            n=0
+            for f in $files; do
+              case "$f" in *.txt) ;; *) continue ;; esac
+              name=$(basename "$f" .txt)
+              if ! printf '%s' "$name" | grep -Eq '^[a-z0-9][a-z0-9-]{0,48}$'; then echo "Not a task name: $f"; continue; fi
+              model=$(grep -m1 -oE '^model: *opencode-go/[A-Za-z0-9._-]+' "$f" | sed 's/^model: *//' || true)
+              # (lines starting # are for the history only, such as when it was started)
+              notes=$(grep -v -e '^model:' -e '^#' "$f" | head -c 4000 || true)
+              jq -c --arg t "$name" --arg n "$notes" --arg m "$model" '. + [{task: $t, notes: $n, model: $m}]' tasks.json > next.json
+              mv next.json tasks.json
+              n=$((n + 1))
+              if [ "$n" -ge 5 ]; then echo "At most 5 runs a push: the rest wait for the next."; break; fi
+            done
+          fi
+          echo "tasks=$(cat tasks.json)" >> "$GITHUB_OUTPUT"
+          jq . tasks.json
+
   task:
+    needs: plan
+    if: needs.plan.outputs.tasks != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.tasks) }}
     env:
-      TASK: ${{ inputs.task }}
-      NOTES: ${{ inputs.notes }}
-      MODEL_INPUT: ${{ inputs.model }}
+      TASK: ${{ matrix.task }}
+      NOTES: ${{ matrix.notes }}
+      MODEL_INPUT: ${{ matrix.model }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -221,7 +284,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: opencode-${{ inputs.task }}-${{ github.run_id }}
+          name: opencode-${{ matrix.task }}-${{ github.run_id }}
           path: ${{ runner.temp }}/out
           retention-days: 14
           if-no-files-found: warn

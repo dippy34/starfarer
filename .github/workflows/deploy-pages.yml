@@ -11,6 +11,9 @@ on:
     branches:
       - main
       - claude/friendly-hypatia-up418z
+    # (a start note for the outside AI's run changes nothing on the site)
+    paths-ignore:
+      - '.github/opencode/**'
   workflow_dispatch:
 
 # The job pushes the built site to the gh-pages branch.
