@@ -147,9 +147,23 @@ a failure of the app that we know of):
 | touch: pinching the other way lifts off | one runner run at ce1fa02 (1.6 m both times) | 3 runner runs of touch since (99/99, 99/99, 98/99: altitudes 152.8, 38.0, 50.3 m, different each time) and one run at SLOW_FRAME_MS=800 (70.2 m) pass it. Not reproduced; the old failure left the camera at the ground's eye height as if the zoom were not applied |
 | live: phone, a sun made, its mass changed later with Mass (and, at SLOW_FRAME_MS=450 here, once in five, the red dwarf one before it) | 45262156702 (2.000 Suns where 0.8 was asked, the radius a step behind) | a drag on the card's mass slider that did not land where asked; 8 runs here at 150 to 1000 ms pass it but one. Not reproduced; the next place to look is the slider's box read while the card is still settling |
 | interact: search and go to Sirius, after the walks | 45262156702 (the 600 s wait ended the suite; the walks before it took 12 to 17 minutes each there) | passes here alone at SLOW_FRAME_MS=1000 and in the whole suite at a normal frame rate (21 checks, 40 minutes under load). Not reproduced; the wait now ends in a failed check that names what it saw, so the suite goes on to the space station |
+| touch: 'set to "Look", one finger looks around instead' | 45606060317 and 45617640388 (25 Nov), since the card was redone (95946c0); passed in 45599710134, 45611808107 and 45639256519 | the tap on the round button did not switch the drag to Look (`{"mode":"orbit"}`). Being worked on: TASKS.md task/look-button |
+| touch: a double-tap on the world you are at "comes six times closer" (upright 3.97, on its side 5.36), and sideways "a sheet fits the height" (its foot at 398 of 390 px) | 45647209362 (25 Nov), once, with three checkers' runs sharing the runners; the same app passed touch 108/108 in 45639256519 | not reproduced; all three are measured while a camera or a sheet is still moving, so a slow frame is the first suspect |
+| live: desk, "let go, Mars falls at the Earth … time slows … the last of the fall takes about three seconds" | 45639256519 (25 Nov): the chip read "Watching: 20.1 hours a second", not "Slowed", and the hit came 8.6 s after, not about 6; the phone run passed (6.1 s) | not reproduced; a timing check on a slow runner |
 
 Read a runner-only failure the way you would a failure under load here: run that suite again
 (there or here) before believing it, and never loosen a check to make either side green.
+
+### The "everywhere" suite's known failures
+
+`scripts/everywhere.mjs` (parts solar, stars, planets and deep) visits 20 places across space and
+checks the same things at each. Some checks fail on purpose until their fixes land, never loosened
+(25 Nov 2026, run 45647148783: 144 checks, 141 passed):
+
+- stars: "Alpha Centauri: found by the typed name" and planets: "Vega b (generated): found by the
+  typed name": the search does not know those names yet (TASKS.md task/search-names, in review).
+- deep: "Milky Way: tapping the object on screen selects it": fixed by galaxy picking (live since the
+  run above), so it should pass from now on.
 
 ## 3. Run them here
 

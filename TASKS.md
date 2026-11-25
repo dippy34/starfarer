@@ -109,7 +109,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/everywhere-sweep`: a permanent "works everywhere" browser test
 
-- **Status:** open. Medium. Read `docs/notes/works-everywhere.md` first.
+- **Status:** done, live on 25 Nov 2026 ("Add the works-everywhere browser suite"); its known failures
+  are listed in `docs/notes/testing.md`. Read `docs/notes/works-everywhere.md` first.
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **What to do:**
   - Add `scripts/everywhere.mjs`, built on `scripts/lib/browser.mjs` and `scripts/lib/touch.mjs`
