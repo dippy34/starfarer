@@ -6,7 +6,7 @@ import type { AtmosphereData } from '../render/Atmospheres';
 import { C, G, gravity, type GravitySource, MSUN, makeSource } from '../sim/Gravity';
 import { conicOf, timeToRadius, type Conic } from '../sim/Kepler';
 import { Predictor } from '../sim/Predict';
-import { boostProper, flipAndBurn, lorentz } from '../sim/Relativity';
+import { boostProper, flipAndBurn, lorentz, properVelocityOf } from '../sim/Relativity';
 import { type Atmosphere, type Drive, FlightCore, type FlightEvent, G0, SHIP_SPEC, type ShipSpec } from '../sim/ShipPhysics';
 import { Body, type SpaceObject } from '../universe/Body';
 import { ExoPlanet, starProps } from '../universe/Planets';
@@ -150,7 +150,7 @@ export class Flight {
    */
   stopping: { steering: Steering; at: string } | null = null;
   /** end of the flight in progress (crash, horizon...): seconds left, then respawn */
-  ending: { ev: FlightEvent; t: number; total: number; title: string; text: string; report: EndReport } | null = null;
+  ending: { ev: FlightEvent; t: number; total: number; title: string; text: string; report: EndReport; hold: { dir: Vector3; r: number } | null } | null = null;
   /** seconds since the end sequence started (for the effects) */
   endingT = 0;
   onEvent: ((ev: FlightEvent) => void) | null = null;
@@ -1191,7 +1191,21 @@ export class Flight {
     };
     const [title, text] = msgs[ev.kind];
     const report = endReport(ev, this.core.spec, this.ship.hullTemp);
-    this.ending = { ev, t: ev.kind === 'horizon' ? 7 : 4.5, total: ev.kind === 'horizon' ? 7 : 4.5, title, text, report };
+    // Where the wreck stays while the panel shows: the spot where the flight ended, in the world's own turning frame
+    // (as a landing is held). The physics takes no step until the respawn, so without it the ship stayed put in
+    // space while the world moved on: after a crash on the Moon it was 100 km up by the end of the count, and its
+    // instruments read a climb and a new impact minutes away.
+    let hold: { dir: Vector3; r: number } | null = null;
+    const D = ev.src;
+    if (ev.kind !== 'horizon' && D && this.core.frame === D) {
+      const rel = this.ship.upos.sub(D.upos, new Vector3());
+      const r = Math.max(rel.length(), this.core.groundR);
+      if (r > 0) {
+        if (D.orient) rel.applyMatrix4(_m.extractRotation(D.orient).invert());
+        hold = { dir: rel.normalize(), r };
+      }
+    }
+    this.ending = { ev, t: ev.kind === 'horizon' ? 7 : 4.5, total: ev.kind === 'horizon' ? 7 : 4.5, title, text, report, hold };
     this.endingT = 0;
     this.ship.throttle = 0;
     if (app.vr.active) app.vr.flash(title);
@@ -1209,6 +1223,16 @@ export class Flight {
       const rel = ship.upos.sub(e.ev.src.upos, new Vector3());
       ship.upos.copy(e.ev.src.upos).addVec(rel, Math.max(0.2, 1 - dt * 0.15));
       ship.quat.premultiply(_q.setFromAxisAngle(_v.set(0.3, 1, 0.2).normalize(), dt * 0.2));
+    } else if (e.hold && e.ev.src && this.core.frame === e.ev.src) {
+      // the wreck stays where it hit, turning with the world, at rest on it; on the ground after a crash, as the
+      // ground there comes in finer (a tile loaded after the crash put it 1.8 km lower on the Moon)
+      const core = this.core, D = e.ev.src;
+      _v.copy(e.hold.dir);
+      if (D.orient) _v.applyMatrix4(_m.extractRotation(D.orient));
+      core.rel.copy(_v).multiplyScalar(e.ev.kind === 'crash' && core.groundR > 0 ? core.groundR : e.hold.r);
+      properVelocityOf(_w.crossVectors(core.spin, core.rel), core.relW);
+      core.place();
+      core.syncRel();
     }
     if (e.t <= 0) this.respawn();
   }
@@ -1610,6 +1634,7 @@ export function fmtClock(s: number): string {
 
 const _q = new Quaternion();
 const _v = new Vector3();
+const _m = new Matrix4();
 const _zero = new Vector3();
 const _g1 = new Vector3(), _g2 = new Vector3(), _g3 = new Vector3();
 /** keys that take the controls back from the autopilot */
