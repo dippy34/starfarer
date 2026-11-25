@@ -19,9 +19,23 @@ interface ArchiveSystem {
 const norm = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, '').replace(/^gliese/, 'gj').replace(/centauri$/, 'cen');
 
 /**
+ * A star people know or planet hunters have looked at hard: seen by eye from Earth (magnitude 6.5 or
+ * brighter), or within 10 parsecs (about 33 light years), the neighbourhood the radial-velocity and
+ * transit surveys have searched most. Such a star shows only the planets found around it, never made-up
+ * ones (the owner, 25 Nov 2026: "for established stars that are known and don't have planets, we
+ * shouldn't generate planets for them").
+ */
+export function wellStudied(star: { posPc: Vector3; absMag: number }): boolean {
+  const d = star.posPc.length();
+  if (d <= 10) return true;
+  return star.absMag + 5 * Math.log10(d) - 5 <= 6.5;
+}
+
+/**
  * Planetary systems of the stars the explorer visits: real ones from the NASA Exoplanet Archive
  * (matched to catalogue stars by name/designation, or placed at the archive's position when the
- * catalogues lack the star), and a generated system for every other star.
+ * catalogues lack the star), and a generated system for every other star
+ * that is not well studied (see wellStudied).
  */
 export class Systems {
   private archive: ArchiveSystem[] = [];
@@ -145,6 +159,8 @@ export class Systems {
       });
       return new PlanetarySystem(star, specs, true, normal);
     }
+    // (a star people know, or one the planet hunters have looked at hard, gets only what they found: no made-up planets)
+    if (wellStudied(star)) return null;
     const specs = generatePlanets(star);
     if (!specs.length) return null;
     const r = rng(hashKey(star.key + '/plane'));
@@ -224,7 +240,7 @@ export class Systems {
     this.archive.forEach((s, i) => {
       s.planets.forEach((p, k) => {
         const sc = best(p.name, this.nkPlanets[i][k]);
-        if (sc >= 0) out.push({ label: p.name, detail: `exoplanet · ${(s.distPc * 3.2616).toFixed(0)} ly`, id: `xp:${i}:${k}`, score: sc + 0.15 });
+        if (sc >= 0) out.push({ label: p.name, detail: `real planet of ${s.host} · ${(s.distPc * 3.2616).toFixed(0)} ly`, id: `xp:${i}:${k}`, score: sc + 0.15 });
       });
       // (a host that is a named star of the catalogue is listed as that star, which says it has planets: App.searchItems)
       const sh = this.named.has(i) ? -1 : best(s.host, this.nkHost[i]);
@@ -234,7 +250,7 @@ export class Systems {
   }
 
   /**
-   * The engine's generated planet of `star`, typed as "<star> <letter>" ("Vega b"): null when the
+   * The engine's generated planet of `star`, typed as "<star> <letter>" ("Gl 9848 b"): null when the
    * star has a real (archive) system — those are found by `search` — or no planets at all.
    */
   searchGenerated(q: string, star: CatalogStar): ExoPlanet | null {

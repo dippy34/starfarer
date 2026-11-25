@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
-import { Systems } from '../src/app/Systems';
+import { Systems, wellStudied } from '../src/app/Systems';
 import { CatalogSearch, normKey, normScore, queryKeys, SEARCH_ALIASES } from '../src/universe/CatalogSearch';
 import { CatalogStar } from '../src/universe/Stars';
 
@@ -115,15 +115,38 @@ describe('the exoplanet archive', () => {
     expect(systems.search('no such system zzz', scoreFor('no such system zzz'))).toEqual([]);
   });
 
-  it('answers "<star> <letter>" with the generated planet, unless the star has a real system', () => {
-    const vega = new CatalogStar('star:test:vega', new Vector3(1, 0, 0), 0.6, 10138, 'A0V', ['Vega'], null);
-    // (firm: the engine gives this star planets, the first is "Vega b", and typing its name finds that very planet)
-    const planets = systems.of(vega)?.planets ?? [];
+  it('answers "<star> <letter>" with the generated planet, unless the star has a real system or is well studied', () => {
+    // Gl 9848, as the catalogue has it: 56 pc away, magnitude 11 from Earth, no planet found: the engine makes some up,
+    // the first is "Gl 9848 b", and typing its name finds that very planet
+    const named = JSON.parse(readFileSync(join(__dirname, '..', 'public', 'data', 'stars', 'named.json'), 'utf8'));
+    const L: string[] = named.layout;
+    const row = named.stars.find((r: unknown[]) => (r[L.indexOf('names')] as string[]).includes('Gl 9848'));
+    const at = (k: string) => row[L.indexOf(k)];
+    const gl = new CatalogStar(`star:athyg:${at('node')}:${at('slot')}`, new Vector3(at('x_pc'), at('y_pc'), at('z_pc')), at('absMag'), at('teff'), at('spect'), at('names'), null);
+    const planets = systems.of(gl)?.planets ?? [];
     expect(planets.length).toBeGreaterThan(0);
-    expect(planets[0].name).toBe('Vega b');
-    expect(systems.searchGenerated('Vega b', vega)).toBe(planets[0]);
+    expect(planets[0].name).toBe('Gl 9848 b');
+    expect(planets[0].system.real).toBe(false);
+    expect(systems.searchGenerated('Gl 9848 b', gl)).toBe(planets[0]);
+    // Vega, 7.7 pc away and among the brightest stars of the sky: no planet found, so none made up either
+    const vega = new CatalogStar('star:test:vega', new Vector3(7.68, 0, 0), 0.58, 9600, 'A0V', ['Vega'], null);
+    expect(systems.of(vega)).toBeNull();
+    expect(systems.searchGenerated('Vega b', vega)).toBeNull();
     // the archive has real candidates for tau Cet g, so nothing is generated
     const tauCet = new CatalogStar('star:test:taucet', new Vector3(1, 0, 0), 5, 5400, 'G8V', ['tau Cet'], null);
     expect(systems.searchGenerated('tau Cet g', tauCet)).toBeNull();
+  });
+});
+
+describe('which stars are well studied (no made-up planets for them)', () => {
+  it('those seen by eye from Earth, and those within 10 parsecs', () => {
+    expect(wellStudied({ posPc: new Vector3(7.68, 0, 0), absMag: 0.58 })).toBe(true);    // Vega: near and bright
+    expect(wellStudied({ posPc: new Vector3(0, 168, 0), absMag: -5.85 })).toBe(true);    // Betelgeuse: far, but bright
+    expect(wellStudied({ posPc: new Vector3(0, 0, 2.55), absMag: 16.6 })).toBe(true);    // a faint red dwarf next door
+    expect(wellStudied({ posPc: new Vector3(55.9, 0, 0), absMag: 7.6 })).toBe(false);    // Gl 9848: 56 pc, magnitude 11
+    // the edges: magnitude 6.5 and 10 parsecs
+    expect(wellStudied({ posPc: new Vector3(100, 0, 0), absMag: 1.5 })).toBe(true);      // magnitude 6.5 at 100 pc
+    expect(wellStudied({ posPc: new Vector3(100, 0, 0), absMag: 1.6 })).toBe(false);     // magnitude 6.6
+    expect(wellStudied({ posPc: new Vector3(10, 0, 0), absMag: 15 })).toBe(true);
   });
 });
