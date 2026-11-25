@@ -11,7 +11,7 @@
 //   - a link made on a phone opened at a desk: the same way of looking, on another screen
 //   - a broken link, one of a newer version, one naming what is not here: the app as usual, and a note that
 //     says so; never a crash or a blank screen; a name with markup in a link is shown as text
-//   - a planet of another star (TRAPPIST-1 e and 51 Peg b from the NASA Exoplanet Archive, Vega b, one the app generates):
+//   - a planet of another star (TRAPPIST-1 e and 51 Peg b from the NASA Exoplanet Archive, Gl 9848 b, one the app generates for a faint far star):
 //     shared with the camera close to it and opened in a fresh browser, which is at another date until the link sets
 //     its own, the same selection and the camera the same distance from it (within 1 %): the planet is where the link's
 //     date puts it, not where the date of the page that opened it did
@@ -309,7 +309,7 @@ for (const kind of kinds) {
   }
 
   // ------------------------------------------------------------------ a planet of another star: shared close to it, opened at the date of the link
-  if (want('exo') && kind !== 'side') for (const name of ['TRAPPIST-1 e', '51 Peg b', 'Vega b']) exo: {
+  if (want('exo') && kind !== 'side') for (const name of ['TRAPPIST-1 e', '51 Peg b', 'Gl 9848 b']) exo: {
     const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=1&target=Earth&dist=6`);
     // (setup: the camera put near the planet as the app's own flight to it leaves it, and the planet selected)
     const made = await page.evaluate((n) => { const a = window.app, pl = a.findByName(n); if (!pl) return null; a.placeNear(pl, 3.4 * pl.radius * a.rig.framing, 35, 12); a.select(pl); return { real: !!pl.spec?.real }; }, name);

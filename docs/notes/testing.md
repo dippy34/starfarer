@@ -163,6 +163,8 @@ checks the same things at each. Some checks fail on purpose until their fixes la
 
 - stars: "Alpha Centauri: found by the typed name" and planets: "Vega b (generated): found by the
   typed name": the search does not know those names yet (TASKS.md task/search-names, in review).
+  Later the same day a star people know (seen by eye, or within 10 parsecs) lost its made-up planets,
+  Vega among them: the made-up planet visited is now Gl 9848 b, of a faint star 56 parsecs off.
 - deep: "Milky Way: tapping the object on screen selects it": fixed by galaxy picking (live since the
   run above), so it should pass from now on.
 

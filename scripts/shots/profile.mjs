@@ -47,8 +47,8 @@ const SCENES = [
   } },
   { name: 'cygnus-x1', query: `time=${T}&paused=1&target=Cygnus X-1&dist=30` },
   { name: 'sgr-a', query: `time=${T}&paused=1&target=Sagittarius A*&dist=20` },
-  { name: 'exo', query: `time=${T}&paused=1&target=Altair f&dist=3.5&az=40&el=10` },
-  { name: 'exo-giant', query: `time=${T}&paused=1&target=Procyon c&dist=5&az=30&el=20` },
+  { name: 'exo', query: `time=${T}&paused=1&target=Gl 9848 g&dist=3.5&az=40&el=10` },
+  { name: 'exo-giant', query: `time=${T}&paused=1&target=Gl 4A d&dist=5&az=30&el=20` },
   { name: 'iss', query: `time=${T}&paused=1&target=ISS&dist=2.2&az=200&el=25` },
 ];
 const modes = process.env.LITE === 'both' ? [false, true] : [process.env.LITE === '1'];

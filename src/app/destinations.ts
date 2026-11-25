@@ -149,7 +149,7 @@ function lightYears(m: number): string {
 
 /** The sections of the Explore sheet, in order. */
 export const CATEGORIES = [
-  ['tour', 'Tour'], ['solar', 'Solar System'], ['moons', 'Moons'], ['small', 'Small worlds'], ['stars', 'Stars'], ['exo', 'Exoplanets'],
+  ['tour', 'Tour'], ['solar', 'Solar System'], ['moons', 'Moons'], ['small', 'Small worlds'], ['stars', 'Stars'], ['exo', 'Real exoplanets'],
   ['nebulae', 'Nebulae'], ['galaxies', 'Galaxies'], ['holes', 'Black holes'], ['craft', 'Spacecraft'], ['places', 'Places'],
 ] as const;
 export type Category = (typeof CATEGORIES)[number][0];
