@@ -44,9 +44,10 @@ branches is reviewed at a time.
 
 The owner starts it on GitHub: **Actions**, then **OpenCode task**, then **Run workflow**, and types
 the task name, e.g. `everest-summit`. Use `smoke-test` once first, to check that the sign-in works.
-The run works on a read-only copy and pushes nothing. Its changes come back as a file attached to
-the run (`result.patch`, `REPORT.md`, `check.log`). Give Claude the run's link, and Claude reviews
-it as above. For a second try, run it again with Claude's notes in the **notes** box.
+The run works on a read-only copy and pushes nothing. It has a browser, the same as the test runs',
+so the AI can run the browser suites and look at its own work. Its changes come back as files
+attached to the run (`result.patch`, `REPORT.md`, `check.log`, and its pictures in `pictures/`).
+Give Claude the run's link, and Claude reviews it as above. For a second try, run it again with Claude's notes in the **notes** box.
 (`.github/workflows/opencode-task.yml`)
 
 ## Which model does what
@@ -161,6 +162,48 @@ need the OpenCode workspace's region set to Global.
 - **Done when:** a browser check taps the Milky Way's and Andromeda's centres and gets them, and
   fails on the code before the change. `npm run check` passes.
 - **Don't touch:** `src/ui/Hud.ts`, `src/ui/styles.css`.
+
+### `task/ship-instruments`: the ship's instruments on a phone, in the new design
+
+- **Status:** open. Medium to large. Design, Part 2 (`HANDOFF.md` "Design", "Next screens", item 1).
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **The problem:** flying on an upright phone, the ship's instruments take most of the top half of
+  the screen, and they speak in m/s, "km up" and g. The owner: "the UI is taking up most of the
+  screen", "way too nerdy: you should be able to understand what it is if you took 1 year of high
+  school". The instruments are in `src/game/FlightHud.ts`, with their CSS in the same file: the
+  glance panel (`.fl-glance`, filled by `renderGlance`), the drive chip with its − and +
+  (`.fl-touch`), the lever with Stop and the view button (`.fl-stick`), and the assist and
+  side-thruster chips (`.fl-aids`, `renderAids`).
+- **What to do:** read `HANDOFF.md` "Design" first and follow it: its tokens (`--sf-*` in
+  `src/ui/styles.css`: use them, don't change them), plain words first with the science one tap
+  away, and the list of what it rules out. Look at the two screens already done that way: the
+  crash screen (`setEnd` in `FlightHud.ts`, `endReport` in `src/game/Flight.ts`) and the object card.
+  - Folded, the instruments are one slim strip at the top: the speed in km/h (km/s when fast, and
+    a share of light's speed near it), the height above the ground in km, and one more line only
+    when it matters, such as "Hits the ground in 4 min" in the caution colour on a course into the
+    ground.
+  - One tap opens everything else, as it does today (the full read-out), with its numbers as they
+    are now.
+  - The drive, the lever, Stop, the view, assist and the side thrusters all stay, with plain names,
+    in less room. Don't remove a control: make it smaller, or move it into the opened part.
+  - While the end-of-flight panel shows (a crash and the like, `setEnd`), the instruments step aside
+    too, as the lever and the chips already do: today the strip still says "Impact in 4 min" and
+    offers the drive's − and + under "You hit the Moon".
+  - Every number comes from the read-out the ship already gives (`FlightReadout` in
+    `src/game/Flight.ts`); only the units and the words change. Keep each number with its unit (a
+    no-break space, as `endReport` does).
+- **Done when:**
+  - A new check in `scripts/flight.mjs` (its phone part) shows that the folded instruments are at
+    most 80 px tall on an upright phone, clear of the chips, the card and the tab bar, and show
+    km/h, not m/s. It fails on the code before the change.
+  - The phone part of `flight`, and the `ship` and `touch` suites, pass. A check written for the
+    old layout may be rewritten for the new one, never made weaker; the report lists each one and
+    why.
+  - Pictures before and after, at 390x844 upright and 844x390 on its side, flying near the Moon,
+    are in the run's pictures.
+  - `npm run check` passes.
+- **Don't touch:** `src/ui/Hud.ts`, `src/ui/styles.css`, `src/app/App.ts`, and the physics
+  (`src/sim/`).
 
 ## Adding a task
 
