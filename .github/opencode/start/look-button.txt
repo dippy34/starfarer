@@ -1,1 +1,2 @@
 # Started by Claude, 25 Nov 2026: first try.
+# Started again, 25 Nov 2026: the first run lost its pass at 15:19 while still reproducing the miss (fixed: the AI now signs in again and carries on).
