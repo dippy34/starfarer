@@ -49,11 +49,31 @@ the run (`result.patch`, `REPORT.md`, `check.log`). Give Claude the run's link, 
 it as above. For a second try, run it again with Claude's notes in the **notes** box.
 (`.github/workflows/opencode-task.yml`)
 
+## Which model does what
+
+From the model research of 25 Nov 2026 (mostly the makers' own benchmark figures; adjusted as real
+results come in). Each task below names its model, and the workflow uses it unless told otherwise.
+
+| Job | Model |
+|---|---|
+| Senior: plans, does the hard parts, reviews | `opencode-go/kimi-k3.1-pro` |
+| Junior: small, well-specified pieces | `opencode-go/glm-5.3-flash` |
+| UI screens following the design | `opencode-go/kimi-k3.1-pro` |
+| Small TypeScript bug fixes | `opencode-go/glm-5.3-flash` or `opencode-go/deepseek-v4.1-flash` |
+| Flaky browser tests | `opencode-go/kimi-k3.1-pro`, or `opencode-go/mimo-v2.6-pro` |
+| Plain, friendly wording | `opencode-go/claude-haiku-5-5` |
+| Fast boilerplate | `opencode-go/gpt-6-luna` |
+
+Then a Sonnet checker tests the result and takes pictures, and Claude makes the final call. Not
+used: the `muse-spark-*-contributor` models, which train on the requests sent to them. DeepSeek models
+need the OpenCode workspace's region set to Global.
+
 ## Tasks
 
 ### `task/everest-summit`: the Everest walking spot sits below the summit
 
-- **Status:** open. Small to medium.
+- **Status:** on hold. The owner wants general space and reliability first, not Earth-only polish.
+- **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** walking at "Mount Everest" puts the walker a little below the highest point of
   the elevation data the app ships. The landmark is in `src/universe/Landmarks.ts` (lat 27.988,
   lon 86.925, `h: 8.8e3`), and the walking place is offered from `src/app/App.ts` and
@@ -70,6 +90,7 @@ it as above. For a second try, run it again with Claude's notes in the **notes**
 ### `task/sirius-test`: "search and go to Sirius" fails on GitHub's runners
 
 - **Status:** open. Medium.
+- **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** in `scripts/interact.mjs`, the check "search + goto Sirius" fails on GitHub's
   slow runners and passes on fast machines. Its failure says
   `{"arrived":false,"autopilot":false,"near":[],"sel":"Mount Everest"}`. So the search never

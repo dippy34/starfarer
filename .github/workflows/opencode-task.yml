@@ -29,10 +29,10 @@ on:
         type: string
         default: ""
       model:
-        description: "OpenCode Go model"
+        description: "OpenCode Go model (leave empty: the model TASKS.md names for the task)"
         required: false
         type: string
-        default: "opencode-go/kimi-k3"
+        default: ""
 
 permissions:
   id-token: write
@@ -49,7 +49,7 @@ jobs:
     env:
       TASK: ${{ inputs.task }}
       NOTES: ${{ inputs.notes }}
-      MODEL: ${{ inputs.model }}
+      MODEL_INPUT: ${{ inputs.model }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,12 +60,21 @@ jobs:
           if ! printf '%s' "$TASK" | grep -Eq '^[a-z0-9][a-z0-9-]{0,48}$'; then
             echo "A task name is lower-case letters, digits and hyphens, e.g. everest-summit."; exit 1
           fi
-          if ! printf '%s' "$MODEL" | grep -Eq '^opencode-go/[A-Za-z0-9._-]+$'; then
-            echo "The model must be an OpenCode Go model, e.g. opencode-go/kimi-k3."; exit 1
-          fi
           if [ "$TASK" != "smoke-test" ] && ! grep -qF "### \`task/$TASK\`" TASKS.md; then
             echo "There is no section for task/$TASK in TASKS.md."; exit 1
           fi
+          # the model: as given, else the one the task's section names, else the senior
+          MODEL="$MODEL_INPUT"
+          if [ -z "$MODEL" ] && [ "$TASK" != "smoke-test" ]; then
+            MODEL=$(awk -v h="### \`task/$TASK\`" 'index($0, h) == 1 { f = 1; next } f && /^### / { f = 0 } f' TASKS.md \
+              | grep -o 'opencode-go/[A-Za-z0-9._-]*' | head -1)
+          fi
+          MODEL="${MODEL:-opencode-go/kimi-k3.1-pro}"
+          if ! printf '%s' "$MODEL" | grep -Eq '^opencode-go/[A-Za-z0-9._-]+$'; then
+            echo "The model must be an OpenCode Go model, e.g. opencode-go/kimi-k3.1-pro."; exit 1
+          fi
+          echo "MODEL=$MODEL" >> "$GITHUB_ENV"
+          echo "Model: $MODEL"
           echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/out"
 
@@ -98,11 +107,21 @@ jobs:
         run: |
           npm install -g opencode-ai@1.19.5
           mkdir -p ~/.config/opencode
-          # the Go provider takes the signed-in key from the environment
+          # The Go provider takes the signed-in key from the environment. The run's model (--model)
+          # is the senior; "junior" is a cheap, fast subagent it hands small pieces to
+          # (picks from the model research of 25 Nov 2026, in TASKS.md).
           cat > ~/.config/opencode/opencode.json <<'JSON'
           {
             "$schema": "https://opencode.ai/config.json",
-            "provider": { "opencode-go": { "options": { "apiKey": "{env:OPENCODE_API_KEY}" } } }
+            "provider": { "opencode-go": { "options": { "apiKey": "{env:OPENCODE_API_KEY}" } } },
+            "agent": {
+              "junior": {
+                "description": "Cheap, fast worker for small, well-specified pieces: one function, one test, one CSS block, boilerplate or a small fix",
+                "mode": "subagent",
+                "model": "opencode-go/glm-5.3-flash",
+                "prompt": "You write small, focused changes exactly as asked. Follow the rules in TASKS.md and the code's existing style. Never invent data. Don't refactor unrelated code. List the files you changed."
+              }
+            }
           }
           JSON
           opencode --version
@@ -112,7 +131,7 @@ jobs:
           if [ "$TASK" = "smoke-test" ]; then
             prompt="Reply with one line: 'Signed in, and the model works.' Do not read, change or create any files."
           else
-            prompt="You are an AI developer working on Starfarer, in a working copy of its repository on a GitHub Actions runner. First read TASKS.md. Then do ONLY the task in the section headed task/$TASK, following every rule in TASKS.md, with these differences for this run: do not create branches, commit or push (this copy is read-only); just change the files here. Before you finish, run npm run check and fix what fails. Finally write your report to REPORT.md in the repository root: what you changed, how you checked it, and what is left."
+            prompt="You are an AI developer working on Starfarer, in a working copy of its repository on a GitHub Actions runner. First read TASKS.md. Then do ONLY the task in the section headed task/$TASK, following every rule in TASKS.md, with these differences for this run: do not create branches, commit or push (this copy is read-only); just change the files here. Hand small, well-specified pieces (one function, one test, one CSS block) to the junior subagent, and review what it returns before you keep it; do the harder parts yourself. Before you finish, run npm run check and fix what fails. Finally write your report to REPORT.md in the repository root: what you changed, how you checked it, and what is left."
             if [ -n "$NOTES" ]; then
               prompt="$prompt Notes from the reviewer (Claude) on the previous try: $NOTES"
             fi
