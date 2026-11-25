@@ -208,6 +208,23 @@ need the OpenCode workspace's region set to Global.
 - **Don't touch:** `src/ui/Hud.ts`, `src/ui/styles.css`, `src/app/App.ts`, and the physics
   (`src/sim/`).
 
+### `task/look-button`: the round "Drag: orbit" button sometimes misses a tap
+
+- **Status:** open. Small to medium. Flaky since the card redesign.
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **The problem:** in `scripts/touch.mjs` (its section 2), the check `set to "Look", one finger looks
+  around instead` failed in 2 of 4 runs since the card was redone (95946c0), and in none before. It
+  reports `{"mode":"orbit",...}`: the tap on the round button (`.look-fab`) did not switch the drag to
+  Look. Perhaps the button moves while the folded card's line changes height (it wraps "… km / away"
+  as the distance changes), or something covers it for a moment after "Go there" arrives.
+- **What to do:** reproduce it (`SLOW_FRAME_MS`, `docs/notes/testing.md`) and find why the tap misses.
+  If a person's tap could miss too, fix the app (for instance, keep the button still while the card's
+  line changes); if only the check's timing is wrong, fix the check. Never loosen it.
+- **Done when:** the report explains the cause with evidence; this check, run by a small loop of your
+  own (not committed), passes 10 times in a row on your runner, and fails the old way before the fix
+  if the cause was in the app; the touch suite passes; `npm run check` passes.
+- **Don't touch:** `src/game/` and `scripts/flight.mjs` (task/ship-instruments works there).
+
 ## Adding a task
 
 Copy a section: a branch name starting `task/`, a status, the problem, what to do, when it is
