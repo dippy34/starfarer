@@ -3,7 +3,7 @@
 # Who starts it: Claude, by saving a start note, .github/opencode/start/<task>.txt, on the live branch
 # (the owner asked for that, 25 Nov 2026: "I want you to do everything"); every start is a commit in the
 # history. A note's text goes to the AI as the reviewer's notes on its last try (none on a first try),
-# a line "model: opencode-go/..." picks its model, and lines starting # are for the history only. A push that adds or changes notes starts one run for each (at most 5, 3 at a time).
+# a line "model: opencode-go/..." picks its model, and lines starting # are for the history only. A push that adds or changes notes starts one run for each (at most 5 a push, one at a time).
 # The owner can still start one from GitHub's Actions tab: "OpenCode task", then "Run workflow", then
 # the task name (the part after task/ in TASKS.md, e.g. everest-summit). "smoke-test" only checks that
 # sign-in and the model work, and changes nothing.
@@ -110,10 +110,11 @@ jobs:
     needs: plan
     if: needs.plan.outputs.tasks != '[]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 175
+    timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 3
+      # (one at a time: the owner's plan used 31 % of its month in its first day, 25 Nov 2026)
+      max-parallel: 1
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.tasks) }}
     env:
@@ -257,11 +258,12 @@ jobs:
         env:
           AUDIENCE: https://opencode.ai/console
           CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID || secrets.OPENCODE_API_KEY }}
+          LIVE: ${{ github.ref_name }}
         run: |
           if [ "$TASK" = "smoke-test" ]; then
             prompt="Reply with one line: 'Signed in, and the model works.' Do not read, change or create any files."
           else
-            prompt="You are an AI developer working on Starfarer, in a working copy of its repository on a GitHub Actions runner. First read TASKS.md. Then do ONLY the task in the section headed task/$TASK, following every rule in TASKS.md, with these differences for this run: do not create branches, commit or push (this copy is read-only); just change the files here. Hand small, well-specified pieces (one function, one test, one CSS block) to the junior subagent, and review what it returns before you keep it; do the harder parts yourself. A browser is installed for the browser suites in scripts/*.mjs (docs/notes/testing.md): build with npx vite build, serve the build with npx vite preview --port 4173 --strictPort --host 127.0.0.1 in the background, then run node scripts/<suite>.mjs http://127.0.0.1:4173/ <a folder> with the part your task touches (scripts/affected.mjs lists the parts). Run only the suites and parts your change touches, since a whole suite can take 30 minutes here, and run each one on the code before your change too when the task asks for a check that fails before it. Put every picture you take, before and after, in out/pictures (inside the repository; git ignores out/), which comes back with the run. Work only inside the repository folder: anything outside it is refused. Write your report to REPORT.md in the repository root as soon as you have made your first change, and keep it up to date as you go (what you changed, how you checked it: each suite and part you ran, with its counts, and what is left), so that a run that runs out of time still hands in its report. Before you finish, run npm run check and fix what fails, and bring REPORT.md up to date."
+            prompt="You are an AI developer working on Starfarer, in a working copy of its repository on a GitHub Actions runner. First read TASKS.md. Then do ONLY the task in the section headed task/$TASK, following every rule in TASKS.md, with these differences for this run: do not create branches, commit or push (this copy is read-only); just change the files here. Hand small, well-specified pieces (one function, one test, one CSS block) to the junior subagent, and review what it returns before you keep it; do the harder parts yourself. A browser is installed for the browser suites in scripts/*.mjs (docs/notes/testing.md): build with npx vite build, serve the build with npx vite preview --port 4173 --strictPort --host 127.0.0.1 in the background, then run node scripts/<suite>.mjs http://127.0.0.1:4173/ <a folder> with the part your task touches (scripts/affected.mjs lists the parts). Run only the suites and parts your change touches, since a whole suite can take 30 minutes here, and run each one on the code before your change too when the task asks for a check that fails before it. Put every picture you take, before and after, in out/pictures (inside the repository; git ignores out/), which comes back with the run. Work only inside the repository folder: anything outside it is refused. You have 80 minutes in all, so keep the change as small as the task allows. Write your report to REPORT.md in the repository root as soon as you have made your first change, and keep it up to date as you go (what you changed, how you checked it: each suite and part you ran, with its counts, and what is left), so that a run that runs out of time still hands in its report. Before you finish, run npm run check and fix what fails, and bring REPORT.md up to date."
             if [ -n "$NOTES" ]; then
               prompt="$prompt Notes from the reviewer (Claude) on the previous try: $NOTES"
             fi
@@ -270,7 +272,7 @@ jobs:
           # The OpenCode pass lasts a limited time, and passes run out together (two runs of 25 Nov,
           # signed in 10 minutes apart, both stopped at 15:19 with "access token has expired"). So the
           # AI works in rounds: when its pass runs out, this step signs in again and the AI carries on
-          # in the same session (--continue), for up to 105 minutes in all.
+          # in the same session (--continue), for up to 80 minutes in all.
           signin() {
             local oidc token
             oidc=$(curl -sSf --oauth2-bearer "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
@@ -285,11 +287,25 @@ jobs:
             export OPENCODE_API_KEY="$token"
           }
           set +e
-          # (the phone suites take 20 to 35 minutes here: two tries of 25 Nov ran out at 105 with their work done but unreported)
-          deadline=$(( $(date +%s) + 140 * 60 ))
+          # (the phone suites take 20 to 35 minutes here: two tries of 25 Nov ran out at 105 with their work done but unreported;
+          # 140 until the owner's plan used 31 % of its month in its first day, 25 Nov: now 80, for small tasks)
+          deadline=$(( $(date +%s) + 80 * 60 ))
           round=1
           : > "$OUT/opencode.log"
+          # A stop note ends the run within about 5 minutes, keeping its work so far: Claude cannot cancel
+          # runs (GitHub refuses it the permission), so it pushes .github/opencode/stop/<this run's id>.txt
+          # to the live branch. (raw.githubusercontent.com: no API rate limit; it caches for up to 5 minutes)
+          stop_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/refs/heads/$LIVE/.github/opencode/stop/$GITHUB_RUN_ID.txt"
+          ( while sleep 60; do
+              if curl -sf -o /dev/null "$stop_url"; then
+                echo "A stop note for this run: the AI stops here, its work so far kept." > "$OUT/stopped"
+                pkill -f "opencode run"
+                break
+              fi
+            done ) &
+          watcher=$!
           while :; do
+            if [ -s "$OUT/stopped" ]; then tee -a "$OUT/opencode.log" < "$OUT/stopped"; break; fi
             left=$(( deadline - $(date +%s) ))
             if [ "$left" -lt 180 ]; then echo "Out of time." | tee -a "$OUT/opencode.log"; break; fi
             if [ "$round" -eq 1 ]; then args=(run --model "$MODEL" "$prompt")
@@ -300,12 +316,14 @@ jobs:
             rc=${PIPESTATUS[0]}
             cat "$OUT/round.log" >> "$OUT/opencode.log"
             echo "opencode exit $rc (round $round)" | tee -a "$OUT/opencode.log"
+            if [ -s "$OUT/stopped" ]; then tee -a "$OUT/opencode.log" < "$OUT/stopped"; break; fi
             if grep -q "access token has expired" "$OUT/round.log" && [ "$round" -lt 8 ]; then
               if signin; then echo "Signed in again; the AI carries on." | tee -a "$OUT/opencode.log"; round=$((round + 1)); continue; fi
               echo "Signing in again failed." | tee -a "$OUT/opencode.log"
             fi
             break
           done
+          kill "$watcher" 2>/dev/null
           rm -f "$OUT/round.log"
 
       - name: Collect the result
