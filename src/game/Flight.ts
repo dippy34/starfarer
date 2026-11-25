@@ -1457,6 +1457,8 @@ export const kmh = (mps: number): number => Math.round(mps * 3.6);
 /** the fastest whole km/h under a speed limit (12 m/s, 43.2 km/h: 43) */
 export const kmhUnder = (mps: number): number => Math.floor(mps * 3.6);
 const grouped = (n: number): string => n.toLocaleString('en-US');
+/** a space that never breaks a number from its unit across two lines ("355 km/h") */
+const NB = '\u00a0';
 const theName = (n: string): string => (n === 'Sun' || n === 'Moon' ? `the ${n}` : n);
 
 export function endReport(ev: FlightEvent, spec: ShipSpec, hullK: number): EndReport {
@@ -1464,7 +1466,7 @@ export function endReport(ev: FlightEvent, spec: ShipSpec, hullK: number): EndRe
   const back = ev.src ? theName(ev.src.name) : 'where you were';
   switch (ev.kind) {
     case 'burnup': {
-      const c = (k: number) => `${grouped(Math.round(k - 273.15))} °C`;
+      const c = (k: number) => `${grouped(Math.round(k - 273.15))}${NB}°C`;
       return {
         legend: 'Burned up', head: `The ship got too hot coming into the air of ${name}.`, gauge: null,
         readouts: [['Hull reached', c(Math.max(hullK, spec.maxHullTemp))], ['Hull can take', c(spec.maxHullTemp)]],
@@ -1474,7 +1476,7 @@ export function endReport(ev: FlightEvent, spec: ShipSpec, hullK: number): EndRe
     case 'spaghetti':
       return {
         legend: 'Torn apart', head: `The gravity of ${name} tore the ship apart.`, gauge: null,
-        readouts: [['Why', `it pulled the near end much harder than the far end, ${spec.length} m away`]],
+        readouts: [['Why', `it pulled the near end much harder than the far end, ${spec.length}${NB}m away`]],
         next: 'Next time, keep your distance: a small black hole stretches a ship to pieces long before you reach it.', back,
       };
     case 'horizon':
@@ -1486,9 +1488,9 @@ export function endReport(ev: FlightEvent, spec: ShipSpec, hullK: number): EndRe
     default: {
       const v = kmh(ev.speed), lim = kmhUnder(spec.crashSpeed);
       return {
-        legend: 'Crashed', head: `You hit ${name} at ${grouped(v)} km/h.`, gauge: { value: v, limit: lim },
-        readouts: [['Your speed', `${grouped(v)} km/h`], ['Safe landing', `under ${lim} km/h`]],
-        next: `Next time, point the engine at the ground and fire it as you come down, until you are slower than ${lim} km/h.`, back,
+        legend: 'Crashed', head: `You hit ${name} at ${grouped(v)}${NB}km/h.`, gauge: { value: v, limit: lim },
+        readouts: [['Your speed', `${grouped(v)}${NB}km/h`], ['Safe landing', `under ${lim}${NB}km/h`]],
+        next: `Next time, point the engine at the ground and fire it as you come down, until you are slower than ${lim}${NB}km/h.`, back,
       };
     }
   }

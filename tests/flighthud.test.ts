@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { type FlightReadout, fmtPace, fmtWarp, WARP_STEPS } from '../src/game/Flight';
+import { endReport, type FlightReadout, fmtPace, fmtWarp, WARP_STEPS } from '../src/game/Flight';
 import { glance } from '../src/game/FlightHud';
-import { C } from '../src/sim/Gravity';
+import { C, type GravitySource } from '../src/sim/Gravity';
+import { SHIP_SPEC } from '../src/sim/ShipPhysics';
 
 /** a readout as Flight fills it, with what a test changes */
 function readout(over: Partial<FlightReadout>): FlightReadout {
@@ -76,5 +77,22 @@ describe('the ship\'s time warp in words', () => {
     expect(fmtPace(2468 * 3.15576e7)).toBe('2,470 years a second');
     expect(fmtPace(2.5e6 * 3.15576e7)).toBe('2.5 million years a second');
     expect(fmtPace(0)).toBe('stopped');
+  });
+});
+
+describe('the end of a flight, in plain words (Flight.ts endReport)', () => {
+  const moon = { name: 'Moon' } as GravitySource;
+  it('a crash: how fast the ship hit and how slow a landing has to be, in km/h as the physics has them, each number kept with its unit', () => {
+    // 98.6 m/s is 354.96 km/h; the ship's crash limit, 12 m/s, is 43.2 km/h: a landing is safe under 43
+    const r = endReport({ kind: 'crash', speed: 98.6, src: moon }, SHIP_SPEC, 290);
+    expect(r.head).toBe('You hit the Moon at 355 km/h.');
+    expect(r.readouts).toEqual([['Your speed', '355 km/h'], ['Safe landing', 'under 43 km/h']]);
+    expect(r.gauge).toEqual({ value: 355, limit: 43 });
+    expect(r.next).toContain('slower than 43 km/h.');
+    expect(r.back).toBe('the Moon');
+  });
+  it('burning up: the hull\'s temperature against what it can take, in °C', () => {
+    const r = endReport({ kind: 'burnup', speed: 7000, src: { name: 'Earth' } as GravitySource }, SHIP_SPEC, 3100);
+    expect(r.readouts).toEqual([['Hull reached', '2,827 °C'], ['Hull can take', '2,627 °C']]);
   });
 });

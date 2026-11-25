@@ -591,6 +591,9 @@ const centreOf = async (page, sel) => {
   const hole = await open(ctx, '?menu=0&time=2026-10-01T20:00:00Z&target=Cygnus%20X-1&dist=40');
   await ready(hole);
   await hole.evaluate(() => { document.querySelector('.hud-coach [data-coach]')?.click(); });
+  // (its card opened, as above: it stands at the left and the centre moves well over to the right of it, so that a
+  // disk drawn at the middle of the screen instead of where it is projected cannot pass)
+  await openTheCard(hole);
   await hole.waitForFunction(() => Math.abs(window.app.view.cx) > 30 || Math.abs(window.app.view.cy) > 30, null, { timeout: 120000 });
   const hf = await fingers(hole);
   await hf.frames(30);
@@ -612,8 +615,7 @@ const centreOf = async (page, sel) => {
     const best = (x0, y0) => { let m = 0; for (let y = y0 - 60; y <= y0 + 60; y += 6) for (let x = x0 - 60; x <= x0 + 60; x += 6) { const d = g.getImageData(Math.round(Math.max(0, x) * k), Math.round(Math.max(0, y) * k), 4, 4).data; m = Math.max(m, (d[0] + d[1] + d[2]) / 3); } return m; };
     return { at: best(h.p.x, h.p.y), middle: best(h.W / 2 - 130, h.H / 2 + 100) };
   }, h);
-  // (its card folded to a bar at the foot: the clear part is the view over it, its middle 30 to 40 px above the view's)
-  check('a black hole\'s disk is drawn where it is projected, with the centre off the middle, at the middle of the clear part', Math.hypot(h.cx, h.cy) > 30 && !!h.part && h.cx === h.part.x && h.cy === h.part.y && lumH.at > 40 && lumH.at > 2 * lumH.middle, JSON.stringify({ h, lumH }));
+  check('a black hole\'s disk is drawn where it is projected, with the centre off the middle, at the middle of the clear part', Math.hypot(h.cx, h.cy) > 40 && !!h.part && h.cx === h.part.x && h.cy === h.part.y && lumH.at > 40 && lumH.at > 2 * lumH.middle, JSON.stringify({ h, lumH }));
   await hole.screenshot({ path: path.join(outDir, 'touch-14-sideways-hole.png'), timeout: 300000 });
   await hole.close();
   await ctx.close();

@@ -36,7 +36,7 @@ const CSS = `
   background: var(--sf-panel); border: var(--sf-edge-line); border-left: 4px solid var(--sf-warning); border-radius: var(--sf-r-panel);
   font: var(--sf-t-body); color: var(--sf-ink); text-align: left; }
 .fl-end-legend { margin: 0 0 var(--sf-s2); font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track); text-transform: uppercase; color: var(--sf-warning); }
-.fl-end-head { margin: 0 0 var(--sf-s4); font: var(--sf-t-display); letter-spacing: -0.01em; }
+.fl-end-head { margin: 0 0 var(--sf-s4); font: var(--sf-t-display); letter-spacing: -0.01em; text-wrap: balance; }
 .fl-end-reads { display: flex; gap: var(--sf-s5); margin: 0 0 var(--sf-s3); }
 .fl-end-reads div { min-width: 0; }
 .fl-end-reads span { display: block; font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track); text-transform: uppercase; color: var(--sf-ink-2); }
@@ -514,7 +514,7 @@ export class FlightHud {
       const [first, ...rest] = report.next.split(', ');
       next.replaceChildren(Object.assign(document.createElement('b'), { textContent: rest.length ? `${first},` : first }), rest.length ? ` ${rest.join(', ')}` : '');
     }
-    q('.fl-end-back').textContent = `Back in orbit around ${report.back} in ${Math.max(1, secondsLeft)} s`;
+    q('.fl-end-back').textContent = `Back in orbit around ${report.back} in ${Math.max(1, secondsLeft)}\u00a0s`;
   }
   private endKey = '';
 

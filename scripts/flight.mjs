@@ -123,8 +123,8 @@ check('hitting the Moon fast is a crash', crashed && st.ending === 'CRASHED', St
   });
   const want = Math.round(end.speed * 3.6), safe = Math.floor(end.limit * 3.6), kmh = (n) => n.toLocaleString('en-US');
   check('the crash screen says, in km/h, how fast the ship hit and how slow a safe landing is, as the physics has them; what to do next; when the flight starts again',
-    new RegExp(`You hit the Moon at ${kmh(want)} km/h\\.`).test(end.text) && new RegExp(`Safe landingunder ${safe} km/h`).test(end.text)
-      && /Next time, point the engine at the ground/.test(end.text) && /Back in orbit around the Moon in \d+ s/.test(end.text) && !/m\/s/.test(end.text) && end.warn === 'none',
+    new RegExp(`You hit the Moon at ${kmh(want)}\u00a0km/h\\.`).test(end.text) && new RegExp(`Safe landingunder ${safe}\u00a0km/h`).test(end.text)
+      && /Next time, point the engine at the ground/.test(end.text) && /Back in orbit around the Moon in \d+\u00a0s/.test(end.text) && !/m\/s/.test(end.text) && end.warn === 'none',
     JSON.stringify({ ...end, want, safe }));
 }
 await page.waitForTimeout(500);
