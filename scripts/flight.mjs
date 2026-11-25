@@ -80,6 +80,9 @@ async function moonInstruments() {
       st.height > 0 && st.height <= 80 && st.glance.l >= 0 && st.glance.t >= 0 && st.glance.r <= st.W && st.glance.b <= st.H && hits.length === 0 && st.speed === wanted && !/m\/s/.test(st.text) && /\bkm\b/.test(st.text),
       JSON.stringify({ ...st, wanted, hits }));
     await phone.screenshot({ path: path.join(outDir, `ship-instruments-moon-${landscape ? 'side' : 'upright'}.png`), timeout: 180000 });
+    // (the full read-out open when the flight ends: it has to fold away with the rest, not lie over the panel)
+    await phone.evaluate(() => document.querySelector('.fl-glance').click());
+    const readOut = await phone.waitForFunction(() => window.app.hud.open === 'flight', null, { timeout: 120000 }).then(() => true, () => false);
     await phone.evaluate(() => {
       const a = window.app, fl = a.game.flight;
       a.renderer.gl.setAnimationLoop(null);
@@ -89,8 +92,10 @@ async function moonInstruments() {
     const ending = await phone.evaluate(() => ({
       panel: !document.querySelector('.fl-end').hidden,
       instruments: [...document.querySelectorAll('.fl-desk, .fl-glance, .fl-touch, .fl-stick, .fl-aids')].map((e) => ({ what: e.className, display: getComputedStyle(e).display, visibility: getComputedStyle(e).visibility })),
+      sheet: window.app.hud.open,
     }));
-    check(`${tag}: the end-of-flight panel puts every instrument and control aside`, ending.panel && ending.instruments.every((e) => e.display === 'none' || e.visibility === 'hidden'), JSON.stringify(ending));
+    check(`${tag}: the end-of-flight panel puts every instrument and control aside, the full read-out (open before) too`,
+      ending.panel && ending.instruments.every((e) => e.display === 'none' || e.visibility === 'hidden') && readOut && ending.sheet !== 'flight', JSON.stringify({ readOut, ...ending }));
     await ctx.close();
   }
 }

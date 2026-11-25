@@ -484,6 +484,8 @@ export class FlightHud {
     end.style.opacity = String(opacity);
     end.style.transition = opacity > 0 ? 'opacity 0.6s' : 'none';
     if (!report) { this.endKey = ''; return; }
+    // (the full read-out folds away too: left open, it lay over the panel and still said "impact in 3 min")
+    if (this.sheet.open === 'flight') this.sheet.closeSheet();
     const q = (sel: string) => end.querySelector(sel) as HTMLElement;
     const key = `${report.legend}|${report.head}`;
     if (key !== this.endKey) {
