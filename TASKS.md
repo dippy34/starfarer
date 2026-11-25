@@ -236,7 +236,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/powers-everywhere`: the same powers on every kind of object, with a reason where one can't work yet
 
-- **Status:** open. Medium. Read `docs/notes/works-everywhere.md` (plan step 2) and `HANDOFF.md`
+- **Status:** done, live on 25 Nov 2026 (the outside AI's work, with the checker's update of whatif's
+  two "not offered" checks). Read `docs/notes/works-everywhere.md` (plan step 2) and `HANDOFF.md`
   "Design" first.
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** the powers (Mass, Size, Move, Add, Remove) are offered only when the selection is
