@@ -68,6 +68,7 @@ import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
 import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { powersFor } from './powersFor';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
@@ -951,8 +952,8 @@ export class App {
       case 'add-earth': this.add('earth'); break;
       case 'add-jupiter': this.add('jupiter'); break;
       case 'add-sun': this.add('sun'); break;
-      case 'remove': if (this.selection instanceof Body) this.removeBody(this.selection); break;
-      case 'move': this.mover.toggle(this.selection instanceof Body && this.selection.valid ? this.selection : null); break;
+      case 'remove': if (this.selection instanceof Body && powersFor(this.selection, this.made.length).remove.works) this.removeBody(this.selection); break;
+      case 'move': this.mover.toggle(this.selection instanceof Body && powersFor(this.selection, this.made.length).move.works ? this.selection : null); break;
       case 'move-keep': this.mover.leave('keep'); break;
       case 'move-circle': this.mover.leave('circle'); break;
       case 'move-throw': this.mover.leave('throw'); break;
@@ -1348,7 +1349,7 @@ export class App {
    * starts). Null if that cannot be added there.
    */
   add(kind: Kind, to: SpaceObject | null = this.selection): Body | null {
-    if (!(to instanceof Body) || !canAdd(to, this.made.length).includes(kind)) return null;
+    if (!(to instanceof Body) || !powersFor(to, this.made.length).add.works || !canAdd(to, this.made.length).includes(kind)) return null;
     const eye = this.rig.upos.sub(to.upos, new Vector3()).toArray(), id = MADE_FIRST_ID + this.madeEver++;
     const like = kind === 'moon' ? null : this.system.byId.get(TWIN_OF[kind])!;
     const sun = this.system.sunAt(to.pos);
@@ -1458,7 +1459,7 @@ export class App {
   /** A finger (or the pointer) has come down on the mass slider, or lifted from it: one change from the moment it comes down until it lifts. */
   massHeld(held: boolean): void {
     const b = this.selection;
-    if (held && b instanceof Body && b.valid) this.beginChange('mass', b, true, `changing ${the(b.name)}'s mass`);
+    if (held && b instanceof Body && powersFor(b, this.made.length).mass.works) this.beginChange('mass', b, true, `changing ${the(b.name)}'s mass`);
     else if (!held && this.pending?.kind === 'mass') this.endChange();
   }
 
@@ -1760,7 +1761,7 @@ export class App {
    */
   setMass(slider: number): void {
     const b = this.selection;
-    if (!(b instanceof Body) || !b.valid) return;
+    if (!(b instanceof Body) || !powersFor(b, this.made.length).mass.works) return;
     const real = this.physics.realGm(b), sun = madeSun(b);
     // (a sun the explorer made is a star of the main sequence: of the masses it could be made with)
     const gm = sun ? G * Math.max(MADE_MASS.sun[0], Math.min(MADE_MASS.sun[1], (massFactor(slider) * real) / G)) : massFactor(slider) * real;
@@ -1789,7 +1790,7 @@ export class App {
   /** The size slider of the selected world was put at `slider` (Powers.sizeFactor): that size from now; at the same density its mass follows. */
   setSize(slider: number): void {
     const b = this.selection;
-    if (!(b instanceof Body) || !b.valid || !this.sizeable(b)) return;
+    if (!(b instanceof Body) || !powersFor(b, this.made.length).size.works || !this.sizeable(b)) return;
     const R0 = this.physics.realRadius(b), R = sizeFactor(slider) * R0;
     if (R === b.radius) return;
     this.beginChange('mass', b, false, `changing ${the(b.name)}'s size`);
@@ -1802,7 +1803,7 @@ export class App {
   /** A finger (or the pointer) has come down on the size slider, or lifted from it: one change from the moment it comes down until it lifts. */
   sizeHeld(held: boolean): void {
     const b = this.selection;
-    if (held && b instanceof Body && b.valid) this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
+    if (held && b instanceof Body && powersFor(b, this.made.length).size.works) this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
     else if (!held && this.pending?.kind === 'mass') this.endChange();
   }
 
@@ -1810,7 +1811,7 @@ export class App {
   private linkSize(on: boolean): void {
     this.sizeFollows = on;
     const b = this.selection;
-    if (!on || !(b instanceof Body) || !b.valid || !this.sizeable(b)) return;
+    if (!on || !(b instanceof Body) || !powersFor(b, this.made.length).size.works || !this.sizeable(b)) return;
     const R = sameDensity(this.physics.realRadius(b), b.gm / this.physics.realGm(b));
     if (Math.abs(R / b.radius - 1) < 1e-12) return;
     this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
@@ -1822,7 +1823,7 @@ export class App {
 
   /** Take a world away: everything else carries on without it. */
   removeBody(b: Body): void {
-    if (!b.valid || !this.system.bodies.includes(b)) return;
+    if (!powersFor(b, this.made.length).remove.works || !this.system.bodies.includes(b)) return;
     this.beginChange('remove', b, true, `taking away ${the(b.name)}`);
     const wasOn = this.physics.on;
     this.physics.remove(b, this.clock.jdTdb);
@@ -3578,17 +3579,18 @@ export class App {
         const sys = this.systems.of(sel);
         if (sys) rows.push(['Planets', sys.real ? `${sys.planets.length} confirmed (NASA Exoplanet Archive)` : `${sys.planets.length} generated (not observed)`]);
       }
+      const available = powersFor(sel, this.made.length);
       selection = {
         key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
-        mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body ? canAdd(sel, this.made.length) : [],
+        powers: available, mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body && available.add.works ? canAdd(sel, this.made.length) : [],
       };
-      // the powers over a world of the Solar System
-      if (sel instanceof Body && sel.valid) {
+      // the powers over a world of the Solar System, when the one table says they work
+      if (sel instanceof Body && available.move.works) {
         selection.rows.splice(1, 0, ...this.physics.rows(sel));
-        selection.removable = true;
+        selection.removable = available.remove.works;
         selection.move = { ...this.mover.describe(sel), ahead: sel === this.aheadOf ? this.aheadLine() : '' };
         const real = this.physics.realGm(sel);
-        if (real > 0) {
+        if (available.mass.works) {
           const factor = sel.gm / real, sun = madeSun(sel);
           selection.mass = {
             slider: massSlider(factor), words: (sel.kind === 'star' ? starMassWords : massWords)(massOf(sel.gm)), times: timesWords(factor),
@@ -3596,7 +3598,7 @@ export class App {
             theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '',
           };
           // its size, as a factor on its real radius
-          if (this.sizeable(sel)) {
+          if (available.size.works) {
             const size = sel.radius / this.physics.realRadius(sel);
             // (a factor the slider snapped to, read back from the radius, is that factor to the last digits)
             const nice = sizeFactor(sizeSlider(size)), f = Math.abs(size / nice - 1) < 1e-9 ? nice : size;

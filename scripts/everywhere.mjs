@@ -1,6 +1,6 @@
 // The same works-everywhere sweep at every kind of place, on a 390 x 844 touch page. Search by the
-// name a person types, open the card, go there, tap the thing itself, compare the powers offered,
-// use Move and Mass with Undo where offered, and open a shared link in a fresh browser.
+// name a person types, open the card, go there, tap the thing itself, check which powers work and
+// tap every other for its reason, use Move and Mass with Undo where offered, and open a shared link.
 // Usage: node scripts/everywhere.mjs [baseUrl] [outDir] [solar|stars|planets|deep|all]
 //   EVERYWHERE_ONLY=Earth,Vega b runs just those places while developing; the four parts together are the suite.
 import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
@@ -15,8 +15,8 @@ const START = '2026-10-01T20:00:00Z';
 const SEARCH_WAIT = 30_000;
 const ARRIVAL_WAIT = 600_000;
 
-// Recorded from today's cards (25 Nov 2026), not from what would be useful for one kind to offer.
-// The support matrix and its reasons are in docs/notes/works-everywhere.md.
+// The powers that work today, from the support matrix in docs/notes/works-everywhere.md. Every other
+// power must remain visible and dimmed, and tapping it must show its own short reason.
 const POWERS = {
   planet: ['Mass', 'Size', 'Move', 'Add', 'Remove'],
   moon: ['Mass', 'Size', 'Move', 'Remove'],
@@ -79,7 +79,10 @@ const press = async (page, sel) => {
   if (/\.card \[data-(power|act="(move|remove|share|centre)")/.test(sel)) await openCard(page);
   const b = page.locator(sel).first();
   await b.scrollIntoViewIfNeeded();
-  await b.tap({ timeout: 120000 }).catch(() => b.click({ timeout: 120000 }));
+  // An unavailable power is deliberately still a real tap target: it explains itself. Playwright
+  // otherwise treats aria-disabled as a reason not to touch it at all.
+  const force = (await b.getAttribute('aria-disabled')) === 'true';
+  await b.tap({ timeout: 120000, force }).catch(() => b.click({ timeout: 120000, force }));
 };
 
 async function openPage(url, errors) {
@@ -234,18 +237,39 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/**
- * The powers the selection's card offers, in the card's own order (Mass, Size, Move, Add, Remove):
- * a power counts only when its button is there, itself and all its ancestors shown, and drawn with height.
- */
-async function powersOffered(page) {
+const POWER_BUTTONS = [
+  ['Mass', '[data-power="mass"]'], ['Size', '[data-power="size"]'], ['Move', '[data-act="move"]'],
+  ['Add', '[data-power="add"]'], ['Remove', '[data-act="remove"]'],
+];
+
+/** All five stay shown, at least a thumb's target; the expected ones work, and every other tap says why not. */
+async function powersWorkAndReasons(page, place) {
   await openCard(page);
-  return page.evaluate(() => {
-    const shown = (sel) => { const b = document.querySelector(`#hud .card ${sel}`); return !!b && !b.hidden && !b.closest('[hidden]') && b.getBoundingClientRect().height > 0; };
-    return [['Mass', '[data-power="mass"]'], ['Size', '[data-power="size"]'], ['Move', '[data-act="move"]'], ['Add', '[data-power="add"]'], ['Remove', '[data-act="remove"]']]
-      .filter(([, sel]) => shown(sel))
-      .map(([power]) => power);
-  });
+  const states = await page.evaluate((buttons) => buttons.map(([power, sel]) => {
+    const b = document.querySelector(`#hud .card ${sel}`), r = b?.getBoundingClientRect();
+    const shown = !!b && !b.hidden && !b.closest('[hidden]') && !!r && r.height > 0;
+    return {
+      power, shown, width: r?.width ?? 0, height: r?.height ?? 0,
+      disabled: b?.getAttribute('aria-disabled') === 'true', works: shown && b?.getAttribute('aria-disabled') !== 'true',
+    };
+  }), POWER_BUTTONS);
+  const working = states.filter((s) => s.works).map((s) => s.power);
+  const targets = states.every((s) => s.shown && s.width >= 44 && s.height >= 44 && s.disabled === !s.works);
+  const reasons = [];
+  for (const state of states.filter((s) => !s.works)) {
+    const sel = POWER_BUTTONS.find(([power]) => power === state.power)[1];
+    if (state.shown) await press(page, `#hud .card ${sel}`);
+    await frames(page, 1);
+    const seen = await page.evaluate(() => {
+      const el = document.querySelector('#hud .card .power-reason');
+      return { text: el?.textContent?.trim() ?? '', shown: !!el && !el.hidden && !el.closest('[hidden]') && el.getBoundingClientRect().height > 0 };
+    });
+    reasons.push({ power: state.power, ...seen, ok: state.shown && seen.shown && seen.text.length > 0 && seen.text.length <= 60 });
+  }
+  return {
+    ok: targets && working.join() === place.powers.join() && reasons.every((r) => r.ok),
+    working, detail: JSON.stringify({ expected: place.powers, states, reasons }),
+  };
 }
 
 const bodyState = (page) => page.evaluate(() => {
@@ -431,8 +455,8 @@ async function visit(place) {
     check(place, 'tapping the object on screen selects it', picked.ok, JSON.stringify({ at: picked.at, got: picked.got }));
 
     await quiet(page);
-    const offered = await powersOffered(page);
-    check(place, 'the powers offered equal the expectation for this kind', offered.join() === place.powers.join(), `offered [${offered.join(', ')}], expected [${place.powers.join(', ')}]`);
+    const powers = await powersWorkAndReasons(page, place);
+    check(place, 'all five powers are thumb-sized; the expected ones work and every other tap shows a short reason', powers.ok, powers.detail);
     if (place.powers.includes('Mass')) {
       const mass = await massAndUndo(page, touch);
       check(place, 'Mass works and Undo restores the exact body state', mass.ok, mass.detail);

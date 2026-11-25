@@ -409,7 +409,9 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .power .icon { width: 20px; height: 20px; }
 #hud .power[aria-expanded='true'] { background: rgba(255, 176, 122, 0.3); }
 #hud .power:active { filter: brightness(1.25); }
+#hud .power[aria-disabled='true'] { background: var(--sf-panel-2); color: var(--sf-ink-3); }
 .power-panel { padding: 2px 2px 0; }
+.card .power-reason { margin: 0; font: var(--sf-t-small); line-height: 1.35; color: var(--sf-ink-2); }
 .power-read { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .power-read span { min-width: 0; }
 .power-read b { display: block; font-size: 21px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
