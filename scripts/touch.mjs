@@ -611,11 +611,18 @@ const centreOf = async (page, sel) => {
     const g = c.getContext('2d');
     g.drawImage(img, 0, 0);
     const k = img.width / window.innerWidth;
-    // the brightest 4 px square within 60 px of the projected centre, against the same where the middle of the screen is
+    // the brightest 4 px square within 60 px of the projected centre: its disk is drawn about it
     const best = (x0, y0) => { let m = 0; for (let y = y0 - 60; y <= y0 + 60; y += 6) for (let x = x0 - 60; x <= x0 + 60; x += 6) { const d = g.getImageData(Math.round(Math.max(0, x) * k), Math.round(Math.max(0, y) * k), 4, 4).data; m = Math.max(m, (d[0] + d[1] + d[2]) / 3); } return m; };
-    return { at: best(h.p.x, h.p.y), middle: best(h.W / 2 - 130, h.H / 2 + 100) };
+    // the darkest 4 px square (its mean) within 10 px: the hole's shadow, dark where the hole is and nowhere else near.
+    // (Against a fixed spot of the screen the disk's light, as big as the screen, made a poor contrast: 225 there
+    // against 126, wherever the card moved the view.)
+    const darkest = (x0, y0) => { let m = 1e9; for (let y = y0 - 10; y <= y0 + 10; y += 2) for (let x = x0 - 10; x <= x0 + 10; x += 2) { const d = g.getImageData(Math.round(Math.max(0, x) * k), Math.round(Math.max(0, y) * k), 4, 4).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; m = Math.min(m, t / (d.length / 4) / 3); } return m; };
+    // and where the hole would be drawn if its sight lines missed the view's offset: the projected point less the offset
+    return { at: best(h.p.x, h.p.y), shadow: darkest(h.p.x, h.p.y), unshifted: darkest(h.p.x - h.cx, h.p.y - h.cy) };
   }, h);
-  check('a black hole\'s disk is drawn where it is projected, with the centre off the middle, at the middle of the clear part', Math.hypot(h.cx, h.cy) > 40 && !!h.part && h.cx === h.part.x && h.cy === h.part.y && lumH.at > 40 && lumH.at > 2 * lumH.middle, JSON.stringify({ h, lumH }));
+  // (here 225, 41 and 150 or so: the shadow is about 55 px across, the centre 147 px off the middle)
+  check('a black hole is drawn where it is projected, with the centre well off the middle, at the middle of the clear part: its disk bright about the projected point, its shadow dark on it, and no shadow where it would be if it were drawn without the offset',
+    Math.hypot(h.cx, h.cy) > 40 && !!h.part && h.cx === h.part.x && h.cy === h.part.y && lumH.at > 40 && lumH.shadow < 0.5 * lumH.unshifted && lumH.unshifted - lumH.shadow > 40, JSON.stringify({ h, lumH }));
   await hole.screenshot({ path: path.join(outDir, 'touch-14-sideways-hole.png'), timeout: 300000 });
   await hole.close();
   await ctx.close();
