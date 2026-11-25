@@ -269,6 +269,38 @@ need the OpenCode workspace's region set to Global.
 - **Don't touch:** `src/game/` and `scripts/flight.mjs` (task/ship-instruments), and
   `src/universe/CatalogSearch.ts`, `src/app/Systems.ts` and App.ts's search code (task/search-names).
 
+### `task/tab-bar`: the bottom bar and the round buttons, in the new design
+
+- **Status:** open. Medium. Design, Part 3 (`HANDOFF.md` "Design", "Next screens", item 2).
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **The problem:** at the foot of a phone the interface stacks a tab bar (Search, Explore, Time,
+  More: `.hud-tabs`, 60 px with rounded "pill" styling the design rules out) and, above it, round
+  buttons whose words don't say what they do: "Drag: orbit" / "Drag: look" (`.look-fab`, what one
+  finger's drag does) and "Your ship" / "Fly there in your ship" (`.ship-fab`), sometimes "Land and
+  walk" (`.walk-fab`). With the card's bar, the foot of the screen is about 200 px of interface. The
+  owner: "the UI is taking up most of the screen", "not very user intuitive", "the navigation
+  sucks". They are in `src/ui/Hud.ts` (the markup near line 240, the words near line 820) and
+  `src/ui/styles.css` (`.hud-tabs`, `.fab`).
+- **What to do:** read `HANDOFF.md` "Design" first and follow it (its `--sf-*` tokens, flat and
+  opaque, squared keys, plain words, what it rules out). Look at the screens already done that way:
+  the object card and the ship's instruments.
+  - The tab bar: one slim, flat row in the design, icons with short labels, at most 52 px tall above
+    the phone's safe area. On its side and at a desk, the same parts in the same order.
+  - The round buttons: smaller and flat, with plain words that say what a tap does. For example, the
+    drag button could say "Turning around it" / "Looking around", and the ship button "Fly my ship
+    there" / "My ship". Choose the words; keep every function.
+  - Don't remove a control or a function; every target stays at least 44 px.
+- **Done when:**
+  - A new check in `scripts/touch.mjs` shows the tab bar at most 52 px tall upright, and the round
+    buttons' words free of "Drag:". It fails on the code before the change.
+  - The `touch`, `live`, `share`, `start`, `interact` and `flight` (phone part) suites pass, but for
+    the known flaky checks in `docs/notes/testing.md`. A check written for the old layout may be
+    rewritten for the new one, never made weaker; list each in the report.
+  - Pictures before and after, at 390x844 upright and 844x390 on its side, with Earth selected.
+  - `npm run check` passes.
+- **Don't touch:** `src/game/` (the ship's instruments), `src/app/powersFor.ts` and the card's powers
+  row (task/powers-everywhere, in review).
+
 ## Adding a task
 
 Copy a section: a branch name starting `task/`, a status, the problem, what to do, when it is
