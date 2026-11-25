@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { endReport, type FlightReadout, fmtPace, fmtWarp, WARP_STEPS } from '../src/game/Flight';
-import { glance } from '../src/game/FlightHud';
+import { glance, plainAltitude, plainSpeed } from '../src/game/FlightHud';
 import { C, type GravitySource } from '../src/sim/Gravity';
 import { SHIP_SPEC } from '../src/sim/ShipPhysics';
 
@@ -17,12 +17,11 @@ function readout(over: Partial<FlightReadout>): FlightReadout {
 }
 
 describe('the instruments at a glance (a touch screen)', () => {
-  it('give the speed with its nines and the Lorentz factor, never "1.000 c"', () => {
-    // γ = 2.5×10⁶: 1 - β = 8×10⁻¹⁴
+  it('give the speed as a share of light speed with its nines, never "1.000 c"', () => {
+    // γ = 2.5×10⁶: 1 - β = 8×10⁻¹⁴; the Lorentz factor itself stays in the full read-out
     const gamma = 2.5e6, w = Math.sqrt(gamma * gamma - 1) * C;
     const g = glance(readout({ properSpeed: w, gamma }));
-    expect(g.speed).toBe('0.999 999 999 999 92 c');
-    expect(g.side).toBe('γ 2.5×10⁶');
+    expect(g.speed).toBe('0.999 999 999 999 92\u00a0×\u00a0light speed');
     expect(g.speed).not.toMatch(/^1\.0/);
   });
 
@@ -36,11 +35,17 @@ describe('the instruments at a glance (a touch screen)', () => {
     expect(g.toGo).toBe('there in 12 d 2 h for you · 2.28 million yr outside');
   });
 
-  it('while slow near a world: the height and the orbit', () => {
+  it('while slow near a world: the height; the routine orbit science stays in the full read-out', () => {
     const g = glance(readout({ frame: 'Earth', altitude: 393e3, properSpeed: 7670, gamma: 1 + 3.3e-10, conic: { e: 0.001 } as FlightReadout['conic'], pe: 391e3, ap: 395e3, driveG: 1 }));
-    expect(g.speed).toBe('7.67 km/s');
-    expect(g.side).toBe('393 km up');
-    expect(g.state).toBe('Orbit 391 km × 395 km over Earth');
+    expect(g.speed).toBe('7.67\u00a0km/s');
+    expect(g.side).toBe('393\u00a0km');
+    expect(g.state).toBe('');
+  });
+
+  it('a course into the ground gets the one caution line, with its time kept beside its units', () => {
+    const g = glance(readout({ tImpact: 240 }));
+    expect(g.state).toBe('Hits the ground in 4\u00a0min 0\u00a0s');
+    expect(g.stateClass).toBe('caution');
   });
 });
 
@@ -48,7 +53,7 @@ describe('a trip that would take years, in plain words', () => {
   it('on the fusion torch: why, and what to do', () => {
     // Sirius coasting on the torch (a playtester read "to go 130,252 yr" and nothing else)
     const g = glance(readout({ drive: 'torch', target: 'Sirius', targetDist: 8.1e16, etaShip: 130_252 * 3.15576e7, etaUniverse: 130_252 * 3.15576e7, etaBy: 'coasting' }));
-    expect(g.toGo).toBe("there in 130,252 yr for you · 130,252 yr outside. The torch's fuel can never get you there sooner: tap Fusion torch for the reactionless drive");
+    expect(g.toGo).toBe("there in 130,252 yr for you · 130,252 yr outside. The torch's fuel can never get you there sooner: tap Main drive to switch to the field drive");
   });
   it('a short trip needs no advice', () => {
     expect(glance(readout({ target: 'Moon', targetDist: 3.8e8, etaShip: 3600, etaUniverse: 3600, etaBy: 'flip-and-burn' })).toGo).toBe('there in 1 h 0 min for you · 1 h 0 min outside');
@@ -58,7 +63,7 @@ describe('a trip that would take years, in plain words', () => {
 describe('Stop at a glance', () => {
   it('says what it does and the time to go aboard', () => {
     const g = glance(readout({ stop: 'braking beside Sun', stopTau: 3 * 3600 + 120 }));
-    expect(g.state).toBe('Stop: braking beside Sun · 3 h 2 min aboard');
+    expect(g.state).toBe('Stop: braking beside Sun · 3\u00a0h 2\u00a0min aboard');
     expect(g.stateClass).toBe('ok');
   });
 });
@@ -94,5 +99,42 @@ describe('the end of a flight, in plain words (Flight.ts endReport)', () => {
   it('burning up: the hull\'s temperature against what it can take, in °C', () => {
     const r = endReport({ kind: 'burnup', speed: 7000, src: { name: 'Earth' } as GravitySource }, SHIP_SPEC, 3100);
     expect(r.readouts).toEqual([['Hull reached', '2,827 °C'], ['Hull can take', '2,627 °C']]);
+  });
+});
+
+describe('a height in plain words (plainAltitude)', () => {
+  it('uses the read-out\'s metres, shown in km with a no-break unit', () => {
+    expect(plainAltitude(0)).toBe('0\u00a0km');
+    expect(plainAltitude(25)).toBe('0.03\u00a0km');
+    expect(plainAltitude(36_480)).toBe('36.5\u00a0km');
+    expect(plainAltitude(393_000)).toBe('393\u00a0km');
+    expect(plainAltitude(2.5e9)).toBe('2.5\u00a0million km');
+  });
+});
+
+describe('a speed in plain words (plainSpeed)', () => {
+  it('below 1,000 m/s: whole km/h, grouped, the sign kept', () => {
+    expect(plainSpeed(0)).toBe('0\u00a0km/h');
+    expect(plainSpeed(98.6)).toBe('355\u00a0km/h');
+    expect(plainSpeed(340)).toBe('1,224\u00a0km/h');
+    expect(plainSpeed(-98.6)).toBe('-355\u00a0km/h');
+  });
+
+  it('from 1,000 m/s to 1 % of c: km/s, rounded as fmtSpeed rounds it, the sign kept', () => {
+    expect(plainSpeed(7670)).toBe('7.67\u00a0km/s');
+    expect(plainSpeed(-7670)).toBe('-7.67\u00a0km/s');
+    // just under the boundary: 0 decimals past 100,000 m/s
+    expect(plainSpeed(0.0099 * C)).toBe('2968\u00a0km/s');
+  });
+
+  it('from 1 % of c: a share of light speed, never "1" or "100%"', () => {
+    expect(plainSpeed(0.0105 * C)).toBe('0.0105\u00a0×\u00a0light speed');
+    expect(plainSpeed(0.5 * C)).toBe('0.4472\u00a0×\u00a0light speed');
+    // γ = 2.5×10⁶, the same speed the glance test uses: every nine kept
+    const gamma = 2.5e6, w = Math.sqrt(gamma * gamma - 1) * C;
+    const s = plainSpeed(w);
+    expect(s).toBe('0.999 999 999 999 92\u00a0×\u00a0light speed');
+    expect(s).not.toMatch(/^1/);
+    expect(s).not.toContain('100%');
   });
 });
