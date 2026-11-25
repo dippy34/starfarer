@@ -30,11 +30,18 @@ beforeAll(async () => {
   trappist = systems.archiveSystem(systems.findHost('TRAPPIST-1')!)!;
 });
 
-/** a generated system: a Sun-like catalogue star's (Vega's has planets, a fixed seed: searchnames.test.ts) */
+/**
+ * a generated system: Gl 9848's, as the catalogue has the star (56 pc away, magnitude 11 from Earth, no planet found:
+ * the engine makes some up; a star people know gets none, src/app/Systems.ts wellStudied)
+ */
 function generated(): PlanetarySystem {
-  const vega = new CatalogStar('star:test:vega', new Vector3(1, 0, 0), 0.6, 10138, 'A0V', ['Vega'], null);
-  const sys = systems.of(vega);
-  if (!sys || sys.real) throw new Error('Vega has a generated system');
+  const named = JSON.parse(readFileSync(join(process.cwd(), 'public', 'data', 'stars', 'named.json'), 'utf8'));
+  const L: string[] = named.layout;
+  const row = named.stars.find((r: unknown[]) => (r[L.indexOf('names')] as string[]).includes('Gl 9848'));
+  const at = (k: string) => row[L.indexOf(k)];
+  const gl = new CatalogStar(`star:athyg:${at('node')}:${at('slot')}`, new Vector3(at('x_pc'), at('y_pc'), at('z_pc')), at('absMag'), at('teff'), at('spect'), at('names'), null);
+  const sys = systems.of(gl);
+  if (!sys || sys.real) throw new Error('Gl 9848 has a generated system');
   return sys;
 }
 

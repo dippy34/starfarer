@@ -2,7 +2,7 @@
 // name a person types, open the card, go there, tap the thing itself, check which powers work and
 // tap every other for its reason, use Move and Mass with Undo where offered, and open a shared link.
 // Usage: node scripts/everywhere.mjs [baseUrl] [outDir] [solar|stars|planets|deep|all]
-//   EVERYWHERE_ONLY=Earth,Vega b runs just those places while developing; the four parts together are the suite.
+//   EVERYWHERE_ONLY=Earth,Gl 9848 b runs just those places while developing; the four parts together are the suite.
 import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
@@ -41,12 +41,14 @@ const PLACES = [
   { part: 'stars', label: 'Betelgeuse', query: 'Betelgeuse', rows: ['Betelgeuse'], powers: POWERS.none },
   // Alpha Centauri is the system name people type; today's catalogue calls its two stars Rigil
   // Kentaurus and Toliman. Either real catalogue entry is a valid answer to that name.
-  { part: 'stars', label: 'Alpha Centauri', query: 'Alpha Centauri', rows: ['Rigil Kentaurus', 'Toliman', 'Alpha Centauri'], fallback: 'Rigil Kentaurus', powers: POWERS.host },
+  // (Rigil Kentaurus is within 10 pc and has no planets in the archive: a star people know gets no made-up ones)
+  { part: 'stars', label: 'Alpha Centauri', query: 'Alpha Centauri', rows: ['Rigil Kentaurus', 'Toliman', 'Alpha Centauri'], fallback: 'Rigil Kentaurus', powers: POWERS.none },
   { part: 'stars', label: 'TRAPPIST-1 (the star)', query: 'TRAPPIST-1', rows: ['TRAPPIST-1'], powers: POWERS.host },
   { part: 'planets', label: 'Proxima Cen b', query: 'Proxima Cen b', rows: ['Proxima Cen b'], powers: POWERS.exoplanet },
   { part: 'planets', label: 'TRAPPIST-1 e', query: 'TRAPPIST-1 e', rows: ['TRAPPIST-1 e'], powers: POWERS.transiting },
   { part: 'planets', label: '51 Peg b', query: '51 Peg b', rows: ['51 Peg b'], powers: POWERS.exoplanet },
-  { part: 'planets', label: 'Vega b (generated)', query: 'Vega b', rows: ['Vega b'], powers: POWERS.exoplanet },
+  // (a made-up planet: of a faint star far off, Gl 9848, 56 pc and magnitude 11; a star people know gets none, Vega included)
+  { part: 'planets', label: 'Gl 9848 b (generated)', query: 'Gl 9848 b', rows: ['Gl 9848 b'], powers: POWERS.exoplanet },
   { part: 'deep', label: 'deep space', openSpace: true },
   { part: 'deep', label: 'Sagittarius A*', query: 'Sagittarius A*', rows: ['Sagittarius A*'], powers: POWERS.none },
   { part: 'deep', label: 'Cygnus X-1', query: 'Cygnus X-1', rows: ['Cygnus X-1'], detail: /^black hole$/, powers: POWERS.none },

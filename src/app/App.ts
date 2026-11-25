@@ -83,7 +83,7 @@ import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
 import { canvasRatio, leanDevice } from '../core/device';
 import { describe, distanceText, distanceTo, HOLES, moonWords, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
-import { Systems } from './Systems';
+import { Systems, wellStudied } from './Systems';
 import { VRSupport } from './VR';
 import { FreeFly } from './FreeFly';
 import { Walk } from './Walk';
@@ -2207,14 +2207,15 @@ export class App {
       if (best >= 0) out.push({ label: st.names[0], detail: planets ? `star with ${planets} known planet${planets > 1 ? 's' : ''} · ${st.names.slice(1, 3).join(', ')}` : `star · ${st.names.slice(1, 3).join(', ')}`, id: `star:${st.index}`, score: best + (st.proper ? 0 : 0.3) });
     }
     out.push(...this.systems.search(q, score));
-    // a generated planet, "Vega b": the star's own system, generated (a confirmed planet is found above)
+    // a generated planet, "Gl 9848 b": the star's own system, generated (a confirmed planet is found above;
+    // a star people know has none made up)
     const gm = /^(.+)\s+([b-k])$/i.exec(q.trim());
     if (gm) {
       const names = [gm[1].toLowerCase(), ...(SEARCH_ALIASES[normKey(gm[1])] ?? []).map((a) => a.toLowerCase())];
       const st = this.named.list.find((s) => s.names.some((nm) => names.includes(nm.toLowerCase())));
       if (st) {
         const pl = this.systems.searchGenerated(q, this.getStar(this.catalog, st.node, st.slot));
-        if (pl) out.push({ label: pl.name, detail: `generated planet of ${st.names[0]}`, id: `gen:${encodeURIComponent(pl.name)}`, score: 0.15 });
+        if (pl) out.push({ label: pl.name, detail: `made-up planet of ${st.names[0]}`, id: `gen:${encodeURIComponent(pl.name)}`, score: 0.15 });
       }
     }
     this.deepSky.objects.forEach((o, i) => {
@@ -3707,6 +3708,7 @@ export class App {
       if (sel instanceof CatalogStar && !this.isCompanion(sel)) {
         const sys = this.systems.of(sel);
         if (sys) rows.push(['Planets', sys.real ? `${sys.planets.length} confirmed (NASA Exoplanet Archive)` : `${sys.planets.length} generated (not observed)`]);
+        else if (wellStudied(sel)) rows.push(['Planets', 'none confirmed (NASA Exoplanet Archive)']);
       }
       const available = this.powersOf(sel);
       // (the body the powers act on: a world of the Solar System itself, or the one standing for another star or its planet)

@@ -182,9 +182,8 @@ await page.screenshot({ path: path.join(outDir, 't5-exoplanet.png'), timeout: 18
 // 6. a temperate (or ocean) world of another star: land, sea and a blue sky
 st = await page.evaluate(() => {
   const a = window.app;
-  const names = ['Rigil Kentaurus', 'Sirius', 'Procyon', 'Altair', 'Vega', 'Tau Ceti', 'Epsilon Eridani', 'Fomalhaut', 'Pollux',
-    'Arcturus', 'Capella', 'Castor', 'Denebola', 'Alderamin', 'Mizar', 'Caph', 'Megrez', 'Alioth', 'Eltanin', 'Mirach', 'Hamal',
-    'Achernar', 'Regulus', 'Spica', 'Aldebaran', 'Deneb', 'Polaris', 'Kochab', 'Schedar', 'Dubhe', 'Merak', 'Phecda', 'Alkaid'];
+  // (faint stars far off: a star people know, seen by eye or within 10 parsecs, gets no made-up planets)
+  const names = ['Gl 9848', 'Gl 3017', 'Gl 3018A', 'Gl 3011', 'Gl 1001', 'Gl 2', 'Gl 16', 'Gl 1006A', 'Gl 3014A'];
   for (const n of names) {
     const s = a.findByName(n);
     const sys = s ? a.systems.of(s) : null;
@@ -194,6 +193,7 @@ st = await page.evaluate(() => {
   return null;
 });
 console.log('temperate', JSON.stringify(st));
+check('t6: a made-up temperate planet of a faint star is there to visit', !!st, JSON.stringify(st));
 if (st) {
   const pname = st.planet;
   await page.evaluate((n) => { const a = window.app; const p = a.findByName(n); a.select(p); a.placeNear(p, p.radius * 4, 30, 20); }, pname);

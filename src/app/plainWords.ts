@@ -14,6 +14,7 @@ import { CatalogStar } from '../universe/Stars';
 import type { App } from './App';
 import { describe, distanceText, distanceTo, moonWords } from './destinations';
 import { the } from './Powers';
+import { wellStudied } from './Systems';
 
 const EARTH_RADIUS = 6_371e3;
 const G_EARTH = 9.80665;
@@ -51,7 +52,8 @@ export function celsiusWords(k: number): string {
 export function plainLine(app: App, o: SpaceObject): string {
   const away = `${plainDistance(distanceTo(app, o))} away`;
   if (o instanceof CatalogStar) return `${starColour(o.teff)} star · ${away}${o.distanceUncertain ? ' (distance uncertain)' : ''}`;
-  if (o instanceof ExoPlanet) return `Planet of ${o.system.host.name} · ${plainDistance(o.system.host.upos.sub(app.rig.upos, new Vector3()).length())} away`;
+  // (real or made up, said first: the owner could not tell a real planet of another star from the app's own)
+  if (o instanceof ExoPlanet) return `${o.system.real ? 'Real planet' : 'Made-up planet'} of ${o.system.host.name} · ${plainDistance(o.system.host.upos.sub(app.rig.upos, new Vector3()).length())} away`;
   if (o instanceof Body) {
     const made = o.meta.made ? ', made by you' : '';
     if (o.kind === 'star') return `${o.name === 'Sun' ? 'Our star' : 'Star'}${made} · ${away}`;
@@ -78,6 +80,10 @@ export function plainFacts(app: App, o: SpaceObject): [string, string][] {
     const lum = Math.pow(10, -0.4 * (o.absMag - SUN_ABS_MAG));
     rows.push(['Brightness', `${brightnessWords(lum)}${unsure}`]);
     rows.push(['Surface', `about ${celsiusWords(o.teff)}`]);
+    // (as the card's numbers: a companion of a brighter star has no system of its own)
+    const sys = app.isCompanion(o) ? null : app.systems.of(o);
+    if (sys) rows.push(['Planets', sys.real ? `${sys.planets.length} found by astronomers` : `${sys.planets.length} made up by the app (not observed)`]);
+    else if (!app.isCompanion(o) && wellStudied(o)) rows.push(['Planets', 'none found so far']);
     return rows;
   }
   if (o instanceof ExoPlanet) {

@@ -35,8 +35,9 @@ export const scenarios = [
   { name: '19-proxima-b', query: `time=${T}&paused=1&target=Proxima Cen b&dist=3.5&az=40&el=10` },
   { name: '20-trappist-1e', query: `time=${T}&paused=1&target=TRAPPIST-1 e&dist=3.5&az=30&el=10` },
   { name: '21-hot-jupiter-51-peg-b', query: `time=${T}&paused=1&target=51 Peg b&dist=4&az=50&el=15` },
-  { name: '22-generated-planet-altair-f', query: `time=${T}&paused=1&target=Altair f&dist=3.5&az=40&el=10` },
-  { name: '23-generated-giant-procyon-c', query: `time=${T}&paused=1&target=Procyon c&dist=5&az=30&el=20` },
+  // (made-up planets: of faint stars far off; a star people know, Altair or Procyon, gets none)
+  { name: '22-generated-planet-gl9848-g', query: `time=${T}&paused=1&target=Gl 9848 g&dist=3.5&az=40&el=10` },
+  { name: '23-generated-giant-gl4a-d', query: `time=${T}&paused=1&target=Gl 4A d&dist=5&az=30&el=20` },
   { name: '24-iss', query: `time=${T}&paused=1&target=ISS&dist=2.2&az=200&el=25` },
   { name: '25-jwst', query: `time=${T}&paused=1&target=JWST&dist=2.6&az=120&el=20` },
   { name: '26-voyager-1', query: `time=${T}&paused=1&target=Voyager 1&dist=4&az=150&el=15` },
