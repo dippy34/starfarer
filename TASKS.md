@@ -104,6 +104,64 @@ need the OpenCode workspace's region set to Global.
   `npm run check` passes.
 - **Don't touch:** the other suites' checks.
 
+### `task/everywhere-sweep`: a permanent "works everywhere" browser test
+
+- **Status:** open. Medium. Read `docs/notes/works-everywhere.md` first.
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **What to do:**
+  - Add `scripts/everywhere.mjs`, built on `scripts/lib/browser.mjs` and `scripts/lib/touch.mjs`
+    like `scripts/live.mjs`, on a 390x844 touch page.
+  - It visits a fixed table of places: Earth, Moon, Sun, Jupiter, Ceres, Halley, Sirius,
+    Betelgeuse, Alpha Centauri (typed as "Alpha Centauri"), Proxima Cen b, TRAPPIST-1 e and its
+    star, 51 Peg b, a generated planet, deep space, Sagittarius A*, Cygnus X-1, inside the Orion
+    Nebula, beside Andromeda, and the Milky Way.
+  - At each place it checks:
+    1. it is found by the name a person types;
+    2. the card opens with a title;
+    3. Go there arrives (waits counted in frames, with long bounds, as `docs/notes/testing.md`
+       says);
+    4. tapping the object on screen selects it;
+    5. the powers offered equal a per-kind expectation table, recorded from today's app;
+    6. Move and Mass work where offered, and Undo restores;
+    7. the share link reopens the same selection and camera distance within 1%;
+    8. there are no console errors.
+  - Register it in `FULL`, `RULES` and `PARTS` in `scripts/affected.mjs`, as about four parts.
+  - Some checks fail today: "Alpha Centauri" search, Milky Way and Andromeda picking, and
+    exoplanet share links. Keep them, and list them in your report as the known failures, so they
+    pass once the fixes land. Never weaken a check to make it pass.
+- **Done when:** the suite runs, the known failures are the only failures, and `npm run check`
+  passes.
+- **Don't touch:** app code under `src/` (this task only adds the test).
+
+### `task/search-names`: find things by the names people type
+
+- **Status:** open. Small.
+- **Model:** `opencode-go/glm-5.3-flash`
+- **The problem:** search misses "Alpha Centauri", "Alpha Cen", "Tau Ceti", "Eta Carinae" and
+  generated planets such as "Vega b". "Sol" finds Solaris instead of the Sun, and "ISS" finds
+  Meissa instead of the International Space Station.
+- **What to do:** in the search code (`src/universe/CatalogSearch.ts` and `Systems.search`; find
+  them), add aliases that point to the real catalogue entries, such as Alpha Centauri to Rigil
+  Kentaurus and Toliman, and Sun or Sol to the Sun first. Find Bayer-style names like "Tau Ceti"
+  from the catalogue's own designations. Make generated planets findable as "<star> b", labelled
+  generated. Never add a star or a name that isn't in the data.
+- **Done when:** a unit test covers each of those names, and `npm run check` passes.
+- **Don't touch:** `src/ui/Hud.ts`, `src/ui/styles.css` (the design work is changing them).
+
+### `task/galaxy-picking`: tap a galaxy where you see it
+
+- **Status:** open. Small to medium.
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **The problem:** beside the Milky Way, tapping its centre selects nothing. Beside Andromeda,
+  tapping its centre selects M32, a small galaxy in front of it.
+- **What to do:** find how taps pick objects (search for the pick or raycast code used by tap
+  selection). Make a galaxy pickable over its drawn disc. When a tap lands on both a big galaxy
+  and a small one in front, choose the one the view is framed on, or the biggest on screen. Say
+  in the report which rule you chose and why.
+- **Done when:** a browser check taps the Milky Way's and Andromeda's centres and gets them, and
+  fails on the code before the change. `npm run check` passes.
+- **Don't touch:** `src/ui/Hud.ts`, `src/ui/styles.css`.
+
 ## Adding a task
 
 Copy a section: a branch name starting `task/`, a status, the problem, what to do, when it is
