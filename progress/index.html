@@ -148,6 +148,27 @@
   .skel { display: block; height: 14px; border-radius: 4px; background: var(--well); margin: 14px; }
   .skel.short { width: 55%; }
 
+  /* pictures of the updates */
+  .update { padding: 14px; display: grid; gap: 8px; border-top: 1px solid var(--rule); min-width: 0; }
+  .update:first-child { border-top: 0; }
+  .update .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--ink-3); font: 400 12px/18px var(--font); }
+  .update h3 { margin: 0; font: 600 16px/21px var(--font); text-wrap: balance; overflow-wrap: anywhere; }
+  .update p { margin: 0; color: var(--ink-2); font: 400 14px/20px var(--font); }
+  .strip { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+  .strip figure { margin: 0; flex: none; scroll-snap-align: start; display: grid; gap: 5px; }
+  .strip button { padding: 0; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: #000; cursor: zoom-in; display: block; }
+  .strip img { display: block; width: auto; max-width: none; }
+  .strip figcaption { font: 600 11px/14px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+  .lightbox { position: fixed; inset: 0; z-index: 30; background: rgba(2, 3, 6, 0.96); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px;
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 12px) max(12px, env(safe-area-inset-left, 0px)); }
+  .lightbox .lb-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .lightbox .lb-top span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lightbox img { max-width: 100%; max-height: 100%; margin: auto; object-fit: contain; border-radius: 6px; }
+  .lightbox .lb-foot { display: flex; align-items: center; gap: 10px; color: var(--ink-2); min-width: 0; }
+  .lightbox .lb-foot p { margin: 0; flex: 1; min-width: 0; }
+  .lightbox button { min-height: 40px; min-width: 44px; padding: 0 14px; border-radius: var(--r-key); border: 1px solid var(--rule); background: var(--well); color: var(--ink); font: 600 14px/18px var(--font); cursor: pointer; }
+  .lightbox .x { margin-left: auto; }
+
   footer.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--ink-3); font: 400 12px/18px var(--font); }
   footer.foot button {
     min-height: 36px; padding: 0 14px; border-radius: var(--r-key); border: 1px solid var(--rule);
@@ -174,6 +195,11 @@
       <div class="readout"><span class="legend">Site updated</span><b id="r-site">—</b><small id="r-site-s">the live app</small></div>
     </div>
   </header>
+
+  <section class="panel" id="pics">
+    <header><h2>Latest pictures</h2><span class="legend">tap one to see it big</span></header>
+    <div id="pics-list"><p class="empty">Pictures of each update show here as it lands.</p></div>
+  </section>
 
   <div class="cols">
     <div class="col">
@@ -205,6 +231,12 @@
   </footer>
 </div>
 
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="A picture, large">
+  <div class="lb-top"><span class="legend" id="lb-cap"></span><button type="button" class="x" id="lb-close">Close</button></div>
+  <img id="lb-img" alt="">
+  <div class="lb-foot"><button type="button" id="lb-prev" aria-label="The picture before">◀</button><p id="lb-title"></p><button type="button" id="lb-next" aria-label="The next picture">▶</button></div>
+</div>
+
 <script>
 (() => {
   const REPO = 'dippy34/starfarer';
@@ -213,8 +245,9 @@
   const RAW = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/TASKS.md`;
   const TEAM_BUDGET_MIN = 110;  // an outside AI's run has 110 minutes (.github/workflows/opencode-task.yml)
 
-  const S = { runs: [], commits: [], tasks: [], jobs: new Map(), checked: 0, error: '', limit: null };
-  const seen = { runs: 0, commits: 0, tasks: 0, jobs: 0 };
+  const SHOTS = './shots/manifest.json';  // the updates' pictures, on this site (scripts/progress-shots.py)
+  const S = { runs: [], commits: [], tasks: [], jobs: new Map(), shots: null, checked: 0, error: '', limit: null };
+  const seen = { runs: 0, commits: 0, tasks: 0, jobs: 0, shots: 0 };
   const $ = (id) => document.getElementById(id);
 
   // ------------------------------------------------------------ reading
@@ -274,6 +307,11 @@
   async function tick(force) {
     if (document.hidden && !force) return;
     const now = Date.now();
+    // the pictures are on this site: no allowance to mind
+    if (force || now - seen.shots > 110e3) {
+      try { const r = await fetch(SHOTS, { cache: 'no-cache' }); S.shots = r.ok ? await r.json() : []; } catch { /* next time */ }
+      seen.shots = now;
+    }
     const low = S.limit && S.limit.rem < 8 && now < S.limit.reset;
     if (low && !force) { render(); return; }
     try {
@@ -414,7 +452,59 @@
     return ['Change', 'live'];
   }
 
+  const KIND = { live: ['Live now', 'live'], team: ['Cheap team · waiting for review', 'review'], tests: ['Tests', 'ok'] };
+  let lb = null;  // the open picture: {pics, i, title}
+  function showPic() {
+    const p = lb.pics[lb.i];
+    $('lb-img').src = `./shots/${p.src}`;
+    $('lb-img').alt = p.caption || lb.title;
+    $('lb-cap').textContent = `${p.caption || 'Picture'} · ${lb.i + 1} of ${lb.pics.length}`;
+    $('lb-title').textContent = lb.title;
+    $('lb-prev').disabled = lb.pics.length < 2; $('lb-next').disabled = lb.pics.length < 2;
+  }
+  function openPic(pics, i, title) { lb = { pics, i, title }; showPic(); $('lightbox').hidden = false; $('lb-close').focus(); }
+  function closePic() { $('lightbox').hidden = true; lb = null; }
+  $('lb-close').addEventListener('click', closePic);
+  $('lb-prev').addEventListener('click', () => { if (lb) { lb.i = (lb.i + lb.pics.length - 1) % lb.pics.length; showPic(); } });
+  $('lb-next').addEventListener('click', () => { if (lb) { lb.i = (lb.i + 1) % lb.pics.length; showPic(); } });
+  $('lightbox').addEventListener('click', (e) => { if (e.target === $('lightbox')) closePic(); });
+  document.addEventListener('keydown', (e) => {
+    if (!lb) return;
+    if (e.key === 'Escape') closePic();
+    else if (e.key === 'ArrowLeft') $('lb-prev').click();
+    else if (e.key === 'ArrowRight') $('lb-next').click();
+  });
+
+  function drawPictures() {
+    const list = $('pics-list');
+    if (!Array.isArray(S.shots)) return;
+    if (!S.shots.length) { list.replaceChildren(h('p', { class: 'empty' }, 'Pictures of each update show here as it lands.')); return; }
+    const key = S.shots.map((e) => e.id).join('|');
+    if (list.dataset.key === key) {  // the same pictures: only the times move on
+      list.querySelectorAll('[data-at]').forEach((el) => { el.textContent = ago(Date.parse(el.dataset.at)); });
+      return;
+    }
+    list.dataset.key = key;
+    list.replaceChildren(...S.shots.slice(0, 6).map((e) => {
+      const [label, cls] = KIND[e.kind] || ['Update', ''];
+      const pics = (e.pictures || []).filter((p) => /^[\w.-]+\.jpg$/.test(p.src));
+      return h('article', { class: 'update' },
+        h('div', { class: 'row' }, h('span', { class: `chip ${cls}` }, label), h('span', { 'data-at': e.at }, ago(Date.parse(e.at))), link(e.link, 'Details ↗')),
+        h('h3', null, e.title),
+        e.text ? h('p', null, e.text) : null,
+        h('div', { class: 'strip' }, ...pics.map((p, i) => {
+          const tall = (p.h || 1) >= (p.w || 1);
+          const img = h('img', { src: `./shots/${p.src}`, alt: p.caption || e.title, loading: 'lazy', decoding: 'async',
+            style: tall ? 'height:230px' : 'height:150px', width: String(Math.round((tall ? 230 : 150) * (p.w || 1) / (p.h || 1))), height: tall ? '230' : '150' });
+          const b = h('button', { type: 'button', 'aria-label': `See ${p.caption || 'the picture'} large` }, img);
+          b.addEventListener('click', () => openPic(pics, i, e.title));
+          return h('figure', null, b, p.caption ? h('figcaption', null, p.caption) : null);
+        })));
+    }));
+  }
+
   function render() {
+    drawPictures();
     const work = working(), done = finished();
     const team = work.filter((w) => w.kind === 'team' && w.model !== undefined).length;
     const tests = work.filter((w) => w.kind === 'tests').length;

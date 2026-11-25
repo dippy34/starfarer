@@ -1,0 +1,64 @@
+[
+ {
+  "id": "20261125-141848-after-a-crash-the-wreck-stays-on",
+  "at": "2026-11-25T14:18:48+00:00",
+  "kind": "live",
+  "title": "After a crash, the wreck stays on the ground",
+  "text": "During the 4-second countdown the ship used to float off into space while the Moon moved on, and the instruments showed nonsense. Now it stays where it hit.",
+  "link": "https://github.com/dippy34/starfarer/commit/2d58878",
+  "pictures": [
+   {
+    "src": "20261125-141848-after-a-crash-the-wreck-stays-on-1.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "Before: 89 km up"
+   },
+   {
+    "src": "20261125-141848-after-a-crash-the-wreck-stays-on-2.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: on the ground"
+   }
+  ]
+ },
+ {
+  "id": "20261125-141846-a-calmer-crash-screen-and-a-slim",
+  "at": "2026-11-25T14:18:46+00:00",
+  "kind": "live",
+  "title": "A calmer crash screen and a slim info card",
+  "text": "The crash screen says what happened in plain numbers and what to do next. The info card is one small bar; one tap opens the rest.",
+  "link": "https://github.com/dippy34/starfarer/commit/95946c0",
+  "pictures": [
+   {
+    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-1.jpg",
+    "w": 960,
+    "h": 2078,
+    "caption": "Crash: before"
+   },
+   {
+    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-2.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "Crash: after"
+   },
+   {
+    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-3.jpg",
+    "w": 960,
+    "h": 2078,
+    "caption": "Card: before"
+   },
+   {
+    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-4.jpg",
+    "w": 960,
+    "h": 2078,
+    "caption": "Card: after"
+   },
+   {
+    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-5.jpg",
+    "w": 960,
+    "h": 2078,
+    "caption": "Card: one tap"
+   }
+  ]
+ }
+]
