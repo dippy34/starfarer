@@ -74,6 +74,8 @@ export interface HudState {
   reversed: boolean;
   selection: {
     key: string; name: string; detail: string; rows: [string, string][]; picture: Picture; here: boolean;
+    /** a few facts in plain words, as a first read (src/app/plainWords.ts); `rows` and `worked`, every fact as measured, are under More science */
+    plain: [string, string][];
     /** what follows from those facts by the textbook, each with its working (src/app/Worked.ts) */
     worked: { label: string; text: string; math: string }[];
     /** its temperature in a line ('' where none is worked out: no Bond albedo measured) */
@@ -156,7 +158,11 @@ export interface ThumbSheet { url: string; cols: number; rows: number; bodies: R
 /** (`flight`: the ship's full read-out, opened from its instruments on a touch screen) */
 type Sheet = 'explore' | 'time' | 'more' | 'flight';
 
-/** the height the selection's card takes above the tab bar, with its gap (px): its three buttons, the powers under them, and a world's temperature in a line */
+/**
+ * the room kept for the selection's card above the tab bar, with its gap (px). Folded the card is a bar
+ * of about 70 px (styles.css, .card-bar); the room is still that of the card with its buttons open (its
+ * actions, the powers, a world's temperature), so that the subject does not move when it is opened
+ */
 const CARD_ROOM = 225;
 /** a watch is given at least this share of an upright view's height: an open panel of the card folds away for it (makeRoom) */
 const FOLD_BELOW = 0.4;
@@ -251,16 +257,15 @@ const TEMPLATE = `
         <button class="watch-close" type="button" data-act="watch-close" aria-label="Close">${ICON.close}</button>
       </div>
       <section class="sheet card" data-sheet="card" aria-label="Selected">
-        <div class="card-head">
-          <span class="thumb"></span>
-          <div class="card-title"><h2></h2><p></p></div>
-          <button class="icon-btn card-share" type="button" data-act="share" aria-label="Share this view">${ICON.share}</button>
+        <div class="card-bar">
+          <div class="card-title"><h2></h2><p></p><button class="card-more" type="button" data-details aria-expanded="false" aria-label="More about it">${ICON.chevron}</button></div>
+          <button class="btn primary card-go" type="button" data-act="go">${ICON.go}<span>Go there</span></button>
           <button class="icon-btn" type="button" data-act="deselect" aria-label="Close">${ICON.close}</button>
         </div>
         <div class="card-actions">
-          <button class="btn primary" type="button" data-act="go">${ICON.go}<span>Go there</span></button>
+          <span class="thumb"></span>
           <button class="btn" type="button" data-act="centre">${ICON.centre}<span>Look at</span></button>
-          <button class="btn" type="button" data-details aria-expanded="false">${ICON.info}<span>Details</span></button>
+          <button class="btn" type="button" data-act="share">${ICON.share}<span>Share</span></button>
         </div>
         <div class="card-powers" hidden>
           <button class="power" type="button" data-power="mass" aria-expanded="false">${ICON.mass}<span>Mass</span></button>
@@ -308,8 +313,12 @@ const TEMPLATE = `
           <p class="power-hint">It starts between you and this world, with time waiting: put it where you want it, give it the mass you want, then Done. After that it is moved, made heavier and removed like any other.</p>
         </div>
         <div class="facts" hidden>
-          <dl></dl>
-          <div class="worked" hidden><h3>Worked out <small>tap a line to see how</small></h3><div class="worked-rows"></div></div>
+          <ul class="plain"></ul>
+          <button class="science-toggle" type="button" data-science aria-expanded="false"><span>More science</span>${ICON.chevron}</button>
+          <div class="science" hidden>
+            <dl></dl>
+            <div class="worked" hidden><h3>Worked out <small>tap a line to see how</small></h3><div class="worked-rows"></div></div>
+          </div>
         </div>
       </section>
       <section class="sheet explore" data-sheet="explore" aria-label="Search and places to go">
@@ -413,6 +422,10 @@ export class Hud {
   private details = false;
   /** the line of the selection's temperature has folded away to make room (makeRoom), until another is chosen */
   private warmthFolded = false;
+  /** the card's science (every fact as measured, and what is worked out from them) is unfolded under its plain lines */
+  private science = false;
+  /** the plain lines as last drawn */
+  private plainKey = '';
   /** the selection has changed by itself: the open sheet is not to give way to its card (see `selectionMoved`) */
   private moved = false;
   /** the power whose panel is open on the card */
@@ -969,6 +982,7 @@ export class Hud {
       // something new was chosen: its card takes the panel
       this.selectionKey = sel.key;
       this.details = false;
+      this.science = false;
       this.warmthFolded = false;
       this.power = null;
       this.pictureStale = true;
@@ -1053,8 +1067,20 @@ export class Hud {
     }
     const facts = card.querySelector<HTMLElement>('.facts')!;
     facts.hidden = !this.details;
-    card.querySelector('[data-details]')!.setAttribute('aria-expanded', String(this.details));
+    // (folded, the card is a bar: its name, a line, Go there. Everything else is a tap on it away)
+    const open = this.details || this.power !== null || moving;
+    card.classList.toggle('open', open);
+    card.querySelector('[data-details]')!.setAttribute('aria-expanded', String(open));
     if (!this.details) return;
+    // the plain lines first; every fact as measured under More science
+    const plainKey = sel.plain.map((r) => r.join('\t')).join('\n');
+    if (plainKey !== this.plainKey) {
+      this.plainKey = plainKey;
+      facts.querySelector('.plain')!.innerHTML = sel.plain.map(([k, v]) => `<li><span>${escapeHtml(k)}</span><b>${escapeHtml(v)}</b></li>`).join('');
+    }
+    facts.querySelector<HTMLElement>('.science')!.hidden = !this.science;
+    facts.querySelector('[data-science]')!.setAttribute('aria-expanded', String(this.science));
+    setText(facts.querySelector('[data-science] span')!, this.science ? 'Less science' : 'More science');
     // another body's facts open at their top (a hidden list keeps where it was scrolled to)
     if (this.factsKey !== sel.key) { this.factsKey = sel.key; facts.scrollTop = 0; }
     // the facts: rebuilt when their headings change, otherwise only the values are refreshed
@@ -1136,7 +1162,8 @@ export class Hud {
     else if (d.cat) { this.category = d.cat as Category; this.renderList(); }
     else if (d.tab) this.tab(d.tab);
     else if ('close' in d) this.closeSheet();
-    else if ('details' in d) { this.endMove(); this.details = !this.details; this.power = null; if (this.state) this.renderCard(this.state); }
+    else if ('details' in d) { this.endMove(); this.details = !this.details; if (!this.details) this.science = false; this.power = null; if (this.state) this.renderCard(this.state); }
+    else if ('science' in d) { this.science = !this.science; if (this.state) this.renderCard(this.state); }
     else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'size' | 'add'); this.details = false; if (this.state) this.renderCard(this.state); }
     else if ('noticeClose' in d) this.clearNotice();
     else if ('impactClose' in d) this.impact(null);

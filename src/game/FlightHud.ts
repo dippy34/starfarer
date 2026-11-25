@@ -1,7 +1,7 @@
 import { C } from '../sim/Gravity';
 import { G0, SHIP_SPEC } from '../sim/ShipPhysics';
 import { ICON } from '../ui/icons';
-import { type FlightReadout, type SasMode, fmtClock, fmtDist, fmtG, fmtGamma, fmtLight, fmtSpeed, fmtPace, fmtTime, fmtWarp, sasLabel, WARP_STEPS } from './Flight';
+import { type EndReport, type FlightReadout, type SasMode, fmtClock, fmtDist, fmtG, fmtGamma, fmtLight, fmtSpeed, fmtPace, fmtTime, fmtWarp, sasLabel, WARP_STEPS } from './Flight';
 
 const CSS = `
 .fl-panel { font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: #cfe8ff; }
@@ -26,10 +26,39 @@ const CSS = `
 .fl-warn.l1 { color: #ffd166; background: rgba(40, 30, 0, 0.45); }
 .fl-warn.l2 { color: #ff5a4a; background: rgba(50, 0, 0, 0.5); animation: fl-blink 0.8s steps(2) infinite; }
 @keyframes fl-blink { 50% { opacity: 0.55; } }
-.fl-end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none;
-  font-family: system-ui, sans-serif; text-align: center; opacity: 0; transition: opacity 0.6s; }
-.fl-end h1 { font-size: 54px; letter-spacing: 0.2em; margin: 0 0 14px; color: #fff; text-shadow: 0 0 24px rgba(255,120,80,0.8); }
-.fl-end p { font-size: 17px; max-width: 640px; color: #e8eef8; text-shadow: 0 0 6px #000; margin: 0 20px; }
+/* the end of a flight: an event display, as a spacecraft's caution and warning panel shows one (HANDOFF.md
+   "Design"): what happened in a sentence, the numbers against their limit, the one thing to do next, and
+   when the flight starts again. Flat, opaque, squared, left-aligned; red only for what went wrong. */
+.fl-end { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; pointer-events: none; opacity: 0; transition: opacity 0.6s;
+  padding: calc(var(--safe-t, 0px) + 16px) calc(var(--safe-r, 0px) + 16px) calc(var(--safe-b, 0px) + 16px) calc(var(--safe-l, 0px) + 16px); }
+.fl-end[hidden] { display: none; }
+.fl-end-panel { width: 100%; max-width: 460px; margin: 0 auto; box-sizing: border-box; padding: var(--sf-s4) var(--sf-s4) var(--sf-s3);
+  background: var(--sf-panel); border: var(--sf-edge-line); border-left: 4px solid var(--sf-warning); border-radius: var(--sf-r-panel);
+  font: var(--sf-t-body); color: var(--sf-ink); text-align: left; }
+.fl-end-legend { margin: 0 0 var(--sf-s2); font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track); text-transform: uppercase; color: var(--sf-warning); }
+.fl-end-head { margin: 0 0 var(--sf-s4); font: var(--sf-t-display); letter-spacing: -0.01em; }
+.fl-end-reads { display: flex; gap: var(--sf-s5); margin: 0 0 var(--sf-s3); }
+.fl-end-reads div { min-width: 0; }
+.fl-end-reads span { display: block; font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track); text-transform: uppercase; color: var(--sf-ink-2); }
+.fl-end-reads b { display: block; margin-top: 2px; font: var(--sf-t-readout); font-variant-numeric: tabular-nums; }
+.fl-end-reads div:first-child b { color: var(--sf-warning); }
+.fl-end-reads.words b { font: var(--sf-t-body); }
+.fl-end-reads.words div:first-child b { color: var(--sf-ink); }
+/* the speed on a scale from 0: the safe part up to its limit's tick, the speed it hit at as a bar */
+.fl-end-gauge { position: relative; height: 10px; margin: var(--sf-s1) 0 var(--sf-s5); background: var(--sf-panel-2); border-radius: 2px; }
+.fl-end-gauge .safe { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--sf-nominal) 35%, transparent); border-radius: 2px 0 0 2px; }
+.fl-end-gauge .hit { position: absolute; left: 0; top: 3px; height: 4px; background: var(--sf-warning); }
+.fl-end-gauge .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--sf-nominal); }
+.fl-end-gauge .tick-label { position: absolute; top: 14px; transform: translateX(-50%); font: var(--sf-t-legend); color: var(--sf-nominal); white-space: nowrap; text-transform: uppercase; letter-spacing: var(--sf-legend-track); font-variant-numeric: tabular-nums; }
+.fl-end-gauge .tick-label.start { transform: none; }
+.fl-end-next { margin: 0 0 var(--sf-s3); padding-top: var(--sf-s3); border-top: var(--sf-edge-line); }
+.fl-end-next b { font-weight: 650; }
+.fl-end-back { margin: 0; font: var(--sf-t-small); color: var(--sf-ink-2); font-variant-numeric: tabular-nums; }
+/* (while it is shown the warning banner says no more: the panel says it; and the ship's controls, which do
+   nothing until the flight starts again, step out from under it) */
+.fl-ending .fl-warn { display: none !important; }
+.fl-ending :is(.fl-stick, .fl-aids, .fl-rcs, .fl-modes, .fl-keys) { visibility: hidden; }
+@media (max-width: 520px) { .fl-end-head { font-size: 24px; line-height: 29px; } }
 .fl-keys { position: absolute; right: 14px; bottom: 54px; font: 11px/1.5 system-ui, sans-serif; color: rgba(200, 220, 240, 0.7); text-align: right; pointer-events: none;
   background: rgba(4, 10, 20, 0.5); border-radius: 6px; padding: 6px 9px; }
 .fl-keys b { color: #cfe8ff; font-weight: 600; }
@@ -126,7 +155,6 @@ const CSS = `
   #hud:is([data-sheet='explore'], [data-sheet='more']) :is(.fl-desk, .fl-top) { display: none; }
   #hud[data-sheet='time'] :is(.fl-stick, .fl-aids, .fl-modes) { display: none; }
   .fl-warn { font-size: 15px; top: auto; bottom: 40%; }
-  .fl-end h1 { font-size: 34px; }
 }
 @media (max-width: 520px), (pointer: coarse) { .fl-keys { display: none; } }
 /* a wide view (a phone on its side, a tablet): the panels of the interface stand at the left (the
@@ -251,7 +279,7 @@ export class FlightHud {
     }
     this.el = document.createElement('div');
     this.el.className = 'flight-hud';
-    this.el.innerHTML = `<div class="fl-panel fl-desk" data-cover></div><div class="fl-warn"></div><div class="fl-end"><h1></h1><p></p></div>
+    this.el.innerHTML = `<div class="fl-panel fl-desk" data-cover></div><div class="fl-warn"></div><div class="fl-end" role="alert" hidden><div class="fl-end-panel"><p class="fl-end-legend"></p><p class="fl-end-head"></p><div class="fl-end-reads"></div><div class="fl-end-gauge" hidden><i class="safe"></i><i class="hit"></i><i class="tick"></i><span class="tick-label"></span></div><p class="fl-end-next"></p><p class="fl-end-back"></p></div></div>
       <div class="fl-top touch-only">
         <button class="fl-glance" type="button" data-cover aria-expanded="false" aria-label="The ship's instruments: tap for the full read-out">
           <span class="fl-l1"><b></b><i></i></span><span class="fl-l2"></span><span class="fl-l3"></span><span class="fl-l4"></span>${ICON.chevron}
@@ -445,13 +473,50 @@ export class FlightHud {
     if (!v && this.sheet.open === 'flight') this.sheet.closeSheet();
   }
 
-  /** End-of-flight card: title/text with opacity 0..1. */
-  setEnd(title: string, text: string, opacity: number): void {
-    (this.end.querySelector('h1') as HTMLElement).textContent = title;
-    (this.end.querySelector('p') as HTMLElement).textContent = text;
-    this.end.style.opacity = String(opacity);
-    this.end.style.transition = opacity > 0 ? 'opacity 0.6s' : 'none';
+  /**
+   * The end of a flight as an event display (Flight.ts endReport), with opacity 0..1 and the whole
+   * seconds left before the flight starts again; null when no flight has ended.
+   */
+  setEnd(report: EndReport | null, opacity: number, secondsLeft: number): void {
+    const end = this.end;
+    end.hidden = !report;
+    this.el.classList.toggle('fl-ending', !!report);
+    end.style.opacity = String(opacity);
+    end.style.transition = opacity > 0 ? 'opacity 0.6s' : 'none';
+    if (!report) { this.endKey = ''; return; }
+    const q = (sel: string) => end.querySelector(sel) as HTMLElement;
+    const key = `${report.legend}|${report.head}`;
+    if (key !== this.endKey) {
+      this.endKey = key;
+      q('.fl-end-legend').textContent = report.legend;
+      q('.fl-end-head').textContent = report.head;
+      const reads = q('.fl-end-reads');
+      reads.classList.toggle('words', !report.gauge);
+      reads.replaceChildren(...report.readouts.map(([k, v]) => {
+        const d = document.createElement('div'), sp = document.createElement('span'), b = document.createElement('b');
+        sp.textContent = k; b.textContent = v; d.append(sp, b);
+        return d;
+      }));
+      const gauge = q('.fl-end-gauge');
+      gauge.hidden = !report.gauge;
+      if (report.gauge) {
+        // (a scale from 0 to a quarter past the larger of the two: the limit's tick and the speed's bar on it)
+        const { value, limit } = report.gauge, top = Math.max(value, limit) * 1.25, at = (x: number) => `${(100 * x) / top}%`;
+        (gauge.querySelector('.safe') as HTMLElement).style.width = at(limit);
+        (gauge.querySelector('.hit') as HTMLElement).style.width = at(value);
+        (gauge.querySelector('.tick') as HTMLElement).style.left = at(limit);
+        const label = gauge.querySelector('.tick-label') as HTMLElement;
+        label.style.left = '0';
+        label.textContent = 'safe';
+        label.className = 'tick-label start';
+      }
+      const next = q('.fl-end-next');
+      const [first, ...rest] = report.next.split(', ');
+      next.replaceChildren(Object.assign(document.createElement('b'), { textContent: rest.length ? `${first},` : first }), rest.length ? ` ${rest.join(', ')}` : '');
+    }
+    q('.fl-end-back').textContent = `Back in orbit around ${report.back} in ${Math.max(1, secondsLeft)} s`;
   }
+  private endKey = '';
 
   update(dt: number, r: FlightReadout, showKeys: boolean, view: 'cockpit' | 'chase' = 'cockpit'): void {
     this.view = view;
