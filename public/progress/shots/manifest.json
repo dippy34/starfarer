@@ -1,5 +1,39 @@
 [
  {
+  "id": "20261125-152326-the-ship-s-dashboard-in-plain-wo",
+  "at": "2026-11-25T15:23:26+00:00",
+  "kind": "team",
+  "title": "The ship's dashboard in plain words",
+  "text": "The cheap team (Kimi K3.1 Pro) redid the ship's instruments: km/h instead of m/s, 'above ground' and 'hits the ground in', 'main drive', 'steering', 'side thrust', in the new look and a little smaller. Being checked now; not live yet.",
+  "link": "https://github.com/dippy34/starfarer/actions/runs/45630570762",
+  "pictures": [
+   {
+    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Before: upright"
+   },
+   {
+    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "After: upright"
+   },
+   {
+    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-3.jpg",
+    "w": 844,
+    "h": 390,
+    "caption": "Before: on its side"
+   },
+   {
+    "src": "20261125-152326-the-ship-s-dashboard-in-plain-wo-4.jpg",
+    "w": 844,
+    "h": 390,
+    "caption": "After: on its side"
+   }
+  ]
+ },
+ {
   "id": "20261125-145102-tap-a-galaxy-where-you-see-it",
   "at": "2026-11-25T14:51:02+00:00",
   "kind": "team",
