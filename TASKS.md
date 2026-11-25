@@ -302,6 +302,48 @@ need the OpenCode workspace's region set to Global.
 - **Don't touch:** `src/game/` (the ship's instruments), `src/app/powersFor.ts` and the card's powers
   row (task/powers-everywhere, in review).
 
+### `task/offline`: a copy of everything on the phone, for use with no internet
+
+- **Status:** open. Medium.
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **The problem:** the owner: "would it be possible to create an offline version that has everything
+  downloaded". The app loads nothing from other sites: everything is on its own site, the app and
+  `public/data` (about 920 MB in about 13,000 files). It can already be added to the Home Screen
+  (`public/manifest.webmanifest`, the apple-mobile-web-app tags in `index.html`), but it needs the
+  internet for every file.
+- **What to do:**
+  - **The list of files.** The build writes a list of every file of the built site, with its size
+    and a hash of its content (a small Vite plugin in `vite.config.ts`, or a step after the build).
+  - **The service worker** (`public/sw.js`, registered with scope `./`, since the site lives under
+    `/starfarer/`). It serves the app and its data from a cache when they are there, and the network
+    otherwise.
+    - Register it **only when the person asks for the offline copy**, and unregister it and empty
+      its cache on "Remove the offline copy". Someone who never asks gets exactly today's site.
+    - It must never serve an old app with new data, or the other way round. On a new version, it
+      fetches only the files whose hash changed, then switches over together.
+  - **In More (settings), a small "Use offline" part:**
+    - "Download everything for offline use (about N MB)", where N comes from the list, with a
+      progress bar, a line saying to use Wi-Fi, and the space it will take
+      (`navigator.storage.estimate()`).
+    - Ask for persistent storage (`navigator.storage.persist()`) and say plainly if the phone
+      refuses.
+    - When done: "Starfarer works offline". Also "Remove the offline copy".
+    - Words in the plain style of `HANDOFF.md` "Design".
+    - The browser APIs go in `src/platform/` (for example `src/platform/offline.ts`). The panel's
+      own code goes in a file of its own; in `src/ui/Hud.ts`, only mount it in the More sheet
+      (task/tab-bar is changing Hud.ts's tab bar and round buttons at the same time).
+- **Done when:**
+  - Unit tests cover the file list and the "what changed between two lists" logic.
+  - A browser check, a new `scripts/offline.mjs` registered in `scripts/affected.mjs`:
+    - it downloads a small part (a test-only option limiting the list to what showing the Earth and
+      flying to the Moon need), sets the page offline (Playwright's `context.setOffline(true)`) and
+      reloads;
+    - the app starts, the Earth is drawn with its map, a flight to the Moon arrives, and no request
+      fails;
+    - and "Remove the offline copy" leaves no service worker and no cache.
+  - The `start`, `touch` and `share` suites pass. `npm run check` passes.
+- **Don't touch:** `src/game/`, the tab bar and round buttons (task/tab-bar), `src/app/powersFor.ts`.
+
 ## Adding a task
 
 Copy a section: a branch name starting `task/`, a status, the problem, what to do, when it is
