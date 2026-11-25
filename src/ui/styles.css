@@ -184,21 +184,25 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .live-mark.after .live-what { color: var(--fg); cursor: default; }
 #hud[data-live] .hud-toast { top: calc(var(--safe-t) + 122px); }
 
-/* the bottom: round buttons, the flight in progress, one panel, the tab bar */
+/* the bottom: one row of flat action keys, the flight in progress, one panel, the tab bar */
 .hud-dock {
   position: absolute; left: calc(var(--safe-l) + 8px); right: calc(var(--safe-r) + 8px); bottom: calc(var(--safe-b) + 8px);
   display: flex; flex-direction: column; gap: 8px;
 }
-.hud-fabs { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.hud-fabs { align-self: stretch; display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: var(--sf-s2); }
 #hud .fab {
-  pointer-events: auto; min-width: 48px; height: 48px; padding: 0 14px 0 12px; border-radius: 24px;
-  display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; font-weight: 600;
-  background: var(--glass); border: 1px solid var(--line);
+  pointer-events: auto; flex: 0 1 auto; min-width: var(--sf-touch); height: var(--sf-touch); padding: 0 var(--sf-s2);
+  border: var(--sf-edge-line); border-radius: var(--sf-r-key); display: flex; align-items: center; justify-content: center;
+  gap: var(--sf-s1); background: var(--sf-panel); color: var(--sf-ink); font: var(--sf-t-small); font-weight: 600;
+  line-height: 16px; text-align: left; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
-#hud .fab:active { background: var(--solid); }
+#hud .fab .icon { width: 20px; height: 20px; }
+#hud .fab:active { background: var(--sf-panel-2); }
 .look-fab .icon:nth-child(2), .look-fab[aria-pressed='true'] .icon:nth-child(1) { display: none !important; }
 .look-fab[aria-pressed='true'] .icon:nth-child(2) { display: block !important; }
-.look-fab[aria-pressed='true'] { color: var(--accent); }
+.look-fab[aria-pressed='true'] { color: var(--sf-accent); }
+/* three action keys still make one row: their words carry the meaning, so their signs give way */
+#hud .hud-fabs:has(.walk-fab:not([hidden])) .fab .icon { display: none !important; }
 #hud #vr-button {
   pointer-events: auto; height: 48px; padding: 0 18px; border-radius: 24px; border: 1px solid rgba(127, 178, 255, 0.6);
   background: var(--solid); color: #fff; font-size: 13px; font-weight: 650; letter-spacing: 0.1em;
@@ -613,12 +617,18 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
 .missions li.done b { color: #9dff8a; }
 #hud .time-today { flex: none; margin: 0 16px 10px; background: rgba(127, 178, 255, 0.18); color: var(--accent); }
 
-.hud-tabs { pointer-events: auto; display: flex; height: 60px; box-sizing: border-box; padding: 4px; border-radius: 22px; }
+.hud-tabs {
+  pointer-events: auto; display: flex; height: 52px; box-sizing: border-box; padding: 2px var(--sf-s1);
+  background: var(--sf-panel); border: var(--sf-edge-line); border-radius: var(--sf-r-panel);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
 #hud .hud-tabs button {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  border-radius: 18px; font-size: 11px; font-weight: 550; color: var(--dim);
+  min-height: var(--sf-touch); border-radius: var(--sf-r-key); font-size: 11px; line-height: 14px;
+  font-weight: 550; color: var(--sf-ink-2);
 }
-#hud .hud-tabs button[aria-selected='true'] { color: var(--accent); background: rgba(127, 178, 255, 0.14); }
+#hud .hud-tabs button .icon { width: 20px; height: 20px; }
+#hud .hud-tabs button[aria-selected='true'] { color: var(--sf-accent); background: var(--sf-panel-2); }
 
 /* first time on a touch screen: how to get around */
 .hud-coach {
@@ -660,6 +670,9 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
 @media (max-width: 359px) {
   #hud .chip { gap: 6px; padding: 5px 10px 5px 8px; }
   #hud .chip.clock { padding: 5px 10px; }
+  .hud-fabs { gap: var(--sf-s1); }
+  #hud .fab { padding: 0 6px; }
+  #hud .fab .icon { display: none !important; }
 }
 /* a phone's panel: Go there on the card's bar keeps its word and gives its sign's room to the line */
 @container (max-width: 420px) {
@@ -679,11 +692,11 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
     top: calc(var(--safe-t) + 66px); right: auto; left: calc(var(--safe-l) + var(--edge)); bottom: calc(var(--safe-b) + var(--edge));
     flex-direction: row; align-items: flex-end; gap: 10px;
   }
-  .hud-tabs { order: -1; align-self: center; flex-direction: column; width: 68px; height: auto; }
-  #hud .hud-tabs button { flex: none; min-height: 58px; }
+  .hud-tabs { order: -1; align-self: center; flex-direction: column; width: 60px; height: auto; }
+  #hud .hud-tabs button { flex: none; min-height: 48px; }
   .hud-slot { align-self: stretch; justify-content: flex-end; width: min(380px, 46vw); }
   .sheet, .sheet.flight { max-height: 100%; }
-  .hud-fabs { position: fixed; right: calc(var(--safe-r) + var(--edge)); bottom: calc(var(--safe-b) + var(--edge)); }
+  .hud-fabs { position: fixed; right: calc(var(--safe-r) + var(--edge)); bottom: calc(var(--safe-b) + var(--edge)); flex-direction: column; align-items: flex-end; width: auto; max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 20px); }
   .live-mark { top: calc(var(--safe-t) + var(--edge) - 2px); left: 50%; right: auto; width: max-content; max-width: 44vw; transform: translateX(-50%); }
   #hud[data-live] .hud-toast { top: calc(var(--safe-t) + 68px); }
   .explore.typing {
@@ -694,7 +707,7 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
 /* a phone on its side: little height, so the panels are tighter */
 @media (orientation: landscape) and (max-height: 480px) {
   .hud-dock { top: calc(var(--safe-t) + 62px); }
-  #hud .hud-tabs button { min-height: 50px; }
+  #hud .hud-tabs button { min-height: 48px; }
   .time-clock { font-size: 28px; }
   .transport { padding-bottom: 8px; }
   .explore.typing { top: calc(var(--safe-t) + 8px); max-height: calc(var(--visible-height, 100vh) - var(--safe-t) - 16px); }

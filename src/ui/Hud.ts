@@ -242,7 +242,7 @@ const TEMPLATE = `
   <div class="hud-dock">
     <div class="hud-fabs">
       <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What dragging one finger does now: turn round the world, or look around. Tap to change">${ICON.orbit}${ICON.look}<span></span></button>
-      <button class="fab ship-fab" type="button" data-act="ship-go">${ICON.ship}<span>Your ship</span></button>
+      <button class="fab ship-fab" type="button" data-act="ship-go">${ICON.ship}<span>My ship</span></button>
       <button class="fab walk-fab touch-only" type="button" data-act="walk" hidden>${ICON.walk}<span>Land and walk</span></button>
     </div>
     <div class="hud-slot">
@@ -824,8 +824,8 @@ export class Hud {
     }
     this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
     // (the button says what dragging does now; a tap changes it)
-    setText(this.$('.look-fab span'), s.look ? 'Drag: look' : 'Drag: orbit');
-    setText(this.$('.ship-fab span'), s.selection && !s.selection.here ? 'Fly there in your ship' : 'Your ship');
+    setText(this.$('.look-fab span'), s.look ? 'Looking around' : 'Turning around it');
+    setText(this.$('.ship-fab span'), s.selection && !s.selection.here ? 'Fly my ship there' : 'My ship');
     const today = this.$('.time-today');
     today.hidden = !s.today;
     if (s.today) setText(today.querySelector('span')!, s.today);
