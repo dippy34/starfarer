@@ -11,8 +11,9 @@ const CSS = `
 .fl-panel .row { display: flex; justify-content: space-between; gap: 8px; }
 .fl-panel .k { color: #7f9bb8; }
 .fl-panel .v { color: #fff; text-align: right; }
-.fl-panel .bad, .fl-glance .bad { color: #ff7a6a; }
-.fl-panel .ok, .fl-glance .ok { color: #9dff8a; }
+.fl-panel .bad, .fl-glance .bad { color: var(--sf-warning); }
+.fl-panel .ok, .fl-glance .ok { color: var(--sf-nominal); }
+.fl-glance .caution { color: var(--sf-caution); }
 .fl-panel .bar { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; margin: 2px 0 4px; overflow: hidden; }
 .fl-panel .bar i { display: block; height: 100%; background: #7fd4ff; }
 .fl-panel .tip { margin: 2px 0 4px; font: 12px/1.35 system-ui, sans-serif; color: #9fb6cf; }
@@ -57,92 +58,92 @@ const CSS = `
 /* (while it is shown the warning banner says no more: the panel says it; and the ship's controls, which do
    nothing until the flight starts again, step out from under it) */
 .fl-ending .fl-warn { display: none !important; }
-.fl-ending :is(.fl-stick, .fl-aids, .fl-rcs, .fl-modes, .fl-keys) { visibility: hidden; }
+.fl-ending :is(.fl-desk, .fl-top, .fl-stick, .fl-aids, .fl-rcs, .fl-modes, .fl-keys) { visibility: hidden; }
 @media (max-width: 520px) { .fl-end-head { font-size: 24px; line-height: 29px; } }
 .fl-keys { position: absolute; right: 14px; bottom: 54px; font: 11px/1.5 system-ui, sans-serif; color: rgba(200, 220, 240, 0.7); text-align: right; pointer-events: none;
   background: rgba(4, 10, 20, 0.5); border-radius: 6px; padding: 6px 9px; }
 .fl-keys b { color: #cfe8ff; font-weight: 600; }
-/* a touch screen: the instruments at a glance under the clock (a tap opens the full read-out), and the drive */
+/* a touch screen: one slim, flat instrument strip (a tap opens the full read-out), then the drive */
 .fl-top { position: absolute; right: calc(var(--safe-r, 0px) + 10px); top: calc(var(--safe-t, 0px) + 62px); width: 360px; box-sizing: border-box;
-  display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+  display: flex; flex-direction: column; gap: var(--sf-s1); pointer-events: none; }
 #hud .fl-glance { pointer-events: auto; position: relative; display: flex; flex-direction: column; align-items: stretch; width: 100%; box-sizing: border-box;
-  padding: 6px 34px 7px 12px; border-radius: 14px; background: rgba(6, 11, 22, 0.9); border: 1px solid rgba(120, 220, 255, 0.35);
-  -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); text-align: left; color: #cfe8ff; font: 12.5px/1.4 system-ui, sans-serif; }
-#hud .fl-glance:active { background: rgba(14, 24, 40, 0.95); }
-.fl-glance > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fl-glance > .icon { position: absolute; right: 8px; top: 50%; width: 20px; height: 20px; margin-top: -10px; color: #7fd4ff; transform: rotate(90deg); transition: transform 0.15s; }
+  padding: var(--sf-s1) 32px var(--sf-s1) var(--sf-s2); border-radius: var(--sf-r-panel); background: var(--sf-panel); border: var(--sf-edge-line);
+  text-align: left; color: var(--sf-ink); font: var(--sf-t-small); }
+#hud .fl-glance:active { background: var(--sf-panel-2); }
+.fl-glance > span { min-width: 0; }
+.fl-glance > .icon { position: absolute; right: var(--sf-s2); top: 50%; width: 18px; height: 18px; margin-top: -9px; color: var(--sf-accent); transform: rotate(90deg); transition: transform var(--sf-quick) var(--sf-ease); }
 .fl-glance[aria-expanded='true'] > .icon { transform: rotate(-90deg); }
-.fl-glance .fl-l1 { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 10px; white-space: normal;
-  font: 700 14px/1.35 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: #fff; font-variant-numeric: tabular-nums; }
-.fl-l1 i { font-style: normal; font-weight: 600; color: #cfe8ff; white-space: nowrap; }
-.fl-l1 b { font-weight: 700; overflow-wrap: anywhere; }
-.fl-glance .fl-l3 { color: #fff; }
-.fl-glance .fl-l4 { color: #9fb6cf; font-variant-numeric: tabular-nums; white-space: normal; }
-.fl-touch { display: flex; align-items: stretch; gap: 6px; height: 40px; font: 13px/1 system-ui, sans-serif; color: #cfe8ff; pointer-events: none; }
-/* (every piece over the view is as opaque as the card, and blurs what is behind it: no sky label
-   reads through the instruments or the controls) */
-#hud :is(.fl-glance, .fl-touch button, .fl-touch span, .fl-lever, .fl-stop, .fl-view, .fl-chips button, .fl-rcs, .fl-modes) { -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
-#hud .fl-touch button { pointer-events: auto; min-width: 46px; border-radius: 12px; border: 1px solid rgba(120, 220, 255, 0.45); background: rgba(6, 11, 22, 0.9);
-  color: #fff; font: 600 18px/1 system-ui, sans-serif; touch-action: manipulation; }
-#hud .fl-touch .fl-which { flex: 1; min-width: 0; padding: 0 10px; text-align: left; font: 600 13px/1.1 system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fl-which small { display: block; font-size: 10.5px; font-weight: 500; color: #7f9bb8; }
-#hud .fl-touch button:active { background: rgba(30, 50, 80, 0.95); }
-.fl-touch span { min-width: 84px; display: flex; align-items: center; justify-content: center; padding: 0 6px; border-radius: 12px; background: rgba(6, 11, 22, 0.9);
-  font: 600 13px/1 ui-monospace, 'SF Mono', Menlo, monospace; white-space: nowrap; }
+.fl-glance .fl-l1 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sf-s3); }
+.fl-l1 > span { min-width: 0; }
+.fl-l1 small { display: block; font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track); text-transform: uppercase; color: var(--sf-ink-2); }
+.fl-l1 b, .fl-l1 i { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--sf-t-title); font-style: normal; font-variant-numeric: tabular-nums; color: var(--sf-ink); }
+.fl-glance > .fl-l2 { flex: none; height: 16px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 16px; }
+.fl-glance > .fl-l2:empty { visibility: hidden; }
+.fl-glance [hidden] { display: none !important; }
+.fl-touch { display: flex; align-items: stretch; gap: var(--sf-s1); height: var(--sf-touch); font: var(--sf-t-small); color: var(--sf-ink); pointer-events: none; }
+/* Flat opaque displays, not blurred glass: sky labels cannot read through the instruments or controls. */
+#hud .fl-touch button { pointer-events: auto; min-width: var(--sf-touch); border-radius: var(--sf-r-key); border: var(--sf-edge-line); background: var(--sf-panel);
+  color: var(--sf-accent); font: 600 18px/1 var(--sf-font); touch-action: manipulation; }
+#hud .fl-touch .fl-which { flex: 1; min-width: 0; padding: 0 var(--sf-s2); text-align: left; font: var(--sf-t-small); font-weight: 600; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--sf-ink); }
+.fl-which small { display: block; overflow: hidden; text-overflow: ellipsis; font: var(--sf-t-legend); letter-spacing: 0; text-transform: none; color: var(--sf-ink-2); }
+#hud .fl-touch button:active { background: var(--sf-panel-2); }
+.fl-touch span { min-width: 92px; display: flex; align-items: center; justify-content: center; padding: 0 var(--sf-s1); border: var(--sf-edge-line); border-radius: var(--sf-r-key); background: var(--sf-panel);
+  font: var(--sf-t-small); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 #hud.touch .fl-desk { display: none; }
 #hud.touch[data-mode='ship'] .hud-toast { top: calc(var(--fl-bottom, 200px) + 8px); z-index: 3; }
 /* flying by hand on a touch screen: the throttle lever and Stop, at the right edge under the right
    thumb (upright, under the instruments; on its side, in the corner) */
-.fl-stick { align-self: flex-end; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 64px; margin-top: 4px; pointer-events: none; }
-#hud .fl-lever { pointer-events: auto; position: relative; height: 136px; border-radius: 18px; overflow: hidden; touch-action: none; cursor: ns-resize;
-  background: rgba(6, 11, 22, 0.9); border: 1px solid rgba(120, 220, 255, 0.45); }
-.fl-lever i { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--v, 0) * 100%); background: linear-gradient(rgba(127, 212, 255, 0.85), rgba(127, 212, 255, 0.45)); }
-.fl-lever b, .fl-lever small { position: absolute; left: 0; right: 0; text-align: center; color: #fff; text-shadow: 0 0 4px #000; pointer-events: none; }
-.fl-lever b { top: 8px; font: 700 14px/1 ui-monospace, 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
-.fl-lever small { bottom: 7px; font: 600 10px/1 system-ui, sans-serif; letter-spacing: 0.04em; color: #cfe8ff; }
-#hud .fl-lever[data-dragging] { border-color: #7fd4ff; }
-#hud .fl-stop { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 52px; border-radius: 16px;
-  border: 1px solid rgba(255, 140, 120, 0.6); background: rgba(40, 10, 8, 0.9); color: #ffb3a6; font: 650 12px/1 system-ui, sans-serif; touch-action: manipulation; }
-#hud .fl-stop .icon { width: 18px; height: 18px; }
-#hud .fl-stop[aria-pressed='true'] { background: rgba(255, 140, 120, 0.9); color: #2a0a04; }
-#hud .fl-stop:active { filter: brightness(1.25); }
-#hud .fl-view { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 52px; border-radius: 16px;
-  border: 1px solid rgba(120, 220, 255, 0.45); background: rgba(6, 11, 22, 0.9); color: #cfe8ff; font: 650 12px/1 system-ui, sans-serif; touch-action: manipulation; }
-#hud .fl-view .icon { width: 18px; height: 18px; color: #7fd4ff; }
-.fl-view small { font-size: 10px; font-weight: 500; color: #7f9bb8; }
-#hud .fl-view:active { filter: brightness(1.25); }
+.fl-stick { align-self: flex-end; display: flex; flex-direction: column; align-items: stretch; gap: var(--sf-s1); width: 64px; margin-top: 0; pointer-events: none; }
+#hud .fl-lever { pointer-events: auto; position: relative; height: 96px; border-radius: var(--sf-r-panel); overflow: hidden; touch-action: none; cursor: ns-resize;
+  background: var(--sf-panel); border: var(--sf-edge-line); }
+.fl-lever i { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--v, 0) * 100%); background: color-mix(in srgb, var(--sf-accent) 45%, transparent); }
+.fl-lever b, .fl-lever small { position: absolute; left: 0; right: 0; text-align: center; color: var(--sf-ink); pointer-events: none; }
+.fl-lever b { top: var(--sf-s2); font: var(--sf-t-small); font-weight: 650; font-variant-numeric: tabular-nums; }
+.fl-lever small { bottom: var(--sf-s2); font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track); color: var(--sf-ink-2); }
+#hud .fl-lever[data-dragging] { border-color: var(--sf-accent); }
+#hud .fl-stop { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: var(--sf-touch); border-radius: var(--sf-r-key);
+  border: 1px solid var(--sf-warning); background: var(--sf-panel); color: var(--sf-warning); font: var(--sf-t-small); font-weight: 650; touch-action: manipulation; }
+#hud .fl-stop .icon { width: 16px; height: 16px; }
+#hud .fl-stop[aria-pressed='true'] { background: var(--sf-warning); color: var(--sf-accent-ink); }
+#hud .fl-stop:active { background: var(--sf-panel-2); }
+#hud .fl-view { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; height: var(--sf-touch); border-radius: var(--sf-r-key);
+  border: var(--sf-edge-line); background: var(--sf-panel); color: var(--sf-ink); font: var(--sf-t-small); font-weight: 650; touch-action: manipulation; }
+#hud .fl-view .icon { width: 14px; height: 14px; color: var(--sf-accent); }
+#hud .fl-view b { line-height: 16px; }
+.fl-view small { font: var(--sf-t-legend); line-height: 11px; color: var(--sf-ink-2); }
+#hud .fl-view:active { background: var(--sf-panel-2); }
 /* the steering assist and the side thrusters, by touch (the keys Y and A D R F Shift+W S): two chips
    under the left thumb (upright: down the left side under the instruments, where the sky is clear;
    on its side: along the right, above the lever), the thrusters' pad opening only while flying by
    hand, the assist's modes in a small list that opens at its chip */
-.fl-aids { position: absolute; left: 0; top: var(--aids-top, 200px); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
-.fl-chips { display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
-#hud .fl-chips button { pointer-events: auto; width: 64px; height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 14px;
-  border: 1px solid rgba(120, 220, 255, 0.45); background: rgba(6, 11, 22, 0.9); color: #cfe8ff; font: 650 11px/1.05 system-ui, sans-serif; touch-action: manipulation; overflow: hidden; }
-#hud .fl-chips button small { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #7f9bb8; }
-#hud .fl-chips button b { max-width: 100%; padding: 0 2px; box-sizing: border-box; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
-#hud .fl-chips .icon { width: 16px; height: 16px; color: #7fd4ff; }
-#hud .fl-chips button[aria-pressed='true'], #hud .fl-chips button[aria-expanded='true'] { border-color: #7fd4ff; background: rgba(40, 90, 130, 0.92); }
-#hud .fl-chips button:active { filter: brightness(1.25); }
+.fl-aids { position: absolute; left: 0; top: var(--aids-top, 200px); display: flex; flex-direction: column; align-items: flex-start; gap: var(--sf-s1); pointer-events: none; }
+.fl-chips { display: flex; flex-direction: column; gap: var(--sf-s1); pointer-events: none; }
+#hud .fl-chips button { pointer-events: auto; width: 76px; height: var(--sf-touch); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: var(--sf-r-key);
+  border: var(--sf-edge-line); background: var(--sf-panel); color: var(--sf-ink); font: var(--sf-t-legend); touch-action: manipulation; overflow: hidden; }
+#hud .fl-chips button small { font: var(--sf-t-legend); font-size: 9px; letter-spacing: var(--sf-legend-track); text-transform: uppercase; color: var(--sf-ink-2); }
+#hud .fl-chips button b { max-width: 100%; padding: 0 2px; box-sizing: border-box; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--sf-ink); }
+#hud .fl-chips .icon { width: 16px; height: 16px; color: var(--sf-accent); }
+#hud .fl-chips button[aria-pressed='true'], #hud .fl-chips button[aria-expanded='true'] { border-color: var(--sf-accent); background: var(--sf-panel-2); }
+#hud .fl-chips button:active { background: var(--sf-panel-2); }
 .fl-aids.fl-beside { flex-direction: row; align-items: flex-start; }
 .fl-chips [hidden], .fl-aids[hidden], .fl-rcs[hidden], .fl-modes[hidden] { display: none !important; }
-.fl-rcs { display: grid; grid-template-columns: repeat(3, 42px); grid-auto-rows: 42px; gap: 6px; padding: 6px; border-radius: 18px; pointer-events: none;
-  background: rgba(6, 11, 22, 0.9); border: 1px solid rgba(120, 220, 255, 0.45); }
-#hud .fl-rcs button { pointer-events: auto; display: flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid rgba(120, 220, 255, 0.3);
-  background: rgba(30, 50, 80, 0.7); color: #fff; font: 650 11px/1 system-ui, sans-serif; touch-action: none; }
+.fl-rcs { display: grid; grid-template-columns: repeat(3, var(--sf-touch)); grid-auto-rows: var(--sf-touch); gap: var(--sf-s1); padding: var(--sf-s1); border-radius: var(--sf-r-panel); pointer-events: none;
+  background: var(--sf-panel); border: var(--sf-edge-line); }
+#hud .fl-rcs button { pointer-events: auto; display: flex; align-items: center; justify-content: center; border-radius: var(--sf-r-key); border: var(--sf-edge-line);
+  background: var(--sf-panel-2); color: var(--sf-ink); font: var(--sf-t-legend); touch-action: none; }
 #hud .fl-rcs button .icon { width: 22px; height: 22px; }
-#hud .fl-rcs button[data-held] { background: #7fd4ff; color: #04121e; }
-.fl-modes { position: fixed; z-index: 4; display: grid; grid-template-columns: repeat(2, 96px); gap: 4px; padding: 6px; border-radius: 16px; pointer-events: none;
-  background: rgba(6, 11, 22, 0.96); border: 1px solid rgba(120, 220, 255, 0.45); }
-#hud .fl-modes button { pointer-events: auto; height: 38px; padding: 0 6px; border-radius: 10px; border: 1px solid rgba(120, 220, 255, 0.2); background: rgba(30, 50, 80, 0.55); color: #e8f4ff;
-  font: 600 12px/1 system-ui, sans-serif; white-space: nowrap; touch-action: manipulation; }
+#hud .fl-rcs button[data-held] { background: var(--sf-accent); color: var(--sf-accent-ink); }
+.fl-modes { position: fixed; z-index: 4; display: grid; grid-template-columns: repeat(2, 84px); gap: var(--sf-s1); padding: var(--sf-s1); border-radius: var(--sf-r-panel); pointer-events: none;
+  background: var(--sf-panel); border: var(--sf-edge-line); }
+#hud .fl-modes button { pointer-events: auto; height: var(--sf-touch); padding: 0 var(--sf-s1); border-radius: var(--sf-r-key); border: var(--sf-edge-line); background: var(--sf-panel-2); color: var(--sf-ink);
+  font: var(--sf-t-small); white-space: nowrap; touch-action: manipulation; }
 #hud .fl-modes button .sh { display: none; }
-.fl-modes.fl-short { padding: 6px; gap: 4px; }
+.fl-modes.fl-short { padding: var(--sf-s1); gap: var(--sf-s1); }
 #hud .fl-modes.fl-short button { padding: 0 1px; font-size: 11px; }
 #hud .fl-modes.fl-short button .sh { display: inline; }
 #hud .fl-modes.fl-short button .lg { display: none; }
-#hud .fl-modes button[aria-checked='true'] { background: #7fd4ff; color: #04121e; border-color: #7fd4ff; }
-#hud .fl-modes button[aria-disabled='true'] { color: #6b8099; }
+#hud .fl-modes button[aria-checked='true'] { background: var(--sf-accent); color: var(--sf-accent-ink); border-color: var(--sf-accent); }
+#hud .fl-modes button[aria-disabled='true'] { color: var(--sf-ink-3); }
 @media (max-width: 520px) {
   .fl-desk { left: 8px; right: 8px; width: auto; top: 64px; font-size: 11px; line-height: 1.3; }
   .fl-top { left: calc(var(--safe-l, 0px) + 8px); right: calc(var(--safe-r, 0px) + 8px); width: auto; }
@@ -164,30 +165,29 @@ const CSS = `
   #hud.touch[data-mode='ship'] .hud-slot { width: min(340px, 40vw); }
   .fl-top { width: min(400px, calc(100vw - var(--safe-l, 0px) - var(--safe-r, 0px) - 124px - min(340px, 40vw))); }
   .fl-stick { position: fixed; right: calc(var(--safe-r, 0px) + 10px); bottom: calc(var(--safe-b, 0px) + 10px); margin: 0;
-    width: min(400px, calc(100vw - var(--safe-l, 0px) - var(--safe-r, 0px) - 124px - min(340px, 40vw))); height: 52px; flex-direction: row; }
+    width: min(400px, calc(100vw - var(--safe-l, 0px) - var(--safe-r, 0px) - 124px - min(340px, 40vw))); height: var(--sf-touch); flex-direction: row; }
   #hud .fl-lever { flex: 1; height: auto; cursor: ew-resize; }
-  .fl-lever i { top: 0; right: auto; width: calc(var(--v, 0) * 100%); height: auto; background: linear-gradient(90deg, rgba(127, 212, 255, 0.45), rgba(127, 212, 255, 0.85)); }
+  .fl-lever i { top: 0; right: auto; width: calc(var(--v, 0) * 100%); height: auto; background: color-mix(in srgb, var(--sf-accent) 45%, transparent); }
   .fl-lever b, .fl-lever small { top: 50%; bottom: auto; transform: translateY(-50%); text-align: left; padding: 0 12px; }
   .fl-lever small { text-align: right; }
   #hud .fl-stop { flex: none; width: 76px; height: auto; flex-direction: row; gap: 5px; font-size: 13px; }
   #hud .fl-view { flex: none; width: 64px; height: auto; }
   /* ("Stopping" fills the button lying down: its square steps aside for it) */
   #hud .fl-stop[aria-pressed='true'] .icon { display: none; }
-  #hud .fl-touch button { min-width: 40px; }
-  .fl-touch span { min-width: 64px; }
+  #hud .fl-touch button { min-width: var(--sf-touch); }
+  .fl-touch span { min-width: 68px; }
   /* (the chips along the right above the lever, the pad above them) */
   .fl-aids { position: fixed; left: auto; top: auto; right: calc(var(--safe-r, 0px) + 10px); bottom: calc(var(--safe-b, 0px) + 68px); flex-direction: column-reverse; align-items: flex-end; }
   .fl-aids.fl-beside { flex-direction: row-reverse; align-items: flex-end; }
   .fl-chips { flex-direction: row; }
-  #hud .fl-chips button { width: auto; min-width: 84px; height: 40px; flex-direction: row; gap: 5px; padding: 0 10px; }
+  #hud .fl-chips button { width: auto; min-width: 84px; height: var(--sf-touch); flex-direction: row; gap: 5px; padding: 0 var(--sf-s2); }
   #hud .fl-chips button small { font-size: 11px; letter-spacing: 0; text-transform: none; }
   .fl-modes { grid-template-columns: repeat(5, 74px); }
 }
-/* where there is not room for everything (a short view, the browser's bars shown): the instruments
-   give up their lower lines, then the drive (the full read-out keeps it all); upright the lever
-   shortens, then steps aside (FlightHud.fit) */
-#hud .fl-top.fl-tight :is(.fl-l3, .fl-l4) { display: none; }
-#hud .fl-top.fl-tighter :is(.fl-l2, .fl-touch) { display: none; }
+/* where there is not room for everything (a short view, the browser's bars shown): the one
+   conditional line gives way first; the drive stays. Upright the lever shortens, then steps aside
+   (FlightHud.fit). An open assist list or thruster pad can put the strip aside for that moment. */
+#hud .fl-top.fl-tight .fl-l2, #hud .fl-top.fl-tighter .fl-l2 { display: none; }
 #hud .fl-top.fl-tightest :is(.fl-glance, .fl-touch) { display: none; }
 #hud .fl-stick.fl-away { display: none; }
 #hud .fl-aids.fl-away { display: none; }
@@ -282,7 +282,7 @@ export class FlightHud {
     this.el.innerHTML = `<div class="fl-panel fl-desk" data-cover></div><div class="fl-warn"></div><div class="fl-end" role="alert" hidden><div class="fl-end-panel"><p class="fl-end-legend"></p><p class="fl-end-head"></p><div class="fl-end-reads"></div><div class="fl-end-gauge" hidden><i class="safe"></i><i class="hit"></i><i class="tick"></i><span class="tick-label"></span></div><p class="fl-end-next"></p><p class="fl-end-back"></p></div></div>
       <div class="fl-top touch-only">
         <button class="fl-glance" type="button" data-cover aria-expanded="false" aria-label="The ship's instruments: tap for the full read-out">
-          <span class="fl-l1"><b></b><i></i></span><span class="fl-l2"></span><span class="fl-l3"></span><span class="fl-l4"></span>${ICON.chevron}
+          <span class="fl-l1"><span><small>Speed</small><b></b></span><span><small>Above ground</small><i></i></span></span><span class="fl-l2"></span>${ICON.chevron}
         </button>
         <div class="fl-touch" data-cover><button class="fl-which" type="button" data-drive aria-label="Change the drive"></button><button type="button" data-step="down" aria-label="Weaker">−</button><span></span><button type="button" data-step="up" aria-label="Stronger">+</button></div>
         <div class="fl-stick" data-cover>
@@ -292,12 +292,12 @@ export class FlightHud {
         </div>
         <div class="fl-aids">
           <div class="fl-chips" data-cover>
-            <button class="fl-assist" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Steering assist: what the ship holds its nose to"><small>assist</small><b>Hold</b></button>
-            <button class="fl-thrust" type="button" aria-pressed="false" aria-label="Side thrusters">${ICON.move}<b>RCS</b></button>
+            <button class="fl-assist" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Steering assist: what the ship holds its nose to"><small>steering</small><b>Hold</b></button>
+            <button class="fl-thrust" type="button" aria-pressed="false" aria-label="Side thrusters">${ICON.move}<b>Side thrust</b></button>
           </div>
           <div class="fl-rcs" data-cover role="group" aria-label="Side thrusters" hidden>
           <button type="button" data-rcs="x-" aria-label="Thrust left">${ARROW.left}</button><button type="button" data-rcs="y+" aria-label="Thrust up">${ARROW.up}</button><button type="button" data-rcs="x+" aria-label="Thrust right">${ARROW.right}</button>
-          <button type="button" data-rcs="z+" aria-label="Thrust backwards">Back</button><button type="button" data-rcs="y-" aria-label="Thrust down">${ARROW.down}</button><button type="button" data-rcs="z-" aria-label="Thrust forwards">Fwd</button>
+          <button type="button" data-rcs="z+" aria-label="Thrust backwards">Back</button><button type="button" data-rcs="y-" aria-label="Thrust down">${ARROW.down}</button><button type="button" data-rcs="z-" aria-label="Thrust forwards">Forward</button>
           </div>
         </div>
         <div class="fl-modes" role="menu" data-cover hidden>${MODES.map(([m, l]) => `<button type="button" role="menuitemradio" aria-checked="false" data-sas="${m}"><span class="lg">${l}</span><span class="sh">${CHIP[m]}</span></button>`).join('')}</div>
@@ -380,7 +380,7 @@ export class FlightHud {
   private showLever(v: number): void {
     const pct = Math.round(v * 100);
     this.lever.style.setProperty('--v', String(pct / 100));
-    setText(this.lever.querySelector('b')!, `${pct}%`);
+    setText(this.lever.querySelector('b')!, `${pct}\u00a0%`);
     this.lever.setAttribute('aria-valuenow', String(pct));
   }
 
@@ -545,8 +545,8 @@ export class FlightHud {
    * Nothing of the ship's over the view may cover the interface's own (the chips, the tab bar, the
    * card or sheet that is open), on any screen, however much of it the browser's bars take. The
    * CSS lays it out for the usual sizes; here what is laid out is measured, and where it still
-   * meets something the instruments give up their lower lines, then the drive (the full read-out
-   * has it all), and upright the lever shortens to the room left, or steps aside.
+   * meets something the one conditional instrument line gives way (the drive stays), and upright
+   * the lever shortens to the room left, or steps aside.
    */
   private fit(): void {
     const top = this.el.querySelector<HTMLElement>('.fl-top')!, stick = this.el.querySelector<HTMLElement>('.fl-stick')!;
@@ -600,25 +600,23 @@ export class FlightHud {
 
   private renderGlance(r: FlightReadout): void {
     const g = glance(r);
-    const [l1, l2, l3, l4] = this.glanceEl.children as unknown as HTMLElement[];
-    setText(l1.firstElementChild!, g.speed);
-    setText(l1.lastElementChild!, g.side);
+    const [l1, l2] = this.glanceEl.children as unknown as HTMLElement[];
+    setText(l1.querySelector('b')!, g.speed);
+    const altitude = l1.querySelector('i')!;
+    setText(altitude, g.side);
+    (altitude.parentElement as HTMLElement).hidden = !g.side;
     setText(l2, g.state);
     l2.className = `fl-l2 ${g.stateClass}`;
-    setText(l3, g.target);
-    l3.hidden = !g.target;
-    setText(l4, g.toGo);
-    l4.hidden = !g.toGo;
     const torch = r.drive === 'torch';
     this.driveRow.dataset.drive = r.drive;
     // (− and + set the reactionless drive, and choose it: the setting is its own)
-    const name = torch ? 'Fusion torch' : 'Reactionless';
+    const name = 'Main drive';
     if (this.which.dataset.name !== name) {
       this.which.dataset.name = name;
       this.which.innerHTML = `${name}<small></small>`;
     }
-    setText(this.which.querySelector('small')!, torch ? `fuel ${Math.round(r.fuel * 100)} % · tap to change` : 'tap to change');
-    setText(this.drive, fmtG(r.driveG));
+    setText(this.which.querySelector('small')!, torch ? `Torch · ${Math.round(r.fuel * 100)}\u00a0%` : 'Field · switch');
+    setText(this.drive, fmtG(r.driveG).replace(/ g$/, '\u00a0×\u00a0gravity'));
     // the lever shows the throttle as it is (the autopilot's, Stop's) unless a finger is on it
     if (!this.leverHeld) this.showLever(r.throttle);
     this.stopBtn.setAttribute('aria-pressed', String(!!r.stop));
@@ -629,24 +627,20 @@ export class FlightHud {
 }
 
 /**
- * What the pilot needs at a glance (a touch screen's instruments): the speed (with its nines) and
- * the Lorentz factor, or the height while slow; what the ship is doing; the target and the time to
- * it in both clocks. Every number is the full read-out's own.
+ * The folded touch instruments: speed and height in plain units, and at most one status line when
+ * something needs the pilot's attention. The orbit, target, clocks and the rest stay one tap away
+ * in the full read-out. `target` and `toGo` remain the full read-out's words for its unit checks.
  */
 export function glance(r: FlightReadout): { speed: string; side: string; state: string; stateClass: string; target: string; toGo: string } {
-  const speed = fmtLight(r.properSpeed);
-  const side = r.landed ? `on ${r.landed}`
-    : r.gamma >= 1.0001 ? `γ ${fmtGamma(r.gamma)}`
-    : Number.isFinite(r.altitude) ? `${fmtDist(r.altitude)} up` : '';
-  let state: string, stateClass = '';
-  const c = r.conic;
+  const speed = plainSpeed(r.properSpeed);
+  const side = Number.isFinite(r.altitude) ? plainAltitude(r.altitude) : '';
+  let state = '', stateClass = '';
   if (r.autopilot) { state = `Autopilot: ${r.apState}`; stateClass = 'ok'; }
-  else if (r.stop) { state = `Stop: ${r.stop}${Number.isFinite(r.stopTau) && r.stopTau > 1 ? ` · ${fmtTime(r.stopTau)} aboard` : ''}`; stateClass = 'ok'; }
+  else if (r.stop) { state = `Stop: ${r.stop}${Number.isFinite(r.stopTau) && r.stopTau > 1 ? ` · ${timeWords(r.stopTau)} aboard` : ''}`; stateClass = 'ok'; }
   else if (r.landed) state = `Landed on ${r.landed}`;
-  else if (r.throttle > 0) state = `Thrust ${Math.round(r.throttle * 100)} % · ${r.drive === 'torch' ? 'fusion torch' : `${fmtG(r.driveG * r.throttle)} reactionless`}`;
-  else if (c && c.e < 1 && r.properSpeed < 0.1 * C && Number.isFinite(r.pe) && Number.isFinite(r.ap)) state = `Orbit ${fmtDist(r.pe)} × ${fmtDist(r.ap)} over ${r.frame}`;
-  else state = `Coasting · nearest pull: ${r.frame}`;
-  if (!r.autopilot && Number.isFinite(r.tImpact) && !r.landed) { state = `Impact in ${fmtTime(r.tImpact)}`; stateClass = 'bad'; }
+  else if (r.throttle > 0) state = `Thrust at ${Math.round(r.throttle * 100)}\u00a0%`;
+  else if (r.target && r.refusal) { state = 'Drive too weak to go there'; stateClass = 'caution'; }
+  if (!r.autopilot && Number.isFinite(r.tImpact) && !r.landed) { state = `Hits the ground in ${timeWords(r.tImpact)}`; stateClass = 'caution'; }
   let target = '', toGo = '';
   if (r.target) {
     target = `${r.target} · ${fmtDist(r.targetDist)}`;
@@ -659,6 +653,33 @@ export function glance(r: FlightReadout): { speed: string; side: string; state: 
 }
 
 /**
+ * The same proper speed the read-out shows, in plain words: below 1 % of c, the coordinate speed in
+ * whole km/h, or in km/s rounded as fmtSpeed rounds it (the sign kept); past that, fmtLight's own
+ * nines against `× light speed`.
+ */
+export function plainSpeed(properSpeed: number): string {
+  const v = properSpeed / Math.hypot(1, properSpeed / C); // the coordinate speed, as fmtLight derives it
+  const a = Math.abs(v);
+  if (a < 1000) return `${Math.round(v * 3.6).toLocaleString('en-US')}\u00a0km/h`;
+  if (a < 0.01 * C) return `${(v / 1000).toFixed(a < 1e5 ? 2 : 0)}\u00a0km/s`;
+  return fmtLight(properSpeed).replace(/ c$/, '\u00a0×\u00a0light speed');
+}
+
+/** Height above the ground in km (or plain millions of km far out), from the read-out's metres. */
+export function plainAltitude(metres: number): string {
+  const km = metres / 1000, a = Math.abs(km);
+  if (!Number.isFinite(km)) return '—';
+  if (a >= 1e9) return `${(km / 1e9).toLocaleString('en-US', { maximumSignificantDigits: 4 })}\u00a0billion km`;
+  if (a >= 1e6) return `${(km / 1e6).toLocaleString('en-US', { maximumSignificantDigits: 4 })}\u00a0million km`;
+  return `${km.toLocaleString('en-US', { maximumFractionDigits: a < 10 ? 2 : a < 1000 ? 1 : 0 })}\u00a0km`;
+}
+
+/** fmtTime's own value, with every number kept on the same line as its unit. */
+function timeWords(seconds: number): string {
+  return fmtTime(seconds).replace(/(\d) (s|min|h|d|yr)\b/g, '$1\u00a0$2');
+}
+
+/**
  * Why a trip would take so long, and what to do about it, in plain words ('' when there is
  * nothing to say): the torch's propellant gives 25 km/s in all, so it coasts; a weak setting of the
  * reactionless drive.
@@ -668,7 +689,7 @@ function advice(r: FlightReadout): string {
   const year = 3.15576e7;
   const long = !Number.isFinite(r.etaShip) || r.etaShip > year;
   if (!long) return '';
-  if (r.drive === 'torch') return 'The torch\'s fuel can never get you there sooner: tap Fusion torch for the reactionless drive';
+  if (r.drive === 'torch') return 'The torch\'s fuel can never get you there sooner: tap Main drive to switch to the field drive';
   if (r.etaBy === 'flip-and-burn') return 'At this setting it takes years: + makes the drive stronger';
   return '';
 }
