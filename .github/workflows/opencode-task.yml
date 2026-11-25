@@ -1,0 +1,160 @@
+# One outside-AI run for one task on TASKS.md, started by hand.
+#
+# Who starts it: the owner, from GitHub's Actions tab: "OpenCode task", then "Run workflow", then
+# type the task name (the part after task/ in TASKS.md, e.g. everest-summit). "smoke-test" only
+# checks that sign-in and the model work, and changes nothing.
+#
+# What it can touch: nothing outside this run. The repository is checked out read-only
+# (contents: read, and no git credentials are kept), so the AI's edits stay on this runner. They
+# come back as an artifact: result.patch (every change), REPORT.md (the AI's own report),
+# check.log (npm run check) and opencode.log. Claude reviews and tests them, and only Claude puts
+# work live (TASKS.md, "How a task is finished").
+#
+# Sign-in: keyless. GitHub vouches for the repository and branch (OIDC). The OpenCode service
+# account trusts only workflows of dippy34/starfarer on claude/friendly-hypatia-up418z, and the
+# repository secret OPENCODE_CLIENT_ID names that account. Usage counts against the owner's
+# OpenCode Go Plus plan.
+name: OpenCode task
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Task name from TASKS.md, e.g. everest-summit (smoke-test: a quick sign-in check)"
+        required: true
+        type: string
+      notes:
+        description: "Claude's review notes, for a second try (optional)"
+        required: false
+        type: string
+        default: ""
+      model:
+        description: "OpenCode Go model"
+        required: false
+        type: string
+        default: "opencode-go/kimi-k3"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: opencode-task-${{ inputs.task }}
+  cancel-in-progress: false
+
+jobs:
+  task:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      TASK: ${{ inputs.task }}
+      NOTES: ${{ inputs.notes }}
+      MODEL: ${{ inputs.model }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check the task name
+        run: |
+          if ! printf '%s' "$TASK" | grep -Eq '^[a-z0-9][a-z0-9-]{0,48}$'; then
+            echo "A task name is lower-case letters, digits and hyphens, e.g. everest-summit."; exit 1
+          fi
+          if ! printf '%s' "$MODEL" | grep -Eq '^opencode-go/[A-Za-z0-9._-]+$'; then
+            echo "The model must be an OpenCode Go model, e.g. opencode-go/kimi-k3."; exit 1
+          fi
+          if [ "$TASK" != "smoke-test" ] && ! grep -qF "### \`task/$TASK\`" TASKS.md; then
+            echo "There is no section for task/$TASK in TASKS.md."; exit 1
+          fi
+          echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/out"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # (OpenCode's own snippet, with the account's id read from the repository secret)
+      - name: Sign in to OpenCode
+        env:
+          AUDIENCE: https://opencode.ai/console
+          CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID }}
+        run: |
+          if [ -z "$CLIENT_ID" ]; then echo "The repository secret OPENCODE_CLIENT_ID is missing."; exit 1; fi
+          oidc=$(curl -sSf --oauth2-bearer "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value)
+          token=$(curl -sSf https://opencode.ai/console/auth/oauth/token \
+            -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+            -d subject_token_type=urn:ietf:params:oauth:token-type:jwt \
+            -d client_id="$CLIENT_ID" \
+            -d subject_token="$oidc" | jq -r .access_token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then echo "OpenCode did not sign this run in."; exit 1; fi
+          echo "::add-mask::$token"
+          echo "OPENCODE_API_KEY=$token" >> "$GITHUB_ENV"
+
+      - name: Install OpenCode
+        run: |
+          npm install -g opencode-ai@1.19.5
+          mkdir -p ~/.config/opencode
+          # the Go provider takes the signed-in key from the environment
+          cat > ~/.config/opencode/opencode.json <<'JSON'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": { "opencode-go": { "options": { "apiKey": "{env:OPENCODE_API_KEY}" } } }
+          }
+          JSON
+          opencode --version
+
+      - name: Run the task
+        run: |
+          if [ "$TASK" = "smoke-test" ]; then
+            prompt="Reply with one line: 'Signed in, and the model works.' Do not read, change or create any files."
+          else
+            prompt="You are an AI developer working on Starfarer, in a working copy of its repository on a GitHub Actions runner. First read TASKS.md. Then do ONLY the task in the section headed task/$TASK, following every rule in TASKS.md, with these differences for this run: do not create branches, commit or push (this copy is read-only); just change the files here. Before you finish, run npm run check and fix what fails. Finally write your report to REPORT.md in the repository root: what you changed, how you checked it, and what is left."
+            if [ -n "$NOTES" ]; then
+              prompt="$prompt Notes from the reviewer (Claude) on the previous try: $NOTES"
+            fi
+          fi
+          # (the OIDC request variables stay with the sign-in step, not with the AI)
+          set +e
+          env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
+            timeout 80m opencode run --model "$MODEL" "$prompt" 2>&1 | tee "$OUT/opencode.log"
+          echo "opencode exit ${PIPESTATUS[0]}" | tee -a "$OUT/opencode.log"
+
+      - name: Collect the result
+        if: always()
+        run: |
+          OUT="${OUT:-$RUNNER_TEMP/out}"
+          mkdir -p "$OUT"
+          if [ "$TASK" != "smoke-test" ]; then
+            set +e
+            npm run check > "$OUT/check.log" 2>&1
+            echo "npm run check exit $?" >> "$OUT/check.log"
+            set -e
+          fi
+          git add -A
+          git diff --cached --stat > "$OUT/changed-files.txt"
+          git diff --cached > "$OUT/result.patch"
+          if [ -f REPORT.md ]; then cp REPORT.md "$OUT/REPORT.md"; fi
+          {
+            echo "## OpenCode task: $TASK"
+            echo "Model: \`$MODEL\`"
+            echo
+            echo "Changed files:"
+            echo '```'
+            cat "$OUT/changed-files.txt"
+            echo '```'
+            if [ -f "$OUT/check.log" ]; then echo "$(tail -1 "$OUT/check.log")"; fi
+            echo
+            echo "Next: tell Claude this run's link. Nothing here is live until Claude reviews it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-${{ inputs.task }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/out
+          retention-days: 14
+          if-no-files-found: warn

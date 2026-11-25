@@ -40,6 +40,15 @@ the browser suites on GitHub's runners, looks at the pictures and checks the num
 it into the live branch. If something is wrong, it comes back with notes. Only one batch of
 branches is reviewed at a time.
 
+## Running a task on GitHub's computers (OpenCode)
+
+The owner starts it on GitHub: **Actions**, then **OpenCode task**, then **Run workflow**, and types
+the task name, e.g. `everest-summit`. Use `smoke-test` once first, to check that the sign-in works.
+The run works on a read-only copy and pushes nothing. Its changes come back as a file attached to
+the run (`result.patch`, `REPORT.md`, `check.log`). Give Claude the run's link, and Claude reviews
+it as above. For a second try, run it again with Claude's notes in the **notes** box.
+(`.github/workflows/opencode-task.yml`)
+
 ## Tasks
 
 ### `task/everest-summit`: the Everest walking spot sits below the summit
