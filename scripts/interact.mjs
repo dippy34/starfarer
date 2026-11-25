@@ -395,7 +395,10 @@ await page.evaluate((jd) => { const a = window.app; a.walk.exit(true); a.clock.j
 // Let the last walk's selection reach the card (and pointer lock end) before opening Search: a new selection closes
 // the sheet, so a late card update would otherwise take away the input's focus after Enter.
 // (waits that say what they saw in the check below rather than end the suite, as the one after the walks once did)
-const settled = await page.waitForFunction(() => document.pointerLockElement === null
+// (and the interface out of walking, whose mode hides the sheets: the card already named the walk's place, so a frame
+// after the walk's exit, still walking, Enter's search opened hidden and its field took no focus: the run of f6f8084, "typing":false)
+const settled = await page.waitForFunction(() => document.pointerLockElement === null && !window.app.walk.active
+  && document.querySelector('#hud')?.dataset.mode !== 'walk'
   && document.querySelector('.card h2')?.textContent === window.app.selection?.name, null, { timeout: 600000 }).then(() => true, () => false);
 
 // 5. Search and go to a star
