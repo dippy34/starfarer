@@ -11,6 +11,10 @@
 //   - a link made on a phone opened at a desk: the same way of looking, on another screen
 //   - a broken link, one of a newer version, one naming what is not here: the app as usual, and a note that
 //     says so; never a crash or a blank screen; a name with markup in a link is shown as text
+//   - a planet of another star (TRAPPIST-1 e and 51 Peg b from the NASA Exoplanet Archive, Vega b, one the app generates):
+//     shared with the camera close to it and opened in a fresh browser, which is at another date until the link sets
+//     its own, the same selection and the camera the same distance from it (within 1 %): the planet is where the link's
+//     date puts it, not where the date of the page that opened it did
 //   - a changed universe (live physics): Mars sent at the Earth (phone), a planet like the Earth added through the
 //     card (on its side), the Moon thrown out and twenty years and more run on at a hundred years a second (desk);
 //     shared and opened in a fresh browser: every simulated body where it was and moving as it was to the last bit,
@@ -19,7 +23,7 @@
 //   - saved on this device (More): listed with a name and a date, opened again after the page is closed, deleted
 //     with two taps; with the storage full, and where the browser keeps nothing, it says so
 // Usage: node scripts/share.mjs [baseUrl] [outDir]
-//   (SHARE_ONLY=view,running,broken,live,saves: those blocks alone; SHARE_KINDS=phone,side,desk)
+//   (SHARE_ONLY=view,running,exo,broken,live,saves: those blocks alone; SHARE_KINDS=phone,side,desk)
 import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
@@ -119,6 +123,18 @@ const scene = (page) => page.evaluate(() => {
   };
 });
 
+/** The camera has stopped moving from what it is at: its distance the same for 8 frames in a row (a planet's system settles over the first frames). */
+const settled = (page) => page.waitForFunction(() => {
+  const a = window.app, at = a.rig.target;
+  if (!at) return false;
+  const st = (window.settle ??= { f: -1, d: 0, n: 0 });
+  if (a.frameCount === st.f) return false;
+  const d = a.rig.upos.sub(at.upos, new (a.rig.forward().constructor)()).length();
+  st.n = Math.abs(d - st.d) <= 1e-9 * d ? st.n + 1 : 0;
+  st.f = a.frameCount; st.d = d;
+  return st.n >= 8;
+}, null, { timeout: 600000, polling: 50 });
+
 /** How far apart two scenes are: the camera's place (as a share of its distance), its look (rad), the date (ms). */
 function apart(a, b) {
   const d = Math.hypot(...a.off), off = Math.hypot(a.off[0] - b.off[0], a.off[1] - b.off[1], a.off[2] - b.off[2]) / d;
@@ -130,25 +146,25 @@ function apart(a, b) {
 const note = (page) => page.evaluate(() => { const n = document.querySelector('#hud .hud-notice'); return n && !n.hidden ? n.querySelector('span').textContent : ''; });
 
 /** Share through the interface (the card's button, or More's row): the link it handed on, and the scene at that moment. */
-async function share(page, kind, from) {
+async function share(page, kind, from, bound = 10000) {
   // (where there is no Share to press, nothing is shared: the checks that follow say so, one by one)
   try {
     if (from === 'more') {
       await press(page, '#hud .hud-tabs [data-tab="more"]');
-      await page.locator('#hud .sheet.more [data-act="share"]').first().click({ timeout: 10000 });
+      await page.locator('#hud .sheet.more [data-act="share"]').first().click({ timeout: bound });
       await press(page, '#hud .sheet.more [data-close]');
-    } else { await openCard(page); await page.locator('#hud .card [data-act="share"]').first().click({ timeout: 10000 }); }
+    } else { await openCard(page); await page.locator('#hud .card [data-act="share"]').first().click({ timeout: bound }); }
   } catch {
     return { url: '', before: await scene(page), toast: '', sheet: null };
   }
   await frames(page, 3);
   const before = await scene(page);
   if (kind === 'desk') {
-    await page.waitForFunction(() => document.querySelector('#hud .hud-toast').textContent === 'Link copied', null, { timeout: 20000 }).catch(() => undefined);
+    await page.waitForFunction(() => document.querySelector('#hud .hud-toast').textContent === 'Link copied', null, { timeout: Math.max(20000, bound) }).catch(() => undefined);
     const url = await page.evaluate(() => navigator.clipboard.readText());
     return { url, before, toast: await text(page, '#hud .hud-toast'), sheet: null };
   }
-  await page.waitForFunction(() => window.shared.length > 0, null, { timeout: 20000 }).catch(() => undefined);
+  await page.waitForFunction(() => window.shared.length > 0, null, { timeout: Math.max(20000, bound) }).catch(() => undefined);
   const sheet = await page.evaluate(() => window.shared[window.shared.length - 1] ?? null);
   return { url: sheet?.url ?? '', before, toast: await text(page, '#hud .hud-toast'), sheet };
 }
@@ -290,6 +306,38 @@ for (const kind of kinds) {
       Math.abs((s.sheet.jd - (linkJd + 69.184 / 86400)) * 86_400_000) < 1 && after.rate === 86400 && !after.paused && after.jd > s.sheet.jd && /time at 1 day a second\.$/.test(await note(got.page)),
       `shared at ${s.sheet.jd}, link ${t}; opened running at ${after.rate} s/s: "${await note(got.page)}"`);
     await got.ctx.close();
+  }
+
+  // ------------------------------------------------------------------ a planet of another star: shared close to it, opened at the date of the link
+  if (want('exo') && kind !== 'side') for (const name of ['TRAPPIST-1 e', '51 Peg b', 'Vega b']) exo: {
+    const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=1&target=Earth&dist=6`);
+    // (setup: the camera put near the planet as the app's own flight to it leaves it, and the planet selected)
+    const made = await page.evaluate((n) => { const a = window.app, pl = a.findByName(n); if (!pl) return null; a.placeNear(pl, 3.4 * pl.radius * a.rig.framing, 35, 12); a.select(pl); return { real: !!pl.spec?.real }; }, name);
+    if (!made) { check(on(`${name} is found`), false, 'no such planet'); await ctx.close(); break exo; }
+    await page.waitForFunction((n) => document.querySelector('#hud').dataset.sheet === 'card' && document.querySelector('#hud .card h2')?.textContent === n, name, { timeout: 600000 });
+    await settled(page);
+    // (a planet close up is a frame a second or less under software drawing, and a click waits for frames: the bound is long)
+    const s = await share(page, kind, 'card', 600000);
+    await ctx.close();
+    if (!s.url) { check(on(`${name}: Share hands on a link`), false, 'nothing was shared'); break exo; }
+    const got = await open(kind, s.url);
+    await settled(got.page);
+    const after = await scene(got.page);
+    const far = Math.hypot(...s.before.off), now = Math.hypot(...after.off);
+    check(on(`${name} (${made.real ? 'from the archive' : 'generated'}): the link opens with the same planet selected and the camera at it`), s.before.selected === name && after.selected === name && after.at === name, JSON.stringify({ sent: [s.before.selected, s.before.at], opened: [after.selected, after.at] }));
+    check(on(`${name}: the camera is the same distance from it as when it was shared (within 1%)`), Math.abs(now / far - 1) < 0.01, `${far.toExponential(4)} m shared, ${now.toExponential(4)} m opened (${(now / far).toFixed(4)} times)`);
+    await got.ctx.close();
+    if (name === 'TRAPPIST-1 e') {
+      // the same link with time running at a day a second (made by hand: the fragment's rate and pause): the planet moves
+      // with the clock, and the camera, which rides with it, stays where it was from it
+      const run = s.url.replace(/&r=[^&]+&p=1/, '&r=86400&p=0');
+      const going = await open(kind, run);
+      await frames(going.page, 12);
+      const then = await scene(going.page), held = await going.page.evaluate(() => window.app.rig.anchor?.name ?? null);
+      const fell = Math.hypot(...then.off);
+      check(on(`${name}: opened with time running at a day a second, the camera goes on with it (the same distance, within 1%, and it rides with the planet)`), run !== s.url && !then.paused && then.rate === 86400 && Math.abs(fell / far - 1) < 0.01 && held === name, `${far.toExponential(4)} m shared, ${fell.toExponential(4)} m after 12 frames; rides with ${held}`);
+      await going.ctx.close();
+    }
   }
 
   // ------------------------------------------------------------------ a phone's link opened at a desk

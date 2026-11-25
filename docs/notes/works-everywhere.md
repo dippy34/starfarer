@@ -32,7 +32,7 @@ GPU was used).
 | Undo, Back to reality | yes (S) | yes (S) | n/a | n/a | n/a | n/a | n/a | n/a |
 | Watch, Replay, Impacts, future path | yes (S/C) | yes (C) | no | no | no | no | no | no |
 | Live temperature | bodies with a measured Bond albedo (C) | n/a | no | no | no | no | no | no |
-| Share the view | yes (S) | yes (S) | **broken: reopens far away** | **broken** | yes (S) | yes (S) | yes (S) | yes (S) |
+| Share the view | yes (S) | yes (S) | yes (fixed, share.mjs) | yes (fixed, share.mjs) | yes (S) | yes (S) | yes (S) | yes (S) |
 | Share a changed universe | yes (C) | yes (C) | no | no | no | no | no | no |
 
 Why each "no": exoplanets (`ExoPlanet`) are not `Body` objects and move on Kepler rails with no
@@ -43,10 +43,17 @@ data at all.
 
 ## Defects found
 
-1. **A shared link to a planet of another star reopens far away**, looking at empty sky: TRAPPIST-1
-   e reopened 75x too far, 51 Peg b 15x, a generated planet 3,700x. Likely cause:
-   `App.openScene` finds the planet before the clock is set to the link's date, and exoplanet
-   systems are not updated after it (Solar System bodies are, by `system.update(jd)`).
+1. **A shared link to a planet of another star reopened far away**, looking at empty sky: TRAPPIST-1
+   e reopened 75x too far, 51 Peg b 15x, a generated planet 3,700x. Fixed. Cause, measured: the
+   planet was found (and its system brought to a date) before `App.openScene` set the clock to the
+   link's date, and a system is brought to the date only while it is in view, so the camera was
+   put at the planet's place at the date of the page that opened the link. The first frame then
+   moved the planet to the link's date, and `chooseAnchor` let the camera go (the planet had no
+   view yet, so the camera was not "in its Hill sphere"), leaving it where the planet had been.
+   Now `openScene` brings the system of the planet the link names (selected or at) to the link's
+   date before the camera is set from it, and `chooseAnchor` keeps a planet the camera already
+   rides with while it is within its Hill sphere. One path for every planetary system, real or
+   generated. Checked in `scripts/share.mjs` (block `exo`).
 2. **Search misses names people type:** "Alpha Centauri", "Alpha Cen", "Tau Ceti", "Eta Carinae",
    "HIP 9520", and generated planets such as "Vega b". "Sol" finds Solaris, not the Sun, and "ISS"
    finds Meissa and Larissa, not the space station.

@@ -809,6 +809,9 @@ export class App {
     this.clock.paused = v.paused;
     this.system.update(jd);
     this.physics.place(jd);
+    // (a planet of another star moves with its system, which a frame brings to the date only for the systems in view, and
+    // `find` brought this one to the date before the link's: it is where the link's date puts it before the camera is set from it)
+    for (const o of [at, selected]) if (o instanceof ExoPlanet) o.system.update(jd);
     // (let go of what the camera rode with until now: it has moved with the date, and the camera must not follow it there)
     this.rig.cancelGoto();
     this.rig.setAnchor(null);
@@ -2233,6 +2236,10 @@ export class App {
     }
     // an exoplanet whose Hill sphere we are in (planets of other stars carry the camera along)
     if (!best) {
+      // (the planet the camera already rides with is judged by where it is now: its system may not have been in view a frame
+      // ago, as when a link has just put the camera at it, and a planet without a view yet would let the camera go)
+      const held = this.rig.anchor;
+      if (held instanceof ExoPlanet && held.upos.sub(this.rig.upos, rel).length() < held.hill) return;
       let bestExo: ExoPlanet | null = null;
       let bestD = Infinity;
       for (const ev of this.exo.views) {
