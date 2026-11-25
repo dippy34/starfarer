@@ -41,7 +41,7 @@ async function setup(eye: (s: SolarSystem) => Vector3, aim: (s: SolarSystem) => 
   const placed: boolean[] = [];
   const mover = new Mover({
     rig: { ray: (x: number, y: number) => new Vector3((x - 500) * PIXEL, (500 - y) * PIXEL, -1).normalize().applyQuaternion(quat), upos: { toVector3: () => at.clone() } },
-    physics, system: sys, clock, bodies: { views }, view: { quat, pixelRatio: 1 }, project, tellNews: () => { told++; },
+    physics, clock, viewOf: views.get, view: { quat, pixelRatio: 1 }, project, tellNews: () => { told++; },
     beginChange: () => { begun++; }, endChange: () => { ended++; }, cancelChange: () => { cancelled++; }, placed: (done: boolean) => { placed.push(done); },
   } as unknown as ConstructorParameters<typeof Mover>[0]);
   /** the pixel at which a place (m from the system's centre) is seen */

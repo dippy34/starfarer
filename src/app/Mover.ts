@@ -36,7 +36,7 @@ const CLEAR = 1.05;
 /** a way on the screen is found in space by following it this far from the world (px) */
 const STEP = 24;
 
-type What = Pick<App, 'rig' | 'physics' | 'system' | 'clock' | 'bodies' | 'view' | 'project' | 'tellNews' | 'beginChange' | 'endChange' | 'cancelChange' | 'placed'>;
+type What = Pick<App, 'rig' | 'physics' | 'clock' | 'viewOf' | 'view' | 'project' | 'tellNews' | 'beginChange' | 'endChange' | 'cancelChange' | 'placed'>;
 
 /** What a world being moved does where it is left: keeps the velocity it had, goes round in a circle, or is thrown. */
 export type Leave = 'keep' | 'circle' | 'throw';
@@ -120,14 +120,14 @@ export class Mover {
 
   /** A pointer has come down at (x, y), at `t` (ms): if it is on the world being moved, it has hold of it until it lifts. */
   grab(x: number, y: number, touch: boolean, t: number): Hold | null {
-    const app = this.app, b = this.body, view = b?.valid ? app.bodies.views.get(b) : undefined;
+    const app = this.app, b = this.body, view = b?.valid ? app.viewOf(b) : undefined;
     const at = view && app.project(view.rel);
     if (!b || !view || !at) return null;
     if (Math.hypot(at.x - x, at.y - y) > Math.max(view.pixelRadius / app.view.pixelRatio, touch ? FINGER_REACH : POINTER_REACH)) return null;
     // the plane it moves in, through what it goes round (or through itself, across the view)
     const plane = this.plane(b);
     if (this.how === 'throw' && !this.placing) return this.sling(b, plane.normal, x, y, t);
-    const round = plane.orbit && b.parent ? app.bodies.views.get(b.parent)?.rel : undefined;
+    const round = plane.orbit && b.parent ? app.viewOf(b.parent)?.rel : undefined;
     const through = (round ?? view.rel).clone(), normal = plane.normal;
     // (it does not jump to the finger: the finger keeps the place on it that it took hold of)
     const first = onPlane(app.rig.ray(x, y).toArray(), through.toArray(), normal);
@@ -137,13 +137,15 @@ export class Mover {
     // world just made in place is part of its making)
     if (!this.placing) app.beginChange('move', b, true, `moving ${the(b.name)}`);
     const paused = app.clock.paused, places: FingerAt[] = [{ t, x, y }];
+    const origin = app.physics.system.origin, eyeAt = () => (origin ? app.rig.upos.sub(origin, new Vector3()) : app.rig.upos.toVector3());
     app.clock.paused = true;
     this.holding = true;
     return {
       move: (px, py, pt) => {
         places.push({ t: pt, x: px, y: py });
         const hit = onPlane(app.rig.ray(px, py).toArray(), through.toArray(), normal);
-        if (hit && this.body === b) this.put(b, app.rig.upos.toVector3().add(off).add(new Vector3(...hit)));
+        // (from the eye to the system's origin: the Solar System's is the universe's own, another star's is that star's place: src/sim/SystemSim.ts)
+        if (hit && this.body === b) this.put(b, eyeAt().add(off).add(new Vector3(...hit)));
       },
       end: (px, py, pt, cancelled) => {
         places.push({ t: pt, x: px, y: py });
@@ -225,7 +227,7 @@ export class Mover {
 
   /** The way in space (a unit vector, in the plane whose normal is `normal`) that (ux, uy) on the screen points from where `b` is; null if the view cannot tell. */
   private along(b: Body, normal: [number, number, number], ux: number, uy: number): Vector3 | null {
-    const app = this.app, view = app.bodies.views.get(b), at = view && app.project(view.rel);
+    const app = this.app, view = app.viewOf(b), at = view && app.project(view.rel);
     if (!view || !at) return null;
     const through = view.rel.toArray();
     const p = onPlane(app.rig.ray(at.x, at.y).toArray(), through, normal);
@@ -237,14 +239,14 @@ export class Mover {
 
   /** Where the world being moved is on the screen (px), for the ring drawn round it; null if none is, or it is out of view. */
   handle(): { x: number; y: number } | null {
-    const view = this.body?.valid ? this.app.bodies.views.get(this.body) : undefined;
+    const view = this.body?.valid ? this.app.viewOf(this.body) : undefined;
     return view ? this.app.project(view.rel) : null;
   }
 
   /** The slingshot's arrow as it is to be drawn now, or null while none is being pulled. */
   aim(): Aim | null {
     const a = this.aiming, b = this.body, app = this.app;
-    const view = a && b?.valid ? app.bodies.views.get(b) : undefined;
+    const view = a && b?.valid ? app.viewOf(b) : undefined;
     const at = view && app.project(view.rel);
     if (!a || !view || !at) return null;
     const edge = Math.max(10, view.pixelRadius / app.view.pixelRatio);
@@ -261,7 +263,7 @@ export class Mover {
   describe(b: Body): { on: boolean; how: Leave; placing: boolean; plane: string; orbit: string } {
     const on = b === this.body;
     if (!on) return { on, how: 'keep', placing: false, plane: '', orbit: '' };
-    const o = this.app.physics.orbit(b), sun = this.app.system.sun;
+    const o = this.app.physics.orbit(b), sun = this.app.physics.system.sun;
     // (one bound to nothing is leaving: on an open path past the Sun, unless it is the Sun)
     const free = !b.parent && b !== sun && sun.valid ? this.app.physics.orbit(b, sun) : null;
     const orbit = !b.parent ? (free && !free.bound ? `Now on an open path past the Sun: it passes at ${farWords(free.peri)}, then leaves.` : 'Now it goes round nothing.')

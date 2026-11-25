@@ -50,6 +50,7 @@ import { plainFacts, plainLine } from './plainWords';
 import { GALAXY, glowColumn } from '../universe/Galaxy';
 import { MilkyWay } from '../universe/MilkyWay';
 import { ExoPlanet, type PlanetarySystem } from '../universe/Planets';
+import { PlanetarySim, SimBody } from '../universe/PlanetarySim';
 import { type BodyJson, SolarSystem } from '../universe/SolarSystem';
 import { StarCatalog } from '../universe/StarCatalog';
 import { CatalogStar, NamedStars } from '../universe/Stars';
@@ -65,10 +66,10 @@ import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit
 import { canAdd, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
 import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
-import { type Hit, type LiveCheckpoint, LivePhysics, weighty } from './LivePhysics';
+import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
 import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
-import { powersFor } from './powersFor';
+import { type PowerPlace, powersFor, type PowerTable } from './powersFor';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
 import { recall, remember } from '../platform/storage';
@@ -152,6 +153,9 @@ const REAL_AGAIN_MS = 20_000;
 /** two worlds about to hit, in the clear part of the view and at least this far apart on the screen (px), are seen coming together where they are */
 const SEEN_APART = 40;
 const bad = (why: string): never => { throw new WorldError(why); };
+const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+/** What the app draws and selects for a body: itself, or for a body of another star's system (src/universe/PlanetarySim.ts) the star or planet it stands for. */
+const shownOf = (b: Body): SpaceObject => (b instanceof SimBody ? b.shows : b);
 /** a link naming an object only the catalogue of real objects has waits this long for it (ms) */
 const LINK_LOOKUP_WAIT = 8000;
 /** the look ahead starts again from a change at most this often (ms) */
@@ -264,7 +268,14 @@ export class App {
   private rateSign = 1;
   frameCount = 0;
   /** the Solar System under its own gravity, once the explorer has changed something in it (src/app/LivePhysics.ts) */
-  readonly physics: LivePhysics;
+  readonly solar: LivePhysics;
+  /**
+   * Another star's planetary system under its own gravity (src/universe/PlanetarySim.ts): the one
+   * whose star or planet a power was last offered for. Live physics runs in one system at a time.
+   */
+  private exoSim: { source: PlanetarySim; physics: LivePhysics } | null = null;
+  /** live physics as the powers go through it: the system it runs in, or while it runs nowhere, the selection's (`powerBody`) */
+  physics: LivePhysics;
   /** where the simulated bodies have been */
   readonly trails = new TrailsLayer();
   /** live physics: a flash where two worlds met, and time slowed to see them meet (src/app/Impacts.ts) */
@@ -337,9 +348,9 @@ export class App {
     this.hud = new Hud(hudRoot, this);
     this.labels = new Labels(labelRoot);
     this.clock = SimClock.now();
-    this.physics = new LivePhysics(system, { left: (b, into) => this.bodyLeft(b, into), dropped: (b) => this.bodies.changed(b) });
+    this.physics = this.solar = new LivePhysics(system, { left: (b, into) => this.bodyLeft(b, into), dropped: (b) => this.bodies.changed(b) });
     this.mover = new Mover(this);
-    orbits.simulated = (b) => this.physics.simulated(b);
+    orbits.simulated = (b) => this.solar.simulated(b);
     // (with the orbit lines: what hides them hides these)
     orbits.group.add(this.trails.group, this.futures.group);
     renderer.scene.add(this.flash.mesh);
@@ -669,10 +680,10 @@ export class App {
    */
   sceneView(): SceneView {
     let world: string | null = null;
-    const w = this.physics.world();
+    const w = this.solar.world();
     if (w) {
       const bytes = encodeWorld(w);
-      this.physics.rebase(decodeWorld(bytes));
+      this.solar.rebase(decodeWorld(bytes));
       world = toBase64Url(bytes);
     }
     const at = this.rig.target, q = this.pureTurn(), sel = this.selection;
@@ -698,16 +709,18 @@ export class App {
   /** Share: the link to the scene, by the system's share sheet on a phone, copied at a desk. */
   async share(): Promise<void> {
     const url = this.sceneLink();
-    const how = await handOn({ url, title: PRODUCT_NAME, text: `${this.sceneWords()}, in ${PRODUCT_NAME}${this.physics.on ? ' (changed with live physics)' : ''}` }, this.input.touch || this.hud.touchFirst);
-    if (how === 'copied') this.hud.toast('Link copied');
-    else if (how === 'shared') this.hud.toast('Shared');
+    const how = await handOn({ url, title: PRODUCT_NAME, text: `${this.sceneWords()}, in ${PRODUCT_NAME}${this.solar.on ? ' (changed with live physics)' : ''}` }, this.input.touch || this.hud.touchFirst);
+    // (a changed planetary system of another star is not written in a link yet: said, not hidden)
+    const kept = this.physics !== this.solar && this.physics.on ? `. The changes round ${this.physics.system.sun.name} are not in it yet` : '';
+    if (how === 'copied') this.hud.toast(`Link copied${kept}`, kept ? 4 : undefined);
+    else if (how === 'shared') this.hud.toast(`Shared${kept}`, kept ? 4 : undefined);
     else if (how === 'failed') this.hud.toast('The link could not be shared here');
   }
 
   /** More, Save this scene: kept on this device, in the list under it. */
   saveScene(): void {
-    const name = `${this.sceneWords(true)}${this.physics.on ? ', changed' : ''}`;
-    const how = saveScene(name, encodeLink(this.sceneView()), this.physics.on);
+    const name = `${this.sceneWords(true)}${this.solar.on ? ', changed' : ''}`;
+    const how = saveScene(name, encodeLink(this.sceneView()), this.solar.on);
     if (how === 'kept') this.hud.toast(`Saved: ${name}`);
     else if (how === 'too many') this.hud.toast(`${SAVES_MOST} scenes are saved already: delete one to save another`, 4);
     else if (how === 'full') this.hud.toast("Not saved: this browser's storage for the app is full. Deleting a saved scene makes room", 5);
@@ -780,7 +793,7 @@ export class App {
       // (all of it checked against the catalogue before the universe here is let go for it: one that cannot be made
       // again leaves the scene as it was)
       try {
-        this.physics.checkWorld(world);
+        this.solar.checkWorld(world);
       } catch (e) {
         refuse(e instanceof WorldError ? e.message : 'its changed universe could not be made again');
         return;
@@ -789,9 +802,11 @@ export class App {
       await Promise.all([this.system.ephemeris.request(world.jd0), this.system.ephemeris.request(world.jd0 + world.sim.time / DAY)]);
     }
     if (this.physics.on) this.leaveChanges();
+    // (a changed universe written down is the Solar System's)
+    if (world) this.useLive(this.solar);
     if (world) {
       try {
-        this.physics.adoptWorld(world, (m) => this.madeJson(m));
+        this.solar.adoptWorld(world, (m) => this.madeJson(m));
       } catch (e) {
         refuse(e instanceof WorldError ? e.message : 'its changed universe could not be made again');
         return;
@@ -802,14 +817,14 @@ export class App {
       this.trails.clear();
       this.bodies.changed();
     }
-    const jd = this.physics.live ? liveDate(this.physics.live) : v.jd;
+    const jd = this.solar.live ? liveDate(this.solar.live) : v.jd;
     const [at, selected] = await Promise.all([v.at ? this.find(v.at) : null, v.selected ? this.find(v.selected) : null]);
     const missing = [v.at && !at ? v.at.name : null, v.selected && !selected && v.selected.name !== v.at?.name ? v.selected.name : null].filter((x): x is string => !!x);
     this.clock.jdTdb = jd;
     this.setRate(v.rate);
     this.clock.paused = v.paused;
     this.system.update(jd);
-    this.physics.place(jd);
+    this.solar.place(jd);
     // (a planet of another star moves with its system, which a frame brings to the date only for the systems in view, and
     // `find` brought this one to the date before the link's: it is where the link's date puts it before the camera is set from it)
     for (const o of [at, selected]) if (o instanceof ExoPlanet) o.system.update(jd);
@@ -857,6 +872,7 @@ export class App {
     this.replayFrom = null;
     this.history.clear();
     this.physics.backToReality(this.clock);
+    this.drawExo(this.clock.jdTdb);
     this.trails.clear();
     this.forgetHits();
     this.bodies.changed();
@@ -952,8 +968,8 @@ export class App {
       case 'add-earth': this.add('earth'); break;
       case 'add-jupiter': this.add('jupiter'); break;
       case 'add-sun': this.add('sun'); break;
-      case 'remove': if (this.selection instanceof Body && powersFor(this.selection, this.made.length).remove.works) this.removeBody(this.selection); break;
-      case 'move': this.mover.toggle(this.selection instanceof Body && powersFor(this.selection, this.made.length).move.works ? this.selection : null); break;
+      case 'remove': { const b = this.powerBody(); if (b && this.powersOf(this.selection!).remove.works) this.removeBody(b); break; }
+      case 'move': { const b = this.powerBody(); this.mover.toggle(b && this.powersOf(this.selection!).move.works ? b : null); break; }
       case 'move-keep': this.mover.leave('keep'); break;
       case 'move-circle': this.mover.leave('circle'); break;
       case 'move-throw': this.mover.leave('throw'); break;
@@ -1323,7 +1339,7 @@ export class App {
    * The camera stays with what it is at (rig.target) until it does.
    */
   select(obj: SpaceObject | null): void {
-    if (obj !== this.mover.body) this.mover.stop();
+    if (obj !== this.mover.body && (!obj || this.exoSim?.source.bodyOf(obj) !== this.mover.body)) this.mover.stop();
     this.selection = obj;
     this.orbits.selected = obj instanceof Body ? obj : null;
     if (obj instanceof CatalogStar) { obj.resolve(this.named, () => undefined); obj.gradeDistance(() => undefined); obj.describeTemperature(() => undefined); }
@@ -1337,6 +1353,100 @@ export class App {
   get made(): readonly Body[] {
     return this.physics.made;
   }
+
+  // ------------------------------------------------------------------ live physics in one system at a time
+  /** Where live physics runs now: round the Sun, in another star's planetary system, or nowhere. */
+  private liveWhere(): 'solar' | PlanetarySystem | null {
+    return this.solar.on ? 'solar' : this.exoSim?.physics.on ? this.exoSim.source.system : null;
+  }
+
+  /** What `o` is as far as its powers go: for a star, its planetary system; and where live physics runs now (src/app/powersFor.ts). */
+  private powerPlace(o: SpaceObject | null): PowerPlace {
+    return { system: o instanceof CatalogStar && !this.isCompanion(o) ? this.systems.of(o) : undefined, live: this.liveWhere() };
+  }
+
+  /** The one table of which powers work on `o`, here and now (src/app/powersFor.ts). */
+  powersOf(o: SpaceObject): PowerTable {
+    return powersFor(o, this.made.length, this.powerPlace(o));
+  }
+
+  /**
+   * The body the powers act on for `o` (the selection, unless told), and the live physics they go
+   * through (`physics`): a world of the Solar System itself; for another star or one of its planets,
+   * the body standing for it in that star's planetary system (src/universe/PlanetarySim.ts). Live
+   * physics runs in one system at a time, so while it runs in one, a world of another has none
+   * (powersFor says why). `fresh`: for a power about to act, the rails of a system that is not live
+   * yet brought to the date. Null where no power can act.
+   */
+  powerBody(o: SpaceObject | null = this.selection, fresh = true): Body | null {
+    if (!o) return null;
+    if (o instanceof SimBody) return this.exoSim?.source.bodyOf(o.shows) === o ? o : null;
+    if (o instanceof Body) {
+      if (this.exoSim?.physics.on) return null;
+      this.useLive(this.solar);
+      return o;
+    }
+    const system = o instanceof ExoPlanet ? o.system : o instanceof CatalogStar && !this.isCompanion(o) ? this.systems.of(o) : null;
+    if (!system || this.solar.on) return null;
+    let ex = this.exoSim;
+    if (!ex || ex.source.system !== system) {
+      if (ex?.physics.on) return null;
+      // (made only when a power is offered for it: nothing of another star's system is simulated, or kept, before that)
+      const source = new PlanetarySim(system);
+      ex = this.exoSim = { source, physics: new LivePhysics(source, { left: (b, into) => this.bodyLeft(b, into), dropped: () => undefined }, PLANETARY_LEFT_OUT) };
+    }
+    if (!ex.source.simulable) return null;
+    this.useLive(ex.physics);
+    if (fresh) this.railsNow();
+    return ex.source.bodyOf(o);
+  }
+
+  /** The powers go through `p` from now (it is live, or none is): what Undo kept for another system is let go with it. */
+  private useLive(p: LivePhysics): void {
+    if (this.physics === p) return;
+    this.mover.stop();
+    this.history.clear();
+    this.begun = null;
+    this.replayFrom = null;
+    this.realAgain = 0;
+    this.physics = p;
+  }
+
+  /** Another star's system that live physics has not begun in: its bodies on their rails at the clock's date, as they are drawn. */
+  private railsNow(): void {
+    if (this.physics !== this.solar && !this.physics.on) this.physics.system.update(this.clock.jdTdb);
+  }
+
+  /** Another star's system is drawn where its simulation has it while live physics runs it, and on its rails otherwise (each frame, and after a change of state). */
+  private drawExo(jd: number): void {
+    const ex = this.exoSim;
+    if (!ex) return;
+    if (ex.physics.on) ex.source.attach();
+    else ex.source.detach(jd);
+  }
+
+  /**
+   * How the mass the Mass power starts from is known, for its words: nothing to add for a measured
+   * one; "(estimated)" where the archive estimated it; a star weighed by its planet's orbit, or a
+   * made-up system's, says so.
+   */
+  private massMark(b: Body): { words: string; says: string } {
+    if (!(b instanceof SimBody)) return { words: '', says: '' };
+    const known = this.exoSim?.source.massKnown(b) ?? 'measured';
+    if (known === 'estimated') return { words: ' (estimated)', says: 'The archive estimated its mass from its size' };
+    if (known === 'orbits') return { words: ' (from its planets)', says: 'Weighed by a planet\'s orbit: the archive gives no mass' };
+    if (known === 'generated') return { words: ' (generated)', says: 'A made-up system: its masses are generated' };
+    return { words: '', says: '' };
+  }
+
+  /** Where a body is drawn from the eye (m) and how many pixels its radius spans, for a finger to take hold of it (src/app/Mover.ts); undefined while it is not drawn. */
+  viewOf(b: Body): { rel: Vector3; pixelRadius: number } | undefined {
+    if (!(b instanceof SimBody)) return this.bodies.views.get(b);
+    const o = b.shows;
+    if (o instanceof ExoPlanet) return this.exo.views.find((v) => v.planet === o);
+    const rel = o.upos.sub(this.rig.upos, new Vector3()), d = rel.length();
+    return { rel, pixelRadius: Math.asin(Math.min(1, o.radius / Math.max(d, o.radius))) / this.view.pixelAngle };
+  }
   /** how many bodies were ever made: their numbers are not used twice */
   private madeEver = 0;
 
@@ -1349,7 +1459,7 @@ export class App {
    * starts). Null if that cannot be added there.
    */
   add(kind: Kind, to: SpaceObject | null = this.selection): Body | null {
-    if (!(to instanceof Body) || !powersFor(to, this.made.length).add.works || !canAdd(to, this.made.length).includes(kind)) return null;
+    if (!(to instanceof Body) || !this.powersOf(to).add.works || !canAdd(to, this.made.length).includes(kind) || this.powerBody(to) !== to) return null;
     const eye = this.rig.upos.sub(to.upos, new Vector3()).toArray(), id = MADE_FIRST_ID + this.madeEver++;
     const like = kind === 'moon' ? null : this.system.byId.get(TWIN_OF[kind])!;
     const sun = this.system.sunAt(to.pos);
@@ -1425,6 +1535,7 @@ export class App {
     this.forgetHits();
     this.glide = null;
     this.realAgain = 0;
+    this.railsNow();
     this.pending = { kind, body, before: this.checkpoint(what), count: this.physics.changes, sample: this.sample(body) };
   }
 
@@ -1451,6 +1562,7 @@ export class App {
     if (this.physics.changes === c.count) return;
     this.physics.restore(c.before.live);
     this.clock.jdTdb = c.before.live.jd;
+    this.drawExo(this.clock.jdTdb);
     this.trails.clear();
     this.forgetHits();
     this.bodies.changed();
@@ -1458,8 +1570,8 @@ export class App {
 
   /** A finger (or the pointer) has come down on the mass slider, or lifted from it: one change from the moment it comes down until it lifts. */
   massHeld(held: boolean): void {
-    const b = this.selection;
-    if (held && b instanceof Body && powersFor(b, this.made.length).mass.works) this.beginChange('mass', b, true, `changing ${the(b.name)}'s mass`);
+    const b = held ? this.powerBody() : null;
+    if (held && b && this.powersOf(this.selection!).mass.works) this.beginChange('mass', b, true, `changing ${the(b.name)}'s mass`);
     else if (!held && this.pending?.kind === 'mass') this.endChange();
   }
 
@@ -1472,7 +1584,7 @@ export class App {
     if (!cp) return;
     this.restore(cp);
     this.realAgain = !cp.live.sim && this.history.size > 0 ? performance.now() : 0;
-    this.hud.toast(`Undone: ${cp.what}${cp.live.sim ? '' : '. The real Solar System again'}`, 3);
+    this.hud.toast(`Undone: ${cp.what}${cp.live.sim ? '' : this.physics === this.solar ? '. The real Solar System again' : `. ${capital(the(this.physics.system.sun.name))} and its planets are real again`}`, 3);
   }
 
   /** Everything as it is now, for Undo: the worlds, the rate of time, whether the clock follows the present; `what` is the change about to be made. */
@@ -1490,6 +1602,7 @@ export class App {
     this.physics.restore(cp.live);
     this.clock.jdTdb = cp.live.jd;
     if (!cp.live.sim && cp.present) { this.clock.setUtcNow(); this.system.update(this.clock.jdTdb); }
+    this.drawExo(this.clock.jdTdb);
     this.putRate(cp.rate);
     this.begun = cp.begun;
     this.trails.clear();
@@ -1512,7 +1625,7 @@ export class App {
 
   /** The worlds as they are now, for a change's watch (src/app/Watch.ts: sample). */
   private sample(touched: Body): Map<Body, Sampled> {
-    return sample(this.physics, this.system, touched);
+    return sample(this.physics, this.physics.system, touched);
   }
 
   /**
@@ -1552,7 +1665,7 @@ export class App {
     const d = frameDistance(Math.max(radius, 1.2 * centre.radius), v.halfX, v.halfY);
     if (this.rig.autopilot) this.rig.cancelGoto();
     // (a world taken away is a point to look at, nothing to turn round)
-    this.rig.target = centre.valid ? centre : null;
+    this.rig.target = centre.valid ? shownOf(centre) : null;
     this.framed = centre.valid ? centre : null;
     this.frameAsked = { centre, radius };
     this.glide = new Glide(this.rig, centre, d, v.dir);
@@ -1679,11 +1792,11 @@ export class App {
 
   /** What ends the path ahead, in words, where it ends and on the card (Powers.aheadWords: "hits Earth in 43 days", "in 49 days it is the Sun's"); null while nothing does. */
   private aheadSaid(): { there: string; line: string } | null {
-    const end = this.ahead.end, live = this.physics.live, b = this.aheadOf, sun = this.system.sun;
+    const end = this.ahead.end, live = this.physics.live, b = this.aheadOf, sun = this.physics.system.sun;
     if (!live) return null;
     // (one bound to nothing from the start, on an open path past the Sun, that nothing stops on its way: it is leaving)
     if (!end) return this.ahead.done && b && !b.parent && b !== sun && this.physics.orbit(b, sun)?.bound === false ? aheadWords({ kind: 'leaves', from: sun.name }) : null;
-    const name = (id: number) => this.system.byId.get(id)?.name ?? '?';
+    const name = (id: number) => this.physics.system.byId.get(id)?.name ?? '?';
     const when = whenWords(end.time, live.jd0 + (this.ahead.from + end.time) / DAY);
     if (end.kind === 'hit') return aheadWords({ kind: 'hit', other: name(end.other), when });
     if (end.kind === 'leaves') return aheadWords({ kind: 'leaves', from: this.ahead.around >= 0 ? name(this.ahead.around) : null });
@@ -1713,6 +1826,7 @@ export class App {
     this.mover.stop();
     this.physics.restore(r.cp);
     this.clock.jdTdb = r.cp.jd;
+    this.drawExo(this.clock.jdTdb);
     this.trails.clear();
     this.forgetHits();
     this.bodies.changed();
@@ -1725,16 +1839,20 @@ export class App {
    * go to what took it in, or to what it went round.
    */
   private bodyLeft(b: Body, into: Body | null): void {
-    const to = into ?? (b.parent && !this.system.isGone(b.parent) ? b.parent : null);
-    if (this.rig.target === b || this.rig.anchor === b) {
+    const system = this.physics.system;
+    const near = into ?? (b.parent && !system.isGone(b.parent) ? b.parent : null);
+    // (in another star's system the camera and the selection are on what its bodies stand for)
+    const was = shownOf(b), to = near && shownOf(near);
+    if (this.rig.target === was || this.rig.anchor === was) {
       this.rig.cancelGoto();
       this.rig.target = to;
       this.rig.setAnchor(to);
     }
-    if (this.selection === b) {
+    if (this.selection === was) {
       this.hud.selectionMoved();
       this.select(to);
     }
+    if (was !== b) this.nearTimer = 0;
     this.orbits.forget(b);
     this.trails.forget(b);
     this.bodies.changed();
@@ -1751,7 +1869,10 @@ export class App {
     const hits = this.physics.takeHits();
     const carded = hits.length ? this.sawHits(hits) : '';
     const news = this.physics.takeNews().filter((n) => n !== carded).slice(0, 3);
-    if (!wasOn && this.physics.on) news.unshift('Live physics is on: from now on everything here pulls on everything else.');
+    if (!wasOn && this.physics.on) {
+      news.unshift(this.physics === this.solar ? 'Live physics is on: from now on everything here pulls on everything else.'
+        : `Live physics is on round ${this.physics.system.sun.name}: its star and planets pull on one another. Everything else stays real.`);
+    }
     if (news.length) this.hud.toast(news.join('\n'), 3 + 1.5 * news.length);
   }
 
@@ -1760,8 +1881,8 @@ export class App {
    * on. (Without a finger on the slider, its arrow keys: a run of them is one change.)
    */
   setMass(slider: number): void {
-    const b = this.selection;
-    if (!(b instanceof Body) || !powersFor(b, this.made.length).mass.works) return;
+    const b = this.powerBody();
+    if (!b || !this.powersOf(this.selection!).mass.works) return;
     const real = this.physics.realGm(b), sun = madeSun(b);
     // (a sun the explorer made is a star of the main sequence: of the masses it could be made with)
     const gm = sun ? G * Math.max(MADE_MASS.sun[0], Math.min(MADE_MASS.sun[1], (massFactor(slider) * real) / G)) : massFactor(slider) * real;
@@ -1789,8 +1910,8 @@ export class App {
 
   /** The size slider of the selected world was put at `slider` (Powers.sizeFactor): that size from now; at the same density its mass follows. */
   setSize(slider: number): void {
-    const b = this.selection;
-    if (!(b instanceof Body) || !powersFor(b, this.made.length).size.works || !this.sizeable(b)) return;
+    const b = this.powerBody();
+    if (!b || !this.powersOf(this.selection!).size.works || !this.sizeable(b)) return;
     const R0 = this.physics.realRadius(b), R = sizeFactor(slider) * R0;
     if (R === b.radius) return;
     this.beginChange('mass', b, false, `changing ${the(b.name)}'s size`);
@@ -1802,16 +1923,16 @@ export class App {
 
   /** A finger (or the pointer) has come down on the size slider, or lifted from it: one change from the moment it comes down until it lifts. */
   sizeHeld(held: boolean): void {
-    const b = this.selection;
-    if (held && b instanceof Body && powersFor(b, this.made.length).size.works) this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
+    const b = held ? this.powerBody() : null;
+    if (held && b && this.powersOf(this.selection!).size.works) this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
     else if (!held && this.pending?.kind === 'mass') this.endChange();
   }
 
   /** Same density on (`on`) or off: on, the selected world's size is made to follow its mass at once, as one change. */
   private linkSize(on: boolean): void {
     this.sizeFollows = on;
-    const b = this.selection;
-    if (!on || !(b instanceof Body) || !powersFor(b, this.made.length).size.works || !this.sizeable(b)) return;
+    const b = on ? this.powerBody() : null;
+    if (!on || !b || !this.powersOf(this.selection!).size.works || !this.sizeable(b)) return;
     const R = sameDensity(this.physics.realRadius(b), b.gm / this.physics.realGm(b));
     if (Math.abs(R / b.radius - 1) < 1e-12) return;
     this.beginChange('mass', b, true, `changing ${the(b.name)}'s size`);
@@ -1823,7 +1944,7 @@ export class App {
 
   /** Take a world away: everything else carries on without it. */
   removeBody(b: Body): void {
-    if (!powersFor(b, this.made.length).remove.works || !this.system.bodies.includes(b)) return;
+    if (!this.powersOf(b).remove.works || !this.physics.system.bodies.includes(b)) return;
     this.beginChange('remove', b, true, `taking away ${the(b.name)}`);
     const wasOn = this.physics.on;
     this.physics.remove(b, this.clock.jdTdb);
@@ -1847,7 +1968,10 @@ export class App {
     this.replayFrom = null;
     this.history.push(this.checkpoint('Back to reality'));
     const begun = this.begun;
+    const solar = this.physics === this.solar;
     let said = this.physics.backToReality(this.clock);
+    this.drawExo(this.clock.jdTdb);
+    if (!solar) said = `${said}: ${the(this.physics.system.sun.name)} and its planets on their real orbits`;
     this.trails.clear();
     this.forgetHits();
     this.bodies.changed();
@@ -2238,7 +2362,7 @@ export class App {
   private chooseAnchor(): void {
     // (a watch's frame, or a new world's while it is put in place, rides with what it is framed round)
     const framed = this.framed;
-    if (framed?.valid && (this.watch.state !== 'idle' || this.glide || this.mover.placing)) { this.rig.setAnchor(framed); return; }
+    if (framed?.valid && (this.watch.state !== 'idle' || this.glide || this.mover.placing)) { this.rig.setAnchor(shownOf(framed)); return; }
     let best: Body | null = null;
     let bestSoi = Infinity;
     const rel = new Vector3();
@@ -2486,7 +2610,9 @@ export class App {
       list.push(st);
       this.nearestStarDist = Math.min(this.nearestStarDist, st.upos.sub(this.rig.upos, tmp).length() - st.radius);
     }
-    this.near.stars = list;
+    // (a star live physics has taken away is not drawn)
+    const live = this.exoSim?.source.system.live;
+    this.near.stars = live ? list.filter((st) => !live.gone(st)) : list;
     this.nearSystems = systems;
   }
 
@@ -3264,19 +3390,22 @@ export class App {
     const jd = this.clock.jdTdb;
     this.system.update(jd, this.clock.paused ? 0 : Math.sign(this.clock.rate), this.simFocus());
     if (this.physics.on) {
+      // (another star's system: its rails at the date first, as the Solar System's ephemeris above; then the simulation's places)
+      if (this.physics !== this.solar) this.physics.system.update(jd);
       this.physics.place(jd);
       this.trails.record(this.physics.bodies());
       this.tellNews();
     }
     this.lookAhead(rawDt);
-    this.small.present = this.physics.sunAsWas;
+    this.small.present = this.solar.sunAsWas;
+    this.drawExo(jd);
     HITCH.lap('solarSystem');
     for (const h of this.blackHoles) h.update(jd);
     // planets and spacecraft move before the camera follows its anchor (which may be one of them)
     for (const sys of this.activeSystems) sys.update(jd);
     // (the real spacecraft flew their paths in the real Solar System: in live physics they have none)
     for (const c of this.craft.craft) {
-      if (this.physics.on) c.valid = false;
+      if (this.solar.on) c.valid = false;
       else c.update(jd);
     }
     HITCH.lap('ephemeris');
@@ -3393,7 +3522,7 @@ export class App {
     // landing terrain on the nearest solid world (Solar System body or generated planet)
     {
       // (none on a world whose size has been changed: its ground is measured for its real size)
-      const cands = [this.bodies.terrainCandidate(), this.exo.terrainCandidate()].filter((c): c is NonNullable<typeof c> => c !== null && !(c.ground.owner instanceof Body && this.physics.resized(c.ground.owner)));
+      const cands = [this.bodies.terrainCandidate(), this.exo.terrainCandidate()].filter((c): c is NonNullable<typeof c> => c !== null && !(c.ground.owner instanceof Body && this.solar.resized(c.ground.owner)) && !(c.ground.owner instanceof ExoPlanet && c.ground.owner.radius !== c.ground.owner.spec.radiusM));
       cands.sort((a, b) => a.alt - b.alt);
       const c = cands[0] ?? null;
       if (c) c.air = this.atmospheres.material(c.ground.owner);
@@ -3555,7 +3684,7 @@ export class App {
     const climate = b.climate;
     if (!climate || !b.valid) return null;
     const listed = climate.irradiance ?? b.parent?.climate?.irradiance ?? null;
-    const sun: Sunlit = !this.physics.on && listed !== null ? { listed }
+    const sun: Sunlit = !this.solar.on && listed !== null ? { listed }
       : { suns: this.system.suns.filter((s) => s !== b && s.valid && s.radius > 0 && s.teff > 0).map((s) => ({ name: s.name, lumW: luminosity(s.radius, s.teff).value * L_SUN, dM: s.pos.distanceTo(b.pos) })) };
     return temperatureOf({ name: b.name, giant: b.isGasGiant, oceans: b.name === 'Earth' }, climate, sun);
   }
@@ -3569,7 +3698,7 @@ export class App {
       const d = sel.upos.sub(rig.upos, new Vector3()).length();
       // what the textbook makes of its facts, worked afresh a few times a second (an orbit's speed moves on)
       const now = performance.now();
-      if (this.worked.key !== sel.key || now - this.worked.at > 400) this.worked = { key: sel.key, at: now, rows: workedOut(sel, this.physics.on ? null : this.system) };
+      if (this.worked.key !== sel.key || now - this.worked.at > 400) this.worked = { key: sel.key, at: now, rows: workedOut(sel, this.solar.on ? null : this.system) };
       // (its temperature, worked afresh each time: it follows a finger dragging it sunwards)
       const warmth = sel instanceof Body ? this.temperature(sel) : null;
       const worked = warmth ? [...this.worked.rows, ...warmth.worked] : this.worked.rows;
@@ -3579,35 +3708,37 @@ export class App {
         const sys = this.systems.of(sel);
         if (sys) rows.push(['Planets', sys.real ? `${sys.planets.length} confirmed (NASA Exoplanet Archive)` : `${sys.planets.length} generated (not observed)`]);
       }
-      const available = powersFor(sel, this.made.length);
+      const available = this.powersOf(sel);
+      // (the body the powers act on: a world of the Solar System itself, or the one standing for another star or its planet)
+      const pb = this.powerBody(sel, false);
       selection = {
         key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
         powers: available, mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body && available.add.works ? canAdd(sel, this.made.length) : [],
       };
-      // the powers over a world of the Solar System, when the one table says they work
-      if (sel instanceof Body && available.move.works) {
-        selection.rows.splice(1, 0, ...this.physics.rows(sel));
+      // the powers over a world, when the one table says they work
+      if (pb && available.move.works) {
+        selection.rows.splice(1, 0, ...this.physics.rows(pb));
         selection.removable = available.remove.works;
-        selection.move = { ...this.mover.describe(sel), ahead: sel === this.aheadOf ? this.aheadLine() : '' };
-        const real = this.physics.realGm(sel);
+        selection.move = { ...this.mover.describe(pb), ahead: pb === this.aheadOf ? this.aheadLine() : '' };
+        const real = this.physics.realGm(pb);
         if (available.mass.works) {
-          const factor = sel.gm / real, sun = madeSun(sel);
+          const factor = pb.gm / real, sun = madeSun(pb), mark = this.massMark(pb);
           selection.mass = {
-            slider: massSlider(factor), words: (sel.kind === 'star' ? starMassWords : massWords)(massOf(sel.gm)), times: timesWords(factor),
-            says: sun ? 'Its size, colour and light follow' : sel.kind === 'star' ? 'Only its pull changes, not its size or look' : this.sizeFollows ? 'Its size follows: the same density' : 'Only its pull changes, not its size',
-            theory: massTheory(massOf(sel.gm), sel.kind === 'star') ?? '',
+            slider: massSlider(factor), words: `${(pb.kind === 'star' ? starMassWords : massWords)(massOf(pb.gm))}${mark.words}`, times: timesWords(factor),
+            says: mark.says || (sun ? 'Its size, colour and light follow' : pb.kind === 'star' ? 'Only its pull changes, not its size or look' : this.sizeFollows ? 'Its size follows: the same density' : 'Only its pull changes, not its size'),
+            theory: massTheory(massOf(pb.gm), pb.kind === 'star') ?? '',
           };
           // its size, as a factor on its real radius
           if (available.size.works) {
-            const size = sel.radius / this.physics.realRadius(sel);
+            const size = pb.radius / this.physics.realRadius(pb);
             // (a factor the slider snapped to, read back from the radius, is that factor to the last digits)
             const nice = sizeFactor(sizeSlider(size)), f = Math.abs(size / nice - 1) < 1e-9 ? nice : size;
-            selection.size = { slider: sizeSlider(size), words: radiusWords(sel.radius), times: sizeTimesWords(f), linked: this.sizeFollows };
+            selection.size = { slider: sizeSlider(size), words: radiusWords(pb.radius), times: sizeTimesWords(f), linked: this.sizeFollows };
           }
         }
         // a world just made, being put in place: its own mass slider, and what it is at that mass
-        const as = sel.meta.madeAs as BodyJson['madeAs'];
-        if (as && this.mover.placing && this.mover.body === sel) {
+        const as = pb.meta.madeAs as BodyJson['madeAs'];
+        if (as && this.mover.placing && this.mover.body === pb) {
           const kind = as.kind as Kind;
           selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy) };
         }
@@ -3620,7 +3751,8 @@ export class App {
     const slow = kept ? `getting ${rateWords(kept)}` : '';
     // (the mark at the top has the room of a phone: while a change is watched its chip says the pace, and the watch slows
     // itself when the stepping falls behind)
-    const mark = kept && !this.watch.watching ? `only ${this.rateText(kept)}` : status ? `since ${dayWords(this.physics.live!.jd0, true)}` : '';
+    const where = this.physics === this.solar ? null : this.physics.system.sun.name;
+    const mark = kept && !this.watch.watching ? `only ${this.rateText(kept)}` : status ? (where ? `round ${where}` : `since ${dayWords(this.physics.live!.jd0, true)}`) : '';
     // where the camera is: at its target (how high above it, or how far from it), or in open space
     const t = rig.target;
     let place = rig.anchor ? `Near ${rig.anchor.name}` : 'Open space';
@@ -3654,7 +3786,8 @@ export class App {
       paused: c.paused,
       reversed: c.rate < 0,
       selection,
-      live: status && { since: status.since, mark, slow, rails: status.rails, leftOut: status.leftOut, log: status.log },
+      live: status && { since: status.since, mark, slow, rails: status.rails, leftOut: status.leftOut, log: status.log, where },
+      realWhat: where ? `${where}'s real orbits again` : 'the real Solar System again',
       undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0),
       realAgain: !this.physics.on && this.realAgain > 0 && this.history.size > 0,
       watch: this.watch.state === 'idle' ? null
