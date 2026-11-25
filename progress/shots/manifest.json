@@ -1,5 +1,39 @@
 [
  {
+  "id": "20261125-160641-tap-a-galaxy-where-you-see-it",
+  "at": "2026-11-25T16:06:41+00:00",
+  "kind": "live",
+  "title": "Tap a galaxy where you see it",
+  "text": "Tapping a galaxy now selects it: the Milky Way when you look at it from outside, and Andromeda instead of the little galaxy in front of it. Work by the cheap team (Kimi K3.1 Pro), checked and tested.",
+  "link": "https://github.com/dippy34/starfarer/commits/claude/friendly-hypatia-up418z",
+  "pictures": [
+   {
+    "src": "20261125-160641-tap-a-galaxy-where-you-see-it-1.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "Before: Milky Way tap picks another galaxy"
+   },
+   {
+    "src": "20261125-160641-tap-a-galaxy-where-you-see-it-2.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: Milky Way"
+   },
+   {
+    "src": "20261125-160641-tap-a-galaxy-where-you-see-it-3.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "Before: Andromeda tap picks Triangulum"
+   },
+   {
+    "src": "20261125-160641-tap-a-galaxy-where-you-see-it-4.jpg",
+    "w": 780,
+    "h": 1688,
+    "caption": "After: Andromeda"
+   }
+  ]
+ },
+ {
   "id": "20261125-152326-the-ship-s-dashboard-in-plain-wo",
   "at": "2026-11-25T15:23:26+00:00",
   "kind": "team",
@@ -30,40 +64,6 @@
     "w": 844,
     "h": 390,
     "caption": "After: on its side"
-   }
-  ]
- },
- {
-  "id": "20261125-145102-tap-a-galaxy-where-you-see-it",
-  "at": "2026-11-25T14:51:02+00:00",
-  "kind": "team",
-  "title": "Tap a galaxy where you see it",
-  "text": "The cheap team (Kimi K3.1 Pro) made a tap on a galaxy select it: the Milky Way from outside, and Andromeda instead of the small galaxy in front of it. Being tested now; not live yet.",
-  "link": "https://github.com/dippy34/starfarer/actions/runs/45632467098",
-  "pictures": [
-   {
-    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-1.jpg",
-    "w": 390,
-    "h": 844,
-    "caption": "Before: Milky Way, nothing selected"
-   },
-   {
-    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-2.jpg",
-    "w": 390,
-    "h": 844,
-    "caption": "Before: Andromeda, nothing selected"
-   },
-   {
-    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-3.jpg",
-    "w": 960,
-    "h": 540,
-    "caption": "After: Milky Way selected"
-   },
-   {
-    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-4.jpg",
-    "w": 960,
-    "h": 540,
-    "caption": "After: Andromeda selected"
    }
   ]
  },
