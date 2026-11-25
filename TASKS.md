@@ -92,7 +92,9 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/sirius-test`: "search and go to Sirius" fails on GitHub's runners
 
-- **Status:** open. Medium.
+- **Status:** open. Medium. (Search changed on 25 Nov, task/search-names; "Sirius" ranks as before.
+  The check still fails on the live app: run 45666623495, `arrived:false`, the selection Mount
+  Everest.)
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** in `scripts/interact.mjs`, the check "search + goto Sirius" fails on GitHub's
   slow runners and passes on fast machines. Its failure says
@@ -139,7 +141,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/search-names`: find things by the names people type
 
-- **Status:** open. Small.
+- **Status:** done, live on 25 Nov 2026 ("Search finds the names people type"): the outside AI's
+  work, with the checker's fix of the constellation names (Velorum, and the seven two-word ones).
 - **Model:** `opencode-go/glm-5.3-flash`
 - **The problem:** search misses "Alpha Centauri", "Alpha Cen", "Tau Ceti", "Eta Carinae" and
   generated planets such as "Vega b". "Sol" finds Solaris instead of the Sun, and "ISS" finds

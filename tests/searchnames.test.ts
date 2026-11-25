@@ -117,17 +117,11 @@ describe('the exoplanet archive', () => {
 
   it('answers "<star> <letter>" with the generated planet, unless the star has a real system', () => {
     const vega = new CatalogStar('star:test:vega', new Vector3(1, 0, 0), 0.6, 10138, 'A0V', ['Vega'], null);
-    const gen = systems.searchGenerated('Vega b', vega);
-    if (gen) {
-      expect(gen.name).toBe('Vega b');
-    } else {
-      // maybe Vega has no generated planets at all; otherwise its first planet must be found the same way
-      const first = systems.of(vega)?.planets[0];
-      if (first) {
-        expect(systems.searchGenerated(first.name, vega)).toBe(first);
-        expect(first.name.startsWith('Vega ')).toBe(true);
-      }
-    }
+    // (firm: the engine gives this star planets, the first is "Vega b", and typing its name finds that very planet)
+    const planets = systems.of(vega)?.planets ?? [];
+    expect(planets.length).toBeGreaterThan(0);
+    expect(planets[0].name).toBe('Vega b');
+    expect(systems.searchGenerated('Vega b', vega)).toBe(planets[0]);
     // the archive has real candidates for tau Cet g, so nothing is generated
     const tauCet = new CatalogStar('star:test:taucet', new Vector3(1, 0, 0), 5, 5400, 'G8V', ['tau Cet'], null);
     expect(systems.searchGenerated('tau Cet g', tauCet)).toBeNull();
