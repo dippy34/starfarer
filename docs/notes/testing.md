@@ -150,6 +150,7 @@ a failure of the app that we know of):
 | touch: 'set to "Look", one finger looks around instead' | 45606060317 and 45617640388 (25 Nov), since the card was redone (95946c0); passed in 45599710134, 45611808107 and 45639256519 | the tap on the round button did not switch the drag to Look (`{"mode":"orbit"}`). Being worked on: TASKS.md task/look-button |
 | touch: a double-tap on the world you are at "comes six times closer" (upright 3.97, on its side 5.36), and sideways "a sheet fits the height" (its foot at 398 of 390 px) | 45647209362 (25 Nov), once, with three checkers' runs sharing the runners; the same app passed touch 108/108 in 45639256519 | not reproduced; all three are measured while a camera or a sheet is still moving, so a slow frame is the first suspect |
 | live: desk, "let go, Mars falls at the Earth … time slows … the last of the fall takes about three seconds" | 45639256519 (25 Nov): the chip read "Watching: 20.1 hours a second", not "Slowed", and the hit came 8.6 s after, not about 6; the phone run passed (6.1 s) | not reproduced; a timing check on a slow runner |
+| everywhere: deep, "beside Andromeda: the whole place check runs without a driver exception" (Go there's button: `scrollIntoViewIfNeeded` 30 s timeout) | the run of 4521a5e (25 Nov), once | the rerun on the same app passed deep 39/39; not reproduced |
 
 Read a runner-only failure the way you would a failure under load here: run that suite again
 (there or here) before believing it, and never loosen a check to make either side green.
