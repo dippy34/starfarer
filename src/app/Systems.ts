@@ -1,7 +1,8 @@
 import { Vector3 } from 'three';
 import { AU, DAY, PC, SUN_ABS_MAG } from '../core/units';
 import { raDecToVector } from '../core/frames';
-import { ALBEDO, classify, eqTemp, generatePlanets, hashKey, massFromRadius, PlanetarySystem, type PlanetSpec, REARTH, rng, starProps } from '../universe/Planets';
+import { normKey, queryKeys, scoreKey } from '../universe/CatalogSearch';
+import { ALBEDO, classify, eqTemp, ExoPlanet, generatePlanets, hashKey, massFromRadius, PlanetarySystem, type PlanetSpec, REARTH, rng, starProps } from '../universe/Planets';
 import { absMagForRadius } from '../universe/StarRadii';
 import { CatalogStar, type NamedStars } from '../universe/Stars';
 
@@ -35,6 +36,9 @@ export class Systems {
   private systemOfNamed = new Map<number, number>();
   /** archive index -> named catalogue star (by designation), filled by indexNamed() */
   private named = new Map<number, number>();
+  /** normKey of each host's name, and of each planet's, at load: `search` runs per keystroke */
+  private nkHost: string[] = [];
+  private nkPlanets: string[][] = [];
   loaded = false;
 
   /** how many stars the archive lists with planets, and how many planets in all */
@@ -51,6 +55,8 @@ export class Systems {
     if (!res.ok) throw new Error(`exoplanets.json: HTTP ${res.status}`);
     const j = await res.json() as { systems: ArchiveSystem[] };
     this.archive = j.systems;
+    this.nkHost = this.archive.map((s) => normKey(s.host));
+    this.nkPlanets = this.archive.map((s) => s.planets.map((p) => normKey(p.name)));
     this.archive.forEach((s, i) => {
       for (const n of [s.host, ...s.ids]) this.byName.set(norm(n), i);
     });
@@ -203,20 +209,39 @@ export class Systems {
     return this.of(this.hostStar(i));
   }
 
-  /** Search the confirmed exoplanets and their hosts. */
+  /**
+   * Search the confirmed exoplanets and their hosts, by the typed name (App's `score`) and by its
+   * normalised keys: the archive writes "tau Cet", so "Tau Ceti" finds it (queryKeys).
+   */
   search(q: string, score: (name: string) => number): { label: string; detail: string; id: string; score: number }[] {
     const out: { label: string; detail: string; id: string; score: number }[] = [];
     if (!this.loaded || q.length < 2) return out;
+    const keys = queryKeys(q);
+    const best = (name: string, nk: string): number => {
+      const s = score(name), n = scoreKey(nk, keys);
+      return s >= 0 && n >= 0 ? Math.min(s, n) : s >= 0 ? s : n;
+    };
     this.archive.forEach((s, i) => {
       s.planets.forEach((p, k) => {
-        const sc = score(p.name);
+        const sc = best(p.name, this.nkPlanets[i][k]);
         if (sc >= 0) out.push({ label: p.name, detail: `exoplanet · ${(s.distPc * 3.2616).toFixed(0)} ly`, id: `xp:${i}:${k}`, score: sc + 0.15 });
       });
       // (a host that is a named star of the catalogue is listed as that star, which says it has planets: App.searchItems)
-      const sh = this.named.has(i) ? -1 : score(s.host);
+      const sh = this.named.has(i) ? -1 : best(s.host, this.nkHost[i]);
       if (sh >= 0) out.push({ label: s.host, detail: `star with ${s.planets.length} known planet${s.planets.length > 1 ? 's' : ''}`, id: `xh:${i}`, score: sh + 0.1 });
     });
     return out;
+  }
+
+  /**
+   * The engine's generated planet of `star`, typed as "<star> <letter>" ("Vega b"): null when the
+   * star has a real (archive) system — those are found by `search` — or no planets at all.
+   */
+  searchGenerated(q: string, star: CatalogStar): ExoPlanet | null {
+    const sys = this.of(star);
+    if (!sys || sys.real) return null;
+    const n = q.trim().toLowerCase();
+    return sys.planets.find((p) => p.name.toLowerCase() === n) ?? null;
   }
 
   get archiveCount(): { systems: number; planets: number } {
