@@ -27,6 +27,90 @@ export function normKey(s: string): string {
   return t.replace(/[^a-z0-9]/g, '');
 }
 
+/**
+ * The constellation genitives people type ("Ceti", "Carinae"), and the catalogue's own abbreviation
+ * for each: the standard IAU three letters, which is how the catalogue writes these names ("τ Cet",
+ * "α1 Cen", "η Car"). Only a word that is a genitive of one constellation is here; where the same
+ * word ends two constellations' genitives ("Ursae Majoris", "Ursae Minoris"), or where only the
+ * whole phrase is the genitive ("Canum Venaticorum"), it is in `GENITIVE_PHRASES` instead.
+ */
+const GENITIVES: Record<string, string> = {
+  andromedae: 'and', antliae: 'ant', apodis: 'aps', aquarii: 'aqr', aquilae: 'aql', arae: 'ara', arietis: 'ari',
+  aurigae: 'aur', berenices: 'com', bootis: 'boo', borealis: 'crb', caeli: 'cae', camelopardalis: 'cam', cancri: 'cnc',
+  capricorni: 'cap', carinae: 'car', cassiopeiae: 'cas', centauri: 'cen', cephei: 'cep', ceti: 'cet',
+  chamaeleontis: 'cha', circini: 'cir', columbae: 'col', corvi: 'crv', crateris: 'crt', crucis: 'cru', cygni: 'cyg',
+  delphini: 'del', doradus: 'dor', draconis: 'dra', equulei: 'equ', eridani: 'eri', fornacis: 'for', geminorum: 'gem',
+  gruis: 'gru', herculis: 'her', horologii: 'hor', hydrae: 'hya', hydri: 'hyi', indi: 'ind', lacertae: 'lac',
+  leonis: 'leo', leporis: 'lep', librae: 'lib', lupi: 'lup', lyncis: 'lyn', lyrae: 'lyr', majoris: 'cma', mensae: 'men',
+  microscopii: 'mic', monocerotis: 'mon', muscae: 'mus', normae: 'nor', octantis: 'oct', ophiuchi: 'oph', orionis: 'ori',
+  pavonis: 'pav', pegasi: 'peg', persei: 'per', phoenicis: 'phe', pictoris: 'pic', piscium: 'psc', austrini: 'psa',
+  puppis: 'pup', pyxidis: 'pyx', reticuli: 'ret', sagittae: 'sge', sagittarii: 'sgr', scorpii: 'sco', sculptoris: 'scl',
+  scuti: 'sct', serpentis: 'ser', sextantis: 'sex', tauri: 'tau', telescopii: 'tel', trianguli: 'tri', tucanae: 'tuc',
+  velorum: 'vel', venaticorum: 'cvn', virginis: 'vir', volantis: 'vol', vulpeculae: 'vul',
+};
+
+/** Genitives a word alone cannot name: "minoris" ends both Canis Minoris and Leonis Minoris, "australis" three, and so on. */
+const GENITIVE_PHRASES: Record<string, string> = {
+  'canes venatici': 'cvn', 'canum venaticorum': 'cvn', 'canis major': 'cma', 'canis minor': 'cmi', 'canis majoris': 'cma', 'canis minoris': 'cmi',
+  'coma berenices': 'com', 'comae berenices': 'com', 'corona australis': 'cra', 'coronae australis': 'cra', 'corona borealis': 'crb', 'coronae borealis': 'crb', 'leo minor': 'lmi',
+  'leonis minoris': 'lmi', 'piscis austrinus': 'psa', 'piscis austrini': 'psa', 'triangulum australe': 'tra', 'trianguli australis': 'tra',
+  'ursa major': 'uma', 'ursa minor': 'umi', 'ursae majoris': 'uma', 'ursae minoris': 'umi',
+};
+
+/**
+ * The keys a typed query answers to: its own key, and the same with every constellation genitive
+ * replaced by the catalogue's abbreviation ("Tau Ceti" also as "tau cet", "Tau Ceti g" as
+ * "tau cet g", since the catalogue writes "τ Cet"). The plain key is first: it is the one to
+ * search when the words are names, not constellations.
+ */
+export function queryKeys(q: string): string[] {
+  const k = normKey(q);
+  const words = q.trim().split(/[\s_-]+/);
+  const out: string[] = [];
+  for (let i = 0; i < words.length;) {
+    const w = words[i].toLowerCase();
+    const next = i + 1 < words.length ? `${w} ${words[i + 1].toLowerCase()}` : '';
+    const ab = GENITIVE_PHRASES[next] ?? GENITIVES[normKey(w)];
+    if (ab) { out.push(ab); i += GENITIVE_PHRASES[next] ? 2 : 1; }
+    else { out.push(w); i++; }
+  }
+  const kv = normKey(out.join(' '));
+  return kv.length >= 2 && kv !== k ? [k, kv] : [k];
+}
+
+/**
+ * How a name matches a typed query by normalised key: 0 exact ("η Car" against the keys of
+ * "eta carinae"), else the typed key (of 3 letters or more) starting the name's key, else -1.
+ */
+export function normScore(name: string, keys: string[]): number {
+  return scoreKey(normKey(name), keys);
+}
+
+/** The match of an already-normalised name key (`scoreKey(normKey(name), keys)`: `normScore`).
+ *  Separate so a caller that keeps the keys of many names (App.searchItems, Systems.search) pays
+ *  for `normKey` once per name, not once per keystroke. */
+export function scoreKey(nk: string, keys: string[]): number {
+  if (nk.length < 2) return -1;
+  let best = -1;
+  for (const k of keys) {
+    if (nk === k) return 0;
+    if (k.length >= 3 && nk.startsWith(k)) { const s = 1 + nk.length / 100; if (best < 0 || s < best) best = s; }
+  }
+  return best;
+}
+
+/**
+ * What people type that the data answers to under other names. Every target is a real name in the
+ * data (an app object, a catalogue designation); nothing here invents an object. Keyed by the
+ * typed name's key: `App.searchItems` finds an alias hit and scores the real names as typed.
+ */
+export const SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  sol: ['Sun'],                                          // "Sol", the Sun's Latin name: Solaris is another star
+  iss: ['International Space Station'],
+  alphacentauri: ['Rigil Kentaurus', 'Toliman'],         // α1 and α2 Cen, the catalogue's own names
+  alphacen: ['Rigil Kentaurus', 'Toliman'],
+};
+
 export type CatCode = 's' | 'w' | 'd' | 'p' | 't' | 'x' | 'q' | 'g' | 'c' | 'n';
 
 export interface CatalogCategory {
@@ -120,19 +204,14 @@ export class CatalogSearch {
   }
 
   /**
-   * Objects with a name starting with `q` (normalised), best first: exact names, then the more
-   * notable, then shorter names. One hit per object.
+   * The chunks whose key range can hold keys with prefix `k` scanned into `hits` (one hit per
+   * object; `exact` true when the stored key is the prefix itself). `seen` keeps hits of an
+   * earlier key of the same query out.
    */
-  async query(q: string, limit = 14): Promise<CatalogHit[]> {
-    const m = await this.load();
-    const k = normKey(q);
-    if (!m || k.length < 2) return [];
+  private async scan(m: CatalogManifest, k: string, hits: CatalogHit[], seen: Set<string>): Promise<void> {
     const first = m.indexChunks;
-    // the chunks whose key range can hold keys with this prefix (at most three)
     // (equal keys may straddle a chunk boundary, so start one chunk before the first >= k)
     let i = Math.max(0, lowerBound(first, k) - 1);
-    const hits: CatalogHit[] = [];
-    const seen = new Set<string>();
     for (let n = 0; n < 3 && i < first.length; n++, i++) {
       if (n > 0 && !first[i].startsWith(k) && first[i] > k) break;
       const c = await this.chunk(i);
@@ -141,9 +220,25 @@ export class CatalogSearch {
         if (seen.has(id)) continue;
         seen.add(id);
         hits.push({ label: c.labels[j], code: c.codes[j], row: c.rows[j], rank: c.ranks[j], exact: c.keys[j] === k });
-        if (hits.length > 600) break;
+        if (hits.length > 600) return;
       }
-      if (hits.length > 600) break;
+      if (hits.length > 600) return;
+    }
+  }
+
+  /**
+   * Objects with a name starting with `q` (normalised), best first: exact names, then the more
+   * notable, then shorter names. One hit per object. A query typed with a constellation genitive
+   * ("Tau Ceti") is also looked up as the catalogue writes it ("τ Cet"): queryKeys.
+   */
+  async query(q: string, limit = 14): Promise<CatalogHit[]> {
+    const m = await this.load();
+    if (!m) return [];
+    const hits: CatalogHit[] = [];
+    const seen = new Set<string>();
+    for (const k of queryKeys(q)) {
+      if (k.length < 2) continue;
+      await this.scan(m, k, hits, seen);
     }
     hits.sort((a, b) => Number(b.exact) - Number(a.exact) || a.rank - b.rank || a.label.length - b.label.length || (a.label < b.label ? -1 : 1));
     return hits.slice(0, limit);

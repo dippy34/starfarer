@@ -54,7 +54,7 @@ import { type BodyJson, SolarSystem } from '../universe/SolarSystem';
 import { StarCatalog } from '../universe/StarCatalog';
 import { CatalogStar, NamedStars } from '../universe/Stars';
 import { Catalog } from '../universe/Catalog';
-import { normKey } from '../universe/CatalogSearch';
+import { normKey, normScore, queryKeys, scoreKey, SEARCH_ALIASES } from '../universe/CatalogSearch';
 import { CameraRig, sunlitSide } from './CameraRig';
 import { Game } from '../game/Game';
 import { fmtLight, fmtTime, MAX_RATE, spinOf, WARP_STEPS } from '../game/Flight';
@@ -1976,6 +1976,8 @@ export class App {
 
   private ringSpot: RingSpot | null = null;
   private landmarkCache = new Map<string, Landmark>();
+  /** normKey of the named stars' names, once each: the search runs per keystroke over them all */
+  private namedKeys = new Map<string, string>();
 
   /** Named places on the landing terrain (Olympus Mons, the Apollo 11 site …). */
   get landmarks(): Landmark[] {
@@ -2030,10 +2032,15 @@ export class App {
 
   searchItems(q: string): Destination[] {
     const n = q.toLowerCase();
+    const keys = queryKeys(q);
+    // (what people type that the data answers to under other names: "Sol" is the Sun, "Alpha
+    // Centauri" is Rigil Kentaurus and Toliman)
+    const alias = (SEARCH_ALIASES[normKey(q)] ?? []).map((a) => a.toLowerCase());
     const out: { label: string; detail: string; id: string; score: number }[] = [];
     const score = (name: string) => {
       const l = name.toLowerCase();
       if (l === n) return 0;
+      if (alias.includes(l)) return 0;
       if (l.startsWith(n)) return 1 + l.length / 100;
       if (l.includes(n)) return 2 + l.length / 100;
       return -1;
@@ -2059,16 +2066,32 @@ export class App {
       if (Number.isFinite(best)) out.push({ label: h.name, detail: h.supermassive ? 'supermassive black hole' : 'black hole', id: `bh:${i}`, score: best - 0.1 + (fame >= 0 ? fame * 0.001 : 0.05) });
       if (h.companion && score(h.companion.name) >= 0) out.push({ label: h.companion.name, detail: 'star orbiting a black hole', id: `bhc:${i}`, score: score(h.companion.name) + 0.3 });
     });
+    // (each name's key built once: normKey for them all is about 80 ms, once, not per keystroke)
+    if (!this.namedKeys.size && this.named.list.length) {
+      for (const st of this.named.list) for (const nm of st.names) if (!this.namedKeys.has(nm)) this.namedKeys.set(nm, normKey(nm));
+    }
     for (const st of this.named.list) {
       let best = -1;
       for (const nm of st.names) {
-        const s = score(nm);
-        if (s >= 0 && (best < 0 || s < best)) best = s;
+        const s = score(nm), ns = this.namedKeys ? scoreKey(this.namedKeys.get(nm)!, keys) : normScore(nm, keys);
+        // (the Greek-letter designations a person types spelled out: "eta carinae" finds "η Car")
+        const sc = s >= 0 && ns >= 0 ? Math.min(s, ns) : s >= 0 ? s : ns;
+        if (sc >= 0 && (best < 0 || sc < best)) best = sc;
       }
       const planets = best >= 0 ? this.systems.knownPlanets(st.index) : 0;
       if (best >= 0) out.push({ label: st.names[0], detail: planets ? `star with ${planets} known planet${planets > 1 ? 's' : ''} · ${st.names.slice(1, 3).join(', ')}` : `star · ${st.names.slice(1, 3).join(', ')}`, id: `star:${st.index}`, score: best + (st.proper ? 0 : 0.3) });
     }
     out.push(...this.systems.search(q, score));
+    // a generated planet, "Vega b": the star's own system, generated (a confirmed planet is found above)
+    const gm = /^(.+)\s+([b-k])$/i.exec(q.trim());
+    if (gm) {
+      const names = [gm[1].toLowerCase(), ...(SEARCH_ALIASES[normKey(gm[1])] ?? []).map((a) => a.toLowerCase())];
+      const st = this.named.list.find((s) => s.names.some((nm) => names.includes(nm.toLowerCase())));
+      if (st) {
+        const pl = this.systems.searchGenerated(q, this.getStar(this.catalog, st.node, st.slot));
+        if (pl) out.push({ label: pl.name, detail: `generated planet of ${st.names[0]}`, id: `gen:${encodeURIComponent(pl.name)}`, score: 0.15 });
+      }
+    }
     this.deepSky.objects.forEach((o, i) => {
       const sc = Math.min(...[o.name, o.data.simbad, o.data.simbad.replace(/\s+/g, ''), o.kind].map(score).filter((x) => x >= 0));
       if (Number.isFinite(sc)) out.push({ label: o.name, detail: `${o.data.kind === 'open' || o.data.kind === 'globular' ? `${o.data.kind} cluster` : 'nebula'} · ${Math.round(o.data.distPc * 3.2616).toLocaleString()} ly`, id: `dso:${i}`, score: sc + 0.02 });
@@ -2143,6 +2166,7 @@ export class App {
     if (kind === 'gx') return this.galaxies.galaxies[Number(v)] ?? null;
     if (kind === 'dso') return this.deepSky.objects[Number(v)] ?? null;
     if (kind === 'xp') return this.exoPlanet(Number(v), Number(id.split(':')[2]));
+    if (kind === 'gen') return this.findByName(decodeURIComponent(v));
     if (kind === 'place' && v === 'rings') return this.findByName("Saturn's rings");
     if (kind === 'lm') return this.landmarks[Number(v)] ?? null;
     if (kind === 'cat') return this.objCatalog?.resolve(id) ?? null;
