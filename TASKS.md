@@ -172,7 +172,9 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/ship-instruments`: the ship's instruments on a phone, in the new design
 
-- **Status:** open. Medium to large. Design, Part 2 (`HANDOFF.md` "Design", "Next screens", item 1).
+- **Status:** done, live on 25 Nov 2026 ("Ship instruments on a phone: one slim strip in plain words"):
+  the outside AI's work in two tries, with the checker's fixes to two labels. Left for a later pass:
+  the drive's hint reads "Torch · 100 %" (fuel), and the top-left chip still says m/s.
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** flying on an upright phone, the ship's instruments take most of the top half of
   the screen, and they speak in m/s, "km up" and g. The owner: "the UI is taking up most of the
