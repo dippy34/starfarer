@@ -85,13 +85,19 @@ jobs:
 
       - run: npm ci
 
-      # (OpenCode's own snippet, with the account's id read from the repository secret)
+      # (OpenCode's own snippet, with the account's id read from the repository secret; an earlier
+      # message asked for the name OPENCODE_API_KEY, so that name is accepted too)
       - name: Sign in to OpenCode
         env:
           AUDIENCE: https://opencode.ai/console
-          CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID }}
+          CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID || secrets.OPENCODE_API_KEY }}
+          HAS_CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID != '' }}
+          HAS_API_KEY: ${{ secrets.OPENCODE_API_KEY != '' }}
         run: |
-          if [ -z "$CLIENT_ID" ]; then echo "The repository secret OPENCODE_CLIENT_ID is missing."; exit 1; fi
+          echo "repository secrets set: OPENCODE_CLIENT_ID $HAS_CLIENT_ID, OPENCODE_API_KEY $HAS_API_KEY"
+          if [ -z "$CLIENT_ID" ]; then
+            echo "Neither repository secret OPENCODE_CLIENT_ID nor OPENCODE_API_KEY is set (Settings, Secrets and variables, Actions, Repository secrets)."; exit 1
+          fi
           oidc=$(curl -sSf --oauth2-bearer "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value)
           token=$(curl -sSf https://opencode.ai/console/auth/oauth/token \
