@@ -377,7 +377,9 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
         W.fwd.copy(s); W.pitch = 0;
       }, away);
       const f = await page.evaluate(() => window.app.frameCount);
-      await page.waitForFunction((x) => window.app.frameCount >= x, f + 90, { timeout: 600000 });
+      // (90 frames of the night sky from the valley floor, the slowest view of the suite: 6 to 7 s a frame on GitHub's
+      // runners on 25 Nov, so 600 s was too short four runs in a row, the suite ending there; the frames are the measure)
+      await page.waitForFunction((x) => window.app.frameCount >= x, f + 90, { timeout: 1800000 });
       return page.evaluate(() => {
         const a = window.app, rel = a.system.sun.upos.sub(a.rig.upos, a.rig.vel.clone());
         const up = a.rig.upos.sub(a.walk.centre, a.rig.vel.clone()).normalize();

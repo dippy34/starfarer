@@ -32,9 +32,11 @@ const card = (page) => page.evaluate(() => {
     facts: [...c.querySelectorAll('.facts dt')].map((d) => d.textContent),
     type: [...c.querySelectorAll('.facts dl div')].find((d) => d.querySelector('dt').textContent === 'Type')?.querySelector('dd').textContent ?? '',
     worked: [...c.querySelectorAll('.worked details')].map((d) => ({ label: d.querySelector('span').textContent, text: d.querySelector('b').textContent, math: d.querySelector('code').textContent, open: d.open })),
-    add: shown(c.querySelector('[data-power="add"]')),
+    // (a power "is offered" when it works: its button is shown and not dimmed; a dimmed one is shown, with its reason on a tap)
+    add: shown(c.querySelector('[data-power="add"]')) && c.querySelector('[data-power="add"]').getAttribute('aria-disabled') !== 'true',
+    addDimmed: shown(c.querySelector('[data-power="add"]')) && c.querySelector('[data-power="add"]').getAttribute('aria-disabled') === 'true',
     offers: [...c.querySelectorAll('[data-panel="add"] .row')].filter(shown).map((r) => r.querySelector('b').textContent),
-    remove: shown(c.querySelector('[data-act="remove"]')),
+    remove: shown(c.querySelector('[data-act="remove"]')) && c.querySelector('[data-act="remove"]').getAttribute('aria-disabled') !== 'true',
     toast: document.querySelector('#hud .hud-toast').textContent,
   };
 });
@@ -139,7 +141,7 @@ for (const kind of ['phone', 'desk']) {
   c = await card(page);
   const round = c.worked.find((w) => w.label === 'Once round Earth');
   check(on('its details say it was made, and work out its orbit like any moon\'s'), c.type === 'Moon (made by you)' && !!round && c.worked.some((w) => w.label === 'Surface gravity'), `${c.type}; ${round?.label} ${round?.text}`);
-  check(on('it can be removed like any world, and is not offered a moon of its own'), c.remove && !c.add);
+  check(on('it can be removed like any world, and is not offered a moon of its own'), c.remove && !c.add && c.addDimmed);
   await page.screenshot({ path: path.join(outDir, `whatif-${kind}-details.png`) });
   await press(page, '#hud .card [data-act="remove"]');
   await frames(page, 6);
@@ -161,7 +163,7 @@ for (const kind of ['phone', 'desk']) {
   await frames(page, 3);
   await details(page);
   c = await card(page);
-  check(on("the Moon is not offered a moon of its own"), c.title === 'Moon' && !c.add && c.remove && c.worked.length >= 4, `${c.title}: ${c.worked.length} lines worked out`);
+  check(on("the Moon is not offered a moon of its own"), c.title === 'Moon' && !c.add && c.addDimmed && c.remove && c.worked.length >= 4, `${c.title}: ${c.worked.length} lines worked out`);
   await ctx.close();
 }
 
