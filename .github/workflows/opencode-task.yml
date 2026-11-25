@@ -241,6 +241,9 @@ jobs:
           opencode --version
 
       - name: Run the task
+        env:
+          AUDIENCE: https://opencode.ai/console
+          CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID || secrets.OPENCODE_API_KEY }}
         run: |
           if [ "$TASK" = "smoke-test" ]; then
             prompt="Reply with one line: 'Signed in, and the model works.' Do not read, change or create any files."
@@ -251,11 +254,45 @@ jobs:
             fi
           fi
           mkdir -p "$OUT/pictures" out/pictures
-          # (the OIDC request variables stay with the sign-in step, not with the AI)
+          # The OpenCode pass lasts a limited time, and passes run out together (two runs of 25 Nov,
+          # signed in 10 minutes apart, both stopped at 15:19 with "access token has expired"). So the
+          # AI works in rounds: when its pass runs out, this step signs in again and the AI carries on
+          # in the same session (--continue), for up to 105 minutes in all.
+          signin() {
+            local oidc token
+            oidc=$(curl -sSf --oauth2-bearer "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value) || return 1
+            token=$(curl -sSf https://opencode.ai/console/auth/oauth/token \
+              -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+              -d subject_token_type=urn:ietf:params:oauth:token-type:jwt \
+              -d client_id="$CLIENT_ID" \
+              -d subject_token="$oidc" | jq -r .access_token) || return 1
+            if [ -z "$token" ] || [ "$token" = "null" ]; then return 1; fi
+            echo "::add-mask::$token"
+            export OPENCODE_API_KEY="$token"
+          }
           set +e
-          env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
-            timeout 110m opencode run --model "$MODEL" "$prompt" 2>&1 | tee "$OUT/opencode.log"
-          echo "opencode exit ${PIPESTATUS[0]}" | tee -a "$OUT/opencode.log"
+          deadline=$(( $(date +%s) + 105 * 60 ))
+          round=1
+          : > "$OUT/opencode.log"
+          while :; do
+            left=$(( deadline - $(date +%s) ))
+            if [ "$left" -lt 180 ]; then echo "Out of time." | tee -a "$OUT/opencode.log"; break; fi
+            if [ "$round" -eq 1 ]; then args=(run --model "$MODEL" "$prompt")
+            else args=(run --continue --model "$MODEL" "Your access was renewed. Carry on with the task exactly where you stopped, and finish as asked: npm run check, then REPORT.md."); fi
+            # (the OIDC request variables stay with this step, not with the AI)
+            env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
+              timeout "$left" opencode "${args[@]}" 2>&1 | tee "$OUT/round.log"
+            rc=${PIPESTATUS[0]}
+            cat "$OUT/round.log" >> "$OUT/opencode.log"
+            echo "opencode exit $rc (round $round)" | tee -a "$OUT/opencode.log"
+            if grep -q "access token has expired" "$OUT/round.log" && [ "$round" -lt 8 ]; then
+              if signin; then echo "Signed in again; the AI carries on." | tee -a "$OUT/opencode.log"; round=$((round + 1)); continue; fi
+              echo "Signing in again failed." | tee -a "$OUT/opencode.log"
+            fi
+            break
+          done
+          rm -f "$OUT/round.log"
 
       - name: Collect the result
         if: always()
