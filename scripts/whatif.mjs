@@ -10,7 +10,7 @@
 // camera and runs time on, and this measures where the moon starts against the eye and times a quarter of its
 // period by the clock; scripts/live.mjs watches changes.)
 // Usage: node scripts/whatif.mjs [baseUrl] [outDir]
-import { collectErrors, launchBrowser } from './lib/browser.mjs';
+import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import { phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,9 +41,13 @@ const card = (page) => page.evaluate(() => {
 const details = async (page) => {
   if (await page.evaluate(() => document.querySelector('#hud .card .facts').hidden)) await page.locator('#hud .card [data-details]').tap().catch(() => page.locator('#hud .card [data-details]').click());
   await page.waitForSelector('#hud .card .facts:not([hidden])');
+  // (the facts as measured and their working are under More science, a tap below the plain lines)
+  if (await page.evaluate(() => document.querySelector('#hud .card .science')?.hidden)) await page.locator('#hud .card [data-science]').tap().catch(() => page.locator('#hud .card [data-science]').click());
+  await page.waitForSelector('#hud .card .science:not([hidden])');
   await frames(page, 2);
 };
-const press = async (page, sel) => { const b = page.locator(sel); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
+// (what is on the selection's card under its bar is a tap on the bar away: openCard)
+const press = async (page, sel) => { if (/\.card \[data-(power|act="(move|remove|share|centre)")/.test(sel)) await openCard(page); const b = page.locator(sel); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
 /** Changes not watched (More: "Show me what happens", off). */
 const quiet = async (page) => {
   await press(page, '#hud .hud-tabs [data-tab="more"]');

@@ -122,7 +122,10 @@ const centreOf = async (page, sel) => {
   check('the tab bar is at the bottom, the card just above it', lay.tabs.b <= H && lay.tabs.b > H - 20 && lay.card.b <= lay.tabs.t && lay.card.b > lay.tabs.t - 20, JSON.stringify([lay.tabs, lay.card]));
   check('upright, the view opens up (70 degrees) and the Earth fits across with room to spare', Math.abs(lay.fov - 70) < 0.5 && lay.radiusPx * 2 < W * 0.75 && lay.radiusPx * 2 > W * 0.45, `fov ${lay.fov.toFixed(1)}, disc ${(lay.radiusPx * 2).toFixed(0)} px of ${W}`);
   check('the Earth is clear of the chips and the card', lay.earth.y - lay.radiusPx > lay.place.b && lay.earth.y + lay.radiusPx < lay.card.t, JSON.stringify({ earth: lay.earth, r: lay.radiusPx, card: lay.card.t }));
-  check('...in the middle of the room they leave', Math.abs(lay.earth.y - (lay.place.b + lay.card.t) / 2) < 6 && Math.abs(lay.earth.x - W / 2) < 1, `at y ${lay.earth.y.toFixed(0)}, room ${lay.place.b.toFixed(0)}..${lay.card.t.toFixed(0)}`);
+  // (the room kept for the card is the card's opened to its buttons, 225 px over the tab bar, CARD_ROOM in src/ui/Hud.ts:
+  // folded it is a slimmer bar, and the subject does not jump when it opens)
+  const room = lay.tabs.t - 225;
+  check('...in the middle of the room they leave, the card\'s room that of the card opened to its buttons', Math.abs(lay.earth.y - (lay.place.b + room) / 2) < 6 && Math.abs(lay.earth.x - W / 2) < 1 && room < lay.card.t, `at y ${lay.earth.y.toFixed(0)}, room ${lay.place.b.toFixed(0)}..${room.toFixed(0)}, the folded card from ${lay.card.t.toFixed(0)}`);
   const small = (await page.evaluate(() => window.probe.controls())).filter((c) => c.w < 43.5 || c.h < 43.5);
   check('every control is big enough for a finger (44 px)', small.length === 0, JSON.stringify(small));
   check('the interface speaks of fingers', lay.touchClass);
@@ -304,14 +307,58 @@ const centreOf = async (page, sel) => {
   const f = await fingers(page);
   const tapOn = async (sel) => { await f.tap(await centreOf(page, sel)); await f.frames(1); };
 
-  // the card
+  // the card: folded, a slim bar (its name, a line in plain words, Go there) that leaves the view to space; one tap
+  // on it opens the rest, on a phone upright and on its side and at a desktop's size: Look at, Share, the powers,
+  // a few facts in plain words, and the science (the facts as measured) one more tap away under More science
+  await page.evaluate(() => window.app.select(window.app.findByName('Earth')));
+  await f.frames(3);
+  const cardLook = () => page.evaluate(() => {
+    const card = document.querySelector('#hud .card'), r = card.getBoundingClientRect();
+    const seen = (sel) => { const e = card.querySelector(sel); if (!e) return false; const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0 && b.top >= 0 && b.bottom <= innerHeight && !!document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.closest('.card'); };
+    return {
+      W: innerWidth, H: innerHeight, h: Math.round(r.height), name: card.querySelector('h2').textContent, line: card.querySelector('.card-title p').textContent,
+      go: seen('[data-act="go"]') && card.querySelector('[data-act="go"]').getBoundingClientRect().height >= 44, more: seen('[data-details]'),
+      look: seen('[data-act="centre"]'), share: seen('[data-act="share"]'), mass: seen('[data-power="mass"]'), facts: seen('.facts .plain li'),
+      plain: [...card.querySelectorAll('.facts .plain li span')].map((e) => e.textContent), science: seen('.facts dl div'), toggle: seen('[data-science]'),
+    };
+  });
+  for (const [w, h, how] of [[390, 844, 'upright'], [844, 390, 'on its side'], [1280, 720, 'at a desktop size']]) {
+    await page.setViewportSize({ width: w, height: h });
+    await f.frames(3);
+    await page.waitForTimeout(300);
+    const bar = await cardLook();
+    // (the bar: no more than 9 % of an upright phone's height, 80 px either way up; nothing else of the card shown)
+    check(`${how}: the card is a slim bar, its name, a line in plain words and Go there, and nothing else`,
+      bar.name === 'Earth' && /^Planet · [\d,.]+ (km|million km) away$/.test(bar.line) && bar.go && bar.more && bar.h <= Math.min(80, 0.09 * Math.max(bar.H, 844)) && !bar.look && !bar.share && !bar.mass && !bar.facts,
+      JSON.stringify(bar));
+    await tapOn('.card [data-details]');
+    const open = await cardLook();
+    // (More science is at the foot of the facts: where they are taller than the room, as on a phone on its side, the list scrolls to it)
+    // (the facts' own list scrolled, not the page: scrollIntoView would move the interface's boxes too)
+    const toggle = await page.evaluate(() => { const t = document.querySelector('.card [data-science]'), f = document.querySelector('.card .facts'); if (t && f) f.scrollTop = f.scrollHeight; return !!t; });
+    await f.frames(1);
+    const reach = await cardLook();
+    check(`${how}: one tap on it opens the rest: Look at, Share, the powers and the facts in plain words, all on the screen; the science still folded, More science at the foot of the facts`,
+      open.look && open.share && open.mass && open.facts && !open.science && open.plain.includes('How far') && open.plain.includes('Size') && toggle && reach.toggle && !reach.science,
+      JSON.stringify({ ...open, toggle: reach.toggle }));
+    if (reach.toggle) await tapOn('.card [data-science]');
+    await page.evaluate(() => { const f = document.querySelector('.card .facts'), d = f?.querySelector('dl div'); if (f && d) f.scrollTop += d.getBoundingClientRect().top - f.getBoundingClientRect().top - 8; });
+    await f.frames(1);
+    const science = await cardLook();
+    check(`${how}: More science unfolds every fact as measured`, science.science, JSON.stringify({ science: science.science }));
+    if (how === 'upright') await page.screenshot({ path: path.join(outDir, 'touch-6-card-open.png'), timeout: 300000 });
+    await tapOn('.card [data-details]');
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await f.frames(3);
   await tapOn('.card [data-details]');
   let facts = await page.evaluate(() => [...document.querySelectorAll('.card .facts dt')].map((d) => d.textContent));
   check('Details unfolds the facts of what is selected', facts.includes('Radius') && facts.includes('Distance') && facts.length > 5, facts.join(', '));
   await page.screenshot({ path: path.join(outDir, 'touch-6-details.png'), timeout: 300000 });
   // another body's facts open at their top, not where the last one's were scrolled to (playtest D2:
-  // the Moon's opened scrolled down, its Distance out of sight)
+  // the Moon's opened scrolled down, its Distance out of sight). (The science unfolded: the plain lines alone do not scroll.)
   {
+    if (await page.evaluate(() => document.querySelector('.card .science')?.hidden)) await tapOn('.card [data-science]');
     const down = await page.evaluate(() => { const f = document.querySelector('.card .facts'); f.scrollTop = f.scrollHeight; return f.scrollTop; });
     await page.evaluate(() => window.app.select(window.app.findByName('Moon')));
     await f.frames(2);
@@ -463,6 +510,10 @@ const centreOf = async (page, sel) => {
   await ready(page);
   const f = await fingers(page);
   await page.evaluate(() => { document.querySelector('.hud-coach [data-coach]')?.click(); });
+  // (the card opened: folded it is a bar at the foot, and the clear part is nearly the whole view; open, it
+  // stands at the left, and the centre moves over to the right of it)
+  const openTheCard = (p) => p.waitForFunction(() => { const c = document.querySelector('#hud .card.on'); if (c && !c.classList.contains('open')) c.querySelector('[data-details]').click(); return !!c; }, null, { timeout: 120000 });
+  await openTheCard(page);
   await page.waitForFunction(() => Math.abs(window.app.view.cx) > 30 || Math.abs(window.app.view.cy) > 30, null, { timeout: 120000 });
   await f.frames(20);
   /** the mean light (0..255) of the screen's picture (the screenshot a player saves) in a square of `r` px about each point */
@@ -545,7 +596,8 @@ const centreOf = async (page, sel) => {
   await hf.frames(30);
   const h = await hole.evaluate(() => {
     const a = window.app, e = a.selection, p = a.project(e.upos.sub(a.rig.upos)), W = window.innerWidth, H = window.innerHeight;
-    return { name: e?.name, p, W, H, cx: a.view.cx, cy: a.view.cy };
+    const part = a.hud.clearPart?.();
+    return { name: e?.name, p, W, H, cx: a.view.cx, cy: a.view.cy, part: part && { x: part.x, y: part.y } };
   });
   const lumH = await hole.evaluate(async (h) => {
     const img = new Image();
@@ -560,7 +612,8 @@ const centreOf = async (page, sel) => {
     const best = (x0, y0) => { let m = 0; for (let y = y0 - 60; y <= y0 + 60; y += 6) for (let x = x0 - 60; x <= x0 + 60; x += 6) { const d = g.getImageData(Math.round(Math.max(0, x) * k), Math.round(Math.max(0, y) * k), 4, 4).data; m = Math.max(m, (d[0] + d[1] + d[2]) / 3); } return m; };
     return { at: best(h.p.x, h.p.y), middle: best(h.W / 2 - 130, h.H / 2 + 100) };
   }, h);
-  check('a black hole\'s disk is drawn where it is projected, with the centre off the middle', Math.hypot(h.cx, h.cy) > 40 && lumH.at > 40 && lumH.at > 2 * lumH.middle, JSON.stringify({ h, lumH }));
+  // (its card folded to a bar at the foot: the clear part is the view over it, its middle 30 to 40 px above the view's)
+  check('a black hole\'s disk is drawn where it is projected, with the centre off the middle, at the middle of the clear part', Math.hypot(h.cx, h.cy) > 30 && !!h.part && h.cx === h.part.x && h.cy === h.part.y && lumH.at > 40 && lumH.at > 2 * lumH.middle, JSON.stringify({ h, lumH }));
   await hole.screenshot({ path: path.join(outDir, 'touch-14-sideways-hole.png'), timeout: 300000 });
   await hole.close();
   await ctx.close();

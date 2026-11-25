@@ -7,7 +7,7 @@ import { C, G, gravity, type GravitySource, MSUN, makeSource } from '../sim/Grav
 import { conicOf, timeToRadius, type Conic } from '../sim/Kepler';
 import { Predictor } from '../sim/Predict';
 import { boostProper, flipAndBurn, lorentz } from '../sim/Relativity';
-import { type Atmosphere, type Drive, FlightCore, type FlightEvent, G0, SHIP_SPEC } from '../sim/ShipPhysics';
+import { type Atmosphere, type Drive, FlightCore, type FlightEvent, G0, SHIP_SPEC, type ShipSpec } from '../sim/ShipPhysics';
 import { Body, type SpaceObject } from '../universe/Body';
 import { ExoPlanet, starProps } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
@@ -150,7 +150,7 @@ export class Flight {
    */
   stopping: { steering: Steering; at: string } | null = null;
   /** end of the flight in progress (crash, horizon...): seconds left, then respawn */
-  ending: { ev: FlightEvent; t: number; total: number; title: string; text: string } | null = null;
+  ending: { ev: FlightEvent; t: number; total: number; title: string; text: string; report: EndReport } | null = null;
   /** seconds since the end sequence started (for the effects) */
   endingT = 0;
   onEvent: ((ev: FlightEvent) => void) | null = null;
@@ -1190,7 +1190,8 @@ export class Flight {
       horizon: ['NO RETURN', `You crossed the event horizon of ${name}. Every path now leads inward; the universe you knew is behind you for ever.`],
     };
     const [title, text] = msgs[ev.kind];
-    this.ending = { ev, t: ev.kind === 'horizon' ? 7 : 4.5, total: ev.kind === 'horizon' ? 7 : 4.5, title, text };
+    const report = endReport(ev, this.core.spec, this.ship.hullTemp);
+    this.ending = { ev, t: ev.kind === 'horizon' ? 7 : 4.5, total: ev.kind === 'horizon' ? 7 : 4.5, title, text, report };
     this.endingT = 0;
     this.ship.throttle = 0;
     if (app.vr.active) app.vr.flash(title);
@@ -1430,6 +1431,67 @@ const SAS_LABEL: Record<SasMode, string> = {
 };
 export function sasLabel(m: SasMode): string {
   return SAS_LABEL[m];
+}
+
+/**
+ * What the end of a flight says, in plain words and units people know (km/h, °C), for the event
+ * display (FlightHud.setEnd): every number from the ship's physics. `gauge`: the speed it hit at
+ * against the fastest a landing survives, both in km/h (a crash).
+ */
+export interface EndReport {
+  /** the kind of event, a word or two (shown in capitals) */
+  legend: string;
+  /** what happened, one sentence */
+  head: string;
+  gauge: { value: number; limit: number } | null;
+  /** a measured value or two: [what, value] */
+  readouts: [string, string][];
+  /** the one thing to do next */
+  next: string;
+  /** where the flight starts again ("the Moon") */
+  back: string;
+}
+
+/** km/h, a whole number: "57", "5,760" */
+export const kmh = (mps: number): number => Math.round(mps * 3.6);
+/** the fastest whole km/h under a speed limit (12 m/s, 43.2 km/h: 43) */
+export const kmhUnder = (mps: number): number => Math.floor(mps * 3.6);
+const grouped = (n: number): string => n.toLocaleString('en-US');
+const theName = (n: string): string => (n === 'Sun' || n === 'Moon' ? `the ${n}` : n);
+
+export function endReport(ev: FlightEvent, spec: ShipSpec, hullK: number): EndReport {
+  const name = ev.src ? theName(ev.src.name) : 'the ground';
+  const back = ev.src ? theName(ev.src.name) : 'where you were';
+  switch (ev.kind) {
+    case 'burnup': {
+      const c = (k: number) => `${grouped(Math.round(k - 273.15))} °C`;
+      return {
+        legend: 'Burned up', head: `The ship got too hot coming into the air of ${name}.`, gauge: null,
+        readouts: [['Hull reached', c(Math.max(hullK, spec.maxHullTemp))], ['Hull can take', c(spec.maxHullTemp)]],
+        next: 'Next time, slow down before you reach the air, or come in at a shallower angle.', back,
+      };
+    }
+    case 'spaghetti':
+      return {
+        legend: 'Torn apart', head: `The gravity of ${name} tore the ship apart.`, gauge: null,
+        readouts: [['Why', `it pulled the near end much harder than the far end, ${spec.length} m away`]],
+        next: 'Next time, keep your distance: a small black hole stretches a ship to pieces long before you reach it.', back,
+      };
+    case 'horizon':
+      return {
+        legend: 'No return', head: `You fell into ${name}.`, gauge: null,
+        readouts: [['Why', 'inside its edge, every path leads further in; not even light comes back out']],
+        next: 'The flight starts again outside.', back,
+      };
+    default: {
+      const v = kmh(ev.speed), lim = kmhUnder(spec.crashSpeed);
+      return {
+        legend: 'Crashed', head: `You hit ${name} at ${grouped(v)} km/h.`, gauge: { value: v, limit: lim },
+        readouts: [['Your speed', `${grouped(v)} km/h`], ['Safe landing', `under ${lim} km/h`]],
+        next: `Next time, point the engine at the ground and fire it as you come down, until you are slower than ${lim} km/h.`, back,
+      };
+    }
+  }
 }
 
 export function fmtSpeed(v: number): string {

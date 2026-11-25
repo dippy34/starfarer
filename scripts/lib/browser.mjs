@@ -39,6 +39,28 @@ function launchChromium() {
  * failed requests. (A failed request is reported from the response, which names the URL; the
  * browser's own console line for it does not.)
  */
+/**
+ * The selection's card, opened if it is folded to its bar (its name, a line in plain words, Go there):
+ * Look at, Share, the powers and the facts are one tap on it away (HANDOFF.md "Design"). A tap where
+ * the page has a touch screen, else a click. Nothing to do with no card, or one already open.
+ */
+export async function openCard(page) {
+  const folded = () => page.evaluate(() => { const c = document.querySelector('#hud .card'); return !!c && c.classList.contains('on') && !c.classList.contains('open'); });
+  // (a card drawn for a selection the app has not yet given it folds again when the app's word arrives: tapped
+  // again then, a few times; each wait is for the app's frames, which on a runner can be seconds each)
+  for (let i = 0; i < 8 && (await folded()); i++) {
+    const b = page.locator('#hud .card [data-details]');
+    await b.tap().catch(() => b.click());
+    await page.waitForFunction(() => {
+      const a = window.app, w = (window.__cardWait ??= { f: a.frameCount, t: Date.now() });
+      // (a few of the app's frames; or, where a check holds the app's loop, the card open and a few seconds)
+      const done = a.frameCount > w.f + 2 || (document.querySelector('#hud .card')?.classList.contains('open') && Date.now() > w.t + 3000);
+      if (done) delete window.__cardWait;
+      return done;
+    }, null, { timeout: 600000, polling: 100 });
+  }
+}
+
 export function collectErrors(page, errors) {
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
