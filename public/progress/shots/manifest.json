@@ -1,5 +1,39 @@
 [
  {
+  "id": "20261125-145102-tap-a-galaxy-where-you-see-it",
+  "at": "2026-11-25T14:51:02+00:00",
+  "kind": "team",
+  "title": "Tap a galaxy where you see it",
+  "text": "The cheap team (Kimi K3.1 Pro) made a tap on a galaxy select it: the Milky Way from outside, and Andromeda instead of the small galaxy in front of it. Being tested now; not live yet.",
+  "link": "https://github.com/dippy34/starfarer/actions/runs/45632467098",
+  "pictures": [
+   {
+    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Before: Milky Way, nothing selected"
+   },
+   {
+    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Before: Andromeda, nothing selected"
+   },
+   {
+    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-3.jpg",
+    "w": 960,
+    "h": 540,
+    "caption": "After: Milky Way selected"
+   },
+   {
+    "src": "20261125-145102-tap-a-galaxy-where-you-see-it-4.jpg",
+    "w": 960,
+    "h": 540,
+    "caption": "After: Andromeda selected"
+   }
+  ]
+ },
+ {
   "id": "20261125-141848-after-a-crash-the-wreck-stays-on",
   "at": "2026-11-25T14:18:48+00:00",
   "kind": "live",
