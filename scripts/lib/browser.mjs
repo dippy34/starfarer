@@ -39,6 +39,19 @@ function launchChromium() {
  * failed requests. (A failed request is reported from the response, which names the URL; the
  * browser's own console line for it does not.)
  */
+/**
+ * The selection's card, opened if it is folded to its bar (its name, a line in plain words, Go there):
+ * Look at, Share, the powers and the facts are one tap on it away (HANDOFF.md "Design"). A tap where
+ * the page has a touch screen, else a click. Nothing to do with no card, or one already open.
+ */
+export async function openCard(page) {
+  const folded = await page.evaluate(() => { const c = document.querySelector('#hud .card'); return !!c && c.classList.contains('on') && !c.classList.contains('open'); });
+  if (!folded) return;
+  const b = page.locator('#hud .card [data-details]');
+  await b.tap().catch(() => b.click());
+  await page.waitForFunction(() => document.querySelector('#hud .card')?.classList.contains('open'), null, { timeout: 600000 });
+}
+
 export function collectErrors(page, errors) {
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
