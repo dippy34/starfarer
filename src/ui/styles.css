@@ -6,6 +6,49 @@
  */
 :root {
   color-scheme: dark;
+  /*
+   * Starfarer's design tokens: the look of a spacecraft's displays (HANDOFF.md "Design"). One dark
+   * theme: the view of space is always black. New and redone screens take these; older rules below
+   * keep their own values until they are redone.
+   *
+   * Colour has a meaning, and only one: ink for words and numbers, accent for what can be pressed,
+   * nominal / caution / warning for how things stand (as on a flight deck: green, amber, red), live
+   * for what the explorer has changed. Panels are near-opaque and flat: no glass, no glow.
+   */
+  --sf-ink: #eef1f5;          /* values and words: the brightest thing on a panel */
+  --sf-ink-2: #a3acb9;        /* labels and second lines */
+  --sf-ink-3: #6f7987;        /* units, scale marks, the least */
+  --sf-panel: rgba(9, 12, 17, 0.94);  /* a display over the view: dark enough to read on the Sun */
+  --sf-panel-2: rgba(255, 255, 255, 0.06); /* a well inside a panel (a readout, a key) */
+  --sf-rule: rgba(238, 241, 245, 0.14);    /* hairlines between parts */
+  --sf-accent: #7fb2ff;       /* what can be pressed */
+  --sf-accent-ink: #061226;   /* words on an accent key */
+  --sf-nominal: #5fd68a;
+  --sf-caution: #f5b83d;
+  --sf-warning: #ff5a4a;
+  --sf-live: #ffb07a;
+  /* type: the phone's own face (SF on an iPhone, Inter or Roboto elsewhere), numbers in even widths */
+  --sf-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --sf-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --sf-t-legend: 600 11px/14px var(--sf-font);   /* a label over a readout, in capitals, spaced */
+  --sf-t-small: 400 13px/18px var(--sf-font);
+  --sf-t-body: 400 15px/21px var(--sf-font);
+  --sf-t-title: 650 17px/22px var(--sf-font);
+  --sf-t-readout: 600 22px/26px var(--sf-font);  /* a number read at a glance */
+  --sf-t-display: 650 28px/32px var(--sf-font);  /* the one line of an event */
+  --sf-legend-track: 0.08em;
+  /* space on a 4 px step */
+  --sf-s1: 4px; --sf-s2: 8px; --sf-s3: 12px; --sf-s4: 16px; --sf-s5: 24px; --sf-s6: 32px;
+  /* corners: squared, as on a panel of keys; round only for what is round */
+  --sf-r-key: 6px;
+  --sf-r-panel: 10px;
+  /* elevation: none. A panel stands off the view by its fill and a hairline, not by a shadow */
+  --sf-edge-line: 1px solid var(--sf-rule);
+  /* motion: short, and only to show where something came from */
+  --sf-ease: cubic-bezier(0.2, 0, 0, 1);
+  --sf-quick: 120ms;
+  --sf-move: 200ms;
+  --sf-touch: 44px;           /* the least a finger is given */
   --fg: #e9eef7;
   --dim: #94a1b8;
   --accent: #7fb2ff;
@@ -278,8 +321,53 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 }
 .thumb.comet { background: radial-gradient(circle at 30% 70%, #fff 0 7%, var(--tint) 15%, transparent 30%), linear-gradient(-45deg, transparent 36%, color-mix(in srgb, var(--tint) 55%, transparent) 50%, transparent 64%); }
 
-/* the card of what is selected */
-.card { padding: 12px; gap: 10px; }
+/* ------------------------------------------------------------------ the card of what is selected
+   (the design tokens' first screen: HANDOFF.md "Design"). Folded, a bar: its name, a line in plain
+   words, Go there, close. A tap on the name (or its chevron) opens the rest above it: Look at and
+   Share, the powers, its temperature, a few facts in plain words, and under More science every fact
+   as measured with what is worked out from them. */
+.sheet.card {
+  padding: var(--sf-s2) var(--sf-s1) var(--sf-s2) var(--sf-s3); gap: var(--sf-s3);
+  background: var(--sf-panel); border: var(--sf-edge-line); border-radius: var(--sf-r-panel);
+  box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.card:not(.open) > :not(.card-bar) { display: none !important; }
+.card-bar { flex: none; display: flex; align-items: center; gap: var(--sf-s2); min-height: var(--sf-touch); }
+.card-title {
+  position: relative; flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--sf-s1); align-items: center;
+}
+.card-title h2 { grid-column: 1; margin: 0; font: var(--sf-t-title); color: var(--sf-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-title p {
+  grid-column: 1; margin: 1px 0 0; font: var(--sf-t-small); color: var(--sf-ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+}
+/* (the chevron is the button, and the whole name with it: a tap anywhere on the name opens the card) */
+#hud .card-more { grid-column: 2; grid-row: 1 / span 2; width: 28px; height: 28px; display: grid; place-items: center; color: var(--sf-ink-2); border-radius: var(--sf-r-key); }
+#hud .card-more::after { content: ''; position: absolute; inset: -8px 0; }
+#hud .card-more .icon { width: 18px; height: 18px; transform: rotate(-90deg); transition: transform var(--sf-move) var(--sf-ease); }
+#hud .card.open .card-more .icon { transform: rotate(90deg); }
+#hud .card-title:active { opacity: 0.7; }
+#hud .btn.card-go { flex: none; min-height: var(--sf-touch); padding: 0 var(--sf-s3) 0 var(--sf-s2); border-radius: var(--sf-r-key); gap: var(--sf-s1); font-size: 15px; }
+#hud .card-bar .icon-btn { width: var(--sf-touch); height: var(--sf-touch); border-radius: var(--sf-r-key); }
+/* open: its second keys (its picture beside them), flat and squared */
+.card .card-actions { align-items: center; padding-right: var(--sf-s2); }
+.card .card-actions .thumb { width: 40px; height: 40px; }
+#hud .card .card-actions .btn { min-height: var(--sf-touch); border-radius: var(--sf-r-key); background: var(--sf-panel-2); font-size: 14px; }
+#hud .card .power { border-radius: var(--sf-r-key); }
+.card .card-powers, .card .card-warmth, .card .power-panel { margin-right: var(--sf-s2); }
+/* the plain facts: a label over its value, read down the left edge like an instrument's legend */
+.facts .plain { margin: 0; padding: 0; list-style: none; }
+.facts .plain li { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sf-s4); padding: var(--sf-s2) var(--sf-s1) var(--sf-s2) 0; border-bottom: var(--sf-edge-line); }
+.facts .plain li span { flex: none; font: var(--sf-t-small); color: var(--sf-ink-2); }
+.facts .plain li b { font: var(--sf-t-body); font-weight: 500; color: var(--sf-ink); text-align: right; font-variant-numeric: tabular-nums; }
+#hud .science-toggle {
+  width: 100%; min-height: var(--sf-touch); display: flex; align-items: center; justify-content: space-between; gap: var(--sf-s2);
+  padding: 0 var(--sf-s1) 0 0; font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track); text-transform: uppercase; color: var(--sf-accent);
+}
+#hud .science-toggle .icon { width: 16px; height: 16px; transform: rotate(90deg); transition: transform var(--sf-move) var(--sf-ease); }
+#hud .science-toggle[aria-expanded='true'] .icon { transform: rotate(-90deg); }
+.facts .science { padding-right: var(--sf-s1); }
 /* with its details open the card may take more of the screen, and its list shows that it goes on */
 .card:has(.facts:not([hidden])) { max-height: min(74vh, 680px); }
 /* (upright, while the details are read, the round buttons step aside: the taller card would push them up over the chips) */
@@ -292,16 +380,11 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
   .hud-slot > .sheet { min-height: 0; }
 }
 .facts { -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); mask-image: linear-gradient(#000 calc(100% - 22px), transparent); padding-bottom: 18px; }
-.card-head { display: flex; align-items: center; gap: 12px; }
-#hud .card-head .card-share { margin-right: -10px; }
 /* More: the saved scenes, each a row with its delete beside it ("Delete?" once tapped) */
 .saves .save-row { display: flex; align-items: center; }
 #hud .saves .save-row .row { flex: 1; min-width: 0; padding-left: 64px; }
 .saves .save-row .row b, .saves .save-row .row small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #hud .saves .save-delete.armed { width: auto; padding: 0 12px; color: var(--danger, #ff8a7a); font-weight: 600; }
-.card-title { flex: 1; min-width: 0; }
-.card-title h2 { margin: 0; font-size: 18px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-title p { margin: 2px 0 0; font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .card-actions { display: flex; gap: 8px; }
 #hud .btn {
   flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 46px; padding: 0 10px;
@@ -605,7 +688,7 @@ kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 5px; back
 }
 @media (prefers-reduced-motion: reduce) {
   .sheet.on, .hud-coach { animation: none; }
-  .hud-toast, .switch i, .switch i::after { transition: none; }
+  .hud-toast, .switch i, .switch i::after, #hud .card-more .icon, #hud .science-toggle .icon { transition: none; }
 }
 
 /* (the loading screen is styled in index.html: it is on the screen before this file arrives) */

@@ -1,6 +1,6 @@
 // Drives the running app in headless Chromium and checks interactive behaviour.
 // Usage: node scripts/interact.mjs [baseUrl] [outDir]
-import { collectErrors, launchBrowser } from './lib/browser.mjs';
+import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -151,6 +151,7 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
   const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 60000 }); };
   await page.evaluate(() => { const a = window.app; a.select(a.findByName('Jupiter')); });
   await frames(2);
+  await openCard(page);
   await page.click('.card [data-power="mass"]');
   await frames(2);
   const focused = await page.evaluate(() => { const s = document.querySelector('.card input.slider'); s.focus(); return document.activeElement === s; });

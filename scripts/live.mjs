@@ -29,7 +29,7 @@
 //   - Mars thrown at the Earth: time slows to show the last of the fall, the camera frames the two, a flash where they
 //     meet, a card with what the hit was; Undo brings Mars back
 // Usage: node scripts/live.mjs [baseUrl] [outDir]   (LIVE_ONLY=watch,sun: those blocks alone; see `want`; LIVE_KINDS=desk: at a desk only)
-import { collectErrors, launchBrowser } from './lib/browser.mjs';
+import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,7 +44,8 @@ const errors = [];
 const START = '2026-10-01T20:00:00Z';
 
 const frames = (page, n) => page.evaluate((n) => new Promise((done) => { const f0 = window.app.frameCount; const t = setInterval(() => { if (window.app.frameCount >= f0 + n) { clearInterval(t); done(); } }, 30); }), n);
-const press = async (page, sel) => { const b = page.locator(sel).first(); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
+// (what is on the selection's card under its bar is a tap on the bar away: openCard)
+const press = async (page, sel) => { if (/\.card \[data-(power|act="(move|remove|share|centre)")/.test(sel)) await openCard(page); const b = page.locator(sel).first(); await b.scrollIntoViewIfNeeded(); await b.tap().catch(() => b.click()); };
 const text = (page, sel) => page.evaluate((sel) => document.querySelector(sel)?.textContent ?? '', sel);
 const shown = (page, sel) => page.evaluate((sel) => { const el = document.querySelector(sel); return !!el && !el.hidden && !el.closest('[hidden]') && el.getBoundingClientRect().height > 0; }, sel);
 const toast = (page) => text(page, '#hud .hud-toast');
@@ -518,13 +519,16 @@ for (const kind of kinds) {
   if (want('jupiter')) {
     const { ctx, page, touch } = await open(kind, 'target=Jupiter&dist=40');
     await quiet(page);
+    // (folded, the card is a bar of no more than 80 px with no power on it; one tap on it and they are there)
+    const folded = await page.evaluate(() => ({ h: document.querySelector('#hud .card').getBoundingClientRect().height, mass: document.querySelector('#hud .card [data-power="mass"]').getBoundingClientRect().height }));
+    await openCard(page);
     const lay = await page.evaluate(() => {
       const box = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { t: r.top, b: r.bottom, h: r.height, w: r.width }; };
       return { mass: box('#hud .card [data-power="mass"]'), remove: box('#hud .card [data-act="remove"]'), tabs: box('#hud .hud-tabs'), facts: document.querySelector('#hud .card .facts').hidden, H: innerHeight, W: innerWidth };
     });
-    check(on("Jupiter's card offers its powers where they are seen at once: Mass and Remove, a thumb high, the details shut"),
-      lay.facts && lay.mass.h >= 44 && lay.remove.h >= 44 && lay.mass.w >= 60 && lay.mass.b <= lay.H && (kind === 'desk' || lay.mass.b < lay.tabs.t),
-      `buttons ${lay.mass.w.toFixed(0)} x ${lay.mass.h.toFixed(0)} px, down to ${lay.mass.b.toFixed(0)} of ${lay.H}`);
+    check(on("Jupiter's card offers its powers one tap away: folded a slim bar; opened, Mass and Remove, a thumb high, in sight"),
+      folded.h <= 80 && folded.mass === 0 && lay.mass.h >= 44 && lay.remove.h >= 44 && lay.mass.w >= 60 && lay.mass.b <= lay.H && (kind === 'desk' || lay.mass.b < lay.tabs.t),
+      `folded ${folded.h.toFixed(0)} px; buttons ${lay.mass.w.toFixed(0)} x ${lay.mass.h.toFixed(0)} px, down to ${lay.mass.b.toFixed(0)} of ${lay.H}`);
     check(on('nothing is live until a power is used: no mark, no way back to offer'), !(await shown(page, '#hud .live-mark')) && !(await about(page, 'Io', 'Jupiter')).on);
 
     await press(page, '#hud .card [data-power="mass"]');
@@ -564,6 +568,7 @@ for (const kind of kinds) {
     }));
     // (a moon that will not survive it is chosen first: Metis's new orbit dips into Jupiter)
     await find(page, 'Metis');
+    await openCard(page);
     check(on('a moon is found by name and has a card of its own'), (await text(page, '#hud .card h2')) === 'Metis' && (await shown(page, '#hud .card [data-act="remove"]')));
     const asked = await rate(page, '1 h/s');
     // (Io: on these orbits Europa runs into Ganymede a day and a half on, before it has gone round twice)
@@ -736,6 +741,7 @@ for (const kind of kinds) {
     await quiet(page);
     await find(page, 'Moon');
     await press(page, '#hud .hud-flight [data-act="stop"]');
+    await openCard(page);
     const lay = await page.evaluate(() => {
       const r = document.querySelector('#hud .card [data-act="move"]').getBoundingClientRect();
       return { w: r.width, h: r.height, others: ['[data-power="mass"]', '[data-act="remove"]'].every((sel) => document.querySelector(`#hud .card ${sel}`).getBoundingClientRect().height >= 44) };
@@ -832,6 +838,7 @@ for (const kind of kinds) {
     // (the eye 2.2 AU from the Sun, 40 degrees up: 473 of the Sun's radii)
     const { ctx, page } = await open(kind, 'target=Sun&dist=473&el=40');
     await quiet(page);
+    await openCard(page);
     const lay = await page.evaluate(() => [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => { const r = b.getBoundingClientRect(); return { label: b.textContent, w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth }; }));
     check(on("the Sun's card offers Add with the other powers, each a thumb high and all in sight"),
       lay.map((b) => b.label).join() === 'Mass,Move,Add,Remove' && lay.every((b) => b.h >= 44 && b.w >= 60 && b.in), lay.map((b) => `${b.label} ${b.w.toFixed(0)} x ${b.h.toFixed(0)}`).join(', '));
@@ -1302,6 +1309,7 @@ for (const kind of kinds) {
     });
     const real = await low();
     // (its size, a power of its own beside Mass)
+    await openCard(page);
     const power = await page.evaluate(() => { const b = document.querySelector('#hud .card [data-power="size"]'), m = document.querySelector('#hud .card [data-power="mass"]'); return b && !b.hidden ? { h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width, beside: b.previousElementSibling === m } : null; });
     if (power) await press(page, '#hud .card [data-power="size"]');
     await frames(page, 2);

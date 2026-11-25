@@ -224,7 +224,7 @@ export class Game {
     if (!app.vr.active) {
       this.flightHud.setVisible(true);
       this.flightHud.update(dt, r, this.mode === 'cockpit' || this.mode === 'chase', this.mode === 'chase' ? 'chase' : 'cockpit');
-      this.flightHud.setEnd(e?.title ?? '', e?.text ?? '', e ? Math.min(1, f.endingT * 2) * (e.t < 0.6 ? e.t / 0.6 : 1) : 0);
+      this.flightHud.setEnd(e?.report ?? null, e ? Math.min(1, f.endingT * 2) * (e.t < 0.6 ? e.t / 0.6 : 1) : 0, e ? Math.ceil(e.t) : 0);
     } else this.flightHud.setVisible(false);
     if (app.vr.active && r.warnLevel === 2 && r.warning !== this.lastVrWarn) app.vr.flash(r.warning);
     this.lastVrWarn = r.warning;

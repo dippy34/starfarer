@@ -46,6 +46,7 @@ import { Hud, type HudAction, type HudState } from '../ui/Hud';
 import { BlackHole, loadBlackHoles } from '../universe/BlackHoles';
 import { Awe } from './Awe';
 import { Body, type SpaceObject } from '../universe/Body';
+import { plainFacts, plainLine } from './plainWords';
 import { GALAXY, glowColumn } from '../universe/Galaxy';
 import { MilkyWay } from '../universe/MilkyWay';
 import { ExoPlanet, type PlanetarySystem } from '../universe/Planets';
@@ -3526,7 +3527,7 @@ export class App {
         if (sys) rows.push(['Planets', sys.real ? `${sys.planets.length} confirmed (NASA Exoplanet Archive)` : `${sys.planets.length} generated (not observed)`]);
       }
       selection = {
-        key: sel.key, name: sel.name, detail: describe(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
+        key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
         mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body ? canAdd(sel, this.made.length) : [],
       };
       // the powers over a world of the Solar System
