@@ -390,11 +390,20 @@ for (const place of ['Apollo 17 landing site', 'Valles Marineris', 'Mount Everes
   }
 }
 await page.evaluate((jd) => { const a = window.app; a.walk.exit(true); a.clock.jdTdb = jd; a.clock.paused = false; }, jdWalk);
+// Let the last walk's selection reach the card (and pointer lock end) before opening Search: a new selection closes
+// the sheet, so a late card update would otherwise take away the input's focus after Enter.
+// (waits that say what they saw in the check below rather than end the suite, as the one after the walks once did)
+const settled = await page.waitForFunction(() => document.pointerLockElement === null
+  && document.querySelector('.card h2')?.textContent === window.app.selection?.name, null, { timeout: 600000 }).then(() => true, () => false);
 
 // 5. Search and go to a star
+// A control left focused by an earlier step would take Enter itself (a button activates); start the app shortcut from no control.
+await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
 await page.keyboard.press('Enter');
+const typing = await page.waitForFunction(() => document.querySelector('.searchbox input') === document.activeElement, null, { timeout: 600000 }).then(() => true, () => false);
 await page.keyboard.type('Sirius');
-await page.waitForTimeout(300);
+// The results appear at some frame, not at a fixed wall time: wait for the state, not a timeout.
+const listed = await page.waitForFunction(() => document.querySelector('.explore .list [data-id] b')?.textContent === 'Sirius', null, { timeout: 600000 }).then(() => true, () => false);
 await page.keyboard.press('Enter');
 // (a wait that ends the suite, as a timeout here does, loses every check after it and says nothing of what it saw: this one is a
 // failed check that says: on a runner (45262156702) it timed out here once, after the three walks, and the suite ended)
@@ -402,6 +411,7 @@ const arrived = await page.waitForFunction(() => !window.app.rig.autopilot && wi
 await page.waitForFunction(() => window.app.debugState().pendingTiles === 0, null, { timeout: 60000 }).catch(() => undefined);
 await page.waitForTimeout(2500);
 st = await page.evaluate((arrived) => ({ arrived, autopilot: !!window.app.rig.autopilot, near: window.app.near.stars.map((s) => s.name), sel: window.app.selection?.name }), arrived);
+Object.assign(st, { settled, typing, listed });  // (how far the search got, when it fails)
 check('search + goto Sirius; Sirius drawn by the near-star renderer', st.near.includes('Sirius'), JSON.stringify(st));
 await page.screenshot({ path: path.join(outDir, 'i2-sirius.png') });
 
