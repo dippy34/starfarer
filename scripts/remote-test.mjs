@@ -72,7 +72,9 @@ if (git('status', '--porcelain', '--untracked-files=no')) say('note: uncommitted
 const head = git('rev-parse', 'HEAD');
 const old = opt('--old', null);
 if (old && !suitesArg) throw new Error('--old needs --suites');
-let tree = `${head}^{tree}`, base = head, title = `Remote test of ${head.slice(0, 8)}`;
+// (the title names the change under test too, for the progress page, public/progress/: "Remote test of 1a2b3c4d: <its subject>")
+const subject = git('log', '-1', '--format=%s', head);
+let tree = `${head}^{tree}`, base = head, title = `Remote test of ${head.slice(0, 8)}: ${subject}`;
 if (old) {
   // a tree: <old> with scripts/ and .github/ as they are at HEAD
   const idx = path.join(fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'remote-test-')), 'index');
@@ -85,7 +87,7 @@ if (old) {
   tree = g('write-tree');
   fs.rmSync(path.dirname(idx), { recursive: true });
   base = git('rev-parse', old);
-  title = `Remote test: today's checks (${head.slice(0, 8)}) against the app at ${base.slice(0, 8)}`;
+  title = `Remote test: today's checks (${head.slice(0, 8)}) against the app at ${base.slice(0, 8)}: ${subject}`;
 }
 const trailer = suitesArg ?? /^Suites:[ \t]*(.*)$/im.exec(git('log', '-1', '--format=%B', head))?.[1] ?? null;
 const tip = tipOf();

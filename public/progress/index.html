@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#05070b">
+<title>Starfarer Mission Control</title>
+<!--
+  Starfarer's progress, live: what is being worked on, what just finished, what went live, and the
+  task board. It reads GitHub's public API from the reader's browser (no key, no server), so it is
+  always current and nobody has to update it. GitHub lets a browser make 60 requests an hour; answers
+  that have not changed come back as "not modified" and are free, so the page asks often for the list
+  of runs and rarely for the rest, and slows down by itself if the hour's allowance runs low.
+  The look is the app's own (HANDOFF.md "Design": a spacecraft's displays).
+-->
+<style>
+  /* Layout: one column of display panels down a dark field, the summary on top (phone first; two columns when wide) */
+  :root {
+    --bg: #05070b;
+    --panel: rgba(12, 16, 23, 0.92);
+    --well: rgba(255, 255, 255, 0.05);
+    --rule: rgba(238, 241, 245, 0.12);
+    --ink: #eef1f5;
+    --ink-2: #a3acb9;
+    --ink-3: #6f7987;
+    --accent: #7fb2ff;
+    --nominal: #5fd68a;
+    --caution: #f5b83d;
+    --warning: #ff5a4a;
+    --live: #ffb07a;
+    --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --r-key: 6px;
+    --r-panel: 10px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; min-height: 100vh; color: var(--ink); font: 400 15px/21px var(--font);
+    background:
+      radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.55), transparent 60%),
+      radial-gradient(1px 1px at 78% 9%, rgba(255,255,255,0.4), transparent 60%),
+      radial-gradient(1.5px 1.5px at 64% 34%, rgba(190,215,255,0.5), transparent 60%),
+      radial-gradient(1px 1px at 31% 52%, rgba(255,255,255,0.35), transparent 60%),
+      radial-gradient(1px 1px at 88% 61%, rgba(255,230,200,0.45), transparent 60%),
+      radial-gradient(1px 1px at 9% 77%, rgba(255,255,255,0.4), transparent 60%),
+      radial-gradient(1.5px 1.5px at 47% 88%, rgba(255,255,255,0.3), transparent 60%),
+      radial-gradient(120% 60% at 50% -10%, rgba(127,178,255,0.10), transparent 70%),
+      var(--bg);
+    background-attachment: fixed;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap {
+    max-width: 1080px; margin: 0 auto;
+    padding-block: calc(env(safe-area-inset-top, 0px) + 20px) calc(env(safe-area-inset-bottom, 0px) + 28px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: grid; gap: 16px;
+  }
+  .legend { font: 600 11px/14px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+  .num { font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); text-decoration: none; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  /* the summary */
+  .top { display: grid; gap: 14px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand svg { flex: none; }
+  .brand .legend { color: var(--ink); }
+  .brand .site { margin-left: auto; font: 600 13px/18px var(--font); }
+  .headline { margin: 0; font: 650 26px/31px var(--font); letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { margin: 0; color: var(--ink-2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .pulse.on { background: var(--nominal); box-shadow: 0 0 0 0 rgba(95,214,138,0.6); }
+  .pulse.bad { background: var(--warning); }
+  @media (prefers-reduced-motion: no-preference) {
+    .pulse.on { animation: beat 2s ease-out infinite; }
+    @keyframes beat { 0% { box-shadow: 0 0 0 0 rgba(95,214,138,0.55); } 70% { box-shadow: 0 0 0 9px rgba(95,214,138,0); } 100% { box-shadow: 0 0 0 0 rgba(95,214,138,0); } }
+  }
+  .readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: var(--r-panel); overflow: hidden; }
+  .readout { background: var(--panel); padding: 12px; display: grid; gap: 4px; min-width: 0; }
+  .readout b { font: 600 22px/26px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .readout small { color: var(--ink-3); font: 400 12px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* panels */
+  .cols { display: grid; gap: 16px; }
+  @media (min-width: 860px) { .cols { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; } }
+  .col { display: grid; gap: 16px; min-width: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-panel); min-width: 0; }
+  .panel > header { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+  .panel > header h2 { margin: 0; font: 650 17px/22px var(--font); }
+  .panel > header .legend { margin-left: auto; color: var(--ink-3); }
+  .empty { padding: 16px 14px; color: var(--ink-2); margin: 0; }
+
+  /* a job at work */
+  .jobs { display: grid; }
+  .job { padding: 14px; display: grid; gap: 8px; border-top: 1px solid var(--rule); min-width: 0; }
+  .job:first-child { border-top: 0; }
+  .job .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .job .who { color: var(--ink-2); }
+  .job .who.team { color: var(--accent); }
+  .job .who.tests { color: var(--nominal); }
+  .job .who.live { color: var(--live); }
+  .job .time { margin-left: auto; color: var(--ink-2); font: 400 13px/18px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .job h3 { margin: 0; font: 600 16px/21px var(--font); text-wrap: balance; overflow-wrap: anywhere; }
+  .job .step { margin: 0; color: var(--ink-2); font: 400 13px/18px var(--font); }
+  .bar { height: 6px; border-radius: 3px; background: var(--well); overflow: hidden; position: relative; }
+  .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
+  .bar.tests i { background: var(--nominal); }
+  .bar.live i { background: var(--live); }
+  @media (prefers-reduced-motion: no-preference) {
+    .bar.going i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent); animation: sheen 2.2s linear infinite; }
+    @keyframes sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  }
+  .fails { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* chips */
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--r-key); font: 600 12px/18px var(--font); white-space: nowrap; background: var(--well); color: var(--ink-2); }
+  .chip.ok { color: var(--nominal); background: rgba(95,214,138,0.12); }
+  .chip.bad { color: var(--warning); background: rgba(255,90,74,0.13); }
+  .chip.review { color: var(--accent); background: rgba(127,178,255,0.13); }
+  .chip.live { color: var(--live); background: rgba(255,176,122,0.13); }
+  .chip.run { color: var(--caution); background: rgba(245,184,61,0.12); }
+  .chip.hold { color: var(--ink-3); }
+
+  /* feeds */
+  .feed { list-style: none; margin: 0; padding: 0; }
+  .feed li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; padding: 11px 14px; border-top: 1px solid var(--rule); }
+  .feed li:first-child { border-top: 0; }
+  .feed .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; background: var(--ink-3); grid-row: span 2; }
+  .feed .dot.ok { background: var(--nominal); } .feed .dot.bad { background: var(--warning); }
+  .feed .dot.review { background: var(--accent); } .feed .dot.live { background: var(--live); }
+  .feed .what { overflow-wrap: anywhere; }
+  .feed .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--ink-3); font: 400 12px/18px var(--font); }
+  .feed .meta a { font-weight: 600; }
+
+  /* the board */
+  .tasks { list-style: none; margin: 0; padding: 0; }
+  .tasks li { padding: 12px 14px; border-top: 1px solid var(--rule); display: grid; gap: 4px; }
+  .tasks li:first-child { border-top: 0; }
+  .tasks .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tasks .name { font: 400 12px/16px var(--mono); color: var(--ink-3); }
+  .tasks .title { overflow-wrap: anywhere; }
+  .tasks .last { color: var(--ink-3); font: 400 12px/16px var(--font); }
+
+  /* while loading */
+  .skel { display: block; height: 14px; border-radius: 4px; background: var(--well); margin: 14px; }
+  .skel.short { width: 55%; }
+
+  footer.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--ink-3); font: 400 12px/18px var(--font); }
+  footer.foot button {
+    min-height: 36px; padding: 0 14px; border-radius: var(--r-key); border: 1px solid var(--rule);
+    background: var(--well); color: var(--ink); font: 600 13px/18px var(--font); cursor: pointer;
+  }
+  footer.foot button:active { background: rgba(127,178,255,0.18); }
+  .note { color: var(--caution); }
+  @media (max-width: 420px) { .headline { font-size: 23px; line-height: 28px; } .readout b { font-size: 19px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="none" stroke="#7fb2ff" stroke-width="1.5"/><circle cx="11" cy="11" r="3" fill="#7fb2ff"/><path d="M2 14 Q11 6 20 8" fill="none" stroke="#a3acb9" stroke-width="1"/></svg>
+      <span class="legend">Starfarer · Mission control</span>
+      <a class="site" href="../">Open the app ↗</a>
+    </div>
+    <h1 class="headline" id="headline" aria-live="polite">Reading the latest from GitHub…</h1>
+    <p class="sub"><span class="pulse" id="pulse"></span><span id="subline">Everything here updates by itself.</span></p>
+    <div class="readouts">
+      <div class="readout"><span class="legend">At work</span><b id="r-work">—</b><small id="r-work-s">jobs running</small></div>
+      <div class="readout"><span class="legend">Went live today</span><b id="r-today">—</b><small id="r-today-s">changes</small></div>
+      <div class="readout"><span class="legend">Site updated</span><b id="r-site">—</b><small id="r-site-s">the live app</small></div>
+    </div>
+  </header>
+
+  <div class="cols">
+    <div class="col">
+      <section class="panel" id="now">
+        <header><h2>At work now</h2><span class="legend" id="now-count"></span></header>
+        <div class="jobs" id="now-list"><span class="skel"></span><span class="skel short"></span></div>
+      </section>
+      <section class="panel" id="done">
+        <header><h2>Just finished</h2><span class="legend">results</span></header>
+        <ol class="feed" id="done-list"><li><span class="skel"></span></li></ol>
+      </section>
+    </div>
+    <div class="col">
+      <section class="panel" id="live">
+        <header><h2>What went live</h2><span class="legend">newest first</span></header>
+        <ol class="feed" id="live-list"><li><span class="skel"></span></li></ol>
+      </section>
+      <section class="panel" id="board">
+        <header><h2>On the board</h2><span class="legend">for the cheap team</span></header>
+        <ul class="tasks" id="board-list"><li><span class="skel"></span></li></ul>
+      </section>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <button type="button" id="refresh">Refresh now</button>
+    <span id="checked">Not read yet</span>
+    <span id="limit"></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const REPO = 'dippy34/starfarer';
+  const BRANCH = 'claude/friendly-hypatia-up418z';
+  const API = `https://api.github.com/repos/${REPO}`;
+  const RAW = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/TASKS.md`;
+  const TEAM_BUDGET_MIN = 110;  // an outside AI's run has 110 minutes (.github/workflows/opencode-task.yml)
+
+  const S = { runs: [], commits: [], tasks: [], jobs: new Map(), checked: 0, error: '', limit: null };
+  const seen = { runs: 0, commits: 0, tasks: 0, jobs: 0 };
+  const $ = (id) => document.getElementById(id);
+
+  // ------------------------------------------------------------ reading
+  async function get(url, text) {
+    const r = await fetch(url, { cache: 'no-cache' });
+    const rem = r.headers.get('x-ratelimit-remaining'), reset = r.headers.get('x-ratelimit-reset');
+    if (rem !== null) S.limit = { rem: Number(rem), reset: Number(reset) * 1000 };
+    if (r.status === 403 || r.status === 429) throw new Error('limit');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return text ? r.text() : r.json();
+  }
+
+  const isTeam = (r) => r.name === 'OpenCode task';
+  const isTests = (r) => r.name === 'Browser tests';
+  const isDeploy = (r) => r.name === 'Deploy to GitHub Pages';
+
+  async function loadJobs(force) {
+    // the jobs of what is running (their steps change), and once each of the latest finished ones (they don't)
+    const want = [];
+    for (const r of S.runs) {
+      if (!(isTeam(r) || isTests(r))) continue;
+      const have = S.jobs.get(r.id);
+      if (r.status !== 'completed') want.push(r);
+      else if (!have || !have.final) want.push(r);
+    }
+    for (const r of want.slice(0, 6)) {
+      try {
+        const d = await get(`${API}/actions/runs/${r.id}/jobs?per_page=40`);
+        S.jobs.set(r.id, { jobs: d.jobs || [], final: r.status === 'completed' });
+      } catch (e) { if (e.message === 'limit') throw e; }
+    }
+    // forget runs no longer listed
+    const ids = new Set(S.runs.map((r) => r.id));
+    for (const id of [...S.jobs.keys()]) if (!ids.has(id)) S.jobs.delete(id);
+  }
+
+  function parseTasks(md) {
+    const heads = [];
+    const re = /^### `task\/([a-z0-9-]+)`: (.+)$/gm;
+    let m;
+    while ((m = re.exec(md))) heads.push({ name: m[1], title: m[2].trim(), at: m.index });
+    return heads.map((h, i) => {
+      let end = i + 1 < heads.length ? heads[i + 1].at : md.length;
+      const next = md.indexOf('\n## ', h.at);
+      if (next > 0 && next < end) end = next;
+      const body = md.slice(h.at, end);
+      const st = /\*\*Status:\*\*\s*([^\n]+)/.exec(body);
+      const mo = /\*\*Model:\*\*\s*`opencode-go\/([^`]+)`/.exec(body);
+      const status = st ? st[1].trim() : '';
+      return {
+        name: h.name, title: capital(h.title.replace(/`/g, '')), model: mo ? mo[1] : '',
+        kind: /^on hold/i.test(status) ? 'hold' : /^done/i.test(status) ? 'done' : 'open',
+      };
+    });
+  }
+
+  async function tick(force) {
+    if (document.hidden && !force) return;
+    const now = Date.now();
+    const low = S.limit && S.limit.rem < 8 && now < S.limit.reset;
+    if (low && !force) { render(); return; }
+    try {
+      if (force || now - seen.runs > 55e3) { S.runs = (await get(`${API}/actions/runs?per_page=20&exclude_pull_requests=true`)).workflow_runs || []; seen.runs = now; }
+      if (force || now - seen.commits > 115e3) { S.commits = await get(`${API}/commits?sha=${encodeURIComponent(BRANCH)}&per_page=15`); seen.commits = now; }
+      if (force || now - seen.tasks > 295e3) { S.tasks = parseTasks(await get(RAW, true)); seen.tasks = now; }
+      if (force || now - seen.jobs > 115e3) { await loadJobs(force); seen.jobs = now; }
+      S.error = ''; S.checked = Date.now();
+    } catch (e) {
+      S.error = e.message === 'limit' ? 'limit' : 'offline';
+    }
+    render();
+  }
+
+  // ------------------------------------------------------------ words
+  function capital(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
+  function ago(t) {
+    const s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 45) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    if (s < 86400) { const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return m ? `${h} h ${m} min ago` : `${h} h ago`; }
+    const d = new Date(t);
+    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  function took(a, b) {
+    const s = Math.max(0, (b - a) / 1000);
+    if (s < 60) return `${Math.round(s)} s`;
+    if (s < 3600) return `${Math.round(s / 60)} min`;
+    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
+  function modelName(id) {
+    if (!id) return '';
+    return id.split('-').map((w) => (/^[a-z]+\d/.test(w) || /^\d/.test(w) ? w.toUpperCase() : capital(w))).join(' ')
+      .replace(/\bGlm\b/, 'GLM').replace(/\bGpt\b/, 'GPT');
+  }
+  function taskOf(job) { const m = /\(([^)]+)\)/.exec(job.name || ''); return m ? m[1].split(',')[0].trim() : ''; }
+  function taskInfo(name) { return S.tasks.find((t) => t.name === name) || { name, title: name, model: '' }; }
+  function testTitle(r) {
+    const t = r.display_title || '';
+    let m = /^Remote test of [0-9a-f]+: (.+)$/.exec(t);
+    if (m) return m[1];
+    m = /^Remote test: today's checks .* against the app at [0-9a-f]+: (.+)$/.exec(t);
+    if (m) return `Proving the old app fails: ${m[1]}`;
+    if (/^Remote test/.test(t)) return 'A test run';
+    return t;
+  }
+  const STEP = {
+    'Set up job': 'Getting a computer ready', 'Run actions/checkout@v4': 'Getting the code', 'Check the task name': 'Reading the task',
+    'Run actions/setup-node@v4': 'Getting ready', 'Run npm ci': 'Installing the tools', 'Fonts as in the container': 'Installing a browser',
+    'Sign in to OpenCode': 'Signing in', 'Install OpenCode': 'Starting the AI', 'Run the task': 'Coding',
+    'Collect the result': 'Checking and packing up its work', 'Run actions/upload-artifact@v4': 'Handing in its work',
+  };
+  function stepWords(job) {
+    if (job.status === 'queued' || job.status === 'waiting') return 'Waiting for a free computer';
+    const st = (job.steps || []).find((x) => x.status === 'in_progress');
+    if (!st) return 'Getting ready';
+    return STEP[st.name] || (/chrome|playwright|cache/i.test(st.name) ? 'Installing a browser' : 'Getting ready');
+  }
+  function suiteJobs(run) {
+    const j = S.jobs.get(run.id);
+    return j ? j.jobs.filter((x) => x.name !== 'plan' && x.name !== 'build') : [];
+  }
+
+  // ------------------------------------------------------------ drawing
+  function h(tag, attrs, ...kids) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === undefined || v === null || v === false) continue;
+      if (k === 'class') e.className = v; else if (k === 'style') e.setAttribute('style', v); else e.setAttribute(k, v);
+    }
+    for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) e.append(k instanceof Node ? k : String(k));
+    return e;
+  }
+  const link = (href, text) => (/^https:\/\//.test(href || '') ? h('a', { href, target: '_blank', rel: 'noopener' }, text) : null);
+  const bar = (kind, frac, going) => h('div', { class: `bar ${kind}${going ? ' going' : ''}`, role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(frac * 100)) },
+    h('i', { style: `width:${Math.max(3, Math.min(100, frac * 100)).toFixed(1)}%` }));
+
+  function working() {
+    const out = [];
+    for (const r of S.runs) {
+      if (r.status === 'completed') continue;
+      if (isTeam(r)) {
+        const j = S.jobs.get(r.id);
+        const tasks = j ? j.jobs.filter((x) => x.name !== 'plan' && x.status !== 'completed') : [];
+        if (!tasks.length) out.push({ kind: 'team', t0: Date.parse(r.run_started_at || r.created_at), title: 'Getting the cheap team started', step: 'Picking up the tasks', frac: 0.02, url: r.html_url });
+        for (const job of tasks) {
+          const info = taskInfo(taskOf(job));
+          const t0 = Date.parse(job.started_at || r.run_started_at || r.created_at);
+          out.push({ kind: 'team', t0, title: info.title, model: modelName(info.model), step: stepWords(job), frac: Math.min(0.95, (Date.now() - t0) / (TEAM_BUDGET_MIN * 60e3)), url: job.html_url || r.html_url });
+        }
+      } else if (isTests(r)) {
+        const suites = suiteJobs(r), done = suites.filter((x) => x.status === 'completed');
+        const failed = done.filter((x) => x.conclusion === 'failure').map((x) => x.name);
+        out.push({ kind: 'tests', t0: Date.parse(r.run_started_at || r.created_at), title: testTitle(r), step: suites.length ? `${done.length} of ${suites.length} test groups done` : 'Building the app to test it',
+          frac: suites.length ? done.length / suites.length : 0.04, failed, url: r.html_url });
+      } else if (isDeploy(r)) {
+        out.push({ kind: 'live', t0: Date.parse(r.run_started_at || r.created_at), title: r.display_title, step: 'Putting it on the live site', frac: Math.min(0.95, (Date.now() - Date.parse(r.run_started_at || r.created_at)) / 150e3), url: r.html_url });
+      }
+    }
+    return out.sort((a, b) => a.t0 - b.t0);
+  }
+
+  function finished() {
+    const out = [];
+    for (const r of S.runs) {
+      if (isTeam(r)) {
+        // (each task as it finishes, though others of its run go on)
+        const j = S.jobs.get(r.id);
+        const tasks = j ? j.jobs.filter((x) => x.name !== 'plan' && x.status === 'completed' && x.conclusion !== 'skipped' && x.conclusion !== 'cancelled') : [];
+        if (!tasks.length && r.status === 'completed' && r.conclusion !== 'cancelled' && r.conclusion !== 'skipped') out.push({ t: Date.parse(r.updated_at), cls: r.conclusion === 'success' ? 'review' : 'bad', chip: r.conclusion === 'success' ? 'Ready for review' : 'Stopped', who: 'Cheap team', what: 'A cheap-team run', url: r.html_url });
+        for (const job of tasks) {
+          const ok = job.conclusion === 'success';
+          out.push({ t: Date.parse(job.completed_at || r.updated_at), cls: ok ? 'review' : 'bad', chip: ok ? 'Ready for review' : 'Stopped', who: 'Cheap team', what: taskInfo(taskOf(job)).title, url: job.html_url || r.html_url });
+        }
+        continue;
+      }
+      if (r.status !== 'completed' || r.conclusion === 'cancelled' || r.conclusion === 'skipped') continue;
+      const t = Date.parse(r.updated_at);
+      if (isTests(r)) {
+        const failed = suiteJobs(r).filter((x) => x.conclusion === 'failure').map((x) => x.name);
+        const ok = r.conclusion === 'success';
+        out.push({ t, cls: ok ? 'ok' : 'bad', chip: ok ? 'Tests passed' : failed.length ? `${failed.length} failed` : 'Tests failed', who: 'Tests', what: testTitle(r), failed, url: r.html_url });
+      } else if (isDeploy(r)) {
+        const ok = r.conclusion === 'success';
+        out.push({ t, cls: ok ? 'live' : 'bad', chip: ok ? 'Live' : 'Did not go live', who: 'Live site', what: r.display_title, url: r.html_url });
+      }
+    }
+    return out.sort((a, b) => b.t - a.t).slice(0, 8);
+  }
+
+  function tagOf(msg) {
+    if (/^OpenCode: start/i.test(msg)) return ['Team started', 'review'];
+    if (/^(Outside team|OpenCode)/i.test(msg)) return ['Team', 'review'];
+    if (/^Design/i.test(msg)) return ['Design', 'live'];
+    if (/^(touch|flight|share|live|interact|walk|whatif|exposure|terrain|places|stars|start|ship|game|vr|verify|tests?|scripts?)(\.mjs)?: /.test(msg)) return ['Tests', 'ok'];
+    if (/^(TASKS\.md|docs|HANDOFF)/i.test(msg)) return ['Plans', ''];
+    return ['Change', 'live'];
+  }
+
+  function render() {
+    const work = working(), done = finished();
+    const team = work.filter((w) => w.kind === 'team' && w.model !== undefined).length;
+    const tests = work.filter((w) => w.kind === 'tests').length;
+    const deploys = work.filter((w) => w.kind === 'live').length;
+
+    // the summary
+    const parts = [];
+    if (team) parts.push(`${team} cheap-team task${team > 1 ? 's' : ''} being coded`);
+    if (tests) parts.push(`${tests} test run${tests > 1 ? 's' : ''} going`);
+    if (deploys) parts.push('a change going live');
+    const head = parts.length ? capital(parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}.` : `${parts[0]}.`) : S.runs.length ? 'All quiet. Nothing is running right now.' : 'Reading the latest from GitHub…';
+    if ($('headline').textContent !== head) $('headline').textContent = head;
+    $('pulse').className = `pulse${S.error ? ' bad' : work.length ? ' on' : ''}`;
+    const lastLive = S.runs.find((r) => isDeploy(r) && r.conclusion === 'success');
+    $('subline').textContent = S.error === 'offline' ? 'Can’t reach GitHub just now. It will try again by itself.'
+      : S.error === 'limit' ? 'Paused: GitHub’s hourly allowance for this browser is used up.'
+      : 'Everything here updates by itself.';
+    $('r-work').textContent = S.runs.length ? String(work.length) : '—';
+    $('r-work-s').textContent = work.length === 1 ? 'job running' : 'jobs running';
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const live = S.commits.filter((c) => Date.parse(c.commit.committer.date) >= today.getTime() && !/^OpenCode: start/i.test(c.commit.message));
+    $('r-today').textContent = S.commits.length ? String(live.length) : '—';
+    $('r-today-s').textContent = live.length === 1 ? 'change' : 'changes';
+    $('r-site').textContent = lastLive ? ago(Date.parse(lastLive.updated_at)).replace(' ago', '') : '—';
+    $('r-site-s').textContent = lastLive ? 'ago' : 'the live app';
+
+    // at work now
+    $('now-count').textContent = work.length ? `${work.length} running` : '';
+    const now = $('now-list');
+    if (!S.runs.length && !S.checked) { /* still loading: keep the placeholder */ }
+    else if (!work.length) now.replaceChildren(h('p', { class: 'empty' }, 'Nothing is running. New work shows up here the moment it starts.'));
+    else now.replaceChildren(...work.map((w) => h('article', { class: 'job' },
+      h('div', { class: 'row' },
+        h('span', { class: `legend who ${w.kind}` }, w.kind === 'team' ? `Cheap team${w.model ? ` · ${w.model}` : ''}` : w.kind === 'tests' ? 'Tests' : 'Going live'),
+        h('span', { class: 'time' }, took(w.t0, Date.now()))),
+      h('h3', null, w.title),
+      bar(w.kind, w.frac, true),
+      h('div', { class: 'row' }, h('p', { class: 'step' }, w.step), link(w.url, 'Details ↗')),
+      w.failed && w.failed.length ? h('div', { class: 'fails' }, ...w.failed.map((f) => h('span', { class: 'chip bad' }, `${f} failed`))) : null,
+    )));
+
+    // just finished
+    const dl = $('done-list');
+    if (S.checked || S.runs.length) {
+      dl.replaceChildren(...(done.length ? done.map((d) => h('li', null,
+        h('span', { class: `dot ${d.cls}` }),
+        h('span', { class: 'what' }, d.what),
+        h('span', { class: 'meta' }, h('span', { class: `chip ${d.cls}` }, d.chip), h('span', null, d.who), h('span', null, ago(d.t)), link(d.url, 'Details ↗'),
+          ...(d.failed || []).slice(0, 4).map((f) => h('span', { class: 'chip bad' }, f))))) : [h('li', null, h('span', { class: 'dot' }), h('span', { class: 'what' }, 'Nothing has finished yet.'))]));
+    }
+
+    // what went live
+    const ll = $('live-list');
+    if (S.commits.length) {
+      ll.replaceChildren(...S.commits.slice(0, 12).map((c) => {
+        const msg = c.commit.message.split('\n')[0];
+        const [tag, cls] = tagOf(msg);
+        return h('li', null,
+          h('span', { class: `dot ${cls}` }),
+          h('span', { class: 'what' }, msg),
+          h('span', { class: 'meta' }, h('span', { class: `chip ${cls}` }, tag), h('span', null, ago(Date.parse(c.commit.committer.date))), link(c.html_url, 'Details ↗')));
+      }));
+    }
+
+    // the board
+    const bl = $('board-list');
+    if (S.tasks.length) {
+      bl.replaceChildren(...S.tasks.map((t) => {
+        const runningNow = work.some((w) => w.kind === 'team' && w.title === t.title);
+        const last = done.find((d) => d.who === 'Cheap team' && d.what === t.title);
+        const chip = runningNow ? h('span', { class: 'chip run' }, 'Being coded') : t.kind === 'hold' ? h('span', { class: 'chip hold' }, 'On hold')
+          : t.kind === 'done' ? h('span', { class: 'chip ok' }, 'Done') : last ? h('span', { class: `chip ${last.cls}` }, last.chip) : h('span', { class: 'chip' }, 'Waiting');
+        return h('li', null,
+          h('div', { class: 'row' }, chip, t.model ? h('span', { class: 'legend' }, modelName(t.model)) : null),
+          h('span', { class: 'title' }, t.title),
+          h('span', { class: 'name' }, `task/${t.name}`));
+      }));
+    }
+
+    // the foot
+    $('checked').textContent = S.checked ? `Checked ${ago(S.checked)}` : 'Not read yet';
+    const L = S.limit;
+    $('limit').className = L && L.rem < 8 ? 'note' : '';
+    $('limit').textContent = L ? (L.rem < 8 ? `GitHub allowance low: full again at ${new Date(L.reset).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : `${L.rem} of GitHub’s 60 hourly reads left`) : '';
+  }
+
+  $('refresh').addEventListener('click', () => { tick(true); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  setInterval(() => { tick(); }, 15e3);
+  setInterval(render, 30e3);  // the clocks ("12 min ago") move on between reads
+  tick(true);
+})();
+</script>
+</body>
+</html>

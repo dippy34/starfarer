@@ -219,11 +219,15 @@ jobs:
           mkdir -p ~/.config/opencode
           # The Go provider takes the signed-in key from the environment. The run's model (--model)
           # is the senior; "junior" is a cheap, fast subagent it hands small pieces to
-          # (picks from the model research of 25 Nov 2026, in TASKS.md).
+          # (picks from the model research of 25 Nov 2026, in TASKS.md). Every permission is set, so
+          # that nothing asks: here nobody can answer, and a question left unanswered ends the run (the
+          # first ship-instruments run stopped after 3 minutes, asking to read a folder outside the
+          # repository). Folders outside it are refused, and so is the web.
           cat > ~/.config/opencode/opencode.json <<'JSON'
           {
             "$schema": "https://opencode.ai/config.json",
             "provider": { "opencode-go": { "options": { "apiKey": "{env:OPENCODE_API_KEY}" } } },
+            "permission": { "edit": "allow", "bash": "allow", "webfetch": "deny", "external_directory": "deny" },
             "agent": {
               "junior": {
                 "description": "Cheap, fast worker for small, well-specified pieces: one function, one test, one CSS block, boilerplate or a small fix",
@@ -241,12 +245,12 @@ jobs:
           if [ "$TASK" = "smoke-test" ]; then
             prompt="Reply with one line: 'Signed in, and the model works.' Do not read, change or create any files."
           else
-            prompt="You are an AI developer working on Starfarer, in a working copy of its repository on a GitHub Actions runner. First read TASKS.md. Then do ONLY the task in the section headed task/$TASK, following every rule in TASKS.md, with these differences for this run: do not create branches, commit or push (this copy is read-only); just change the files here. Hand small, well-specified pieces (one function, one test, one CSS block) to the junior subagent, and review what it returns before you keep it; do the harder parts yourself. A browser is installed for the browser suites in scripts/*.mjs (docs/notes/testing.md): build with npx vite build, serve the build with npx vite preview --port 4173 --strictPort --host 127.0.0.1 in the background, then run node scripts/<suite>.mjs http://127.0.0.1:4173/ <a folder> with the part your task touches (scripts/affected.mjs lists the parts). Run only the suites and parts your change touches, since a whole suite can take 30 minutes here, and run each one on the code before your change too when the task asks for a check that fails before it. Put every picture you take, before and after, in $OUT/pictures, which comes back with the run. Before you finish, run npm run check and fix what fails. Finally write your report to REPORT.md in the repository root: what you changed, how you checked it (each suite and part you ran, with its counts), and what is left."
+            prompt="You are an AI developer working on Starfarer, in a working copy of its repository on a GitHub Actions runner. First read TASKS.md. Then do ONLY the task in the section headed task/$TASK, following every rule in TASKS.md, with these differences for this run: do not create branches, commit or push (this copy is read-only); just change the files here. Hand small, well-specified pieces (one function, one test, one CSS block) to the junior subagent, and review what it returns before you keep it; do the harder parts yourself. A browser is installed for the browser suites in scripts/*.mjs (docs/notes/testing.md): build with npx vite build, serve the build with npx vite preview --port 4173 --strictPort --host 127.0.0.1 in the background, then run node scripts/<suite>.mjs http://127.0.0.1:4173/ <a folder> with the part your task touches (scripts/affected.mjs lists the parts). Run only the suites and parts your change touches, since a whole suite can take 30 minutes here, and run each one on the code before your change too when the task asks for a check that fails before it. Put every picture you take, before and after, in out/pictures (inside the repository; git ignores out/), which comes back with the run. Work only inside the repository folder: anything outside it is refused. Before you finish, run npm run check and fix what fails. Finally write your report to REPORT.md in the repository root: what you changed, how you checked it (each suite and part you ran, with its counts), and what is left."
             if [ -n "$NOTES" ]; then
               prompt="$prompt Notes from the reviewer (Claude) on the previous try: $NOTES"
             fi
           fi
-          mkdir -p "$OUT/pictures"
+          mkdir -p "$OUT/pictures" out/pictures
           # (the OIDC request variables stay with the sign-in step, not with the AI)
           set +e
           env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
@@ -264,6 +268,7 @@ jobs:
             echo "npm run check exit $?" >> "$OUT/check.log"
             set -e
           fi
+          if [ -d out/pictures ]; then cp -r out/pictures/. "$OUT/pictures/" 2>/dev/null || true; fi
           git add -A
           git diff --cached --stat > "$OUT/changed-files.txt"
           git diff --cached > "$OUT/result.patch"
@@ -278,8 +283,12 @@ jobs:
             echo '```'
             if [ -f "$OUT/check.log" ]; then echo "$(tail -1 "$OUT/check.log")"; fi
             echo
-            echo "Next: tell Claude this run's link. Nothing here is live until Claude reviews it."
+            echo "Next: Claude reviews it. Nothing here is live until then."
           } >> "$GITHUB_STEP_SUMMARY"
+          # a run that changed nothing did not do its task: it shows as failed, not as work to review
+          if [ "$TASK" != "smoke-test" ] && [ ! -s "$OUT/result.patch" ]; then
+            echo "::error::The AI changed no file (see opencode.log in the run's files)."; exit 1
+          fi
 
       - if: always()
         uses: actions/upload-artifact@v4
