@@ -293,7 +293,8 @@ const centreOf = async (page, sel) => {
   s0 = await state(page);
   await f.drag({ x: mid.x, y: 300 }, { x: mid.x + 70, y: 340 });
   s1 = await state(page);
-  check('set to "Look", one finger looks around instead', s0.touchDrag === 'look' && dist(s0.cam, s1.cam) < 1e-3 && Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) > 0.02);
+  check('set to "Look", one finger looks around instead', s0.touchDrag === 'look' && dist(s0.cam, s1.cam) < 1e-3 && Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) > 0.02,
+    JSON.stringify({ mode: s0.touchDrag, moved: dist(s0.cam, s1.cam), turned: Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) }));
   await f.tap(await centreOf(page, '.look-fab'));
   await page.close();
   await ctx.close();
