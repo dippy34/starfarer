@@ -191,6 +191,11 @@ const CSS = `
 #hud .fl-top.fl-tightest :is(.fl-glance, .fl-touch) { display: none; }
 #hud .fl-stick.fl-away { display: none; }
 #hud .fl-aids.fl-away { display: none; }
+/* the engine chip spans the strip, and its menu lays the buttons out two by two */
+.fl-touch[hidden] { display: none !important; }
+#hud .fl-touch .fl-engine-button { width: 100%; }
+.fl-modes.fl-engine-menu { width: min(300px, calc(100vw - 16px)); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#hud .fl-engine-menu button { min-width: 0; white-space: normal; }
 `;
 
 /** the assist's modes, as the list names them (the chip names the current one shorter) */
@@ -201,6 +206,8 @@ const MODES: [SasMode, string][] = [
 const CHIP: Record<SasMode, string> = {
   off: 'Off', stability: 'Hold', prograde: 'Prograde', retrograde: 'Retro', normal: 'Normal', antinormal: 'Anti-norm', 'radial-out': 'Rad out', 'radial-in': 'Rad in', target: 'Target', 'anti-target': 'Away',
 };
+/** Four plain choices, each a setting the drive row already offers (Flight's DRIVE_STEPS). */
+const ENGINE: readonly [string, number][] = [['Gentle', 1], ['Fast', 100], ['Very fast', 10000], ['Near light speed', 1000000]];
 /** arrows for the thruster pad */
 const ARROW = {
   up: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
@@ -213,6 +220,8 @@ const ARROW = {
 export interface FlightControls {
   /** the reactionless drive's setting, a step up or down (choosing that drive) */
   stepDrive(up: boolean): void;
+  /** one of the drive row's settings, chosen by its plain name (choosing that drive) */
+  setDrive(g: number): void;
   /** the fusion torch or the reactionless drive */
   toggleDrive(): void;
   /** the throttle (0..1), from the lever */
@@ -252,6 +261,9 @@ export class FlightHud {
   private driveRow: HTMLElement;
   private drive: HTMLElement;
   private which: HTMLElement;
+  private engineRow: HTMLElement;
+  private engineBtn: HTMLElement;
+  private engineMenu: HTMLElement;
   private lever: HTMLElement;
   private stopBtn: HTMLElement;
   private viewBtn: HTMLElement;
@@ -263,6 +275,8 @@ export class FlightHud {
   /** the thrusters' pad is open (it shows only while flying by hand) */
   private padOpen = false;
   private modesOpen = false;
+  private engineOpen = false;
+  private pilotControls = false;
   /** the view the ship is seen in now */
   private view: 'cockpit' | 'chase' = 'cockpit';
   /** the lever is under a finger: it shows the finger's setting */
@@ -284,7 +298,8 @@ export class FlightHud {
         <button class="fl-glance" type="button" data-cover aria-expanded="false" aria-label="The ship's instruments: tap for the full read-out">
           <span class="fl-l1"><span><small>Speed</small><b></b></span><span><small>Above ground</small><i></i></span></span><span class="fl-l2"></span>${ICON.chevron}
         </button>
-        <div class="fl-touch" data-cover><button class="fl-which" type="button" data-drive aria-label="Change the drive"></button><button type="button" data-step="down" aria-label="Weaker">−</button><span></span><button type="button" data-step="up" aria-label="Stronger">+</button></div>
+        <div class="fl-touch fl-drive-row" data-cover><button class="fl-which" type="button" data-drive aria-label="Change the drive"></button><button type="button" data-step="down" aria-label="Weaker">−</button><span></span><button type="button" data-step="up" aria-label="Stronger">+</button></div>
+        <div class="fl-touch fl-engine" data-cover><button class="fl-which fl-engine-button" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Engine: choose its power">Engine<small>Choose power</small></button></div>
         <div class="fl-stick" data-cover>
           <div class="fl-lever" role="slider" aria-label="Throttle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i><b>0%</b><small>THRUST</small></div>
           <button class="fl-stop" type="button" aria-pressed="false" aria-label="Stop: brake to rest beside the nearest world">${ICON.stop}<span>Stop</span></button>
@@ -301,6 +316,7 @@ export class FlightHud {
           </div>
         </div>
         <div class="fl-modes" role="menu" data-cover hidden>${MODES.map(([m, l]) => `<button type="button" role="menuitemradio" aria-checked="false" data-sas="${m}"><span class="lg">${l}</span><span class="sh">${CHIP[m]}</span></button>`).join('')}</div>
+        <div class="fl-modes fl-engine-menu" role="menu" data-cover hidden>${ENGINE.map(([label, g]) => `<button type="button" role="menuitem" data-drive-g="${g}">${label}</button>`).join('')}</div>
       </div>
       <div class="fl-keys"><b>W/S</b> throttle · <b>Z/X</b> full/cut · <b>arrows/drag</b> pitch-yaw · <b>Q/E</b> roll<br>
       <b>A/D R/F Shift+W/S</b> RCS · <b>Y</b> SAS mode · <b>I</b> drive · <b>= -</b> its setting · <b>[ ]</b> time warp · <b>J</b> autopilot</div>`;
@@ -310,11 +326,18 @@ export class FlightHud {
     this.end = this.el.querySelector('.fl-end')!;
     this.keys = this.el.querySelector('.fl-keys')!;
     this.glanceEl = this.el.querySelector('.fl-glance')!;
-    this.driveRow = this.el.querySelector('.fl-touch')!;
-    this.drive = this.el.querySelector('.fl-touch span')!;
+    this.driveRow = this.el.querySelector('.fl-drive-row')!;
+    this.drive = this.el.querySelector('.fl-drive-row span')!;
     this.which = this.el.querySelector('.fl-which')!;
-    for (const b of this.el.querySelectorAll<HTMLButtonElement>('.fl-touch [data-step]')) b.addEventListener('click', () => controls.stepDrive(b.dataset.step === 'up'));
+    this.engineRow = this.el.querySelector('.fl-engine')!;
+    this.engineBtn = this.el.querySelector('.fl-engine-button')!;
+    this.engineMenu = this.el.querySelector('.fl-engine-menu')!;
+    for (const b of this.el.querySelectorAll<HTMLButtonElement>('.fl-drive-row [data-step]')) b.addEventListener('click', () => controls.stepDrive(b.dataset.step === 'up'));
     this.which.addEventListener('click', () => controls.toggleDrive());
+    this.engineBtn.addEventListener('click', () => this.showEngine(!this.engineOpen));
+    for (const b of this.engineMenu.querySelectorAll<HTMLButtonElement>('[data-drive-g]')) {
+      b.addEventListener('click', () => { controls.setDrive(Number(b.dataset.driveG)); this.showEngine(false); this.timer = 0; });
+    }
     this.lever = this.el.querySelector('.fl-lever')!;
     this.stopBtn = this.el.querySelector('.fl-stop')!;
     this.stopBtn.addEventListener('click', () => controls.stop());
@@ -331,9 +354,11 @@ export class FlightHud {
     for (const b of this.modes.querySelectorAll<HTMLButtonElement>('[data-sas]')) {
       b.addEventListener('click', () => { if (controls.setSas(b.dataset.sas as SasMode)) this.showModes(false); });
     }
-    // (a touch anywhere else puts the list away)
+    // (a touch anywhere else puts an open list away)
     document.addEventListener('pointerdown', (e) => {
-      if (this.modesOpen && !(e.target as Element | null)?.closest?.('.fl-modes, .fl-assist')) this.showModes(false);
+      const t = e.target as Element | null;
+      if (this.modesOpen && !t?.closest?.('.fl-modes:not(.fl-engine-menu), .fl-assist')) this.showModes(false);
+      if (this.engineOpen && !t?.closest?.('.fl-engine-menu, .fl-engine-button')) this.showEngine(false);
     }, true);
     this.holdPad(controls);
     this.glanceEl.addEventListener('click', () => {
@@ -341,7 +366,19 @@ export class FlightHud {
       else sheet.openSheet('flight');
       this.timer = 0;
     });
+    this.setPilotControls(false);
     this.setVisible(false);
+  }
+
+  /** Simple controls by default; the setting in More brings every pilot control back. */
+  setPilotControls(on: boolean): void {
+    this.pilotControls = on;
+    this.driveRow.hidden = !on;
+    this.engineRow.hidden = on;
+    this.aids.hidden = !on;
+    this.showEngine(false);
+    if (!on) { this.showModes(false); this.showPad(false); }
+    this.timer = 0;
   }
 
   /**
@@ -417,6 +454,30 @@ export class FlightHud {
     if (open) this.placeModes();
   }
 
+  /** The Engine chip's four plain choices, opening below it upright and above it on its side. */
+  private showEngine(open: boolean): void {
+    this.engineOpen = open && !this.pilotControls;
+    this.engineMenu.hidden = !this.engineOpen;
+    this.engineBtn.setAttribute('aria-expanded', String(this.engineOpen));
+    if (this.engineOpen) this.placeEngine();
+  }
+
+  private placeEngine(): void {
+    const chip = this.engineBtn.getBoundingClientRect(), m = this.engineMenu;
+    const lying = getComputedStyle(this.el.querySelector('.fl-stick')!).position === 'fixed';
+    const width = Math.min(300, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, lying ? chip.right - width : chip.left));
+    m.style.left = `${Math.round(left)}px`;
+    m.style.right = 'auto';
+    if (lying) {
+      m.style.top = 'auto';
+      m.style.bottom = `${Math.round(window.innerHeight - chip.top + 6)}px`;
+    } else {
+      m.style.top = `${Math.round(chip.bottom + 4)}px`;
+      m.style.bottom = 'auto';
+    }
+  }
+
   private showPad(open: boolean, controls?: FlightControls): void {
     this.padOpen = open;
     if (!open) { this.releasePad(); void controls; }
@@ -469,7 +530,8 @@ export class FlightHud {
 
   setVisible(v: boolean): void {
     this.el.style.display = v ? '' : 'none';
-    // (out of the ship its read-out is not left open)
+    // (out of the ship its read-out and menus are not left open)
+    if (!v) { this.showEngine(false); this.showModes(false); }
     if (!v && this.sheet.open === 'flight') this.sheet.closeSheet();
   }
 
@@ -535,6 +597,7 @@ export class FlightHud {
     const touch = this.root.classList.contains('touch');
     const open = this.sheet.open === 'flight';
     if (touch && this.modesOpen) this.placeModes();
+    if (touch && this.engineOpen) this.placeEngine();
     if (touch) this.fit();
     this.glanceEl.setAttribute('aria-expanded', String(open));
     if (touch) { this.renderGlance(r); this.renderAids(r); }
@@ -619,6 +682,9 @@ export class FlightHud {
     }
     setText(this.which.querySelector('small')!, torch ? `Torch · ${Math.round(r.fuel * 100)}\u00a0%` : 'Field drive');
     setText(this.drive, fmtG(r.driveG).replace(/ g$/, '\u00a0×\u00a0gravity'));
+    const chosen = ENGINE.find(([, g]) => !torch && Math.abs(g - r.driveG) < 1e-9);
+    // (a power that is none of the four, as the autopilot sets one for the trip, is named for who set it, not by its drive)
+    setText(this.engineBtn.querySelector('small')!, chosen?.[0] ?? (torch ? 'Rocket' : r.autopilot ? 'Set by the autopilot' : 'Your own setting'));
     // the lever shows the throttle as it is (the autopilot's, Stop's) unless a finger is on it
     if (!this.leverHeld) this.showLever(r.throttle);
     this.stopBtn.setAttribute('aria-pressed', String(!!r.stop));

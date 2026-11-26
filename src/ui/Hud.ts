@@ -22,8 +22,8 @@ export type HudAction =
   | 'go' | 'centre' | 'deselect' | 'stop' | 'home'
   | 'pause' | 'faster' | 'slower' | 'reverse' | 'now'
   | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot'
-  // board the ship (src/game/Game.ts) or leave it; board it and fly to the selection in it
-  | 'ship' | 'ship-go'
+  // board the ship (src/game/Game.ts) or leave it; board it and fly to the selection in it; simple or pilot controls
+  | 'ship' | 'ship-go' | 'pilot-controls'
   // back to today's date; back to the title screen
   | 'today' | 'menu'
   // night at a place: on to its sunrise; land and walk here (src/app/Walk.ts); fly freely by touch, or stop (src/app/FreeFly.ts)
@@ -138,6 +138,8 @@ export interface HudState {
   look: boolean;
   /** flying freely by touch: a stick, Up and Down over the view (src/app/FreeFly.ts) */
   free?: boolean;
+  /** every steering, side-thrust and drive control on the touch screen, rather than simple Engine controls */
+  pilotControls: boolean;
   /** exploring, or in a mode that brings its own controls */
   mode: 'explore' | 'ship' | 'walk';
   /** a finger has been used: speak of taps, show the touch controls */
@@ -190,7 +192,7 @@ const TOUCH_HELP: [string, string][] = [
   ['Tap', 'Select what you tapped (its name works too)'],
   ['Double-tap', 'Fly there; on the world you are at, come closer'],
   ['Fly freely', 'More turns it on: the stick under the left thumb moves you (all the way: ten times faster), Up and Down, drag to look; Done puts it away'],
-  ['In the ship', 'Drag to turn it (a twist rolls it, a pinch zooms) · the lever is the thrust · Assist sets what the nose holds to (a list of modes) · RCS opens the side thrusters (held to push) · Stop brakes to rest · Chase / Cockpit switches the view · tap the instruments for all of them'],
+  ['In the ship', 'Drag to turn it (a twist rolls it, a pinch zooms) · the lever is the thrust · Engine chooses its power · Stop brakes to rest · Chase / Cockpit switches the view · Pilot controls in More brings back steering and side thrust · tap the instruments for all of them'],
 ];
 
 const KEY_HELP: [string, string][] = [
@@ -381,6 +383,7 @@ const TEMPLATE = `
           <button class="switch" type="button" role="switch" data-act="show-me" aria-checked="true"><span><b>Show me what happens</b><small>After you change a world, time speeds up for a while and the view frames what follows</small></span><i></i></button>
           <h3>Travel</h3>
           <button class="switch" type="button" role="switch" data-act="ship" aria-checked="false"><span><b>Spaceship</b><small>Physics all the way up: as fast as you like, never faster than light. Go there flies it</small></span><i></i></button>
+          <button class="switch" type="button" role="switch" data-act="pilot-controls" aria-checked="false"><span><b>Pilot controls</b><small>Show every steering, side-thrust and drive setting; off keeps one Engine chip and Hold steering</small></span><i></i></button>
           <h3>Camera</h3>
           <button class="switch touch-only" type="button" role="switch" data-act="free" aria-checked="false"><span><b>Fly freely</b><small>A stick moves you, Up and Down, drag to look: the keys' flight without a keyboard</small></span><i></i></button>
           <button class="switch touch-only" type="button" role="switch" data-act="look" aria-checked="false"><span><b>One finger looks around</b><small>instead of turning round the world you are at</small></span><i></i></button>
@@ -822,7 +825,7 @@ export class Hud {
     const flight = this.$('.hud-flight');
     flight.hidden = !s.flying;
     if (s.flying) setText(flight.firstElementChild as HTMLElement, `Flying to ${s.flying}`);
-    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['look', s.look], ['free', !!s.free], ['ship', s.mode === 'ship']] as const) {
+    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['look', s.look], ['free', !!s.free], ['ship', s.mode === 'ship'], ['pilot-controls', s.pilotControls]] as const) {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
     this.$('.look-fab').setAttribute('aria-pressed', String(s.look));

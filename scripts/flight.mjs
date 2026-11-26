@@ -36,13 +36,110 @@ const state = () => page.evaluate(() => {
  * flat and opaque, never blurred glass; a sky label must not read through any piece.
  */
 function opacity() {
-  return [...document.querySelectorAll('.fl-glance, .fl-touch > *, .fl-lever, .fl-stop, .fl-view, .fl-chips button, .fl-rcs, .fl-modes')].map((e) => {
+  const pilot = window.app.game.pilotControls;
+  const active = pilot ? '.fl-drive-row > *, .fl-modes:not(.fl-engine-menu)' : '.fl-engine > *, .fl-engine-menu';
+  return [...document.querySelectorAll(`.fl-glance, ${active}, .fl-lever, .fl-stop, .fl-view, .fl-chips button, .fl-rcs`)].map((e) => {
     const cs = getComputedStyle(e), m = cs.backgroundColor.match(/rgba?\(([^)]+)\)/);
     return { what: `${e.tagName.toLowerCase()}.${e.className}`, alpha: Number(m?.[1].split(',')[3] ?? '1'), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || '') };
   });
 }
 const notFlat = (list) => list.filter((p) => !(p.alpha >= 0.9 && !p.blur));
 const waitFor = (fn, arg, timeout = 240000) => page.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
+
+/** Switches the pilot controls on by touch from the More sheet (does nothing if they are already on). */
+async function pilotControlsOn(phone, f, at) {
+  if (await phone.evaluate(() => window.app.game.pilotControls)) return;
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(2);
+  await phone.evaluate(() => document.querySelector('.switch[data-act="pilot-controls"]').scrollIntoView({ block: 'center' }));
+  await phone.waitForTimeout(300);
+  await f.tap(await at('.switch[data-act="pilot-controls"]'));
+  await f.frames(2);
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(2);
+}
+
+/** Simple controls by default; every pilot control returns from More and is remembered on the device. */
+async function simpleFlightControls() {
+  for (const landscape of [false, true]) {
+    const ctx = await phoneContext(browser, { landscape });
+    const phone = await ctx.newPage();
+    collectErrors(phone, errors);
+    const tag = landscape ? 'on its side' : 'upright';
+    await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=4&az=40&el=5&ship=chase&menu=0`, { waitUntil: 'load' });
+    await phone.waitForFunction(() => window.app && window.app.frameCount > 10 && window.app.game.flight.on, null, { timeout: 600000 });
+    const f = await fingers(phone);
+    const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
+    if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+    await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Gacrux')); });
+    await f.frames(4);
+    const controls = () => phone.evaluate(() => {
+      const shown = (q) => { const e = document.querySelector(q); if (!e) return false; const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+      return {
+        engine: shown('.fl-engine-button'), drive: shown('.fl-drive-row, .fl-touch:not(.fl-engine)'),
+        steering: shown('.fl-assist'), side: shown('.fl-thrust'), sas: window.app.game.flight.sas,
+        pilot: !!window.app.game.pilotControls,
+      };
+    });
+    const simple = await controls();
+    check(`${tag}: by default Engine replaces the drive row, Steering and Side thrust are hidden, and Hold keeps the ship steady`,
+      simple.engine && !simple.drive && !simple.steering && !simple.side && simple.sas === 'stability' && !simple.pilot, JSON.stringify(simple));
+
+    if (!landscape) {
+      for (const [label, g] of [['Gentle', 1], ['Fast', 100], ['Very fast', 10000], ['Near light speed', 1000000]]) {
+        let got = { drive: null, g: null, label: null, shut: false };
+        if (simple.engine) {
+          await f.tap(await at('.fl-engine-button'));
+          await f.frames(2);
+          const offered = await phone.evaluate((wanted) => {
+            const b = [...document.querySelectorAll('.fl-engine-menu [data-drive-g]')].find((e) => e.textContent.trim() === wanted);
+            return b ? { g: b.dataset.driveG, w: b.getBoundingClientRect().width, h: b.getBoundingClientRect().height } : null;
+          }, label);
+          if (offered) {
+            await f.tap(await at(`.fl-engine-menu [data-drive-g="${offered.g}"]`));
+            await f.frames(2);
+            got = await phone.evaluate(() => ({ drive: window.app.game.flight.ship.drive, g: window.app.game.flight.ship.driveAccel / 9.80665, shut: document.querySelector('.fl-engine-menu').hidden }));
+          }
+          got.label = offered ? label : null;
+          got.size = offered && offered.w >= 44 && offered.h >= 44;
+        }
+        check(`Engine, ${label}: the choice sets the field drive to ${g.toLocaleString('en-US')} g`, got.drive === 'reactionless' && Math.abs(got.g - g) < 1e-9 && got.label === label && got.shut && got.size, JSON.stringify(got));
+      }
+    }
+
+    // A real flight towards the owner's example star, with the folded instruments showing.
+    await phone.evaluate(() => { const a = window.app, star = a.findByName('Gacrux'), fl = a.game.flight; fl.driveFor(star); fl.autopilotTo(star); });
+    await f.frames(4);
+    await phone.screenshot({ path: path.join(outDir, `simple-flight-${landscape ? 'side' : 'upright'}.png`), timeout: 180000 });
+
+    if (!landscape) {
+      await phone.evaluate(() => window.app.game.flight.cancelAutopilot('test'));
+      await f.frames(3);
+      await f.tap(await at('.hud-tabs [data-tab="more"]'));
+      await f.frames(2);
+      const offered = await phone.evaluate(() => !!document.querySelector('.switch[data-act="pilot-controls"]'));
+      if (offered) {
+        await phone.evaluate(() => document.querySelector('.switch[data-act="pilot-controls"]').scrollIntoView({ block: 'center' }));
+        await phone.waitForTimeout(300);
+        await f.tap(await at('.switch[data-act="pilot-controls"]'));
+        await f.frames(2);
+      }
+      await f.tap(await at('.hud-tabs [data-tab="more"]'));
+      await f.frames(3);
+      const pilot = await controls();
+      check('Pilot controls in More brings back the drive row, Steering and Side thrust, and puts Engine away',
+        pilot.pilot && pilot.drive && pilot.steering && pilot.side && !pilot.engine, JSON.stringify(pilot));
+      let kept = false;
+      if (pilot.pilot) {
+        await phone.reload({ waitUntil: 'load' });
+        await phone.waitForFunction(() => window.app && window.app.frameCount > 10 && window.app.game.flight.on, null, { timeout: 600000 });
+        kept = await phone.evaluate(() => window.app.game.pilotControls && localStorage.getItem('starfarer-pilot-controls') === '1');
+      }
+      check('Pilot controls is kept on this device across a reload', kept, String(kept));
+    }
+    await ctx.close();
+  }
+}
 
 /** The folded instruments near the Moon, and their place while an end-of-flight panel shows. */
 async function moonInstruments() {
@@ -102,10 +199,11 @@ async function moonInstruments() {
 
 // (Parts, for running the suite in two halves at once on two machines: together they are the whole suite.)
 // FLIGHT_ONLY=desk runs 1-12 (one page at a desk), FLIGHT_ONLY=phone 13-18 (each on a fresh phone); unset: both.
-// FLIGHT_LAYOUT_ONLY=1 is a local, focused run of the Moon instrument checks alone.
-const part = process.env.FLIGHT_LAYOUT_ONLY === '1' ? 'layout' : process.env.FLIGHT_ONLY ?? '';
+// FLIGHT_LAYOUT_ONLY=1 is a local, focused run of the Moon instrument checks alone;
+// FLIGHT_SIMPLE_ONLY=1 runs only the new simple-controls checks and their before/after pictures.
+const part = process.env.FLIGHT_SIMPLE_ONLY === '1' ? 'simple' : process.env.FLIGHT_LAYOUT_ONLY === '1' ? 'layout' : process.env.FLIGHT_ONLY ?? '';
 let st;
-if (part !== 'phone' && part !== 'layout') { // (FLIGHT_ONLY: desk, 1-12; not indented, to keep the change small)
+if (part !== 'phone' && part !== 'layout' && part !== 'simple') { // (FLIGHT_ONLY: desk, 1-12; not indented, to keep the change small)
 // 1. boarding in low Earth orbit: physics on, a circular orbit, the predicted path and its apsides
 await page.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=1.0628&az=40&el=5&ship=cockpit&menu=0`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.app && window.app.renderer && window.app.frameCount > 10, null, { timeout: 120000 });
@@ -393,7 +491,9 @@ check('arrives at the star', !prev.ap && prev.d < prev.r * 12, JSON.stringify({ 
 await shot('f14-alpha-cen.png');
 } // (FLIGHT_ONLY: desk)
 
-if (part !== 'desk' && part !== 'layout') { // (FLIGHT_ONLY: phone, 13-18; not indented, to keep the change small)
+if (part === 'simple') await simpleFlightControls();
+if (part !== 'desk' && part !== 'layout' && part !== 'simple') { // (FLIGHT_ONLY: phone, 13-18; not indented, to keep the change small)
+await simpleFlightControls();
 // 13. on a phone, by touch alone: More, Spaceship boards the ship; the tabs stay (where to go, time,
 // the way out); + raises the drive's setting; Go there on a selected world starts the autopilot
 {
@@ -414,6 +514,7 @@ if (part !== 'desk' && part !== 'layout') { // (FLIGHT_ONLY: phone, 13-18; not i
   st = await phone.evaluate(() => ({ mode: window.app.game.mode, on: window.app.game.flight.on, tabs: getComputedStyle(document.querySelector('.hud-tabs')).display !== 'none', g: window.app.game.flight.ship.driveAccel / 9.80665 }));
   // (a phone opens the ship in the chase view)
   const boarded = st.mode === 'chase' && st.on && st.tabs;
+  await pilotControlsOn(phone, f, at);
   await f.tap(await at('.fl-touch [data-step="up"]'));
   await f.frames(2);
   const g2 = await phone.evaluate(() => ({ g: window.app.game.flight.ship.driveAccel / 9.80665, shown: document.querySelector('.fl-touch span').textContent }));
@@ -574,6 +675,7 @@ if (part !== 'desk' && part !== 'layout') { // (FLIGHT_ONLY: phone, 13-18; not i
   const f = await fingers(phone);
   const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
   if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  await pilotControlsOn(phone, f, at);
   await f.frames(4);
   await f.tap(await at('.fl-glance'));
   await f.frames(4);
@@ -1012,6 +1114,7 @@ for (const landscape of [false, true]) {
   const until = (fn, arg, timeout = 120000) => phone.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
   const shown = (q) => phone.evaluate((sel) => { const e = document.querySelector(sel); return !!e && !e.hidden && e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none'; }, q);
   if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
+  await pilotControlsOn(phone, f, at);
   // (nothing selected to begin with)
   await phone.evaluate(() => window.app.select(null));
   await f.frames(4);
@@ -1122,9 +1225,11 @@ for (const landscape of [false, true]) {
   await phone.goto(`${base}?time=2026-10-01T20:00:00Z&target=Earth&dist=4&az=40&el=5&ship=chase&menu=0`, { waitUntil: 'load' });
   await phone.waitForFunction(() => window.app && window.app.frameCount > 10 && window.app.game.flight.on, null, { timeout: 600000 });
   const f = await fingers(phone);
+  const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
   if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) {
     await f.tap(await phone.evaluate(() => { const b = document.querySelector('.hud-coach [data-coach]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }));
   }
+  await pilotControlsOn(phone, f, at);
   await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Sirius')); });
   const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
   const bad = [];
@@ -1181,7 +1286,7 @@ for (const landscape of [false, true]) {
 
 } // (FLIGHT_ONLY: phone)
 
-if (part !== 'desk') await moonInstruments();
+if (part !== 'desk' && part !== 'simple') await moonInstruments();
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok).length;

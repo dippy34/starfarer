@@ -13,11 +13,15 @@ import { Traffic, TrafficShip } from './Traffic';
 import { HudMarkers } from './HudMarkers';
 import { Station } from './Station';
 import { ExoPlanet, type PlanetType } from '../universe/Planets';
-import { Flight, fmtDist, fmtG, fmtGamma, fmtLight, fmtSpeed as fmtSpd, fmtTime, sasLabel } from './Flight';
+import { DRIVE_STEPS, Flight, fmtDist, fmtG, fmtGamma, fmtLight, fmtSpeed as fmtSpd, fmtTime, sasLabel } from './Flight';
 import { FlightHud } from './FlightHud';
 import { FlightViz } from './FlightViz';
 import { C } from '../sim/Gravity';
 import { G0 } from '../sim/ShipPhysics';
+import { recall, remember } from '../platform/storage';
+
+/** the Engine chip's four choices by name (src/game/FlightHud.ts ENGINE), for its message */
+const ENGINE_WORDS: Record<number, string> = { 1: 'Gentle', 100: 'Fast', 10000: 'Very fast', 1000000: 'Near light speed' };
 
 /** generated planet types with a surface to land on */
 const SOLID_TYPES = new Set<PlanetType>(['lava', 'hot', 'desert', 'terran', 'ocean', 'ice']);
@@ -51,6 +55,8 @@ export class Game {
   readonly flight: Flight;
   readonly viz = new FlightViz();
   readonly flightHud: FlightHud;
+  /** advanced touch controls, off until asked for in More and remembered on this device */
+  pilotControls = recall('pilot-controls') === '1';
   /** the ship's looks: light, drive, framing, the names' mask (ShipArt.ts) */
   readonly art: ShipArt;
   private hudTimer = 0;
@@ -80,6 +86,13 @@ export class Game {
     this.flightHud = new FlightHud(app.hud.root, app.hud, {
       // (on a touch screen − and + choose the reactionless drive as they set it: the setting is its own)
       stepDrive: (up) => { this.flight.ship.drive = 'reactionless'; this.flight.stepDrive(up); },
+      setDrive: (g) => {
+        if (!DRIVE_STEPS.includes(g)) return;
+        this.flight.ship.drive = 'reactionless';
+        this.flight.ship.driveAccel = g * G0;
+        // (said as the Engine chip names it: its choice, and in brackets what that is)
+        this.app.hud.toast(`Engine: ${ENGINE_WORDS[g] ?? fmtG(g)} (${fmtG(g).replace(/ g$/, '\u00a0×\u00a0gravity')} at full throttle)`);
+      },
       toggleDrive: () => this.flight.toggleDrive(),
       setThrottle: (x) => this.flight.setThrottle(x),
       stop: () => { this.flight.stop(); },
@@ -87,6 +100,7 @@ export class Game {
       setSas: (mode) => this.flight.setSas(mode),
       setRcs: (x, y, z) => this.flight.touchRcs.set(x, y, z),
     });
+    this.flightHud.setPilotControls(this.pilotControls);
     this.missions = new Missions(app);
     this.art = new ShipArt(app, this);
     this.missions.onComplete = (m) => {
@@ -98,6 +112,18 @@ export class Game {
 
   get active(): boolean {
     return this.mode !== 'off';
+  }
+
+  /** More's "Pilot controls": simple touch controls, or every one of them; the keyboard is unchanged. */
+  setPilotControls(on: boolean): void {
+    this.pilotControls = on;
+    remember('pilot-controls', on ? '1' : '0');
+    if (!on) {
+      this.flight.sas = 'stability';
+      this.flight.touchRcs.set(0, 0, 0);
+    }
+    this.flightHud.setPilotControls(on);
+    this.app.hud.toast(on ? 'Pilot controls: all steering, side thrust and drive settings shown' : 'Simple controls: Engine, thrust, Stop and view');
   }
 
   private fovBefore = 50;

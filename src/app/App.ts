@@ -973,6 +973,7 @@ export class App {
       case 'centre': if (this.selection) this.center(this.selection); break;
       // (on a phone the ship opens in the chase view: HANDOFF, "The ship's looks")
       case 'ship': this.game.setMode(this.game.active ? 'off' : this.input.touch ? 'chase' : 'cockpit'); break;
+      case 'pilot-controls': this.game.setPilotControls(!this.game.pilotControls); break;
       // the place chip: look at where the camera is; in open space, choose somewhere to go
       case 'home': if (this.rig.target) this.center(this.rig.target); else this.hud.openExplore(); break;
       case 'deselect': this.select(null); break;
@@ -3824,6 +3825,7 @@ export class App {
       minor: this.orbits.showMinor,
       look: rig.touchDrag === 'look',
       free: this.free.active,
+      pilotControls: this.game.pilotControls,
       mode: this.walk.active ? 'walk' : this.game.active ? 'ship' : 'explore',
       touch: this.input.touch,
       ship: flight.on ? flight.timeReport() : null,
