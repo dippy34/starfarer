@@ -375,6 +375,7 @@ for (const kind of kinds) {
     const setup = { phone: 'target=Earth&dist=60', side: 'target=Sun&dist=4000', desk: 'target=Earth&dist=60' }[kind];
     const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=1&${setup}`);
     const subject = { phone: 'Mars', side: 'Earth 2', desk: 'Moon' }[kind];
+    if (kind === 'desk') await page.evaluate(() => { const a = window.app, V = a.findByName('Moon').pos.constructor, tr = (window.__trace = []); const f0 = a.frame.bind(a); a.frame = () => { f0(); const m = a.findByName('Moon'); tr.push([a.frameCount, a.clock.paused ? 1 : 0, Math.round(a.clock.jdTdb), a.rig.anchor?.name ?? '-', a.rig.target?.name ?? '-', Math.round(a.rig.upos.sub(m.upos, new V()).length() / 1000), a.watch.state, a.glide ? 1 : 0, a.mover.holding ? 1 : 0, a.selection?.name ?? '-']); if (tr.length > 150) tr.shift(); }; });
     if (kind === 'side') {
       // Add, through the card of the Sun: a planet like the Earth, put in place where it starts, Done
       await page.evaluate(() => { const a = window.app; a.select(a.findByName('Sun')); });
@@ -411,6 +412,7 @@ for (const kind of kinds) {
     await page.waitForFunction((n) => document.querySelector('#hud .card h2')?.textContent === n, subject, { timeout: 20000 });
     const years = await page.evaluate(() => (window.app.clock.jdTdb - window.app.physics.live.jd0) / 365.25);
     const s = await share(page, kind, kind === 'side' ? 'more' : 'card');
+    if (kind === 'desk') console.log('  TRACE ' + JSON.stringify(await page.evaluate(() => window.__trace.slice(-60))));
     if (!s.url) { check(on('Share hands on a link'), false, 'nothing was shared'); await ctx.close(); break live; }
     const fragment = s.url.split('#')[1] ?? '';
     const sent = await liveState(page);
