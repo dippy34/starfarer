@@ -1,5 +1,27 @@
 [
  {
+  "id": "20261126-031330-a-slimmer-tab-bar-and-buttons-th",
+  "at": "2026-11-26T03:13:30+00:00",
+  "kind": "live",
+  "title": "A slimmer tab bar and buttons that say what they do",
+  "text": "The cheap team's design: a flat tab bar and one row of keys in plain words (Turning around it, My ship). The keys step aside while a card is open, so they never cover the planet.",
+  "link": "https://dippy34.github.io/starfarer/",
+  "pictures": [
+   {
+    "src": "20261126-031330-a-slimmer-tab-bar-and-buttons-th-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Before: round buttons stacked, Drag: orbit"
+   },
+   {
+    "src": "20261126-031330-a-slimmer-tab-bar-and-buttons-th-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "After: one row of keys that say what they do"
+   }
+  ]
+ },
+ {
   "id": "20261126-005500-real-planets-and-made-up-ones-sa",
   "at": "2026-11-26T00:55:00+00:00",
   "kind": "live",
