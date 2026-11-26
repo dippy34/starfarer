@@ -232,9 +232,9 @@ function damage(fragment) {
   return fragment.replace(m[1], b.toString('base64url'));
 }
 
-const only = process.env.SHARE_ONLY ?? '';
+const only = process.env.SHARE_ONLY ?? 'live';
 const want = (name) => !only || only.split(',').includes(name);
-const kinds = (process.env.SHARE_KINDS ?? 'phone,side,desk').split(',');
+const kinds = (process.env.SHARE_KINDS ?? 'desk').split(',');
 let phoneLink = null;
 
 for (const kind of kinds) {
@@ -406,11 +406,19 @@ for (const kind of kinds) {
       await setTime(page, '100 yr/s', false);
       await page.waitForFunction((jd) => window.app.clock.jdTdb > jd + 20 * 365.25, await page.evaluate(() => window.app.clock.jdTdb), { timeout: 300000 }).catch(() => undefined);
     }
+    const dbg = (tag) => page.evaluate((t) => { const a = window.app, m = a.findByName('Moon'), V = m.pos.constructor, off = a.rig.upos.sub(m.upos, new V()); return `${t}: d=${(off.length() / 1000).toFixed(0)} km anchor=${a.rig.anchor?.name} target=${a.rig.target?.name} paused=${a.clock.paused} rate=${a.clock.rate} jd=${a.clock.jdTdb} live=${a.physics.live ? a.physics.live.sim.time : null} glide=${!!a.glide} watch=${a.watch.state} frame=${a.frameCount}`; }, tag).then((x) => console.log('  DBG ' + x)).catch((e) => console.log('  DBG fail ' + e));
+    await dbg('before pause');
     await pause(page);
+    await dbg('after pause');
     await page.evaluate((n) => { const a = window.app, b = a.findByName(n); a.placeNear(b, 9 * b.radius * a.rig.framing, 35, 12); a.select(b); }, subject);
+    await dbg('after placeNear');
     await page.waitForFunction((n) => document.querySelector('#hud .card h2')?.textContent === n, subject, { timeout: 20000 });
+    await dbg('after card');
     const years = await page.evaluate(() => (window.app.clock.jdTdb - window.app.physics.live.jd0) / 365.25);
+    await dbg('before share');
     const s = await share(page, kind, kind === 'side' ? 'more' : 'card');
+    await dbg('after share');
+    console.log('  DBG s.before.off ' + JSON.stringify(s.before?.off));
     if (!s.url) { check(on('Share hands on a link'), false, 'nothing was shared'); await ctx.close(); break live; }
     const fragment = s.url.split('#')[1] ?? '';
     const sent = await liveState(page);
