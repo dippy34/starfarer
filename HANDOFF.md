@@ -635,6 +635,38 @@ overlays drawn with no depth test, the names, the tags and the brackets.)
   phone has the interface's card, and its view switch (chase and cockpit) is the phone-flying
   work's.
 
+## Live physics round other stars (exolive worker, live 26 Nov 2026)
+
+Step 4's first part of the works-everywhere plan (`docs/notes/works-everywhere.md`): Mass, Move,
+Throw, Remove, Watch, Replay, Undo and Back to reality work in another star's planetary system,
+real (the NASA Exoplanet Archive's) or generated, one system at a time. Size works on a planet
+measured in transit; Add stays round the Sun, with its reason.
+
+- *How.* `src/universe/PlanetarySim.ts` turns one `PlanetarySystem` into the bodies the existing
+  live physics runs (`SimSystem`): its star and planets, each a `SimBody` standing for what the
+  app draws (`shows`). Live physics starts from the rails the app draws, places and velocities to
+  the bit, in the frame where the system's centre of mass is at rest; positions are metres from
+  the star's catalogue place (`origin`). `App.physics` is the live physics in use: the Solar
+  System's (`App.solar`) or the one other system's (`App.exoSim`). A system has the turn while it
+  is live, or while the Undo of its Back to reality is still offered (`App.holds`): selecting a
+  world of another system then shows its powers off, with the reason, and throws nothing away.
+- *Masses are the data's only.* A planet's is the archive's (marked "(estimated)" where the
+  archive estimated it); a star's is the archive's, else Kepler's third law from a planet whose
+  orbit's size and period were both measured ("(from its planets)"); a generated system's says so.
+  Where none is known (5 systems), or a measured orbit disagrees with the star's mass by more than
+  a fifth less or a quarter more (291 of 4,743, Kepler-186 among them: `hostMassOf`, `disagree`),
+  the system's powers are off with a plain reason: live physics from such numbers would fling a
+  planet off the orbit drawn.
+- *Not yet.* Links and saves of a changed system of another star (Share and Save say the changes
+  are not in them); Add round other stars (the zone constants are scaled for small stars in
+  `WhatIf.ts`, unused so far); binaries; black holes. The archive's masses of planets found by
+  radial velocity are minimum masses (M sin i) and are shown unmarked: the pipeline does not carry
+  `pl_bmassprov` yet.
+- *Checks.* `tests/exolive.test.ts` (capture to the bit, energy, Undo and Back to reality exact,
+  the star's mass), `tests/powersFor.test.ts`, `scripts/live.mjs` block `exo` (TRAPPIST-1 e on a
+  phone and a desk), `scripts/everywhere.mjs` (TRAPPIST-1, Proxima Cen b, 51 Peg b, Gl 9848 b).
+  The full browser run before it went live: 45759682654.
+
 ## God mode, wave 1 (godmode worker)
 
 The owner, after the powers went live: "Genuinely god mode and ship suck rn". The research behind
