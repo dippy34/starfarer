@@ -1,5 +1,27 @@
 [
  {
+  "id": "20261126-005500-real-planets-and-made-up-ones-sa",
+  "at": "2026-11-26T00:55:00+00:00",
+  "kind": "live",
+  "title": "Real planets, and made-up ones say so",
+  "text": "Stars people know now show only the planets astronomers found. Every card says Real planet or Made-up planet, and Explore has a list of 12 real ones.",
+  "link": "https://dippy34.github.io/starfarer/?target=51%20Peg%20b",
+  "pictures": [
+   {
+    "src": "20261126-005500-real-planets-and-made-up-ones-sa-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Real: 51 Peg b, the first planet found around a Sun-like star"
+   },
+   {
+    "src": "20261126-005500-real-planets-and-made-up-ones-sa-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Made up: a planet the app imagines for Gl 9848, a faint star"
+   }
+  ]
+ },
+ {
   "id": "20261125-213837-god-mode-shows-everywhere",
   "at": "2026-11-25T21:38:37+00:00",
   "kind": "live",
