@@ -170,7 +170,8 @@ export class ExoPlanet implements SpaceObject {
   readonly kind = 'planet';
   readonly key: string;
   readonly upos = new UPos();
-  readonly radius: number;
+  /** its radius (m): the spec's, unless live physics has given it another (src/universe/PlanetarySim.ts) */
+  radius: number;
   /** position relative to the host star (m), updated with the system */
   readonly rel = new Vector3();
 
@@ -211,6 +212,34 @@ export class ExoPlanet implements SpaceObject {
   }
 }
 
+/**
+ * What a host star's mass is known from: the archive's measurement (`measured`); Kepler's third
+ * law from a planet whose orbit's size and period the archive both measured (`orbits`, where it
+ * gives no mass for the star); the app's own estimate from the star's light and colour, which a
+ * generated system's periods were made with (`generated`); or nothing (`unknown`: its planets
+ * cannot be simulated).
+ */
+export type StarMassSource = 'measured' | 'orbits' | 'generated' | 'unknown';
+
+/** A host star's mass (kg; 0 when unknown) and what it is known from. */
+export interface HostMass { readonly kg: number; readonly from: StarMassSource }
+
+/**
+ * While live physics runs a planetary system (src/universe/PlanetarySim.ts): where the simulation
+ * has its star and planets, in place of the Kepler rails, and which of them are gone.
+ */
+export interface LiveDraw {
+  /** put the host star and each planet where the simulation has them (their `upos`, `rel` and `radius`) */
+  place(): void;
+  /** taken away, or become one with another */
+  gone(o: SpaceObject): boolean;
+  /**
+   * The orbit a planet is on now, as `count` points (x, y, z: metres from its star) into `out`;
+   * false where it goes round nothing or is on an open path (no line is drawn then).
+   */
+  orbit(p: ExoPlanet, out: Float32Array, count: number): boolean;
+}
+
 /** A star's planets; positions follow Kepler orbits in the system's own plane. */
 export class PlanetarySystem {
   readonly planets: ExoPlanet[];
@@ -218,21 +247,45 @@ export class PlanetarySystem {
   readonly e1 = new Vector3();
   readonly e2 = new Vector3();
   readonly n = new Vector3();
+  /** the host star's mass, and what it is known from */
+  readonly hostMass: HostMass;
+  /** set while live physics runs this system: its star and planets are where the simulation has them */
+  live: LiveDraw | null = null;
 
-  constructor(readonly host: CatalogStar, specs: PlanetSpec[], readonly real: boolean, normal: Vector3) {
+  constructor(readonly host: CatalogStar, specs: PlanetSpec[], readonly real: boolean, normal: Vector3, hostMass?: HostMass) {
     this.n.copy(normal).normalize();
     const ref = Math.abs(this.n.z) < 0.9 ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
     this.e1.crossVectors(this.n, ref).normalize();
     this.e2.crossVectors(this.n, this.e1);
     this.planets = specs.map((s, i) => new ExoPlanet(s, this, i));
+    // (a generated system's periods were made with the generator's mass for its star: src/universe/Planets.ts generatePlanets)
+    this.hostMass = hostMass ?? (real ? { kg: 0, from: 'unknown' } : { kg: starProps(host).mass * MSUN, from: 'generated' });
   }
 
   /** Planet position relative to the star (m) at Julian date `jd`. */
   position(s: PlanetSpec, jd: number, out: Vector3): Vector3 {
-    const M = s.M0 + ((2 * Math.PI) / s.periodS) * (jd - J2000_JD) * DAY;
-    const E = solveKeplerElliptic(M, s.e);
-    const x = s.aM * (Math.cos(E) - s.e), y = s.aM * Math.sqrt(1 - s.e * s.e) * Math.sin(E);
-    // perifocal -> plane frame (argument of periapsis, node, small inclination about the node line)
+    return this.state(s, jd, out);
+  }
+
+  /**
+   * Planet position (m) and, if `vel` is given, velocity (m/s) relative to the star at Julian date
+   * `jd`, on its rail: the Kepler orbit of its period. The velocity is that orbit's own, the time
+   * derivative of the position (dE/dt = n / (1 − e cos E)).
+   */
+  state(s: PlanetSpec, jd: number, out: Vector3, vel?: Vector3): Vector3 {
+    const n = (2 * Math.PI) / s.periodS;
+    const E = solveKeplerElliptic(s.M0 + n * (jd - J2000_JD) * DAY, s.e);
+    const cE = Math.cos(E), sE = Math.sin(E), b = Math.sqrt(1 - s.e * s.e);
+    this.toPlane(s, s.aM * (cE - s.e), s.aM * b * sE, out);
+    if (vel) {
+      const dE = n / (1 - s.e * cE);
+      this.toPlane(s, -s.aM * sE * dE, s.aM * b * cE * dE, vel);
+    }
+    return out;
+  }
+
+  /** perifocal (x, y) to the world, through the plane frame (argument of periapsis, node, small inclination about the node line) */
+  private toPlane(s: PlanetSpec, x: number, y: number, out: Vector3): Vector3 {
     const cw = Math.cos(s.omega), sw = Math.sin(s.omega);
     const xp = x * cw - y * sw, yp = x * sw + y * cw;
     const cn = Math.cos(s.node), sn = Math.sin(s.node), ci = Math.cos(s.inc), si = Math.sin(s.inc);
@@ -241,6 +294,7 @@ export class PlanetarySystem {
   }
 
   update(jd: number): void {
+    if (this.live) { this.live.place(); return; }
     for (const p of this.planets) {
       this.position(p.spec, jd, p.rel);
       p.upos.copy(this.host.upos).addVec(p.rel);

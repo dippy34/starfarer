@@ -33,9 +33,29 @@ export const TWIN_OF: Record<Exclude<Kind, 'moon'>, number> = { earth: 399, jupi
 
 /** rock and ice (kg/m³): what moons this side of the frost line and beyond it are mostly made of */
 const ROCK = 3000, ICE = 1500;
-const FROST_LINE = 3 * AU;
-/** what is made for a star starts no nearer it than this (a sun needs more room than a planet), and no farther than the edge of the planets (m) */
-const NEAREST_PLANET = 0.1 * AU, NEAREST_SUN = 0.3 * AU, FARTHEST = 60 * AU;
+/**
+ * Where things are round a star (m): the frost line, beyond which a moon is made of ice; how near
+ * it a planet, and a second sun (which needs more room), are made at the nearest; and the edge of
+ * its planets, beyond which nothing is made.
+ */
+export interface Zones { frost: number; nearestPlanet: number; nearestSun: number; farthest: number }
+
+/** Round the Sun: the frost line at 3 AU, the nearest planet at 0.1 AU and sun at 0.3 AU, the farthest at 60 AU. */
+export const SUN_ZONES: Zones = { frost: 3 * AU, nearestPlanet: 0.1 * AU, nearestSun: 0.3 * AU, farthest: 60 * AU };
+
+/**
+ * The same zones round another star of `lumSun` times the Sun's light and `massSun` times its mass.
+ * Distances set by warmth (the frost line, and how near to its star a world is made) go as the
+ * square root of the star's light: a world's equilibrium temperature goes as L^¼ / d^½, so a given
+ * temperature is at d ∝ √L (the snow line of Hayashi 1981, 2.7 AU √L, is the classic use of it).
+ * The edge of the planets goes as the square root of the star's mass, as the app's own generator
+ * has it (src/universe/Planets.ts: generatePlanets). Round TRAPPIST-1 (L = 0.00055, M = 0.09 Suns)
+ * the frost line is at 0.07 AU, among its planets at 0.01 to 0.06 AU, not 3 AU out.
+ */
+export function zonesOf(lumSun: number, massSun: number): Zones {
+  const warm = Math.sqrt(lumSun), reach = Math.sqrt(massSun);
+  return { frost: SUN_ZONES.frost * warm, nearestPlanet: SUN_ZONES.nearestPlanet * warm, nearestSun: SUN_ZONES.nearestSun * warm, farthest: SUN_ZONES.farthest * reach };
+}
 /** what is made starts this share of the way from what it is given to towards the eye, where there is room */
 const TOWARDS_EYE = 0.55;
 
@@ -74,10 +94,10 @@ export function canAdd(b: Body, made: number): Kind[] {
  * inside the Roche limit where it would be pulled apart; and the period that Kepler's third law
  * gives it there. `count`: how many moons have been made for this planet before; `id`: its number.
  */
-export function newMoon(parent: Body, eye: ArrayLike<number>, sunDistance: number, count: number, id: number): Plan {
+export function newMoon(parent: Body, eye: ArrayLike<number>, sunDistance: number, count: number, id: number, zones: Zones = SUN_ZONES): Plan {
   const R = parent.radius;
   const radius = Math.min(1.8e6, Math.max(60e3, 0.12 * R));
-  const icy = sunDistance > FROST_LINE;
+  const icy = sunDistance > zones.frost;
   const rho = icy ? ICE : ROCK;
   const gm = G * rho * (4 / 3) * Math.PI * radius ** 3;
   const parentRho = parent.gm / G / ((4 / 3) * Math.PI * R ** 3);
@@ -103,10 +123,10 @@ export function newMoon(parent: Body, eye: ArrayLike<number>, sunDistance: numbe
  * where there is room (`eye`: from the star's centre to the eye, m). `count`: how many copies of
  * it have been made before; `id`: its number.
  */
-export function newTwin(like: Body, texture: string | null, star: Body, eye: ArrayLike<number>, count: number, id: number): Plan {
+export function newTwin(like: Body, texture: string | null, star: Body, eye: ArrayLike<number>, count: number, id: number, zones: Zones = SUN_ZONES): Plan {
   const described = like.meta as unknown as BodyJson, gm = (described.gm ?? 0) * 1e9;
-  const nearest = like.kind === 'star' ? NEAREST_SUN : NEAREST_PLANET;
-  const orbit = Math.min(FARTHEST, Math.max(nearest, TOWARDS_EYE * Math.hypot(eye[0], eye[1], eye[2])));
+  const nearest = like.kind === 'star' ? zones.nearestSun : zones.nearestPlanet;
+  const orbit = Math.min(zones.farthest, Math.max(nearest, TOWARDS_EYE * Math.hypot(eye[0], eye[1], eye[2])));
   const kind = (Object.keys(TWIN_OF) as (keyof typeof TWIN_OF)[]).find((k) => TWIN_OF[k] === like.id) ?? 'earth';
   return {
     ...circle(orbit, star.gm + gm, PLANETS_POLE, eye),

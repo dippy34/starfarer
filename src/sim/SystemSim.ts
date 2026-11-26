@@ -1,6 +1,37 @@
+import type { UPos } from '../core/upos';
 import type { Body } from '../universe/Body';
-import type { SolarSystem } from '../universe/SolarSystem';
+import type { BodyJson, Family } from '../universe/SolarSystem';
 import { NBody } from './NBody';
+
+/**
+ * What live physics can be started on (the plan's "simulation source": docs/notes/works-everywhere.md):
+ * a system of bodies, each where its catalogue's path has it at a date (`update`), with what each
+ * goes round in the catalogue (`homeOf`) and now (`Body.parent`, which live physics sets). The Solar
+ * System (src/universe/SolarSystem.ts) is one; one other star's planetary system is another
+ * (src/universe/PlanetarySim.ts), its bodies on the Kepler rails the app draws them on.
+ */
+export interface SimSystem {
+  readonly bodies: Body[];
+  readonly byId: Map<number, Body>;
+  /** the system's star (the Sun) */
+  readonly sun: Body;
+  /** where the origin of the bodies' `pos` is in the universe; null: the universe's own (the Solar System's barycentre) */
+  readonly origin: UPos | null;
+  homeOf(b: Body): Body | null;
+  adopt(b: Body, parent: Body | null): void;
+  setGone(b: Body, gone: boolean): void;
+  isGone(b: Body): boolean;
+  familyOf(b: Body): Family;
+  restoreFamilies(families: Iterable<Family>): void;
+  settle(): void;
+  add(bj: BodyJson): Body;
+  bringBack(b: Body): void;
+  remove(b: Body): void;
+  /** every body where its catalogue's path has it at `jd` (TDB), with its velocity */
+  update(jd: number): void;
+  updateOrientation(b: Body, jd: number): void;
+  ephemerisKind(b: Body): string;
+}
 
 /**
  * Between the app's bodies and the simulation (NBody.ts): starting it from where the bodies are
@@ -64,7 +95,7 @@ export function liveDate(live: Live): number {
  * that date: of the bodies `include` passes, by default all that have a mass. A body without a
  * known mass is pulled and does not pull. The body's `id` is its number in the simulation.
  */
-export function capture(system: SolarSystem, jd: number, include: (b: Body) => boolean = (b) => b.gm > 0): Live {
+export function capture(system: SimSystem, jd: number, include: (b: Body) => boolean = (b) => b.gm > 0): Live {
   const motion = motions(system, jd);
   const velOf = new Map(system.bodies.map((b, k) => [b, motion.subarray(3 * k, 3 * k + 3)]));
   const sim = new NBody();
@@ -106,9 +137,10 @@ export function capture(system: SolarSystem, jd: number, include: (b: Body) => b
  * every body its own motion, which is then moved with the simulation. A simulated body is exactly
  * where the simulation has it, whatever the ephemeris says of it by then.
  */
-export function apply(live: Live, system: SolarSystem): void {
+export function apply(live: Live, system: SimSystem): void {
   const sim = live.sim;
   sim.read();
+  const origin = system.origin;
   const ids = sim.ids, n = ids.length, index = live.index;
   if (live.layout !== sim.layout) {
     index.clear();
@@ -150,7 +182,8 @@ export function apply(live: Live, system: SolarSystem): void {
       b.pos.set(b.pos.x + shift[k], b.pos.y + shift[k + 1], b.pos.z + shift[k + 2]);
       b.vel.set(b.vel.x + shift[k + 3], b.vel.y + shift[k + 4], b.vel.z + shift[k + 5]);
     }
-    b.upos.set(b.pos.x, b.pos.y, b.pos.z);
+    if (origin) b.upos.copy(origin).addVec(b.pos);
+    else b.upos.set(b.pos.x, b.pos.y, b.pos.z);
   }
 }
 
@@ -159,7 +192,7 @@ export function apply(live: Live, system: SolarSystem): void {
  * the first body they go round in the catalogue that is simulated, or `host` itself if it is one
  * the simulation no longer has (absorbed by another: what rode on it has nothing to ride on).
  */
-export function riders(live: Live, system: SolarSystem, host: Body): Body[] {
+export function riders(live: Live, system: SimSystem, host: Body): Body[] {
   const simulated = new Set<number>(live.sim.ids);
   return system.bodies.filter((b) => {
     if (simulated.has(b.id) || !b.valid) return false;
@@ -176,7 +209,7 @@ export function riders(live: Live, system: SolarSystem, host: Body): Body[] {
  * simulation). A moon its planet stood for is taken out of the planet's share: the planet keeps
  * the rest of the family's mass, and its centre.
  */
-export function release(live: Live, system: SolarSystem, bodies: Body | readonly Body[]): void {
+export function release(live: Live, system: SimSystem, bodies: Body | readonly Body[]): void {
   const sim = live.sim;
   const list = (bodies instanceof Array ? bodies : [bodies as Body]).filter((b) => b.valid && sim.indexOf(b.id) < 0);
   if (!list.length) return;
@@ -225,7 +258,7 @@ const MISS = 1e-5;
  * the ephemeris's stored polynomials, which jump by metres where one meets the next.
  * Leaves the system updated to `jd`.
  */
-export function motions(system: SolarSystem, jd: number): Float64Array {
+export function motions(system: SimSystem, jd: number): Float64Array {
   const bodies = system.bodies, n = bodies.length;
   const moons = bodies.filter((b) => b.parent && system.ephemerisKind(b) === 'satellite');
   const rate = new Map(moons.map((m) => [m, [0, 0, 0]]));

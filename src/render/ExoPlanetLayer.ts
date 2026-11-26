@@ -459,15 +459,21 @@ export class ExoPlanetLayer {
       host.upos.sub(cam, starRel);
       const sc = blackbodyRGB(host.teff);
       const sl = luminance(sc);
+      // (live physics: a planet taken away is not drawn; with its star taken away, nothing lights them)
+      const live = sys.live, dark = !!live?.gone(host);
       for (const p of sys.planets) {
         active.add(p);
         const d = this.draw(p);
+        if (live?.gone(p)) {
+          for (const o of [d.mesh, d.ring, d.orbit]) if (o) o.visible = false;
+          continue;
+        }
         p.upos.sub(cam, rel);
         const dist = rel.length();
         const pr = Math.asin(Math.min(1, p.radius / Math.max(dist, p.radius * 1.0001))) / pixelAngle;
         toStar.copy(starRel).sub(rel);
         const ds = toStar.length();
-        const E = magToIrradiance(host.absMag + 5 * Math.log10(ds / PC) - 5);
+        const E = dark ? 0 : magToIrradiance(host.absMag + 5 * Math.log10(ds / PC) - 5);
         // the eye adapts to the disk as it is drawn (like Solar System bodies: 1.5 x the mean albedo,
         // dark worlds kept darker than mid-grey)
         const radiance = (Math.min(1, 1.5 * Math.max(d.albedo, 0.15)) * E) / Math.PI;
@@ -512,9 +518,17 @@ export class ExoPlanetLayer {
             (ru.uCamL.value as Vector3).copy(rel).negate().divideScalar(p.radius).applyQuaternion(qi);
           }
         }
-        // orbit line relative to the camera
+        // orbit line relative to the camera: on its rail, or in live physics the orbit it is on now
         d.orbit.visible = this.showOrbits;
-        if (this.showOrbits) {
+        if (this.showOrbits && live) {
+          const a = d.orbit.geometry.attributes.position as BufferAttribute;
+          d.orbit.visible = live.orbit(p, a.array as Float32Array, a.count);
+          a.needsUpdate = true;
+          // (the rail is drawn again once live physics is over)
+          d.orbit.userData.filled = false;
+          d.orbit.matrix.makeTranslation(starRel.x, starRel.y, starRel.z);
+          d.orbit.matrixWorldNeedsUpdate = true;
+        } else if (this.showOrbits) {
           if (!d.orbit.userData.filled) {
             const a = d.orbit.geometry.attributes.position as BufferAttribute;
             const per = p.spec.periodS / 86400;

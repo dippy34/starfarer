@@ -1,9 +1,9 @@
 import type { SimClock } from '../core/time';
 import { AU, DAY } from '../core/units';
 import { LEFT_OUT, NBody, type NBodyBodies, type NBodySnapshot, type SimEvent } from '../sim/NBody';
-import { apply, capture, type Live, liveDate, release, riders } from '../sim/SystemSim';
+import { apply, capture, type Live, liveDate, release, riders, type SimSystem } from '../sim/SystemSim';
 import type { Body } from '../universe/Body';
-import type { BodyJson, Family, SolarSystem } from '../universe/SolarSystem';
+import type { BodyJson, Family } from '../universe/SolarSystem';
 import { dayWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
 import { type LiveWorld, type MadeRecord, WORLD_LIMITS, WorldError } from './SceneWorld';
 import { type Kind, MADE_FIRST_ID } from './WhatIf';
@@ -52,6 +52,15 @@ const ALSO_LEFT_OUT: readonly string[] = [
   'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
   'When two worlds are about to meet, time slows to show it, and a flash marks where they meet: the flash is drawn, its brightness is not worked out. The card says the energy of the hit (half the product of their masses over their sum, times their speed squared) against what holds the lighter together, worked out as for a ball of even density (3GM²/5R: a real world is denser at its centre and held more tightly, the Earth by about a tenth), and whether a rule of thumb has them break apart. Breaking apart is not simulated.',
   'The path drawn ahead of a world you hold or aim is the simulation run on, every pull counted, as time would run while the change is watched: for three of its turns or a hundred years at most, and only until it hits something, leaves for good or goes round something else.',
+];
+/** What live physics leaves out in another star's planetary system (src/universe/PlanetarySim.ts), besides what the simulation itself does (NBody's LEFT_OUT), in plain words. */
+export const PLANETARY_LEFT_OUT: readonly string[] = [
+  'Only this star and its planets are simulated. The Solar System and every other star stay as they really are, and a companion star, if it has one, does not pull here.',
+  'Each planet starts exactly where it is drawn on its orbit, as fast as it goes there: the orbits of the NASA Exoplanet Archive (or of the app\'s generator, for a system it made up). Its planets then pull on one another, which the drawn orbits leave out, so they drift from them a little, as the real ones do.',
+  'Masses are the archive\'s, marked where the archive estimated them. A star the archive gives no mass for is weighed by a planet\'s measured orbit (Kepler\'s third law); a made-up system\'s star has the mass its planets were made with.',
+  'A planet keeps its size and look whatever mass you give it, unless you change its size too, which needs a measured size. A star keeps its size, colour and light.',
+  'Nothing can be added here yet: Add works round the Sun only, so far. A changed system is not kept in a link or a save yet.',
+  'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
 ];
 /** an unbound body this far from what it left has left for good */
 const EDGE = 2000 * AU;
@@ -139,7 +148,11 @@ export class LivePhysics {
   /** the simulation's own word on which moons may cross on rails */
   private cross = 0;
 
-  constructor(private system: SolarSystem, private scene: LiveScene) {}
+  /**
+   * `system`: the Solar System, or one other star's planetary system (src/universe/PlanetarySim.ts);
+   * `alsoLeftOut`: what is left out of it besides what the simulation itself leaves out, in plain words.
+   */
+  constructor(readonly system: SimSystem, private scene: LiveScene, private alsoLeftOut: readonly string[] = ALSO_LEFT_OUT) {}
 
   get on(): boolean {
     return this.live !== null;
@@ -614,7 +627,7 @@ export class LivePhysics {
       ...(alone ? [`${alone} small ${alone > 1 ? 'bodies' : 'body'}`] : []),
     ].join(', and ');
     return {
-      since: dayWords(live.jd0), share: Math.max(0, Math.min(1, this.share)), rails, leftOut: [...LEFT_OUT, ...ALSO_LEFT_OUT],
+      since: dayWords(live.jd0), share: Math.max(0, Math.min(1, this.share)), rails, leftOut: [...LEFT_OUT, ...this.alsoLeftOut],
       log: this.log.slice(-12).reverse().map((e) => ({ day: dayWords(e.jd), text: e.text })),
     };
   }
