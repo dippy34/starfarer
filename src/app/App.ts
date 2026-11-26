@@ -638,6 +638,10 @@ export class App {
 
   /** Put the camera at `dist` from `obj`, `az` degrees around from the sunward direction, looking at it. */
   placeNear(obj: SpaceObject, dist: number, az = 35, el = 15): void {
+    // (put here, it stays here: a glide to the frame of a hit or a watch still under way would carry it off, and
+    // the share suite caught one doing that, the camera left 11 AU from the Moon it had just been put by)
+    this.glide = null;
+    this.frameAsked = null;
     // lit side: towards the Sun, or towards its own star for a planet of another star
     const light = obj instanceof ExoPlanet ? obj.system.host.upos : this.system.sun.upos;
     const sunDir = light.sub(obj.upos, new Vector3());
@@ -833,9 +837,12 @@ export class App {
     // (a planet of another star moves with its system, which a frame brings to the date only for the systems in view, and
     // `find` brought this one to the date before the link's: it is where the link's date puts it before the camera is set from it)
     for (const o of [at, selected]) if (o instanceof ExoPlanet) o.system.update(jd);
-    // (let go of what the camera rode with until now: it has moved with the date, and the camera must not follow it there)
+    // (let go of what the camera rode with until now: it has moved with the date, and the camera must not follow it there;
+    // nor ease on to a frame it was gliding to, of a hit or a watch: the link's camera is where it is)
     this.rig.cancelGoto();
     this.rig.setAnchor(null);
+    this.glide = null;
+    this.frameAsked = null;
     if (v.at && !at) {
       // (what the camera was at is not here: the view of what was selected, or of the Earth, as a plain link has it)
       const to = selected ?? this.system.byId.get(399)!;
