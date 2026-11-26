@@ -101,10 +101,31 @@ fast the ship hit and how slow a safe landing is, as the physics has them ...".
 7. live physics: the mark at the top, the powers' panels, the impact card and the watch chip;
 8. the title screen and loading screen (`src/ui/start.css`, index.html).
 
+## Hosting: the play testers' site and the developers' site (26 Nov 2026)
+
+Two copies of the app, so that play testers have one that does not change under them (the owner:
+"pushing to test branches instead of pushing to main all the time"; "Let's deploy it to cloudflare").
+
+- *Play testers' site:* https://starfarer.pages.dev, on the owner's Cloudflare account (Pages
+  project `starfarer`, a classic Pages project with the production branch named `main`: a label
+  there, not this repository's `main`). It changes only on a release, which Claude makes with the
+  account's login saved in the cloud environment (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`,
+  used only for this): from a commit that is live and whose browser suites passed,
+  `npm run check` (types, unit tests, the build), then
+  `WRANGLER_SEND_METRICS=false npx --yes wrangler@4 pages deploy dist --project-name starfarer
+  --branch main --commit-hash <sha> --commit-message "<what is in it>" --commit-dirty=false`,
+  and `rm -rf dist`. Only changed files are uploaded (the first, 13,097 files, took 38 s). Never
+  `--force` again: the project exists (wrangler 4.168 sends `pages project create` to Workers unless
+  forced, which it was once). The account's other projects are the owner's own: leave them be.
+- *Developers' site:* https://dippy34.github.io/starfarer, from this branch as before (every push
+  that passed its suites; `deploy-pages.yml`). It is the newest work; testers are not given it.
+
+Releases so far: 936d146 (the first play-test version, 26 Nov 2026).
+
 ## Progress page
 
 `public/mc-a76557970f/` (the site's `/starfarer/mc-a76557970f/`: linked from nowhere and kept from search engines, so
-that play testers see only the app, the owner, 26 Nov 2026) is the owner's live view of the work: what is
+that play testers see only the app, the owner, 26 Nov 2026) (also on the testers' site, at the same path) is the owner's live view of the work: what is
 running (the cheap team's tasks, test runs, deploys), what just finished, what went live, the
 TASKS.md board, and pictures of the latest updates. It reads GitHub's public API in the reader's
 browser, so it needs no updating. The pictures are on the site: after putting a visible change
