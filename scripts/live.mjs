@@ -29,7 +29,7 @@
 //   - Mars thrown at the Earth: time slows to show the last of the fall, the camera frames the two, a flash where they
 //     meet, a card with what the hit was; Undo brings Mars back
 // Usage: node scripts/live.mjs [baseUrl] [outDir]   (LIVE_ONLY=watch,sun: those blocks alone; see `want`; LIVE_KINDS=desk: at a desk only)
-import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
+import { atRest, collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -336,9 +336,11 @@ for (const kind of kinds) {
   if (want('watch')) {
     const { ctx, page, touch } = await open(kind, 'target=Jupiter&dist=40');
     const real = await page.evaluate(() => { const a = window.app, io = a.findByName('Io'); return { jd: a.clock.jdTdb, io: io.pos.toArray(), paused: a.clock.paused, rate: a.clock.rate }; });
-    // the Time sheet's buttons where they are before anything is changed
+    // the Time sheet's buttons where they are before anything is changed (once its opening slide has
+    // ended: two frames after the tap it may be on its way, 5 px down once on a runner)
     await press(page, '#hud .hud-tabs [data-tab="time"]');
     await frames(page, 2);
+    await atRest(page, '#hud .sheet.time');
     const faster = await page.evaluate(() => { const r = document.querySelector('#hud .transport [data-act="faster"]').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
     await press(page, '#hud .sheet.time [data-close]');
     const before = await framing(page, 'Callisto', 'Jupiter');
@@ -460,6 +462,7 @@ for (const kind of kinds) {
     // with live physics on, the Time sheet's buttons are where they were, and the way back is well away from them
     await press(page, '#hud .hud-tabs [data-tab="time"]');
     await frames(page, 2);
+    await atRest(page, '#hud .sheet.time');
     const sheet = await page.evaluate(() => {
       const box = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom }; };
       return { faster: box('#hud .transport [data-act="faster"]'), back: box('#hud .live-ways [data-act="reality"]'), undo: box('#hud .live-ways [data-act="undo"]'), live: !document.querySelector('#hud .live-sheet').hidden };

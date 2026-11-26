@@ -2,7 +2,7 @@
 // layout on an upright and a sideways phone, every gesture on the view, and the interface's flows
 // (the card, search, places to go, time, settings, photo mode).
 // Usage: node scripts/touch.mjs [baseUrl] [outDir]
-import { collectErrors, launchBrowser } from './lib/browser.mjs';
+import { atRest, collectErrors, launchBrowser } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -496,10 +496,7 @@ const centreOf = async (page, sel) => {
   await f.frames(2);
   // read at rest: an open sheet slides up 18 px as it comes (sheet-in, styles.css), and two frames
   // after the tap the slide may not have run yet (its foot read 398 of 390 px: 380 + 18)
-  await page.evaluate(() => Promise.race([
-    Promise.all(document.querySelector('.sheet.explore').getAnimations().map((a) => a.finished)),
-    new Promise((done) => setTimeout(done, 2000)),
-  ]));
+  await atRest(page, '.sheet.explore');
   const sheet = await page.evaluate(() => { const r = document.querySelector('.sheet.explore').getBoundingClientRect(); return { t: r.top, b: r.bottom, h: window.innerHeight, rows: document.querySelectorAll('.explore .row').length }; });
   check('sideways: a sheet fits the height and scrolls inside', sheet.t >= 0 && sheet.b <= sheet.h && sheet.rows > 5, JSON.stringify(sheet));
   await page.screenshot({ path: path.join(outDir, 'touch-12-sideways-explore.png'), timeout: 300000 });

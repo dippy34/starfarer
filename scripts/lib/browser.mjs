@@ -40,6 +40,18 @@ function launchChromium() {
  * browser's own console line for it does not.)
  */
 /**
+ * Once the element's animations have ended (a sheet slides up 18 px as it opens: sheet-in in
+ * styles.css), at most `ms` on: a box read two frames after a tap may still be on its way. Nothing
+ * to wait for where there is no such element or nothing moves.
+ */
+export function atRest(page, selector, ms = 2000) {
+  return page.evaluate(([s, t]) => Promise.race([
+    Promise.all((document.querySelector(s)?.getAnimations() ?? []).map((a) => a.finished.catch(() => undefined))),
+    new Promise((done) => setTimeout(done, t)),
+  ]), [selector, ms]);
+}
+
+/**
  * The selection's card, opened if it is folded to its bar (its name, a line in plain words, Go there):
  * Look at, Share, the powers and the facts are one tap on it away (HANDOFF.md "Design"). A tap where
  * the page has a touch screen, else a click. Nothing to do with no card, or one already open.

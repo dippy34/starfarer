@@ -380,9 +380,11 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 .facts:has(> .science[hidden]) { -webkit-mask-image: none; mask-image: none; padding-bottom: 0; }
 /* with its details open the card may take more of the screen, and its list shows that it goes on */
 .card:has(.facts:not([hidden])) { max-height: min(74vh, 680px); }
-/* (upright, while the details are read, the round buttons step aside: the taller card would push them up over the chips) */
+/* (upright, while the card is open the row of action keys steps aside: above the taller card it would stand in the
+   middle of the little view left, over the world framed there that a finger means to take hold of; and while the
+   details are read it would be pushed up over the chips. The card's own Go there is still there) */
 @media (max-width: 759px) and (orientation: portrait) {
-  #hud:has(.sheet.card.on .facts:not([hidden])) .hud-fabs { display: none; }
+  #hud:has(.sheet.card.on.open) .hud-fabs, #hud:has(.sheet.card.on .facts:not([hidden])) .hud-fabs { display: none; }
   /* (and the dock never reaches up over the chips, or the live mark: what is in it gives way, and a tall panel's list scrolls) */
   .hud-dock { top: calc(var(--safe-t) + var(--edge) + 54px); justify-content: flex-end; pointer-events: none; }
   #hud[data-live] .hud-dock { top: calc(var(--safe-t) + var(--edge) + 112px); }
