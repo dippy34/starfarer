@@ -73,6 +73,8 @@ export class SolarSystem {
   readonly bodies: Body[] = [];
   readonly byId = new Map<number, Body>();
   readonly sun: Body;
+  /** the bodies' `pos` is the universe's own frame, from the Solar System's barycentre (src/sim/SystemSim.ts: SimSystem) */
+  readonly origin = null;
   /** true when the current positions come from DE442S (false: approximate elements) */
   usingDE = false;
   jd = J2000_JD;

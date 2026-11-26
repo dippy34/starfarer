@@ -28,6 +28,10 @@
 //     simulation run ahead takes and what ends it on the card; the Earth aimed out of the Solar System: a hyperbola
 //   - Mars thrown at the Earth: time slows to show the last of the fall, the camera frames the two, a flash where they
 //     meet, a card with what the hit was; Undo brings Mars back
+//   - another star's planets (src/universe/PlanetarySim.ts), at TRAPPIST-1 e: its card offers Mass, Size, Move and Remove;
+//     Mass makes it twice as heavy and live physics comes on round TRAPPIST-1 without moving it off its orbit; Undo gives
+//     back its real mass, exactly on its orbit; a finger moves it a third further from its star; time runs on, and Back
+//     to reality puts it on its orbit again, at the moment the first change was made
 // Usage: node scripts/live.mjs [baseUrl] [outDir]   (LIVE_ONLY=watch,sun: those blocks alone; see `want`; LIVE_KINDS=desk: at a desk only)
 import { atRest, collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
@@ -323,7 +327,7 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place); the rest are left out */
+/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo); the rest are left out */
 const only = process.env.LIVE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 /** on a phone and at a desk, or one of them (LIVE_KINDS=desk) */
@@ -1647,6 +1651,116 @@ for (const kind of kinds) {
     check(on('a sun made, its mass changed later with Mass: its size, colour and light follow, as the main sequence has them'),
       Math.abs(m - 0.8) < 0.02 && Math.abs(heavier.radius / R - 1) < 1e-3 && Math.abs(heavier.teff / T - 1) < 1e-3 && Math.abs(heavier.absMag - (heavier.sunMag - 2.5 * Math.log10(L))) < 1e-3,
       `${m.toFixed(3)} Suns: ${heavier.radius.toFixed(4)} of the Sun's radius (${R.toFixed(4)}), ${heavier.teff.toFixed(0)} K (${T.toFixed(0)}), magnitude ${heavier.absMag.toFixed(3)} (${(heavier.sunMag - 2.5 * Math.log10(L)).toFixed(3)})`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ another star's planets: TRAPPIST-1 e (src/universe/PlanetarySim.ts)
+  if (want('exo')) {
+    const { ctx, page, touch } = await open(kind, 'target=Earth&dist=6');
+    // (each step is checked whatever became of the one before: a step that cannot be taken is a failed check, not the end of the suite)
+    const step = async (name, fn) => { try { await fn(); } catch (e) { check(on(name), false, String(e).split('\n')[0]); } };
+    const hand = await handOf(page, touch);
+    await quiet(page);
+    await find(page, 'TRAPPIST-1 e');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    // The state of the planet: where it is about its star against where its rail (the archive's orbit) has it at the
+    // clock's date, how far from its star, its mass as the powers have it, and live physics.
+    const exo = () => page.evaluate(() => {
+      // (`powerBody` is the body the powers act on for it: src/app/App.ts; an app without it has none)
+      const a = window.app, e = a.findByName('TRAPPIST-1 e'), sys = e.system, b = a.powerBody?.(e, false), V = e.rel.constructor;
+      const rail = sys.position(e.spec, a.clock.jdTdb, new V());
+      return {
+        on: a.physics.on, live: !!sys.live, jd: a.clock.jdTdb, paused: a.clock.paused, off: e.rel.distanceTo(rail), r: e.rel.length(), rail: rail.length(),
+        factor: b ? b.gm / a.physics.realGm(b) : 0, radius: e.radius === e.spec.radiusM, star: sys.host.upos.sub(a.powerBody?.(sys.host, false)?.upos ?? sys.host.upos, new V()).length(),
+        mark: document.querySelector('#hud .live-mark').hidden ? '' : document.querySelector('#hud .live-what small').textContent, toast: document.querySelector('#hud .hud-toast').textContent,
+      };
+    });
+    // (setup, not a power: the eye high over the plane of TRAPPIST-1's planets, far enough back that e and the place a third
+    // further from the star are both in the open, clear of the card, the chips and where the mark of live physics will be)
+    await openCard(page);
+    const view = await page.evaluate(() => {
+      const a = window.app, e = a.findByName('TRAPPIST-1 e'), star = e.system.host, V = e.rel.constructor;
+      const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+      const open = (p) => !!p && p.x > 36 && p.x < innerWidth - 36 && p.y > 170 && p.y < innerHeight - 36 && walls.every((r) => p.x < r.left - 36 || p.x > r.right + 36 || p.y < r.top - 36 || p.y > r.bottom + 36);
+      for (const k of [2.5, 3.5, 5]) for (let az = 0; az < 360; az += 30) {
+        a.placeNear(star, k * e.spec.aM, az, 70);
+        a.frame();
+        const from = a.project(e.upos.sub(a.rig.upos, new V())), to = a.project(star.upos.sub(a.rig.upos, new V()).add(e.rel.clone().multiplyScalar(4 / 3)));
+        if (open(from) && open(to)) return { from, to };
+      }
+      return null;
+    });
+    await frames(page, 3);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-exo-before.png`) });
+    const s0 = await exo();
+
+    await step("TRAPPIST-1 e's card offers Mass, Size, Move and Remove (Add says why not); nothing is live yet", async () => {
+      const states = await page.evaluate(() => Object.fromEntries(['[data-power="mass"]', '[data-power="size"]', '[data-act="move"]', '[data-power="add"]', '[data-act="remove"]']
+        .map((sel) => [sel.replace(/\[data-(power|act)="|"\]/g, ''), document.querySelector(`#hud .card ${sel}`).getAttribute('aria-disabled') !== 'true'])));
+      check(on("TRAPPIST-1 e's card offers Mass, Size, Move and Remove (Add says why not); nothing is live yet"),
+        states.mass && states.size && states.move && !states.add && states.remove && !s0.on && s0.off === 0 && !!view, JSON.stringify({ ...states, view: !!view }));
+    });
+
+    // Mass: twice as heavy with the slider. The planet does not move for it: it starts from its rail
+    await step('Mass: TRAPPIST-1 e twice as heavy; live physics comes on round TRAPPIST-1, and the planet stays on its orbit', async () => {
+      await listen(page);
+      await slideMass(page, touch, Math.log10(2));
+      const s = await exo(), said = await heard(page), read = await text(page, '#hud .card [data-panel="mass"] .power-read b');
+      await page.screenshot({ path: path.join(outDir, `live-${kind}-exo-mass.png`) });
+      check(on('Mass: TRAPPIST-1 e twice as heavy; live physics comes on round TRAPPIST-1, and the planet stays on its orbit'),
+        s.on && s.live && Math.abs(s.factor - 2) < 0.1 && s.jd === s0.jd && s.off < 1 && /TRAPPIST-1/.test(s.mark) && said.some((t) => /Live physics is on round TRAPPIST-1/.test(t)),
+        `×${s.factor.toFixed(3)} ("${read}"), ${s.off.toExponential(2)} m off its rail, the mark "${s.mark}"; "${said.join('" then "')}"`);
+    });
+
+    await step("Undo: TRAPPIST-1 e's real mass again, exactly on its orbit, and live physics off", async () => {
+      await listen(page);
+      await press(page, '#hud .live-mark .live-undo');
+      await frames(page, 3);
+      const s = await exo(), said = await heard(page);
+      check(on("Undo: TRAPPIST-1 e's real mass again, exactly on its orbit, and live physics off"),
+        !s.on && !s.live && s.factor === 1 && s.off === 0 && s.jd === s0.jd && said.some((t) => t.startsWith("Undone: changing TRAPPIST-1 e's mass. TRAPPIST-1 and its planets are real again")),
+        `×${s.factor}, ${s.off} m off its rail, live ${s.on}; "${said.join('" then "')}"`);
+    });
+
+    // Move: a finger takes the planet a third further out from its star, in the plane of its orbit
+    await step('Move: a finger takes TRAPPIST-1 e a third further from its star; time waits while it is held, and live physics is on', async () => {
+      await press(page, '#hud .card [data-act="move"]');
+      await frames(page, 3);
+      if (!view) throw new Error('no view of TRAPPIST-1 e with room to move it');
+      await hand.press(view.from);
+      for (let i = 1; i <= 10; i++) await hand.slide({ x: view.from.x + ((view.to.x - view.from.x) * i) / 10, y: view.from.y + ((view.to.y - view.from.y) * i) / 10 });
+      await frames(page, 3);
+      const held = await exo();
+      await hand.lift();
+      await frames(page, 3);
+      const s = await exo();
+      check(on('Move: a finger takes TRAPPIST-1 e a third further from its star; time waits while it is held, and live physics is on'),
+        held.on && held.paused && s.on && Math.abs(s.r / s0.r - 4 / 3) < 0.08 && s.off > 0.2 * s0.r,
+        `${(s.r / s0.r).toFixed(3)} times as far from its star, ${(s.off / s0.r).toFixed(3)} of its orbit off its rail; held: paused ${held.paused}, live ${held.on}`);
+    });
+
+    // time on two days (its orbit takes six), then Back to reality: the rail again, at the moment the first change was made
+    await step('Back to reality: TRAPPIST-1 e on its rail again, at the moment the first change was made; live physics off', async () => {
+      const moved = await exo();
+      if (!moved.on) throw new Error('nothing is live to go back from');
+      await rate(page, '1 d/s');
+      if (await page.evaluate(() => window.app.clock.paused)) {
+        await press(page, '#hud .hud-tabs [data-tab="time"]');
+        await press(page, '#hud .transport [data-act="pause"]');
+        await press(page, '#hud .sheet.time [data-close]');
+      }
+      const ran = await until(page, (jd) => window.app.clock.jdTdb > jd + 2, moved.jd, 600);
+      await pause(page);
+      const later = await exo();
+      await listen(page);
+      await press(page, '#hud .live-mark .live-back');
+      await frames(page, 3);
+      const s = await exo(), said = await heard(page);
+      await page.screenshot({ path: path.join(outDir, `live-${kind}-exo-reality.png`) });
+      check(on('Back to reality: TRAPPIST-1 e on its rail again, at the moment the first change was made; live physics off'),
+        ran && later.off > 0.1 * s0.r && !s.on && !s.live && s.off === 0 && s.jd === s0.jd && s.radius && s.star === 0 && said.some((t) => t.startsWith('Back to reality')),
+        `ran on ${(later.jd - moved.jd).toFixed(2)} days, then ${(later.off / s0.r).toFixed(3)} of its orbit off its rail; back: ${s.off} m off, ${((s.jd - s0.jd) * 86400).toFixed(3)} s from the first change; "${said.join('" then "')}"`);
+    });
     await ctx.close();
   }
 }
