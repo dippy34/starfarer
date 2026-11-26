@@ -270,6 +270,47 @@ need the OpenCode workspace's region set to Global.
 - **Don't touch:** `src/game/` and `scripts/flight.mjs` (task/ship-instruments), and
   `src/universe/CatalogSearch.ts`, `src/app/Systems.ts` and App.ts's search code (task/search-names).
 
+### `task/simple-flight`: the ship's controls, simple by default
+
+- **Status:** started 26 Nov 2026 (first try). Medium.
+- **Model:** `opencode-go/kimi-k3.1-pro`
+- **The problem:** the owner, 26 Nov 2026, with a phone screenshot of the ship flying to Gacrux: "the
+  flying controls still look a bit too advanced and not intuitive enough like the steering and side
+  thrust". Upright on a phone the ship shows, besides its instruments: a drive row ("Main drive /
+  Field drive", "-", "1,000,000 x gravity", "+"); a "Steering" chip that opens nine assist modes named
+  as in spaceflight simulators (Off, Hold, Prograde, Retrograde, Normal, Anti-normal, Radial out,
+  Radial in, Target); a "Side thrust" chip that opens a 3x3 pad of thruster buttons; the thrust lever,
+  Stop and the view button. They are in `src/game/FlightHud.ts` (the chips' markup near line 290,
+  the modes' names near line 196, the styles at its top).
+- **What to do:** read `HANDOFF.md` "Design" and "The relativistic ship" first, and follow the
+  design rules (the `--sf-*` tokens, flat, plain words, every target at least 44 px).
+  - Add a setting "Pilot controls", off by default, in More with the other switches, kept on this
+    device as the other settings are.
+  - Pilot controls off (the default): the instruments, the thrust lever, Stop and the view button
+    stay. The drive row gives way to one plain chip, "Engine", whose tap opens four choices:
+    "Gentle", "Fast", "Very fast" and "Near light speed", from about 1 x gravity up to the field drive
+    at its strongest. Each choice sets the drive and its strength as the drive row would. Choose the
+    values from those the drive row offers, and give them in the report. The Steering and Side thrust
+    chips are hidden; the steering assist stays at Hold, so the ship keeps steady, and a finger's
+    drag still turns it.
+  - Pilot controls on: everything exactly as it is today.
+  - At a desk the keys work in both modes; with Pilot controls off only the on-screen chips hide.
+  - No control or function is removed: Pilot controls brings every one back.
+- **Done when:**
+  - New checks in `scripts/flight.mjs` (phone part): by default there is no Steering or Side thrust
+    chip and no drive row; each of the Engine chip's four choices sets the drive (read the ship's
+    drive back); turning Pilot controls on in More brings back the chips and the drive row. They
+    fail on the code before the change.
+  - The `flight` (phone and desk), `touch`, `live` and `start` suites pass, but for the known flaky
+    checks in `docs/notes/testing.md`. A check that uses the steering modes, the side thrusters or the
+    drive row turns Pilot controls on first; none is made weaker. List each changed check in the
+    report.
+  - Pictures before and after, upright at 390x844 and on its side at 844x390, flying towards a star
+    with the instruments showing.
+  - `npm run check` passes.
+- **Don't touch:** `src/game/Flight.ts` and `src/game/Autopilot.ts` (the flight itself), the tab bar,
+  `src/app/powersFor.ts`.
+
 ### `task/tab-bar`: the bottom bar and the round buttons, in the new design
 
 - **Status:** done, live 26 Nov 2026 (run 45705433565, reviewed by Claude; the browser suites found the row of keys over the world framed above an open card, upright, so it steps aside while the card is open, 486b85f). Medium. Design, Part 3 (`HANDOFF.md` "Design", "Next screens", item 2).

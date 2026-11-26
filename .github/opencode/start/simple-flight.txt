@@ -1,0 +1,3 @@
+# Started by Claude, 26 Nov 2026: first try. The owner, play testing the ship on a phone: the controls
+# look too advanced (steering, side thrust). Before task/offline's second try: the play test needs it first.
+model: opencode-go/kimi-k3.1-pro
