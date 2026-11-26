@@ -138,6 +138,11 @@ describe('the powers beyond the Solar System', () => {
       expectNoPowers(powersFor(object, 0, { system: unweighed }));
       expect(reason(powersFor(object, 0, { system: unweighed }), 'mass')).toMatch(/No measured mass for its star/);
     }
+    const disagreeing = new PlanetarySystem(host, [planetSpec], true, new Vector3(0, 0, 1), { kg: M_SUN, from: 'disagree' });
+    for (const object of [disagreeing.host, disagreeing.planets[0]]) {
+      expectNoPowers(powersFor(object, 0, { system: disagreeing }));
+      expect(reason(powersFor(object, 0, { system: disagreeing }), 'move')).toMatch(/orbits disagree/);
+    }
   });
 
   it('live physics runs in one system at a time: the others say so', () => {
@@ -157,6 +162,10 @@ describe('the powers beyond the Solar System', () => {
     expect(reason(powersFor(other.planets[0], 0, { live: system }), 'mass')).toMatch(/one at a time/);
     expect(reason(powersFor(earth, 0, { live: system }), 'mass')).toMatch(/one at a time/);
     expect(working(powersFor(earth, 0, { live: 'solar' }))).toEqual(['mass', 'size', 'move', 'add', 'remove']);
+    // Back to reality just used in one system, its Undo still offered: the others wait, and say why
+    expect(reason(powersFor(earth, 0, { live: system, undo: true }), 'mass')).toMatch(/Undo is still offered/);
+    expect(reason(powersFor(system.planets[0], 0, { live: 'solar', undo: true }), 'move')).toMatch(/Undo is still offered/);
+    expect(working(powersFor(earth, 0, { live: 'solar', undo: true }))).toEqual(['mass', 'size', 'move', 'add', 'remove']);
   });
 
   it('another star has a reason for every power, including its unmeasured mass', () => {

@@ -217,9 +217,12 @@ export class ExoPlanet implements SpaceObject {
  * law from a planet whose orbit's size and period the archive both measured (`orbits`, where it
  * gives no mass for the star); the app's own estimate from the star's light and colour, which a
  * generated system's periods were made with (`generated`); or nothing (`unknown`: its planets
- * cannot be simulated).
+ * cannot be simulated). `disagree`: the archive gives a mass (kg, as `measured` or `orbits` would),
+ * but a planet whose orbit it measured says the star weighs more than a quarter more or a fifth
+ * less: live physics from such numbers would fling that planet off the orbit drawn, so its planets
+ * are not simulated either.
  */
-export type StarMassSource = 'measured' | 'orbits' | 'generated' | 'unknown';
+export type StarMassSource = 'measured' | 'orbits' | 'generated' | 'unknown' | 'disagree';
 
 /** A host star's mass (kg; 0 when unknown) and what it is known from. */
 export interface HostMass { readonly kg: number; readonly from: StarMassSource }

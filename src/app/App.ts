@@ -710,18 +710,23 @@ export class App {
   async share(): Promise<void> {
     const url = this.sceneLink();
     const how = await handOn({ url, title: PRODUCT_NAME, text: `${this.sceneWords()}, in ${PRODUCT_NAME}${this.solar.on ? ' (changed with live physics)' : ''}` }, this.input.touch || this.hud.touchFirst);
-    // (a changed planetary system of another star is not written in a link yet: said, not hidden)
-    const kept = this.physics !== this.solar && this.physics.on ? `. The changes round ${this.physics.system.sun.name} are not in it yet` : '';
+    const kept = this.notKept();
     if (how === 'copied') this.hud.toast(`Link copied${kept}`, kept ? 4 : undefined);
     else if (how === 'shared') this.hud.toast(`Shared${kept}`, kept ? 4 : undefined);
     else if (how === 'failed') this.hud.toast('The link could not be shared here');
+  }
+
+  /** A changed planetary system of another star is not written in a link or a save yet: said, not hidden (the end of Share's and Save's words). */
+  private notKept(): string {
+    return this.physics !== this.solar && this.physics.on ? `. The changes round ${this.physics.system.sun.name} are not in it yet` : '';
   }
 
   /** More, Save this scene: kept on this device, in the list under it. */
   saveScene(): void {
     const name = `${this.sceneWords(true)}${this.solar.on ? ', changed' : ''}`;
     const how = saveScene(name, encodeLink(this.sceneView()), this.solar.on);
-    if (how === 'kept') this.hud.toast(`Saved: ${name}`);
+    const kept = this.notKept();
+    if (how === 'kept') this.hud.toast(`Saved: ${name}${kept}`, kept ? 4 : undefined);
     else if (how === 'too many') this.hud.toast(`${SAVES_MOST} scenes are saved already: delete one to save another`, 4);
     else if (how === 'full') this.hud.toast("Not saved: this browser's storage for the app is full. Deleting a saved scene makes room", 5);
     else this.hud.toast('Not saved: this browser keeps nothing for the app (private browsing?). Share the link instead', 5);
@@ -1357,12 +1362,20 @@ export class App {
   // ------------------------------------------------------------------ live physics in one system at a time
   /** Where live physics runs now: round the Sun, in another star's planetary system, or nowhere. */
   private liveWhere(): 'solar' | PlanetarySystem | null {
-    return this.solar.on ? 'solar' : this.exoSim?.physics.on ? this.exoSim.source.system : null;
+    return this.holds(this.solar) ? 'solar' : this.exoSim && this.holds(this.exoSim.physics) ? this.exoSim.source.system : null;
+  }
+
+  /**
+   * Live physics runs in `p`; or Back to reality was just used there and its Undo is still offered,
+   * which another system's powers would throw away: either way it is that system's turn (one at a time).
+   */
+  private holds(p: LivePhysics): boolean {
+    return p.on || (p === this.physics && this.realAgain > 0 && this.history.size > 0);
   }
 
   /** What `o` is as far as its powers go: for a star, its planetary system; and where live physics runs now (src/app/powersFor.ts). */
   private powerPlace(o: SpaceObject | null): PowerPlace {
-    return { system: o instanceof CatalogStar && !this.isCompanion(o) ? this.systems.of(o) : undefined, live: this.liveWhere() };
+    return { system: o instanceof CatalogStar && !this.isCompanion(o) ? this.systems.of(o) : undefined, live: this.liveWhere(), undo: !this.physics.on && this.holds(this.physics) };
   }
 
   /** The one table of which powers work on `o`, here and now (src/app/powersFor.ts). */
@@ -1381,16 +1394,18 @@ export class App {
   powerBody(o: SpaceObject | null = this.selection, fresh = true): Body | null {
     if (!o) return null;
     if (o instanceof SimBody) return this.exoSim?.source.bodyOf(o.shows) === o ? o : null;
+    // (a world of another system than the one whose turn it is has none: selecting it, which asks
+    // here every frame, must not throw away that system's Undo)
     if (o instanceof Body) {
-      if (this.exoSim?.physics.on) return null;
+      if (this.exoSim && this.holds(this.exoSim.physics)) return null;
       this.useLive(this.solar);
       return o;
     }
     const system = o instanceof ExoPlanet ? o.system : o instanceof CatalogStar && !this.isCompanion(o) ? this.systems.of(o) : null;
-    if (!system || this.solar.on) return null;
+    if (!system || this.holds(this.solar)) return null;
     let ex = this.exoSim;
     if (!ex || ex.source.system !== system) {
-      if (ex?.physics.on) return null;
+      if (ex && this.holds(ex.physics)) return null;
       // (made only when a power is offered for it: nothing of another star's system is simulated, or kept, before that)
       const source = new PlanetarySim(system);
       ex = this.exoSim = { source, physics: new LivePhysics(source, { left: (b, into) => this.bodyLeft(b, into), dropped: () => undefined }, PLANETARY_LEFT_OUT) };
