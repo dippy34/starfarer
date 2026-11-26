@@ -1,7 +1,7 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { UPos } from '../core/upos';
 import type { Body } from '../universe/Body';
-import type { SolarSystem } from '../universe/SolarSystem';
+import type { SimSystem } from '../sim/SystemSim';
 import type { CameraRig } from './CameraRig';
 import { goesRound, type LivePhysics, weighty } from './LivePhysics';
 import { affected, WATCH_SECONDS, WATCH_SLOWEST, type Watched, watchPlan, type Weighed } from './Powers';
@@ -30,7 +30,7 @@ export interface WatchFrame { rate: number; radius: number; centre: Body | null 
  * The worlds that matter to what is seen of a change (LivePhysics: weighty), and the one it is made
  * to: each one's mass, place and motion, and how long the orbit it is on takes once round.
  */
-export function sample(physics: LivePhysics, system: SolarSystem, touched: Body): Map<Body, Sampled> {
+export function sample(physics: LivePhysics, system: SimSystem, touched: Body): Map<Body, Sampled> {
   const out = new Map<Body, Sampled>();
   for (const b of system.bodies) {
     if (!b.valid || system.isGone(b) || (b !== touched && !weighty(b))) continue;

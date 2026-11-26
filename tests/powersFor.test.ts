@@ -98,18 +98,65 @@ describe('the powers on a Solar System body', () => {
 
 const host = new CatalogStar('star:test', new Vector3(1, 0, 0), 4.83, 5772, 'G2V', ['Test star'], null);
 const planetSpec: PlanetSpec = {
-  name: 'Test real b', real: true, est: [], aM: AU, e: 0, inc: 0, node: 0, omega: 0, M0: 0,
+  name: 'Test real b', real: true, est: [], method: 'Transit', aM: AU, e: 0, inc: 0, node: 0, omega: 0, M0: 0,
   periodS: 365.25 * DAY, radiusM: R_EARTH, massKg: M_EARTH, teqK: 255, type: 'terran', albedo: 0.3,
   rings: false, seed: 1, rotS: DAY,
 };
 
 describe('the powers beyond the Solar System', () => {
-  it('a real and a generated planet of another star each explain all five', () => {
-    const real = new PlanetarySystem(host, [planetSpec], true, new Vector3(0, 0, 1)).planets[0];
+  it('a real planet of another star with a measured size has Mass, Size, Move and Remove; Add says why not', () => {
+    const system = new PlanetarySystem(host, [planetSpec], true, new Vector3(0, 0, 1), { kg: M_SUN, from: 'measured' });
+    const table = powersFor(system.planets[0]);
+    expect(working(table)).toEqual(['mass', 'size', 'move', 'remove']);
+    expectPlainReason(table, 'add');
+    expect(reason(table, 'add')).toMatch(/round the Sun/);
+  });
+
+  it('a planet whose size is estimated, generated or not seen in transit keeps Mass, Move and Remove; its Size says which', () => {
+    const estimated = new PlanetarySystem(host, [{ ...planetSpec, est: ['radius'] }], true, new Vector3(0, 0, 1), { kg: M_SUN, from: 'measured' }).planets[0];
     const generated = new PlanetarySystem(host, [{ ...planetSpec, name: 'Test generated b', real: false }], false, new Vector3(0, 0, 1)).planets[0];
-    for (const planet of [real, generated]) expectNoPowers(powersFor(planet));
-    expect(reason(powersFor(real), 'mass')).toMatch(/Solar System only/);
-    expect(reason(powersFor(generated), 'move')).toMatch(/Solar System only/);
+    const wobble = new PlanetarySystem(host, [{ ...planetSpec, method: 'Radial Velocity' }], true, new Vector3(0, 0, 1), { kg: M_SUN, from: 'measured' }).planets[0];
+    expect(generated.system.hostMass.from).toBe('generated');
+    expect(reason(powersFor(wobble), 'size')).toMatch(/transit/);
+    for (const planet of [estimated, generated, wobble]) {
+      expect(working(powersFor(planet))).toEqual(['mass', 'move', 'remove']);
+      expectPlainReason(powersFor(planet), 'size');
+      expectPlainReason(powersFor(planet), 'add');
+    }
+    expect(reason(powersFor(estimated), 'size')).toMatch(/estimated/);
+    expect(reason(powersFor(generated), 'size')).toMatch(/generated/);
+  });
+
+  it('the star of a planetary system has Mass, Move and Remove; a star whose mass nobody knows has none', () => {
+    const system = new PlanetarySystem(host, [planetSpec], true, new Vector3(0, 0, 1), { kg: M_SUN, from: 'measured' });
+    const table = powersFor(host, 0, { system });
+    expect(working(table)).toEqual(['mass', 'move', 'remove']);
+    expectPlainReason(table, 'size');
+    expectPlainReason(table, 'add');
+    const unweighed = new PlanetarySystem(host, [planetSpec], true, new Vector3(0, 0, 1), { kg: 0, from: 'unknown' });
+    for (const object of [unweighed.host, unweighed.planets[0]]) {
+      expectNoPowers(powersFor(object, 0, { system: unweighed }));
+      expect(reason(powersFor(object, 0, { system: unweighed }), 'mass')).toMatch(/No measured mass for its star/);
+    }
+  });
+
+  it('live physics runs in one system at a time: the others say so', () => {
+    const system = new PlanetarySystem(host, [planetSpec], true, new Vector3(0, 0, 1), { kg: M_SUN, from: 'measured' });
+    const other = new PlanetarySystem(host, [{ ...planetSpec, name: 'Test other b' }], true, new Vector3(0, 0, 1), { kg: M_SUN, from: 'measured' });
+    const earth = new Body(399, 'Test world', 'planet');
+    earth.gm = G * M_EARTH;
+    earth.radius = R_EARTH;
+    earth.radii = [R_EARTH, R_EARTH, R_EARTH];
+    // live round the Sun: another star's planets and that star wait
+    for (const table of [powersFor(system.planets[0], 0, { live: 'solar' }), powersFor(host, 0, { system, live: 'solar' })]) {
+      expectNoPowers(table);
+      expect(reason(table, 'move')).toMatch(/one at a time/);
+    }
+    // live in that star's system: its own planets keep their powers, the Solar System's and another system's wait
+    expect(working(powersFor(system.planets[0], 0, { live: system }))).toEqual(['mass', 'size', 'move', 'remove']);
+    expect(reason(powersFor(other.planets[0], 0, { live: system }), 'mass')).toMatch(/one at a time/);
+    expect(reason(powersFor(earth, 0, { live: system }), 'mass')).toMatch(/one at a time/);
+    expect(working(powersFor(earth, 0, { live: 'solar' }))).toEqual(['mass', 'size', 'move', 'add', 'remove']);
   });
 
   it('another star has a reason for every power, including its unmeasured mass', () => {
@@ -123,7 +170,7 @@ describe('the powers beyond the Solar System', () => {
     const hole = new BlackHole(0, data.blackholes.find((h) => h.name === 'Cygnus X-1')!);
     expect(hole.massSun).toBeGreaterThan(0);
     expectNoPowers(powersFor(hole));
-    expect(reason(powersFor(hole), 'mass')).toMatch(/Solar System only/);
+    expect(reason(powersFor(hole), 'mass')).toMatch(/black holes/);
   });
 
   it('a comet and a belt asteroid stay on their recorded paths', () => {

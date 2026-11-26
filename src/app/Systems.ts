@@ -2,12 +2,12 @@ import { Vector3 } from 'three';
 import { AU, DAY, PC, SUN_ABS_MAG } from '../core/units';
 import { raDecToVector } from '../core/frames';
 import { normKey, queryKeys, scoreKey } from '../universe/CatalogSearch';
-import { ALBEDO, classify, eqTemp, ExoPlanet, generatePlanets, hashKey, massFromRadius, PlanetarySystem, type PlanetSpec, REARTH, rng, starProps } from '../universe/Planets';
+import { ALBEDO, classify, eqTemp, ExoPlanet, generatePlanets, hashKey, type HostMass, massFromRadius, PlanetarySystem, type PlanetSpec, REARTH, rng, starProps } from '../universe/Planets';
 import { absMagForRadius } from '../universe/StarRadii';
 import { CatalogStar, type NamedStars } from '../universe/Stars';
 
 /** One system from public/data/exoplanets.json (pipeline/build_exoplanets.py). */
-interface ArchiveSystem {
+export interface ArchiveSystem {
   host: string; ids: string[]; ra: number; dec: number; distPc: number;
   teff: number | null; radSun: number | null; massSun: number | null; spType: string; vmag: number | null; stars: number;
   planets: {
@@ -150,14 +150,15 @@ export class Systems {
         let M0 = rr() * Math.PI * 2;
         if (p.tTransit) M0 = Math.PI / 2 - (2 * Math.PI * (p.tTransit - 2451545.0)) / p.periodDays;
         return {
-          name: p.name, real: true, est: p.est, aM: a, e: p.e, inc: (((p.incDeg ?? 90) - (s.planets[0]?.incDeg ?? 90)) * Math.PI) / 180,
+          // (a mass the archive does not give is the radius's estimate, and says so)
+          name: p.name, real: true, est: p.massEarth === null && !p.est.includes('mass') ? [...p.est, 'mass'] : p.est, aM: a, e: p.e, inc: (((p.incDeg ?? 90) - (s.planets[0]?.incDeg ?? 90)) * Math.PI) / 180,
           node: 0, omega: ((p.omegaDeg ?? 90) * Math.PI) / 180, M0, periodS: P, radiusM: p.radiusEarth * REARTH,
           massKg: (p.massEarth ?? massFromRadius(p.radiusEarth)) * 5.9722e24, teqK: teq, type, albedo: ALBEDO[type],
           rings: (type === 'giant' || type === 'icegiant') && rr() < 0.25, seed: rr() * 1000, rotS: locked ? P : (8 + 40 * rr()) * 3600,
           method: p.method, year: p.year,
         } satisfies PlanetSpec;
       });
-      return new PlanetarySystem(star, specs, true, normal);
+      return new PlanetarySystem(star, specs, true, normal, hostMassOf(s));
     }
     // (a star people know, or one the planet hunters have looked at hard, gets only what they found: no made-up planets)
     if (wellStudied(star)) return null;
@@ -278,3 +279,19 @@ export class Systems {
 }
 
 export const PCM = PC;
+
+const G = 6.674e-11, M_SUN = 1.98892e30, M_EARTH = 5.9722e24;
+
+/**
+ * The mass of an archive system's star, from the archive alone: its own measurement where it has
+ * one; else Kepler's third law (G (M + m) = 4π² a³ / P²) from the innermost planet whose orbit's
+ * size and period were both measured (neither is in its `est`), less that planet's mass; else
+ * unknown. (The same constants as Planets.ts.)
+ */
+export function hostMassOf(s: Pick<ArchiveSystem, 'massSun' | 'planets'>): HostMass {
+  if (s.massSun !== null && s.massSun > 0) return { kg: s.massSun * M_SUN, from: 'measured' };
+  const p = s.planets.filter((q) => !q.est.includes('a') && !q.est.includes('period') && q.aAU > 0 && q.periodDays > 0).sort((x, y) => x.aAU - y.aAU)[0];
+  if (!p) return { kg: 0, from: 'unknown' };
+  const a = p.aAU * AU, P = p.periodDays * DAY, kg = (4 * Math.PI ** 2 * a ** 3) / (G * P * P) - (p.massEarth ?? 0) * M_EARTH;
+  return kg > 0 ? { kg, from: 'orbits' } : { kg: 0, from: 'unknown' };
+}

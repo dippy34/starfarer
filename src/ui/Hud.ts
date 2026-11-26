@@ -112,9 +112,12 @@ export interface HudState {
    * Live physics, or null while the Solar System is the real one: since when, what the mark at the
    * top says under its name (short: a phone's width), how fast time gets on when that is slower
    * than asked ('' otherwise), what is carried on rails ('' when nothing is), what the simulation
-   * leaves out, and what has happened, newest first.
+   * leaves out, and what has happened, newest first. `where`: the star whose planetary system it runs
+   * in (null: the Solar System; it runs in one system at a time).
    */
-  live: { since: string; mark: string; slow: string; rails: string; leftOut: readonly string[]; log: { day: string; text: string }[] } | null;
+  live: { since: string; mark: string; slow: string; rails: string; leftOut: readonly string[]; log: { day: string; text: string }[]; where: string | null } | null;
+  /** what has just come back with the real universe, for the mark ("the real Solar System again") */
+  realWhat: string;
   /** the last change can be undone */
   undo: boolean;
   /** the real Solar System has just come back (Back to reality, or its first change undone): Undo is offered at the top for a moment */
@@ -960,12 +963,13 @@ export class Hud {
     sheet.hidden = !live;
     if (after) {
       setText(this.$('.live-what b'), 'Back to reality');
-      setText(this.$('.live-what small'), 'the real Solar System again');
+      setText(this.$('.live-what small'), s.realWhat);
     }
     if (!live) return;
     setText(this.$('.live-what b'), 'Live physics');
     setText(this.$('.live-what small'), live.mark);
-    setText(this.$('.live-about'), `Since ${live.since} everything here moves under its own gravity: each world pulls on every other, and nothing is on its catalogued path any more.${live.rails ? ` Carried on rails while time runs this fast: ${live.rails}.` : ''}`);
+    const what = live.where ? `${live.where} and its planets move under their own gravity: each pulls on every other, and none is on its catalogued orbit any more. Everything else stays real.` : 'everything here moves under its own gravity: each world pulls on every other, and nothing is on its catalogued path any more.';
+    setText(this.$('.live-about'), `Since ${live.since} ${what}${live.rails ? ` Carried on rails while time runs this fast: ${live.rails}.` : ''}`);
     const key = live.log.map((e) => `${e.day}\n${e.text}`).join('\n');
     if (key !== this.logKey) {
       this.logKey = key;

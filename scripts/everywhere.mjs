@@ -22,6 +22,11 @@ const POWERS = {
   moon: ['Mass', 'Size', 'Move', 'Remove'],
   sun: ['Mass', 'Move', 'Add', 'Remove'],
   dwarf: ['Mass', 'Size', 'Move', 'Add', 'Remove'],
+  // another star's planets and their star, under live physics one system at a time (src/universe/PlanetarySim.ts): Size
+  // only for a planet measured in transit, Add round the Sun only
+  transiting: ['Mass', 'Size', 'Move', 'Remove'],
+  exoplanet: ['Mass', 'Move', 'Remove'],
+  host: ['Mass', 'Move', 'Remove'],
   none: [],
 };
 
@@ -36,13 +41,14 @@ const PLACES = [
   { part: 'stars', label: 'Betelgeuse', query: 'Betelgeuse', rows: ['Betelgeuse'], powers: POWERS.none },
   // Alpha Centauri is the system name people type; today's catalogue calls its two stars Rigil
   // Kentaurus and Toliman. Either real catalogue entry is a valid answer to that name.
+  // (Rigil Kentaurus is within 10 pc and has no planets in the archive: a star people know gets no made-up ones)
   { part: 'stars', label: 'Alpha Centauri', query: 'Alpha Centauri', rows: ['Rigil Kentaurus', 'Toliman', 'Alpha Centauri'], fallback: 'Rigil Kentaurus', powers: POWERS.none },
-  { part: 'stars', label: 'TRAPPIST-1 (the star)', query: 'TRAPPIST-1', rows: ['TRAPPIST-1'], powers: POWERS.none },
-  { part: 'planets', label: 'Proxima Cen b', query: 'Proxima Cen b', rows: ['Proxima Cen b'], powers: POWERS.none },
-  { part: 'planets', label: 'TRAPPIST-1 e', query: 'TRAPPIST-1 e', rows: ['TRAPPIST-1 e'], powers: POWERS.none },
-  { part: 'planets', label: '51 Peg b', query: '51 Peg b', rows: ['51 Peg b'], powers: POWERS.none },
+  { part: 'stars', label: 'TRAPPIST-1 (the star)', query: 'TRAPPIST-1', rows: ['TRAPPIST-1'], powers: POWERS.host },
+  { part: 'planets', label: 'Proxima Cen b', query: 'Proxima Cen b', rows: ['Proxima Cen b'], powers: POWERS.exoplanet },
+  { part: 'planets', label: 'TRAPPIST-1 e', query: 'TRAPPIST-1 e', rows: ['TRAPPIST-1 e'], powers: POWERS.transiting },
+  { part: 'planets', label: '51 Peg b', query: '51 Peg b', rows: ['51 Peg b'], powers: POWERS.exoplanet },
   // (a made-up planet: of a faint star far off, Gl 9848, 56 pc and magnitude 11; a star people know gets none, Vega included)
-  { part: 'planets', label: 'Gl 9848 b (generated)', query: 'Gl 9848 b', rows: ['Gl 9848 b'], powers: POWERS.none },
+  { part: 'planets', label: 'Gl 9848 b (generated)', query: 'Gl 9848 b', rows: ['Gl 9848 b'], powers: POWERS.exoplanet },
   { part: 'deep', label: 'deep space', openSpace: true },
   { part: 'deep', label: 'Sagittarius A*', query: 'Sagittarius A*', rows: ['Sagittarius A*'], powers: POWERS.none },
   { part: 'deep', label: 'Cygnus X-1', query: 'Cygnus X-1', rows: ['Cygnus X-1'], detail: /^black hole$/, powers: POWERS.none },
@@ -275,7 +281,11 @@ async function powersWorkAndReasons(page, place) {
 
 const bodyState = (page) => page.evaluate(() => {
   const a = window.app, b = window.__everywhereObject;
-  return b?.pos ? { gm: b.gm, radius: b.radius, pos: b.pos.toArray(), vel: b.vel.toArray(), jd: a.clock.jdTdb, on: a.physics.on } : null;
+  if (b?.pos) return { gm: b.gm, radius: b.radius, pos: b.pos.toArray(), vel: b.vel.toArray(), jd: a.clock.jdTdb, on: a.physics.on };
+  // another star or its planet: the mass the powers act on (the body standing for it in its system, src/app/App.ts
+  // powerBody), and where it is drawn, to the last bit of its place in the universe (it has no velocity of its own)
+  const p = b && a.powerBody?.(b, false), u = b?.upos;
+  return p && u ? { gm: p.gm, radius: b.radius, pos: [u.xh, u.xl, u.yh, u.yl, u.zh, u.zl], vel: [], jd: a.clock.jdTdb, on: a.physics.on } : null;
 });
 const sameBody = (a, b) => !!a && !!b && a.gm === b.gm && a.radius === b.radius && a.jd === b.jd && a.on === b.on
   && ['pos', 'vel'].every((k) => a[k].every((x, i) => x === b[k][i]));
@@ -321,7 +331,7 @@ async function moveAndUndo(page, touch) {
     await press(page, '#hud .card [data-act="move"]');
     await frames(page, 3);
     const points = await page.evaluate(() => {
-      const a = window.app, o = window.__everywhereObject, v = a.bodies.views.get(o);
+      const a = window.app, o = window.__everywhereObject, b = a.powerBody?.(o, false), v = b ? a.viewOf(b) : a.bodies.views.get(o);
       const at = v && a.project(v.rel);
       if (!at) return null;
       const to = { x: Math.max(45, Math.min(innerWidth - 45, at.x + (at.x < innerWidth / 2 ? 60 : -60))), y: at.y };

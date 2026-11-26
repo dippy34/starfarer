@@ -21,16 +21,21 @@ GPU was used).
 
 "S" means seen working in the sweep; "C" means read in the code but not driven.
 
+Updated 25 Nov 2026 for step 4's first part (live physics for the planets of other stars,
+`src/universe/PlanetarySim.ts`): "L" means checked in `scripts/live.mjs` block `exo` and
+`scripts/everywhere.mjs`; "U" in unit tests (`tests/exolive.test.ts`). "Other star" there means a
+star with planets (real or generated) and its own powers; a star without planets still has none.
+
 | Power | Solar System body | Sun | real exoplanet | generated planet | other star | black hole | comet / belt asteroid | galaxy / nebula |
 |---|---|---|---|---|---|---|---|---|
-| Move | yes (S) | yes (S) | no | no | no | no | no | no |
-| Throw | yes (C) | yes (C) | no | no | no | no | no | no |
-| Mass | yes (S) | yes (S) | no | no | no | no | no | no |
-| Size | yes where the radius is measured (S) | no, by design | no | no | no | no | no | no |
-| Add | a moon for planets and dwarfs only (S) | yes (S) | no | no | no | no | no | no |
-| Remove | yes (S) | yes (S) | no | no | no | no | no | no |
-| Undo, Back to reality | yes (S) | yes (S) | n/a | n/a | n/a | n/a | n/a | n/a |
-| Watch, Replay, Impacts, future path | yes (S/C) | yes (C) | no | no | no | no | no | no |
+| Move | yes (S) | yes (S) | yes (L) | yes (L) | its star: yes (L) | no | no | no |
+| Throw | yes (C) | yes (C) | yes (C) | yes (C) | its star: yes (C) | no | no | no |
+| Mass | yes (S) | yes (S) | yes (L, U) | yes, marked generated (L) | its star: yes, marked as known (L) | no | no | no |
+| Size | yes where the radius is measured (S) | no, by design | measured in transit only (L) | no: generated | no, by design | no | no | no |
+| Add | a moon for planets and dwarfs only (S) | yes (S) | no, "round the Sun only" | no | no | no | no | no |
+| Remove | yes (S) | yes (S) | yes (U) | yes (C) | its star: yes (C) | no | no | no |
+| Undo, Back to reality | yes (S) | yes (S) | yes (L, U) | yes (U) | yes (C) | n/a | n/a | n/a |
+| Watch, Replay, Impacts, future path | yes (S/C) | yes (C) | yes (seen in the owner's pictures; C) | yes (C) | yes (C) | no | no | no |
 | Live temperature | bodies with a measured Bond albedo (C) | n/a | no | no | no | no | no | no |
 | Share the view | yes (S) | yes (S) | yes (fixed, share.mjs) | yes (fixed, share.mjs) | yes (S) | yes (S) | yes (S) | yes (S) |
 | Share a changed universe | yes (C) | yes (C) | no | no | no | no | no | no |
