@@ -88,9 +88,9 @@ export class PlanetarySim implements SimSystem, LiveDraw {
     if (parent) { b.parent = parent; parent.children.push(b); }
   }
 
-  /** Can this system be simulated: is its star's mass known? */
+  /** Can this system be simulated: is its star's mass known, and do its planets' measured orbits agree with it? */
   get simulable(): boolean {
-    return this.sun.gm > 0;
+    return this.sun.gm > 0 && this.system.hostMass.from !== 'disagree';
   }
 
   /** The body that stands for `o` (the system's star, or one of its planets), or null. */
@@ -268,5 +268,6 @@ export class PlanetarySim implements SimSystem, LiveDraw {
 
 /** a star's mass as its card marks it, from what it is known from */
 function starKnown(from: StarMassSource): MassKnown {
-  return from;
+  // (a mass its planets' orbits disagree with is not one to start from: such a system is not simulated)
+  return from === 'disagree' ? 'unknown' : from;
 }

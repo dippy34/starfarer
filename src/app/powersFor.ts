@@ -26,6 +26,8 @@ const table = (mass: PowerStatus, size: PowerStatus, move: PowerStatus, add: Pow
 const none = (reason: string): PowerTable => table(no(reason), no(reason), no(reason), no(reason), no(reason));
 
 const ONE_AT_A_TIME = 'Live physics is on in another system: one at a time';
+const UNDO_ELSEWHERE = 'Undo is still offered in another system, for a few seconds';
+const ORBITS_DISAGREE = "Its star's mass and its planets' orbits disagree in our data";
 const NO_PLANETS = 'Live physics runs round stars with planets, so far';
 const HOLE = 'Live physics does not take black holes yet';
 const DEEP = 'A galaxy or nebula cannot join live physics yet';
@@ -52,11 +54,13 @@ const UNKNOWN = 'This kind cannot join the live simulation yet';
  * Where an object is, as far as its powers go: for a star, its planetary system (null: it has
  * none; left out: not known, taken as none), and where live physics runs now (the Solar System, one
  * other star's planetary system, or nowhere: left out, nowhere). Live physics runs in one system at
- * a time (src/app/App.ts).
+ * a time (src/app/App.ts). `undo`: the system in `live` is not running, but Back to reality was just
+ * used there and its Undo is still offered: it keeps the turn until then.
  */
 export interface PowerPlace {
   readonly system?: PlanetarySystem | null;
   readonly live?: 'solar' | PlanetarySystem | null;
+  readonly undo?: boolean;
 }
 
 /**
@@ -67,7 +71,7 @@ export function powersFor(obj: SpaceObject, made = 0, where: PowerPlace = {}): P
   // (a body of another star's system, as live physics has it, has the powers of what it stands for)
   if (obj instanceof SimBody) return planetary(obj.system, obj.shows instanceof ExoPlanet ? obj.shows : null, where);
   if (obj instanceof Body) {
-    if (where.live && where.live !== 'solar') return none(ONE_AT_A_TIME);
+    if (where.live && where.live !== 'solar') return none(where.undo ? UNDO_ELSEWHERE : ONE_AT_A_TIME);
     if (!obj.valid) return none(INVALID);
     const weighed = obj.gm > 0;
     const size = obj.kind !== 'star' && weighed && obj.radius > 0 && !obj.radiusEstimated;
@@ -102,8 +106,9 @@ export function powersFor(obj: SpaceObject, made = 0, where: PowerPlace = {}): P
  * system whose star's mass is not known at all.
  */
 function planetary(system: PlanetarySystem, planet: ExoPlanet | null, where: PowerPlace): PowerTable {
-  if (where.live && where.live !== system) return none(ONE_AT_A_TIME);
+  if (where.live && where.live !== system) return none(where.undo ? UNDO_ELSEWHERE : ONE_AT_A_TIME);
   if (system.hostMass.from === 'unknown') return none(STAR_UNWEIGHED);
+  if (system.hostMass.from === 'disagree') return none(ORBITS_DISAGREE);
   if (system.live?.gone(planet ?? system.host)) return none(GONE);
   if (!planet) return table(WORKS, no(STAR_SIZE), WORKS, no(ADD_SUN), WORKS);
   return table(WORKS, sizeOf(planet.spec), WORKS, no(ADD_SUN), WORKS);

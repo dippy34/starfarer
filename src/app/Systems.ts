@@ -183,7 +183,8 @@ export class Systems {
     const ai = star.key.startsWith('exohost:') ? Number(star.key.slice(8)) : this.archiveFor(star);
     if (ai !== null) this.claimed.set(ai, star.key);
     const sys = this.build(star, ai);
-    if (this.systems.size > 2000) for (const k of [...this.systems.keys()].slice(0, 500)) this.systems.delete(k);
+    // (the least used let go, but never a system live physics runs: the simulation draws through that very object)
+    if (this.systems.size > 2000) for (const k of [...this.systems.keys()].slice(0, 500)) if (!this.systems.get(k)?.live) this.systems.delete(k);
     this.systems.set(star.key, sys);
     return sys;
   }
@@ -286,12 +287,26 @@ const G = 6.674e-11, M_SUN = 1.98892e30, M_EARTH = 5.9722e24;
  * The mass of an archive system's star, from the archive alone: its own measurement where it has
  * one; else Kepler's third law (G (M + m) = 4π² a³ / P²) from the innermost planet whose orbit's
  * size and period were both measured (neither is in its `est`), less that planet's mass; else
- * unknown. (The same constants as Planets.ts.)
+ * unknown. And `disagree` where a planet whose orbit was measured so says the star weighs more than
+ * a quarter more or a fifth less than that (291 of the 4,743 systems shipped, Kepler-186 among
+ * them: the archive gathers its numbers from different papers), for live physics from those would
+ * fling the planet off the orbit drawn. (The same constants as Planets.ts.)
  */
 export function hostMassOf(s: Pick<ArchiveSystem, 'massSun' | 'planets'>): HostMass {
-  if (s.massSun !== null && s.massSun > 0) return { kg: s.massSun * M_SUN, from: 'measured' };
-  const p = s.planets.filter((q) => !q.est.includes('a') && !q.est.includes('period') && q.aAU > 0 && q.periodDays > 0).sort((x, y) => x.aAU - y.aAU)[0];
-  if (!p) return { kg: 0, from: 'unknown' };
-  const a = p.aAU * AU, P = p.periodDays * DAY, kg = (4 * Math.PI ** 2 * a ** 3) / (G * P * P) - (p.massEarth ?? 0) * M_EARTH;
-  return kg > 0 ? { kg, from: 'orbits' } : { kg: 0, from: 'unknown' };
+  const measured = s.planets.filter((q) => !q.est.includes('a') && !q.est.includes('period') && q.aAU > 0 && q.periodDays > 0);
+  // (the star's mass a planet's orbit says: Kepler's third law, less the planet's own)
+  const kepler = (p: (typeof measured)[number]): number => {
+    const a = p.aAU * AU, P = p.periodDays * DAY;
+    return (4 * Math.PI ** 2 * a ** 3) / (G * P * P) - (p.massEarth ?? 0) * M_EARTH;
+  };
+  let mass: HostMass;
+  if (s.massSun !== null && s.massSun > 0) mass = { kg: s.massSun * M_SUN, from: 'measured' };
+  else {
+    const p = [...measured].sort((x, y) => x.aAU - y.aAU)[0];
+    const kg = p ? kepler(p) : 0;
+    if (!(kg > 0)) return { kg: 0, from: 'unknown' };
+    mass = { kg, from: 'orbits' };
+  }
+  const agree = measured.every((p) => { const r = kepler(p) / mass.kg; return r > 0.8 && r < 1.25; });
+  return agree ? mass : { kg: mass.kg, from: 'disagree' };
 }

@@ -139,6 +139,21 @@ describe('another star\'s planets under live physics', () => {
     expect(hostMassOf({ massSun: 0.5, planets: [] })).toEqual({ kg: 0.5 * 1.98892e30, from: 'measured' });
   });
 
+  it('a star whose measured planets\' orbits disagree with its mass (beyond a fifth less or a quarter more) is not simulated', () => {
+    // a year's orbit at 1 AU says one Sun; at twice the period, a quarter of one
+    const year = { aAU: 1, periodDays: 365.25, massEarth: 1, est: [] as string[] };
+    expect(hostMassOf({ massSun: 1, planets: [year] as never }).from).toBe('measured');
+    expect(hostMassOf({ massSun: 1.2, planets: [year] as never }).from).toBe('measured');
+    const slow = { ...year, periodDays: 2 * 365.25 };
+    const m = hostMassOf({ massSun: 1, planets: [year, slow] as never });
+    expect(m).toEqual({ kg: 1.98892e30, from: 'disagree' });
+    // an estimated period is the pipeline's, worked from the star's mass: it is not a measurement to disagree with
+    expect(hostMassOf({ massSun: 1, planets: [year, { ...slow, est: ['period'] }] as never }).from).toBe('measured');
+    // weighed by the innermost measured orbit, the next measured one is held to that weight
+    expect(hostMassOf({ massSun: null, planets: [year, { ...slow, aAU: 1.6 }] as never }).from).toBe('orbits');
+    expect(hostMassOf({ massSun: null, planets: [year, slow] as never }).from).toBe('disagree');
+  });
+
   it('TRAPPIST-1 keeps its energy over a few orbits of its outermost planet (to a part in a million)', () => {
     const { source, physics, run } = setup(trappist);
     physics.setMass(source.sun, source.sun.gm, JD);
