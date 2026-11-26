@@ -494,6 +494,12 @@ const centreOf = async (page, sel) => {
   await settle(page);
   await f.tap(await centreOf(page, '.hud-tabs [data-tab="explore"]'));
   await f.frames(2);
+  // read at rest: an open sheet slides up 18 px as it comes (sheet-in, styles.css), and two frames
+  // after the tap the slide may not have run yet (its foot read 398 of 390 px: 380 + 18)
+  await page.evaluate(() => Promise.race([
+    Promise.all(document.querySelector('.sheet.explore').getAnimations().map((a) => a.finished)),
+    new Promise((done) => setTimeout(done, 2000)),
+  ]));
   const sheet = await page.evaluate(() => { const r = document.querySelector('.sheet.explore').getBoundingClientRect(); return { t: r.top, b: r.bottom, h: window.innerHeight, rows: document.querySelectorAll('.explore .row').length }; });
   check('sideways: a sheet fits the height and scrolls inside', sheet.t >= 0 && sheet.b <= sheet.h && sheet.rows > 5, JSON.stringify(sheet));
   await page.screenshot({ path: path.join(outDir, 'touch-12-sideways-explore.png'), timeout: 300000 });
