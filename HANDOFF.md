@@ -103,13 +103,14 @@ fast the ship hit and how slow a safe landing is, as the physics has them ...".
 
 ## Progress page
 
-`public/progress/` (the site's `/starfarer/progress/`) is the owner's live view of the work: what is
+`public/mc-a76557970f/` (the site's `/starfarer/mc-a76557970f/`: linked from nowhere and kept from search engines, so
+that play testers see only the app, the owner, 26 Nov 2026) is the owner's live view of the work: what is
 running (the cheap team's tasks, test runs, deploys), what just finished, what went live, the
 TASKS.md board, and pictures of the latest updates. It reads GitHub's public API in the reader's
 browser, so it needs no updating. The pictures are on the site: after putting a visible change
 live, or reviewing a cheap-team run that has pictures, add them with
 `python3 -I scripts/progress-shots.py --kind live|team|tests --title "..." --text "..." --link https://...
---caption "Before" a.png --caption "After" b.png` and commit `public/progress/shots/` (the newest 12
+--caption "Before" a.png --caption "After" b.png` and commit `public/mc-a76557970f/shots/` (the newest 12
 updates are kept, as JPEGs at most 960 px wide, to keep the site under GitHub Pages' 1 GB).
 
 ## Done

@@ -72,7 +72,7 @@ if (git('status', '--porcelain', '--untracked-files=no')) say('note: uncommitted
 const head = git('rev-parse', 'HEAD');
 const old = opt('--old', null);
 if (old && !suitesArg) throw new Error('--old needs --suites');
-// (the title names the change under test too, for the progress page, public/progress/: "Remote test of 1a2b3c4d: <its subject>")
+// (the title names the change under test too, for the progress page, public/mc-a76557970f/: "Remote test of 1a2b3c4d: <its subject>")
 const subject = git('log', '-1', '--format=%s', head);
 let tree = `${head}^{tree}`, base = head, title = `Remote test of ${head.slice(0, 8)}: ${subject}`;
 if (old) {

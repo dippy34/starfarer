@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Add an update's pictures to the progress page (public/progress/, "Pictures"): the newest first.
+Add an update's pictures to the progress page (public/mc-a76557970f/, "Pictures"): the newest first.
 
     python3 -I scripts/progress-shots.py --title "A slim card" --kind live --link https://... \\
         --caption "Before" a.png --caption "After" b.png
 
 Each picture is made a JPEG no wider than 960 px (a phone's screen, sharp), saved as
-public/progress/shots/<id>-<n>.jpg, and listed in public/progress/shots/manifest.json. Only the
+public/mc-a76557970f/shots/<id>-<n>.jpg, and listed in public/mc-a76557970f/shots/manifest.json. Only the
 newest KEEP updates are kept, and their files: the site has to stay under GitHub Pages' 1 GB.
 
 --kind: live (on the site now), team (the cheap team's work, waiting for review) or tests.
@@ -23,7 +23,7 @@ from PIL import Image
 KEEP = 12           # updates kept on the page
 MAX_W = 960         # px
 QUALITY = 76
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'public', 'progress', 'shots')
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'public', 'mc-a76557970f', 'shots')
 Image.MAX_IMAGE_PIXELS = 40_000_000  # refuse anything absurd
 
 
@@ -68,7 +68,7 @@ def main() -> None:
         if name not in keep:
             os.remove(os.path.join(ROOT, name))
     size = sum(os.path.getsize(os.path.join(ROOT, n)) for n in os.listdir(ROOT))
-    print(f'{uid}: {len(pics)} pictures; {len(entries)} updates, {size / 1e6:.1f} MB in public/progress/shots')
+    print(f'{uid}: {len(pics)} pictures; {len(entries)} updates, {size / 1e6:.1f} MB in public/mc-a76557970f/shots')
 
 
 if __name__ == '__main__':
