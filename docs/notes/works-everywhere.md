@@ -40,6 +40,19 @@ star with planets (real or generated) and its own powers; a star without planets
 | Share the view | yes (S) | yes (S) | yes (fixed, share.mjs) | yes (fixed, share.mjs) | yes (S) | yes (S) | yes (S) | yes (S) |
 | Share a changed universe | yes (C) | yes (C) | no | no | no | no | no | no |
 
+Not every star with planets takes live physics (26 Nov 2026, after the review of 02ce231): 5
+archive systems give no mass for their star and no measured orbit to weigh it by, and 291 of the
+4,743 give a mass that a planet's measured orbit (size and period, both measured) disagrees with by
+more than a fifth less or a quarter more (Kepler-186 at half; `hostMassOf` in `src/app/Systems.ts`,
+`disagree`). The archive gathers its numbers from different papers; live physics from such numbers
+would fling the planet off the orbit drawn. Their powers are off, with the reason in plain words.
+Within that bound a planet's orbit, once live, can still settle a little off its drawn line (55 Cnc
+and HR 8799 at about 0.89). Two more for later: the archive's `pl_bmasse` is a minimum mass
+(M sin i) for planets found by radial velocity, and the pipeline does not carry the archive's
+`pl_bmassprov` that says so, so the card shows such a mass unmarked; and a star of the archive
+later claimed by its catalogue twin gets a new system object while live physics still runs the old
+one (rare: it needs the twin's tile to stream in after a change).
+
 Why each "no": exoplanets (`ExoPlanet`) are not `Body` objects and move on Kepler rails with no
 simulation state; other stars (`CatalogStar`) have no mass field; black holes have a real mass but
 nothing builds a simulation with one, because `capture()` takes a `SolarSystem`
