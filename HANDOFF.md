@@ -1459,6 +1459,10 @@ keep B for later, C not needed with A).
    that pull and eat, stars that live and die, deep time, the rest of God mode, a story mode; and
    for step 1 itself the stepping in a Web Worker and the powers in the headset.
 
+## The offline copy (task/offline)
+
+Nothing is installed until a person taps Download in More (`src/platform/offline.ts`, `src/ui/OfflinePanel.ts`, `public/sw.js`). A stopped download keeps its staging cache and Download carries on. **Kill switch:** if `sw.js` ever misbehaves, deploy `public/sw-off.js` under the name `sw.js` (the same folder): browsers fetch `sw.js` afresh, and this worker deletes every `starfarer-offline-*` cache and unregisters itself.
+
 ## Checks before every deploy
 
 `npm run typecheck`, `npm test`, then `npm run build` and, with `npx vite preview --port 4173`

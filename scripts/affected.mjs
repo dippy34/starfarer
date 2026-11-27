@@ -15,7 +15,7 @@
 import { execFileSync } from 'node:child_process';
 
 /** Every browser suite of the deploy checklist (HANDOFF.md "Checks before every deploy"). */
-export const FULL = ['start', 'touch', 'interact', 'verify', 'exposure', 'stars', 'whatif', 'live', 'vr', 'game', 'walk', 'places', 'terrain', 'flight', 'ship', 'share', 'everywhere'];
+export const FULL = ['start', 'touch', 'interact', 'verify', 'exposure', 'stars', 'whatif', 'live', 'vr', 'game', 'walk', 'places', 'terrain', 'flight', 'ship', 'share', 'everywhere', 'offline'];
 
 /**
  * The suites that run in parts at once on GitHub's runners (one job each): the parts together are
@@ -39,9 +39,10 @@ export function matrix(suites) {
   })));
 }
 
-const HUD = ['start', 'touch', 'interact', 'live', 'whatif', 'flight', 'ship', 'walk', 'game', 'vr', 'share', 'everywhere'];
+const HUD = ['start', 'touch', 'interact', 'live', 'whatif', 'flight', 'ship', 'walk', 'game', 'vr', 'share', 'everywhere', 'offline'];
 const GROUND = ['walk', 'terrain', 'touch', 'flight', 'verify'];
 const SHIP = ['flight', 'game', 'ship', 'vr', 'verify', 'walk'];
+const OFFLINE = ['offline', 'start', 'touch', 'share'];
 
 /**
  * [pattern, suites]: every rule that matches a file adds its suites. `null`: the full set.
@@ -60,6 +61,8 @@ const RULES = [
   [/^scripts\/lib\/touch\.mjs$/, ['flight', 'live', 'ship', 'stars', 'touch', 'walk', 'whatif', 'share', 'everywhere']],
   [/^scripts\/stereo\.mjs$/, ['vr']],
   [/^\.github\/workflows\/browser-tests\.yml$/, null],
+  // the offline copy: its file list, service worker, platform code and panel in More
+  [/^(src\/(offline\/|platform\/offline\.ts|ui\/(OfflinePanel\.ts|offline\.css))|public\/sw(-off)?\.js$|vite\.config\.ts$)/, OFFLINE],
   // the start: the loading screen and the title screen
   [/^src\/(app\/StartMenu\.ts|ui\/start\.css)$/, ['start', 'touch', 'vr', 'share']],
   // links to a scene, saves, and handing them on
