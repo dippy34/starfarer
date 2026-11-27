@@ -58,3 +58,19 @@ Next, in order: let the governor step up again when late frames are rare, not no
 phone can afford it); cut the heavy scenes' work on a phone (fewer steps in the volumes, fewer ring
 particles, the black hole's lensing cheaper); warm the cockpit's materials up with the rest. Then the
 owner runs the benchmark again on the developers' site (https://dev.starfarer.pages.dev/?bench=1).
+
+## 27 Nov 2026, evening: what was changed for it
+
+- The governor steps up when misses are rare, not none: at most 5 % of the last 300 frames late
+  (a sliding window, not emptied at a change, so the late frames at the level above still count),
+  none in the last 15, and the wait since the last change (5 s, doubling when a step up is undone
+  within 3 s) as before (`src/render/Quality.ts`; a test with one late frame in thirty).
+- A phone (`touchFirst()`) takes the headset's lighter shaders (`LITE`) from the governor's level 2
+  on (`PHONE_LITE_FROM` in App.ts): fewer steps in the Milky Way's volume, the nebulae and galaxies,
+  the ring particles and the comet tails, fewer octaves on the planets and stars. Its volume pass
+  keeps the screen's own 0.75 (the headset's 0.5 made the nebulae coarse and grainy). Seen here
+  side by side at full resolution: the Milky Way and the Earth look the same; a nebula close up is
+  grainier (fewer steps through it). The browser checks run with the governor off, so they draw as
+  before.
+- Not changed: the cockpit's 484 ms hitch (its materials are compiled at the start already; what
+  else is new to it the first time needs the phone itself to find).

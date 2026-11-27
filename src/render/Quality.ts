@@ -2,13 +2,19 @@ import { QUALITY_LEVEL } from './shaders/xr';
 
 /**
  * Adaptive quality: a governor that keeps the frame rate by stepping a global quality level down
- * when frames are missed and back up after a long run without misses.
+ * when frames are missed and back up after a long run with few misses.
  *
  * A browser paces frames to the display (or the headset), so a frame time only says something when
  * a frame is late: a frame counts as missed when it takes more than 1.3 times the budget (60 Hz on
  * a desktop, the session's rate in a headset). Over a fifth of the last 45 frames missed, the
- * latest among them: one level down (at most once a second). No miss for `upWait` ms: one level up;
- * a step up undone within 3 s doubles the wait (up to a minute), so the level does not oscillate.
+ * latest among them: one level down (at most once a second). `upWait` ms since the last change with
+ * misses rare in the last UP_WINDOW frames (UP_MISS_SHARE of them at most; a window not emptied at a
+ * change, so late frames at the level above still count against going back to it) and none in the
+ * last UP_CLEAN: one level up; a step up undone within 3 s doubles the wait (up to a minute), so the
+ * level does not oscillate.
+ * (Rare, not none: the owner's iPhone 13, 27 Nov 2026, sat at the lowest level in every scene, the
+ * easy ones too, where one frame in about thirty came late, a hitch no resolution changes; a step up
+ * once needed 45 frames without any.)
  *
  * Levels: 0 full quality .. 3 lowest. What a level does is up to each layer (QUALITY.level):
  * the renderer scales its internal resolution on a desktop (RENDER_SCALE); in a headset, whose
@@ -27,6 +33,11 @@ export const QUALITY = { level: 0, levels: 4, enabled: true, cpuBound: false };
 
 /** a late frame whose main thread took this share of the budget is CPU-bound */
 export const CPU_BOUND_SHARE = 0.8;
+/** a step up: misses were at most this share of the last UP_WINDOW frames ... */
+export const UP_MISS_SHARE = 0.05;
+export const UP_WINDOW = 300;
+/** ... and the latest this many frames were all on time */
+export const UP_CLEAN = 15;
 
 /** keep the shader-side copy (shaders/xr.ts QUALITY_LEVEL) in step */
 function setLevel(l: number): void {
@@ -60,6 +71,9 @@ export class Governor {
   private last = 0;
   private misses: boolean[] = [];
   private sinceChange = 0;
+  /** the last UP_WINDOW frames, whether each was a miss, and how many were */
+  private long: boolean[] = [];
+  private longMisses = 0;
   private upWait = 5000;
   private lastUpAt = -1e9;
   /** of the recent late frames, which were CPU-bound */
@@ -78,6 +92,8 @@ export class Governor {
     this.misses = [];
     this.cpuLate = [];
     this.sinceChange = 0;
+    this.long = [];
+    this.longMisses = 0;
     this.upWait = 5000;
     this.lastUpAt = -1e9;
     QUALITY.cpuBound = false;
@@ -109,6 +125,9 @@ export class Governor {
     // only the late frames a lower quality could fix count as misses
     this.misses.push(late && !cpuBound);
     if (this.misses.length > 45) this.misses.shift();
+    this.long.push(late && !cpuBound);
+    if (late && !cpuBound) this.longMisses++;
+    if (this.long.length > UP_WINDOW && this.long.shift()) this.longMisses--;
     if (late) {
       this.cpuLate.push(cpuBound);
       if (this.cpuLate.length > 45) this.cpuLate.shift();
@@ -128,7 +147,9 @@ export class Governor {
       this.misses = [];
       return true;
     }
-    if (missed === 0 && this.sinceChange > this.upWait && QUALITY.level > 0) {
+    let recentClean = this.misses.length >= UP_CLEAN;
+    for (let i = this.misses.length - UP_CLEAN; recentClean && i < this.misses.length; i++) if (this.misses[i]) recentClean = false;
+    if (recentClean && this.longMisses <= this.long.length * UP_MISS_SHARE && this.sinceChange > this.upWait && QUALITY.level > 0) {
       setLevel(QUALITY.level - 1);
       this.lastUpAt = now;
       this.sinceChange = 0;

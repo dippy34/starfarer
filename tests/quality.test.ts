@@ -38,6 +38,34 @@ describe('quality governor', () => {
     expect(QUALITY.level).toBe(0);
   });
 
+  it('steps back up when late frames are rare, not none: one in thirty, as the iPhone 13 had in its easy scenes', () => {
+    QUALITY.level = 3;
+    const g = new Governor(true);
+    /** `n` frames on time with one late (35 ms) frame in every `every` */
+    const rare = (t: number, n: number, every: number): number => {
+      for (let i = 1; i <= n; i++) { t += i % every === 0 ? 35 : 16.7; g.update(t, 1000 / 60); }
+      return t;
+    };
+    let t = rare(0, 280, 30);              // under 5 s: not yet
+    expect(QUALITY.level).toBe(3);
+    t = rare(t, 60, 30);                   // past 5 s, one late frame in thirty: one level up
+    expect(QUALITY.level).toBe(2);
+    // one late frame in ten is not rare: it stays, though no fifth of the window is late either
+    QUALITY.level = 3;
+    const h = new Governor(true);
+    let u = 0;
+    for (let i = 1; i <= 900; i++) { u += i % 10 === 0 ? 35 : 16.7; h.update(u, 1000 / 60); }
+    expect(QUALITY.level).toBe(3);
+    // and a step up never comes in the middle of a late patch: the last frames must be on time
+    QUALITY.level = 2;
+    const k = new Governor(true);
+    let v = run(k, 0, 330, 16.7);          // 5.5 s, all on time...
+    expect(QUALITY.level).toBe(1);
+    v = run(k, v, 2, 35);                  // (a late pair right after does not step back down)
+    expect(QUALITY.level).toBe(1);
+    QUALITY.level = 0;
+  });
+
   it('ignores pauses and does nothing when off', () => {
     QUALITY.level = 0;
     const g = new Governor(false);

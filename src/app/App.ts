@@ -82,7 +82,8 @@ import { liveDate } from '../sim/SystemSim';
 import { type Sunlit, temperatureOf, type Worked, workedOut } from './Worked';
 import { count, LoadProgress } from './Loading';
 import { Input } from './Input';
-import { canvasRatio, leanDevice } from '../core/device';
+import { canvasRatio, leanDevice, touchFirst } from '../core/device';
+import { QUALITY } from '../render/Quality';
 import { describe, distanceText, distanceTo, HOLES, moonWords, objectsOf, pictureOf, starTint, type Category, type Destination, type Picture } from './destinations';
 import { Systems, wellStudied } from './Systems';
 import { VRSupport } from './VR';
@@ -133,6 +134,8 @@ const ENOUGH_STARS = 0.65;
 const EYE_HEIGHT = 1.6;
 /** how far a black hole's glint and its tight glare reach round it on the screen (CSS px) */
 const HOLE_GLINT_PX = 5;
+/** a phone takes the headset's lighter shaders (LITE) from this quality level on (render/Quality.ts: 0 full .. 3 lowest) */
+const PHONE_LITE_FROM = 2;
 /** a double tap on the world the camera is at brings it this many times closer */
 const DOUBLE_TAP_ZOOM = 6;
 /** a click picks what is drawn within this many pixels of it; a finger reaches farther */
@@ -172,6 +175,8 @@ interface Checkpoint { live: LiveCheckpoint; rate: RateState; present: boolean; 
 interface Pending { kind: ChangeKind; body: Body; before: Checkpoint; count: number; sample: Map<Body, Sampled> }
 
 export class App {
+  /** a phone or a tablet (held and touched): it takes the headset's lighter shaders once the governor steps down */
+  private readonly phone = touchFirst();
   readonly renderer: Renderer;
   readonly input: Input;
   readonly hud: Hud;
@@ -3593,7 +3598,11 @@ export class App {
     // (not with reversed-Z in the headset: Renderer.reverseXrProjections drops the runtime's far plane)
     const finiteFar = this.view.xr && Number.isFinite(this.view.far) && this.renderer.depthMode !== 'reversed-z';
     GLOBALS.uPullIn.value = finiteFar ? this.view.far * 0.5 : 0;
-    LITE.uLite.value = this.vr.active ? 1 : 0;
+    // (the lighter shaders are the headset's; a phone takes them too once the quality governor has stepped down twice:
+    // the owner's iPhone 13 drew the Milky Way, the nebulae and Saturn's rings far below 60 Hz even at the lowest
+    // resolution, their cost being steps per pixel, which only these cut. With the governor off, as in the browser
+    // checks, a phone draws as before)
+    LITE.uLite.value = this.vr.active || (this.phone && QUALITY.level >= PHONE_LITE_FROM) ? 1 : 0;
     GLOBALS.uDepthK.value = finiteFar ? depthK(this.renderer.camera.far) : 1;
     HITCH.lap('camera');
 
@@ -3664,7 +3673,8 @@ export class App {
     if (this.holes.views.length) VIEW_CONE.enabled = false;
     // the volume pass: its pixels are larger than the frame's (their noise's level of detail), and
     // inside a hole's lensing region it is not seen at all (the hole draws the surroundings itself)
-    VOLUMES.pixelAngle.value = pixelAngle / Math.min(1, LITE.uLite.value > 0.5 ? VOLUMES.scaleXr : VOLUMES.scale);
+    // (a phone in the lighter shaders keeps the screen's own volume pass: only a headset's is half resolution)
+    VOLUMES.pixelAngle.value = pixelAngle / Math.min(1, this.vr.active ? VOLUMES.scaleXr : VOLUMES.scale);
     VOLUMES.covered = this.holes.views.some((v) => v.inside);
     this.jets.update(this.rig.upos, pixelAngle, now / 1000);
     HITCH.lap('holes');
