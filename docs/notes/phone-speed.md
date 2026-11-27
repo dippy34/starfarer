@@ -72,5 +72,9 @@ owner runs the benchmark again on the developers' site (https://dev.starfarer.pa
   side by side at full resolution: the Milky Way and the Earth look the same; a nebula close up is
   grainier (fewer steps through it). The browser checks run with the governor off, so they draw as
   before.
-- Not changed: the cockpit's 484 ms hitch (its materials are compiled at the start already; what
-  else is new to it the first time needs the phone itself to find).
+- Not changed: the cockpit's 484 ms hitch. Its materials are compiled at the start already
+  (`App.warmUp`: `compileAsync` of every warm-up object), but nothing is drawn with them before they
+  are needed, and WebKit (every browser on an iPhone) is known to build a GPU pipeline only when a
+  draw first uses it. The suspect fix: draw the warm-up objects once into a tiny target of the
+  scene's format at the start. To be tried with the owner's phone to confirm it (the benchmark's
+  cockpit 1 % low).
