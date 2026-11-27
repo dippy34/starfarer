@@ -43,8 +43,15 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail}`);
 };
 const shot = (name) => page.screenshot({ path: path.join(outDir, name), timeout: 180000 });
-const ready = async () => {
-  await page.waitForFunction(() => window.app && window.app.frameCount > 12 && !document.getElementById('boot'), null, { timeout: 600000 });
+/**
+ * The app is up: its loading screen gone and the shaders it compiles at the start ready. (The loading screen gives
+ * up waiting for them after a while; on a slow runner the last of them then compile after it, and a tap's touch
+ * events wait for the page's thread meanwhile: a tap that timed out at 30 s had opened More by the time of the
+ * failure's picture.)
+ */
+const ready = async (on = page) => {
+  await on.waitForFunction(() => window.app && window.app.frameCount > 12 && !document.getElementById('boot'), null, { timeout: 600000 });
+  await on.evaluate(() => Promise.race([window.app.warmed, new Promise((done) => setTimeout(done, 300000))]));
 };
 const openMore = async () => {
   if (await page.evaluate(() => document.querySelector('#hud').dataset.sheet !== 'more')) await page.tap('#hud .hud-tabs [data-tab="more"]');
@@ -228,6 +235,8 @@ try {
   // Two tabs: while another tab holds the download lock, Download starts nothing.
   const other = await context.newPage();
   await other.goto(`${base}?menu=0&gaia=0&procedural=0`, { waitUntil: 'load' });
+  // (the other tab started before this one reloads, as a person would have it: not two copies starting at once on one runner)
+  await ready(other);
   await other.evaluate(() => { navigator.locks.request('starfarer-offline-download', () => new Promise(() => undefined)); });
   await page.reload({ waitUntil: 'load', timeout: 180000 });
   await ready();
