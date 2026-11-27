@@ -78,3 +78,13 @@ owner runs the benchmark again on the developers' site (https://dev.starfarer.pa
   draw first uses it. The suspect fix: draw the warm-up objects once into a tiny target of the
   scene's format at the start. To be tried with the owner's phone to confirm it (the benchmark's
   cockpit 1 % low).
+
+## 27 Nov 2026, later: looks first (the owner)
+
+The owner, on the above: "this isn't a competitive game so FPS doesn't matter that much", and on a
+phone a lower frame rate is hard to see; all but one scene was above 40 frames a second. So on a phone
+the governor now gives up sharpness only below 30 frames a second (`PHONE_FPS`, `governorBudget` in
+`src/render/Quality.ts`: a frame there counts late past 33 ms, not 22), and the lighter shaders come
+only at its lowest level, as a last resort (`PHONE_LITE_FROM` 3 in App.ts). The frame rate to aim for
+on a phone is "smooth enough to look around", not 60.
+

@@ -134,8 +134,8 @@ const ENOUGH_STARS = 0.65;
 const EYE_HEIGHT = 1.6;
 /** how far a black hole's glint and its tight glare reach round it on the screen (CSS px) */
 const HOLE_GLINT_PX = 5;
-/** a phone takes the headset's lighter shaders (LITE) from this quality level on (render/Quality.ts: 0 full .. 3 lowest) */
-const PHONE_LITE_FROM = 2;
+/** a phone takes the headset's lighter shaders (LITE) only at the lowest quality level (render/Quality.ts: 0 full .. 3 lowest): a last resort */
+const PHONE_LITE_FROM = 3;
 /** a double tap on the world the camera is at brings it this many times closer */
 const DOUBLE_TAP_ZOOM = 6;
 /** a click picks what is drawn within this many pixels of it; a finger reaches farther */
@@ -3598,10 +3598,10 @@ export class App {
     // (not with reversed-Z in the headset: Renderer.reverseXrProjections drops the runtime's far plane)
     const finiteFar = this.view.xr && Number.isFinite(this.view.far) && this.renderer.depthMode !== 'reversed-z';
     GLOBALS.uPullIn.value = finiteFar ? this.view.far * 0.5 : 0;
-    // (the lighter shaders are the headset's; a phone takes them too once the quality governor has stepped down twice:
-    // the owner's iPhone 13 drew the Milky Way, the nebulae and Saturn's rings far below 60 Hz even at the lowest
-    // resolution, their cost being steps per pixel, which only these cut. With the governor off, as in the browser
-    // checks, a phone draws as before)
+    // (the lighter shaders are the headset's; a phone takes them only as a last resort, at the governor's lowest level,
+    // which on a phone means under 30 frames a second even at the lowest resolution (render/Quality.ts: PHONE_FPS):
+    // they make a nebula close up grainy, and looks come first here. With the governor off, as in the browser checks,
+    // a phone draws as before)
     LITE.uLite.value = this.vr.active || (this.phone && QUALITY.level >= PHONE_LITE_FROM) ? 1 : 0;
     GLOBALS.uDepthK.value = finiteFar ? depthK(this.renderer.camera.far) : 1;
     HITCH.lap('camera');
