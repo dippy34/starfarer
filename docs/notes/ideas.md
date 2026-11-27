@@ -29,6 +29,32 @@ shows it (`scripts/verify.mjs` shot 13). Three pieces would make that kind of sh
 3. *Spin* (hard, later): the film's hole spins near the limit, which flattens one side of the
    shadow; ours is a non-spinning (Schwarzschild) hole. Kerr geodesics in a phone's shader.
 
+## Sizes of made worlds from a published mass-radius relation (planned 27 Nov 2026)
+
+Today a made world's size follows its mass by rules decided here (`madeSize` in `src/app/WhatIf.ts`:
+the Earth's density for rock, then a straight line in the logarithm up to Jupiter's size), and an ice
+giant of Uranus's 14.5 Earths comes out 2.8 Earth radii where Uranus measures 4.0. A published
+relation would do better: Chen & Kipping 2017, "Probabilistic Forecasting of the Masses and Radii of
+Other Worlds", ApJ 834, 17 (arXiv 1603.08614), Table 1, read from the paper itself:
+log10(R/R⊕) = C + S·log10(M/M⊕) in pieces, each piece meeting the next at the break (their eq. 5-6),
+with 10^C = 1.008 (+0.046/-0.045) R⊕ for the first; slopes S = 0.2790 (+0.0092/-0.0094) for Terran
+worlds, 0.589 (+0.044/-0.031) Neptunian, -0.044 (+0.017/-0.019) Jovian, 0.881 (+0.025/-0.024)
+stellar; breaks at 2.04 (+0.66/-0.59) M⊕, 0.414 (+0.057/-0.065) MJ and 0.0800 (+0.0081/-0.0072) M☉;
+scatter in radius 4.03 %, 14.6 %, 7.37 % and 4.43 % (their medians; Table 1 prints the second and
+third breaks' symbols with M⊕ by mistake, its unit column and §4.4-4.5 say MJ and M☉).
+
+Checked here against the planets (NASA's fact sheet radii): Earth +0.8 %, Venus +0.2 %, Mars +1.6 %,
+Uranus -1.8 %, Neptune +11.5 % (inside its 14.6 %), but Saturn +29 % and Jupiter +26 %: the giants it
+was fitted on are mostly hot and puffed up. So, by kind:
+- the rocky kinds (rocky, ocean, desert, lava; a planet like the Earth): the Terran piece, 1.008 R⊕ ×
+  (M/M⊕)^0.2790, also above 2.04 M⊕, because the kind says rock (5 Earths: 1.58 R⊕, where today's rule
+  says 1.71 and the relation by mass alone, which would take it for a small Neptune, 2.09);
+- an ice giant: the Terran piece to 2.04 M⊕, then the Neptunian one (Uranus's mass: 3.91 R⊕);
+- a gas giant: keep Jupiter's size from 0.3 Jupiters (the relation's own Jovian piece gives 1.25 of
+  Jupiter's radius at Jupiter's mass);
+- an icy world: keep the ball of ice and rock (the paper has no class for it).
+The card's working (`madeWorking`) then names the paper and the piece used.
+
 ## God mode on more things: comets and black holes (the fix list's #9; planned 27 Nov 2026)
 
 Today the card says why not: comets and belt asteroids "stay on their recorded paths", and "live

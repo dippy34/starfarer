@@ -914,7 +914,7 @@ temperature, and size as well as mass.
   rocky four as the Earth's rule, the icy world a ball of ice and rock (1,500 kg/m³), the gas giant as
   Jupiter's rules, the ice giant as rock below 10 Earths and then the rule between (so a Uranus of
   14.5 Earths comes out 2.8 R⊕; it measures 4.0: a published mass-radius relation would do better,
-  as for #46). The card's small picture is still the generic one.
+  docs/notes/ideas.md, "Sizes of made worlds"). The card's small picture is still the generic one.
   *Rings* (added the same night, by Claude): "Add rings" beside New look gives any of them a ring, and
   "Remove rings" takes it away. It is the ring of the made-up planets of other stars (its shader,
   `ringMaterial` and `lightRing`, moved with the look into `PlanetLook.ts`; ExoPlanetLayer draws as
