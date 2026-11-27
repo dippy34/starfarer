@@ -595,7 +595,7 @@ await simpleFlightControls();
   await f.tap(await at('.fl-which'));
   await f.frames(3);
   st = await driveNow();
-  check('on a phone: the plainly named drive switches between its torch and field drive', d0.drive === 'reactionless' && d1.drive === 'torch' && /^Main driveTorch/.test(d1.label) && st.drive === 'reactionless' && /^Main driveField drive/.test(st.label), JSON.stringify({ d0, d1, d2: st }));
+  check('on a phone: the plainly named drive switches between its rocket (its fuel left) and field drive (no fuel)', d0.drive === 'reactionless' && d1.drive === 'torch' && /^Main driveRocket · \d+\u00a0% fuel left$/.test(d1.label) && st.drive === 'reactionless' && /^Main driveField drive · needs no fuel$/.test(st.label), JSON.stringify({ d0, d1, d2: st }));
 
   // steering: a finger dragged to the right across the sky turns the ship to the left (the sky goes
   // with the finger), then the ship holds its new attitude

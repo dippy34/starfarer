@@ -680,7 +680,8 @@ export class FlightHud {
       this.which.dataset.name = name;
       this.which.innerHTML = `${name}<small></small>`;
     }
-    setText(this.which.querySelector('small')!, torch ? `Torch · ${Math.round(r.fuel * 100)}\u00a0%` : 'Field drive');
+    // (in plain words what each is, and what the number counts: "Torch · 100 %" said neither, the fix list's #14)
+    setText(this.which.querySelector('small')!, torch ? `Rocket · ${Math.round(r.fuel * 100)}\u00a0% fuel left` : 'Field drive · needs no fuel');
     setText(this.drive, fmtG(r.driveG).replace(/ g$/, '\u00a0×\u00a0gravity'));
     const chosen = ENGINE.find(([, g]) => !torch && Math.abs(g - r.driveG) < 1e-9);
     // (a power that is none of the four, as the autopilot sets one for the trip, is named for who set it, not by its drive)
