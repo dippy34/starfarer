@@ -494,6 +494,9 @@ describe('worlds of a generated look', () => {
       const json = madeAgain(m, star, null, null, look);
       expect(json.madeAs!.seed).toBe(12345);
       expect(json.madeAs!.kind).toBe(kind);
+      // without rings unless it had them
+      expect(json.madeAs!.rings).toBeUndefined();
+      expect(madeAgain({ ...m, rings: true }, star, null, null, look).madeAs!.rings).toBe(true);
     }
   });
 });

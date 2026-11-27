@@ -1,7 +1,7 @@
 import {
   AdditiveBlending, BufferAttribute, BufferGeometry, CustomBlending, DoubleSide, DynamicDrawUsage, FrontSide, Group,
   LinearFilter, LinearMipmapLinearFilter, Matrix3, Matrix4, Mesh, NoColorSpace, OneFactor,
-  OneMinusSrcAlphaFactor, PlaneGeometry, Points, Quaternion, RepeatWrapping, ShaderMaterial, Texture, Vector4, type WebGLRenderer,
+  OneMinusSrcAlphaFactor, PlaneGeometry, Points, Quaternion, RepeatWrapping, RingGeometry, ShaderMaterial, Texture, Vector4, type WebGLRenderer,
   TextureLoader, Vector3, ClampToEdgeWrapping,
 } from 'three';
 import { blackbodyRGB, lambertPhase, luminance, sunIrradianceAt } from '../astro/photometry';
@@ -15,7 +15,7 @@ import type { TileDetail } from './TileDetail';
 import { BLOOM } from './shaders/bloom';
 import { BODY_FRAG, BODY_VERT, GLARE_FRAG, GLARE_VERT } from './shaders/body';
 import { EXO_FRAG } from './shaders/planet';
-import { generatedLook, lookUniforms, madeLook } from './PlanetLook';
+import { generatedLook, lightRing, lookUniforms, madeLook, RING_SPAN, ringMaterial } from './PlanetLook';
 import type { PlanetType } from '../universe/Planets';
 import { STAR_FRAG } from './shaders/star';
 import { RING_FRAG, RING_VERT } from './shaders/rings';
@@ -541,6 +541,8 @@ export class BodiesLayer {
 
   /** The outer radius of a body's rings (m); 0 if it has none. */
   ringOuter(b: Body): number {
+    const made = this.lookedRings.get(b);
+    if (made) return ((made.material as ShaderMaterial).uniforms.uOut.value as number) * b.radius;
     return (this.rings_[b.name.toLowerCase()]?.outerKm ?? 0) * 1e3;
   }
 
@@ -565,17 +567,20 @@ export class BodiesLayer {
 
   /** the worlds the explorer made with a generated look (src/app/WhatIf.ts): drawn from the look of their type and seed, with no map */
   private looked = new Set<Body>();
+  /** the rings of those that have them (PlanetLook.ts: the made-up planets of other stars' rings) */
+  private lookedRings = new Map<Body, Mesh>();
+  private lookRingGeo: RingGeometry | null = null;
 
-  /** The type and seed of the generated look a body wears (what it was made as, and its seed), or null: it has a map, or a look of its own, as the catalogue's bodies do. */
-  lookOf(b: Body): { type: PlanetType; seed: number } | null {
-    const as = b.meta.madeAs as { kind: string; seed?: number } | undefined;
-    return as && as.seed !== undefined ? { type: as.kind as PlanetType, seed: as.seed } : null;
+  /** The type, seed and rings of the generated look a body wears (what it was made as), or null: it has a map, or a look of its own, as the catalogue's bodies do. */
+  lookOf(b: Body): { type: PlanetType; seed: number; rings: boolean } | null {
+    const as = b.meta.madeAs as { kind: string; seed?: number; rings?: boolean } | undefined;
+    return as && as.seed !== undefined ? { type: as.kind as PlanetType, seed: as.seed, rings: !!as.rings } : null;
   }
 
-  /** The mesh of a world made with a generated look: the material of the made-up planets of other stars (src/render/ExoPlanetLayer.ts), from the same look (PlanetLook.ts). */
-  private createLooked(b: Body, type: PlanetType, seed: number): Mesh {
-    const spec = madeLook(type, seed, b.radius);
-    const mat = new ShaderMaterial({ name: 'generated-look', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: lookUniforms(spec, generatedLook(spec), this.surfaceExposure) });
+  /** The mesh of a world made with a generated look: the material of the made-up planets of other stars (src/render/ExoPlanetLayer.ts), from the same look (PlanetLook.ts), and its ring if it has one. */
+  private createLooked(b: Body, type: PlanetType, seed: number, rings: boolean): Mesh {
+    const spec = madeLook(type, seed, b.radius, rings), look = generatedLook(spec);
+    const mat = new ShaderMaterial({ name: 'generated-look', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: lookUniforms(spec, look, this.surfaceExposure) });
     const mesh = new Mesh(this.sphere(-180), mat);
     mesh.matrixAutoUpdate = false;
     mesh.frustumCulled = false;
@@ -584,6 +589,16 @@ export class BodiesLayer {
     this.group.add(mesh);
     this.meshes.set(b, mesh);
     this.looked.add(b);
+    if (rings) {
+      this.lookRingGeo ??= new RingGeometry(RING_SPAN[0], RING_SPAN[1], 256, 1);
+      const ring = new Mesh(this.lookRingGeo, ringMaterial(spec, look, 'generated-ring'));
+      ring.matrixAutoUpdate = false;
+      ring.frustumCulled = false;
+      ring.name = `${b.name} rings`;
+      ring.renderOrder = 3;
+      this.group.add(ring);
+      this.lookedRings.set(b, ring);
+    }
     return mesh;
   }
 
@@ -601,11 +616,21 @@ export class BodiesLayer {
       (u.uSunDir.value as Vector3).copy(toSun).divideScalar(rSun);
       u.uSunIrr.value = sunIrradianceAt(rSun, sunLight);
     } else u.uSunIrr.value = 0;
+    const ring = this.lookedRings.get(b);
+    if (ring) {
+      // in its equator's plane (the body's XY plane), lit and seen in that frame, in the planet's radii
+      ring.visible = true;
+      ring.matrix.copy(b.orientation).scale(new Vector3(b.radius, b.radius, b.radius)).setPosition(view.rel);
+      ring.matrixWorldNeedsUpdate = true;
+      const inv = rot3.clone().transpose();
+      lightRing(ring, ((u.uSunIrr.value as number) / Math.PI) * this.surfaceExposure.value,
+        new Vector3().copy(u.uSunDir.value as Vector3).applyMatrix3(inv), new Vector3().copy(view.rel).negate().divideScalar(b.radius).applyMatrix3(inv));
+    }
   }
 
   private createMesh(b: Body): Mesh {
     const wears = this.lookOf(b);
-    if (wears) return this.createLooked(b, wears.type, wears.seed);
+    if (wears) return this.createLooked(b, wears.type, wears.seed, wears.rings);
     const texKey = this.textureKey(b);
     const mapInfo = texKey ? this.manifest.maps[texKey] : undefined;
     const isStar = b.kind === 'star';
@@ -846,7 +871,7 @@ export class BodiesLayer {
         this.views.delete(b);
         const m = this.meshes.get(b);
         if (m) m.visible = false;
-        const ring = this.rings.get(b);
+        const ring = this.rings.get(b) ?? this.lookedRings.get(b);
         if (ring) ring.visible = false;
         if (this.ringParticles && b === this.ringParticlesBody) this.ringParticles.update(null, b.orientation, b.radius, new Vector3(), 0);
         continue;
@@ -950,7 +975,7 @@ export class BodiesLayer {
         }
       } else if (mesh) {
         mesh.visible = false;
-        const ring = this.rings.get(b);
+        const ring = this.rings.get(b) ?? this.lookedRings.get(b);
         if (ring) ring.visible = false;
         if (this.ringParticles && b === this.ringParticlesBody) this.ringParticles.update(null, b.orientation, b.radius, new Vector3(), 0);
       }
@@ -986,6 +1011,12 @@ export class BodiesLayer {
     this.sunlit.delete(gone);
     this.sunLooks.delete(gone);
     this.looked.delete(gone);
+    const ring = this.lookedRings.get(gone);
+    if (ring) {
+      this.group.remove(ring);
+      (ring.material as ShaderMaterial).dispose();
+      this.lookedRings.delete(gone);
+    }
   }
 
   private occluders: Body[] | null = null;

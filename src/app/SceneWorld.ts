@@ -47,6 +47,8 @@ export interface MadeRecord {
   absMag: number;
   /** the seed of the generated look of a world of one (WorldKind: its type is its kind); none for the others (the simulation does not carry it: App.sceneView sets it) */
   seed?: number;
+  /** a world of a generated look with rings (none, or false: without); kept as the seed is */
+  rings?: boolean;
 }
 
 export interface LiveWorld {
@@ -162,7 +164,8 @@ export function encodeWorld(w: LiveWorld): Uint8Array {
   for (const [id, moons] of w.carried) { o.uint(id); o.uint(moons.length); for (const m of moons) o.uint(m); }
   o.uint(w.made.length);
   for (const m of w.made) {
-    o.uint(m.id - MADE_FIRST_ID); o.u8(KINDS.indexOf(m.kind)); o.text(m.name); o.uint(m.home); o.u8(m.icy ? 1 : 0);
+    // (the byte after its home: 1 an icy moon; for a world of a generated look, 2 with rings: a link written before rings reads as ever)
+    o.uint(m.id - MADE_FIRST_ID); o.u8(KINDS.indexOf(m.kind)); o.text(m.name); o.uint(m.home); o.u8((m.icy ? 1 : 0) | (isWorldKind(m.kind) && m.rings ? 2 : 0));
     if (isWorldKind(m.kind)) {
       if (m.seed === undefined) throw new Error('a world of a generated look has no seed');
       o.uint(m.seed);
@@ -322,11 +325,13 @@ function walk(r: Reader, dry: boolean, doubles?: Reader): LiveWorld {
     const kind = KINDS[kindAt], name = r.text(WORLD_LIMITS.name);
     if (!plainName(name)) bad('the name of a world made in it is not plain text');
     const home = r.uint(2 ** 31 - 1), icyAt = r.u8();
-    if (icyAt > 1) bad('a world made in it could not be read');
+    // (a world of a generated look is never an icy moon: 0, or 2 with rings; any other world 0, or 1 an icy moon)
+    if (isWorldKind(kind) ? icyAt !== 0 && icyAt !== 2 : icyAt > 1) bad('a world made in it could not be read');
+    const rings = (icyAt & 2) === 2;
     const seed = isWorldKind(kind) ? r.uint(SEED_MOST - 1) : 0;
     const kg = f(1, GM_MOST / 6.674e-11, 'the mass of a world made in it'), gm = f(0, GM_MOST, 'the mass of a world made in it'), radius = f(1, RADIUS_MOST, 'the size of a world made in it');
     const teff = kind === 'sun' ? f(100, 1e6, 'the colour of a sun made in it') : 0, absMag = kind === 'sun' ? f(-30, 40, 'the light of a sun made in it') : 0;
-    made.push({ id, kind, name, home, icy: icyAt === 1, kg, gm, radius, teff, absMag, ...(isWorldKind(kind) ? { seed } : {}) });
+    made.push({ id, kind, name, home, icy: (icyAt & 1) === 1, kg, gm, radius, teff, absMag, ...(isWorldKind(kind) ? { seed } : {}), ...(rings ? { rings: true } : {}) });
   }
   const ng = r.uint(WORLD_LIMITS.gone), gone: number[] = [];
   for (let k = 0; k < ng; k++) gone.push(r.uint(2 ** 31 - 1));

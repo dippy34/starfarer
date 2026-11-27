@@ -464,9 +464,11 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 /* a world just made, being put in place: its mass and Done above its slider */
 .placing { margin-bottom: 6px; }
 #hud .power-read .place-done { background: var(--live); color: #2a1404; padding: 0 22px; }
-/* (a world of a generated look: another look for it, under its mass slider) */
-#hud .new-look { min-height: 44px; padding: 0 16px; border-radius: 14px; background: var(--fill); font-size: 13.5px; font-weight: 600; color: var(--fg); }
-#hud .new-look:active { filter: brightness(1.25); }
+/* (a world of a generated look: another look for it, and rings or none, under its mass slider) */
+.look-row { display: flex; flex-wrap: wrap; gap: 8px; }
+#hud .new-look, #hud .made-rings { min-height: 44px; padding: 0 16px; border-radius: 14px; background: var(--fill); font-size: 13.5px; font-weight: 600; color: var(--fg); }
+#hud .new-look:active, #hud .made-rings:active { filter: brightness(1.25); }
+#hud .made-rings[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--line); }
 /* the ring round the world being moved (the view's own corner is its origin: it is placed by a transform) */
 .move-handle {
   position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; box-sizing: border-box; border-radius: 50%;

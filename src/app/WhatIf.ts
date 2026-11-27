@@ -381,7 +381,7 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
 export function madeAgain(m: MadeRecord, home: Body, like: Body | null, texture: string | null, look: MadeLook | null = null): BodyJson {
   if (isWorldKind(m.kind) && look) {
     const plan = newWorld(m.kind, home, [1, 0, 0], 0, m.id, m.seed ?? 0, look);
-    return { ...plan.json, name: m.name, madeAs: { kind: m.kind, kg: m.kg, icy: false, seed: m.seed ?? 0 } };
+    return { ...plan.json, name: m.name, madeAs: { kind: m.kind, kg: m.kg, icy: false, seed: m.seed ?? 0, ...(m.rings ? { rings: true } : {}) } };
   }
   const plan = m.kind === 'moon' || !like ? newMoon(home, [1, 0, 0], m.icy ? Infinity : 0, 0, m.id) : newTwin(like, texture, home, [1, 0, 0], 0, m.id);
   return { ...plan.json, name: m.name, madeAs: { kind: m.kind, kg: m.kg, icy: m.icy } };

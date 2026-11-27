@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, DoubleSide, DynamicDrawUsage, Group, HalfFloatType, LinearFilter, LinearMipmapLinearFilter,
+  AdditiveBlending, BufferAttribute, BufferGeometry, DynamicDrawUsage, Group, HalfFloatType, LinearFilter, LinearMipmapLinearFilter,
   Line, LineBasicMaterial, Matrix3, Matrix4, Mesh, OrthographicCamera, PlaneGeometry, Points, Quaternion, RingGeometry, Scene, ShaderMaterial,
   SphereGeometry, Vector3, WebGLCubeRenderTarget, type WebGLRenderer,
 } from 'three';
@@ -9,59 +9,14 @@ import type { UPos } from '../core/upos';
 import { type ExoPlanet, hashKey, type PlanetarySystem, rng } from '../universe/Planets';
 import { SPRITE_FRAG, SPRITE_VERT } from './NearStars';
 import { BODY_VERT } from './shaders/body';
-import { EXO_BAKE_FRAG, EXO_FRAG, RING_GLSL } from './shaders/planet';
-import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS } from './shaders/xr';
+import { EXO_BAKE_FRAG, EXO_FRAG } from './shaders/planet';
+import { LITE } from './shaders/xr';
 import { ExoPlanet as ExoPlanetClass, PlanetarySystem as SystemClass } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
 import { ExoGround, ROCKY_TYPES } from '../universe/ExoTerrain';
-import { generatedLook, type LookSpec, lookUniforms, type V3 } from './PlanetLook';
+import { generatedLook, lightRing, type LookSpec, lookUniforms, ringMaterial } from './PlanetLook';
 import { earthLikeAtmosphere, type AtmosphereSpec, type ExoAtmosphere } from './Atmospheres';
 import { TerrainPatch, type TerrainCandidate } from './TerrainPatch';
-
-const RING_VERT = /* glsl */ `
-#include <common>
-#include <logdepthbuf_pars_vertex>
-${PROJECT_PARS}
-varying vec2 vXY;
-void main() {
-  vXY = position.xy;
-  gl_Position = projectView(modelViewMatrix * vec4(position, 1.0));
-  #include <logdepthbuf_vertex>
-${FIX_LOGDEPTH}
-}`;
-const RING_FRAG = /* glsl */ `
-#include <common>
-#include <logdepthbuf_pars_fragment>
-uniform vec3 uColor;
-uniform float uSeed;
-uniform float uIn;
-uniform float uOut;
-uniform float uLight;   // reflected radiance x exposure for a white ring particle
-uniform vec3 uSunL;     // star direction in the ring frame
-uniform vec3 uCamL;     // camera position in the ring frame (planet radii)
-varying vec2 vXY;
-${RING_GLSL}
-void main() {
-  float r = length(vXY);
-  float fw = fwidth(r) / (uOut - uIn);
-  float dens = ringDensity(r, uSeed, uIn, uOut, fw);
-  if (dens <= 0.0) discard;
-  float t = (r - uIn) / (uOut - uIn);
-  // colour: a little redder and darker inwards, ringlets of slightly different tint
-  vec3 col = uColor * mix(vec3(0.82, 0.76, 0.7), vec3(1.0), smoothstep(0.0, 0.6, t)) * (0.85 + 0.3 * ringNoise(t * 57.0, uSeed + 21.0));
-  // the planet's shadow (sphere of radius 1 between this point and the star)
-  vec3 P = vec3(vXY, 0.0);
-  float b = dot(P, uSunL);
-  float sh = b < 0.0 ? smoothstep(0.97, 1.03, sqrt(max(dot(P, P) - b * b, 0.0))) : 1.0;
-  // lit face, or light diffusing through to the unlit face
-  float lit = sign(uSunL.z) == sign(uCamL.z) ? 1.0 : 0.25 * (1.0 - dens);
-  float mu0 = abs(uSunL.z);
-  float tau = dens * 1.8;
-  float refl = (1.0 - exp(-tau / max(mu0, 0.05))) * lit;
-  gl_FragColor = vec4(col * uLight * refl * sh, dens * 0.92);
-${OUTPUT_FRAGMENT}
-  #include <logdepthbuf_fragment>
-}`;
 
 interface PlanetDraw { mesh: Mesh; ring: Mesh | null; orbit: Line; orient: Matrix4; ground: ExoGround | null; air: AtmosphereSpec | null; albedo: number }
 
@@ -131,17 +86,7 @@ export class ExoPlanetLayer {
     this.group.add(mesh);
     let ring: Mesh | null = null;
     if (p.spec.rings) {
-      // icy rings when cold, dark dusty ones otherwise
-      const icy = p.spec.teqK < 150;
-      const c3 = pal.uC3 as V3;
-      const c: V3 = icy ? [0.62 + 0.15 * c3[0], 0.57 + 0.15 * c3[1], 0.5 + 0.15 * c3[2]] : [0.22, 0.2, 0.19];
-      ring = new Mesh(this.ringGeo, new ShaderMaterial({
-        name: 'exoplanet-ring', vertexShader: RING_VERT, fragmentShader: RING_FRAG,
-        uniforms: { uColor: { value: new Vector3(...c) }, uSeed: { value: pal.uRingSeed }, uIn: { value: pal.uRingIn }, uOut: { value: pal.uRingOut },
-          uLight: { value: 1 }, uSunL: { value: new Vector3(0, 0, 1) }, uCamL: { value: new Vector3(0, 0, 1) },
-          uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK },
-        transparent: true, depthWrite: false, side: DoubleSide,
-      }));
+      ring = new Mesh(this.ringGeo, ringMaterial(spec, look, 'exoplanet-ring'));
       ring.matrixAutoUpdate = false;
       ring.frustumCulled = false;
       ring.renderOrder = 3;
@@ -372,11 +317,8 @@ export class ExoPlanetLayer {
             const qr = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), sys.n);
             d.ring.matrix.compose(rel, qr, new Vector3(p.radius, p.radius, p.radius));
             d.ring.matrixWorldNeedsUpdate = true;
-            const ru = (d.ring.material as ShaderMaterial).uniforms;
-            ru.uLight.value = (E / Math.PI) * this.exposure.value;
             const qi = qr.clone().invert();
-            (ru.uSunL.value as Vector3).copy(toStar).divideScalar(ds).applyQuaternion(qi);
-            (ru.uCamL.value as Vector3).copy(rel).negate().divideScalar(p.radius).applyQuaternion(qi);
+            lightRing(d.ring, (E / Math.PI) * this.exposure.value, tmp.copy(toStar).divideScalar(ds).applyQuaternion(qi), rel.clone().negate().divideScalar(p.radius).applyQuaternion(qi));
           }
         }
         // orbit line relative to the camera: on its rail, or in live physics the orbit it is on now

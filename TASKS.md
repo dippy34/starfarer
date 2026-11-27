@@ -108,8 +108,8 @@ need the OpenCode workspace's region set to Global.
 
 - **Status:** done 27 Nov 2026: run 45966214578 on Claude Sonnet 5.5 ($4.27; it ran out of its 80
   minutes while its last checks ran, all three steps done), reviewed by Claude, who added the
-  HANDOFF.md note it was not allowed to write. Left for later: rings on made worlds, the card's small
-  picture (see HANDOFF.md, "Make anything, step 1"). Large.
+  HANDOFF.md note it was not allowed to write; Claude added rings the same night. Left for later: the
+  card's small picture (see HANDOFF.md, "Make anything, step 1"). Large.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the owner, 27 Nov 2026: "God mode feels more like you're editing something or adding
   some preset things instead of actually unlocking your full potential ... creating infinite amount of
