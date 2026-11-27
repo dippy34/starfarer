@@ -3,7 +3,8 @@
 # Who starts it: Claude, by saving a start note, .github/opencode/start/<task>.txt, on the live branch
 # (the owner asked for that, 25 Nov 2026: "I want you to do everything"); every start is a commit in the
 # history. A note's text goes to the AI as the reviewer's notes on its last try (none on a first try),
-# a line "model: opencode-go/..." picks its model, and lines starting # are for the history only. A push that adds or changes notes starts one run for each (at most 5 a push, one at a time).
+# a line "model: opencode-go/..." or "model: anthropic/claude-..." picks its model, and lines starting #
+# are for the history only. A push that adds or changes notes starts one run for each (at most 5 a push, one at a time).
 # The owner can still start one from GitHub's Actions tab: "OpenCode task", then "Run workflow", then
 # the task name (the part after task/ in TASKS.md, e.g. everest-summit). "smoke-test" only checks that
 # sign-in and the model work, and changes nothing.
@@ -14,10 +15,13 @@
 # check.log (npm run check) and opencode.log. Claude reviews and tests them, and only Claude puts
 # work live (TASKS.md, "How a task is finished").
 #
-# Sign-in: keyless. GitHub vouches for the repository and branch (OIDC). The OpenCode service
-# account trusts only workflows of dippy34/starfarer on claude/friendly-hypatia-up418z, and the
-# repository secret OPENCODE_CLIENT_ID names that account. Usage counts against the owner's
+# Sign-in, for an OpenCode Go model: keyless. GitHub vouches for the repository and branch (OIDC). The
+# OpenCode service account trusts only workflows of dippy34/starfarer on claude/friendly-hypatia-up418z,
+# and the repository secret OPENCODE_CLIENT_ID names that account. Usage counts against the owner's
 # OpenCode Go Plus plan.
+# A Claude model (anthropic/claude-..., from 27 Nov 2026) runs on the owner's Claude API credits
+# instead, with their key in the repository secret ANTHROPIC_API_KEY. The key is never in the AI's
+# environment, and any copy of it is blanked before the run's files are uploaded (see "Sign in").
 name: OpenCode task
 
 on:
@@ -33,7 +37,7 @@ on:
         type: string
         default: ""
       model:
-        description: "OpenCode Go model (leave empty: the model TASKS.md names for the task)"
+        description: "Model: opencode-go/... or anthropic/claude-... (leave empty: the model TASKS.md names for the task)"
         required: false
         type: string
         default: ""
@@ -91,7 +95,7 @@ jobs:
               case "$f" in *.txt) ;; *) continue ;; esac
               name=$(basename "$f" .txt)
               if ! printf '%s' "$name" | grep -Eq '^[a-z0-9][a-z0-9-]{0,48}$'; then echo "Not a task name: $f"; continue; fi
-              model=$(grep -m1 -oE '^model: *opencode-go/[A-Za-z0-9._-]+' "$f" | sed 's/^model: *//' || true)
+              model=$(grep -m1 -oE '^model: *(opencode-go/[A-Za-z0-9._-]+|anthropic/claude-[A-Za-z0-9._-]+)' "$f" | sed 's/^model: *//' || true)
               # (a second try starts from the first try's work: a commit of this repository, by its full id)
               base=$(grep -m1 -oE '^base: *[0-9a-f]{40}$' "$f" | sed 's/^base: *//' || true)
               # (lines starting # are for the history only, such as when it was started)
@@ -148,11 +152,11 @@ jobs:
           MODEL="$MODEL_INPUT"
           if [ -z "$MODEL" ] && [ "$TASK" != "smoke-test" ]; then
             MODEL=$(awk -v h="### \`task/$TASK\`" 'index($0, h) == 1 { f = 1; next } f && /^### / { f = 0 } f' TASKS.md \
-              | grep -o 'opencode-go/[A-Za-z0-9._-]*' | head -1)
+              | grep -oE '(opencode-go/[A-Za-z0-9._-]+|anthropic/claude-[A-Za-z0-9._-]+)' | head -1)
           fi
           MODEL="${MODEL:-opencode-go/kimi-k3.1-pro}"
-          if ! printf '%s' "$MODEL" | grep -Eq '^opencode-go/[A-Za-z0-9._-]+$'; then
-            echo "The model must be an OpenCode Go model, e.g. opencode-go/kimi-k3.1-pro."; exit 1
+          if ! printf '%s' "$MODEL" | grep -Eq '^(opencode-go/[A-Za-z0-9._-]+|anthropic/claude-[A-Za-z0-9._-]+)$'; then
+            echo "The model must be an OpenCode Go model (e.g. opencode-go/kimi-k3.1-pro) or a Claude model (e.g. anthropic/claude-sonnet-5-5)."; exit 1
           fi
           echo "MODEL=$MODEL" >> "$GITHUB_ENV"
           echo "Model: $MODEL"
@@ -203,15 +207,28 @@ jobs:
           echo "CHROMIUM_PATH=$HOME/chrome-for-testing/chrome-linux64/chrome" >> "$GITHUB_ENV"
           "$HOME/chrome-for-testing/chrome-linux64/chrome" --version
 
-      # (OpenCode's own snippet, with the account's id read from the repository secret; an earlier
-      # message asked for the name OPENCODE_API_KEY, so that name is accepted too)
-      - name: Sign in to OpenCode
+      # An OpenCode Go model: OpenCode's own snippet, with the account's id read from the repository
+      # secret (an earlier message asked for the name OPENCODE_API_KEY, so that name is accepted too).
+      # A Claude model: no sign-in. The owner's key (repository secret ANTHROPIC_API_KEY) goes into a file
+      # outside the repository, which OpenCode's settings name ({file:...}): the AI's commands never get
+      # it in their environment, folders outside the repository are refused to them, and the run deletes
+      # the file when the AI stops.
+      - name: Sign in
         env:
           AUDIENCE: https://opencode.ai/console
           CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID || secrets.OPENCODE_API_KEY }}
           HAS_CLIENT_ID: ${{ secrets.OPENCODE_CLIENT_ID != '' }}
           HAS_API_KEY: ${{ secrets.OPENCODE_API_KEY != '' }}
+          CLAUDE_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          if [ "${MODEL%%/*}" = "anthropic" ]; then
+            if [ -z "$CLAUDE_KEY" ]; then
+              echo "The repository secret ANTHROPIC_API_KEY is not set (Settings, Secrets and variables, Actions, Repository secrets)."; exit 1
+            fi
+            ( umask 077; printf '%s' "$CLAUDE_KEY" > "$RUNNER_TEMP/claude.key" )
+            echo "A Claude model: it runs on the owner's Claude API credits, with no OpenCode sign-in."
+            exit 0
+          fi
           echo "repository secrets set: OPENCODE_CLIENT_ID $HAS_CLIENT_ID, OPENCODE_API_KEY $HAS_API_KEY"
           if [ -z "$CLIENT_ID" ]; then
             echo "Neither repository secret OPENCODE_CLIENT_ID nor OPENCODE_API_KEY is set (Settings, Secrets and variables, Actions, Repository secrets)."; exit 1
@@ -252,6 +269,15 @@ jobs:
             }
           }
           JSON
+          # A Claude model: only Anthropic's API is used (the junior is Claude Haiku 5.5, and no other
+          # provider is loaded), with the key read from the file "Sign in" wrote.
+          if [ "${MODEL%%/*}" = "anthropic" ]; then
+            jq --arg key "{file:$RUNNER_TEMP/claude.key}" \
+              '.provider = {anthropic: {options: {apiKey: $key}}} | .enabled_providers = ["anthropic"] | .agent.junior.model = "anthropic/claude-haiku-5-5"' \
+              ~/.config/opencode/opencode.json > "$RUNNER_TEMP/opencode.json"
+            mv "$RUNNER_TEMP/opencode.json" ~/.config/opencode/opencode.json
+          fi
+          jq 'del(.agent.junior.prompt)' ~/.config/opencode/opencode.json
           opencode --version
 
       - name: Run the task
@@ -325,10 +351,15 @@ jobs:
           done
           kill "$watcher" 2>/dev/null
           rm -f "$OUT/round.log"
+          # what the run used, in tokens and dollars at the models' list prices (usage.txt in the run's
+          # files; before the key file goes, since OpenCode's settings name it)
+          timeout 120 opencode stats > "$OUT/usage.txt" 2>&1 || true
+          rm -f "$RUNNER_TEMP/claude.key"
 
       - name: Collect the result
         if: always()
         run: |
+          rm -f "$RUNNER_TEMP/claude.key"
           OUT="${OUT:-$RUNNER_TEMP/out}"
           mkdir -p "$OUT"
           if [ "$TASK" != "smoke-test" ]; then
@@ -357,6 +388,24 @@ jobs:
           # a run that changed nothing did not do its task: it shows as failed, not as work to review
           if [ "$TASK" != "smoke-test" ] && [ ! -s "$OUT/result.patch" ]; then
             echo "::error::The AI changed no file (see opencode.log in the run's files)."; exit 1
+          fi
+
+      # The run's files are downloadable, and GitHub masks secrets only in its own logs: any copy of the
+      # Claude key in them (the AI's log, its report, the patch) is blanked before they are uploaded.
+      - name: Keep the key out of the files
+        if: always()
+        env:
+          CLAUDE_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          OUT="${OUT:-$RUNNER_TEMP/out}"
+          if [ -z "$CLAUDE_KEY" ] || [ ! -d "$OUT" ]; then exit 0; fi
+          { grep -rlF -- "$CLAUDE_KEY" "$OUT" || true; } | while IFS= read -r f; do
+            perl -pi -e 's/\Q$ENV{CLAUDE_KEY}\E/[the API key, removed]/g' "$f"
+            echo "::warning::A copy of the API key was blanked in ${f##*/}."
+          done
+          if grep -rqF -- "$CLAUDE_KEY" "$OUT"; then
+            echo "::error::A copy of the API key is still in the run's files: they are not uploaded."
+            rm -rf "$OUT"; exit 1
           fi
 
       - if: always()

@@ -9,7 +9,8 @@ longer wait for a tap on Run workflow; every start is a commit in the history.
 A note's text:
 
 - lines starting `#` are for the history only (when it was started, and why);
-- a line `model: opencode-go/<model>` picks the model (else the one the task names in `TASKS.md`);
+- a line `model: opencode-go/<model>` or `model: anthropic/claude-<model>` picks the model (else the
+  one the task names in `TASKS.md`);
 - a line `base: <a commit's full id>` starts the copy at that commit instead of the live branch: a
   second try then starts from its first try's work (as Claude's checker applied it), and fixes what
   the review found;
@@ -30,6 +31,21 @@ Claude starts only small, clear tasks: roughly one every two days until the mont
 A stop note ends a run within about 5 minutes and keeps its work so far: `stop/<the run's id>.txt`
 pushed to the live branch (its text is for the history). Claude cannot cancel a run itself: GitHub
 refuses it that permission. The owner can, from the run's page (Cancel workflow).
+
+From 27 Nov 2026 the runs can also use Claude models on the owner's Claude API credits ($200 a
+month, which expire at the month's end): a start note's line `model: anthropic/claude-sonnet-5-5` or
+`model: anthropic/claude-haiku-5-5`. Their key is the repository secret `ANTHROPIC_API_KEY`, set by
+the owner on GitHub (never pasted in a chat). The run puts it in a file outside the repository for
+OpenCode alone: the AI's commands don't get it, and any copy in the run's files is blanked before
+they are uploaded (they can be downloaded, unlike the masked logs). Such a run uses only Anthropic's
+API: no OpenCode sign-in, and its junior is Claude Haiku 5.5. List prices per million tokens: Haiku 5.5
+$0.10 in and $0.50 out ($0.50 and $2.50 once a request passes 100,000 tokens), Sonnet 5.5 $2 and $10;
+context read again from the cache costs a tenth of that or less. Claude's first estimates: about $1–3 for a Haiku run and $5–10 for a
+Sonnet run of up to 80 minutes, so about 25 Sonnet runs a month, or many more on Haiku. Each run's
+`usage.txt` holds what it really used. When the credits run out, requests are refused until the
+next month's; nothing more is charged unless the owner adds paid credit. Which plan a task uses is
+Claude's call, written in its start note: Sonnet for the tasks that most need care, Haiku for small or
+wording jobs, the Go plan for the rest.
 
 The same day the owner asked about a $10 add-on for unlimited smaller models. Claude advised against
 it for now. The slow step is reviewing the runs' work, which uses the owner's Claude limit, and weaker

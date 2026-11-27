@@ -66,6 +66,8 @@ results come in). Each task below names its model, and the workflow uses it unle
 | Flaky browser tests | `opencode-go/kimi-k3.1-pro`, or `opencode-go/mimo-v2.6-pro` |
 | Plain, friendly wording | `opencode-go/claude-haiku-5-5` |
 | Fast boilerplate | `opencode-go/gpt-6-luna` |
+| On the owner's Claude API credits (from 27 Nov 2026): senior | `anthropic/claude-sonnet-5-5` |
+| On the owner's Claude API credits: small jobs, and the junior | `anthropic/claude-haiku-5-5` |
 
 Then a Sonnet checker tests the result and takes pictures, and Claude makes the final call. Not
 used: the `muse-spark-*-contributor` models, which train on the requests sent to them. DeepSeek models
