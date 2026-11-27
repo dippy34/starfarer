@@ -91,7 +91,7 @@ async function find(page, name) {
   await frames(page, 2);
 }
 
-/** Ask for a rate of time with the Time sheet's buttons: `label` is what the clock chip then shows ("1 h/s"); `pause`: then paused. */
+/** Ask for a rate of time with the Time sheet's buttons: `label` is what the clock chip then shows ("1 hour a second"); `pause`: then paused. */
 async function setTime(page, label, pause) {
   if (!(await shown(page, '#hud .sheet.time.on'))) await press(page, '#hud .hud-tabs [data-tab="time"]');
   for (let i = 0; i < 16 && (await text(page, '#hud .chip.clock small')) !== label; i++) {
@@ -243,7 +243,7 @@ for (const kind of kinds) {
   // ------------------------------------------------------------------ the real universe: a view shared and opened again
   if (want('view')) view: {
     const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=1&target=Earth&dist=6`);
-    await setTime(page, '1 h/s', true);
+    await setTime(page, '1 hour a second', true);
     // (setup: the Moon selected while the camera stays at the Earth, as a tap on the Moon leaves it; and the camera
     // turned off the way the app put it: a view of the explorer's own, not the default)
     await page.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); a.rig.turn(0.15); a.rig.quat.multiply(a.rig.quat.clone().setFromAxisAngle(a.rig.forward().set(1, 0, 0), 0.05)); });
@@ -293,7 +293,7 @@ for (const kind of kinds) {
   if (want('running') && kind === 'phone') running: {
     const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=0&target=Mars&dist=5`);
     await find(page, 'Mars');
-    await setTime(page, '1 d/s', false);
+    await setTime(page, '1 day a second', false);
     await frames(page, 10);
     const s = await share(page, kind, 'card');
     if (!s.url) { check(on('Share hands on a link'), false, 'nothing was shared'); await ctx.close(); break running; }
@@ -403,7 +403,7 @@ for (const kind of kinds) {
     await frames(page, 3);
     if (kind === 'desk') {
       // many years on: time at a hundred years a second for a few seconds of the screen
-      await setTime(page, '100 yr/s', false);
+      await setTime(page, '100 years a second', false);
       await page.waitForFunction((jd) => window.app.clock.jdTdb > jd + 20 * 365.25, await page.evaluate(() => window.app.clock.jdTdb), { timeout: 300000 }).catch(() => undefined);
     }
     await pause(page);

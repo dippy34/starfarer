@@ -5,7 +5,7 @@ import { VIEW_CONE } from '../render/Cull';
 import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
 import { formatUtc, SimClock, utcToTdb, dateToJdUtc } from '../core/time';
-import { AU, DAY, formatDistance, formatSpeed, PC, SUN_RADIUS } from '../core/units';
+import { AU, DAY, formatDistance, PC, SUN_RADIUS } from '../core/units';
 import { fmtDuration, G, L_SUN, luminosity } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
@@ -49,7 +49,7 @@ import { Hud, PORTRAIT_CSS, type HudAction, type HudState } from '../ui/Hud';
 import { BlackHole, loadBlackHoles } from '../universe/BlackHoles';
 import { Awe } from './Awe';
 import { Body, type SpaceObject } from '../universe/Body';
-import { plainFacts, plainLine } from './plainWords';
+import { plainDistance, plainFacts, plainLine, plainSpeedWords } from './plainWords';
 import { GALAXY, glowColumn } from '../universe/Galaxy';
 import { MilkyWay } from '../universe/MilkyWay';
 import { ExoPlanet, type PlanetarySystem } from '../universe/Planets';
@@ -61,7 +61,8 @@ import { Catalog } from '../universe/Catalog';
 import { normKey, normScore, queryKeys, scoreKey, SEARCH_ALIASES } from '../universe/CatalogSearch';
 import { CameraRig, sunlitSide } from './CameraRig';
 import { Game } from '../game/Game';
-import { fmtLight, fmtTime, MAX_RATE, spinOf, WARP_STEPS } from '../game/Flight';
+import { fmtTime, MAX_RATE, spinOf, WARP_STEPS } from '../game/Flight';
+import { plainSpeed } from '../game/FlightHud';
 import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
@@ -71,7 +72,7 @@ import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
-import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, clockSpeedWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, clockChipWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, clockSpeedWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { type PowerPlace, powersFor, type PowerTable } from './powersFor';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
@@ -1373,11 +1374,9 @@ export class App {
     else this.select(null);
   }
   /** Human-readable time rate (the clock's, unless told another). */
+  /** How fast time runs, in words (the clock at the top, the ship's and the headset's panels): "3 hours a second". */
   rateText(rate = this.clock.rate): string {
-    const r = Math.abs(rate);
-    const t = r === 1 ? 'real time' : r < 60 ? `${Number(r.toPrecision(3))}×` : r < 3600 ? `${(r / 60).toFixed(0)} min/s` : r < DAY ? `${(r / 3600).toFixed(0)} h/s`
-      : r < 365.25 * DAY ? `${(r / DAY).toFixed(r < 7 * DAY ? 0 : 1)} d/s` : `${(r / (365.25 * DAY)).toFixed(0)} yr/s`;
-    return `${rate < 0 ? '◀ ' : ''}${t}`;
+    return clockChipWords(rate);
   }
 
   /**
@@ -3927,11 +3926,12 @@ export class App {
       place = t.name;
       // close to a world it is a height; from afar, or with nothing to stand on, a distance
       const h = Math.max(d - rig.surface, 0);
-      placeDetail = rig.surface > 0 && h < 10 * rig.surface ? `${formatDistance(h)} up` : `${distanceText(rig.surface > 0 ? h : d)} away`;
+      // (in plain words: kilometres, millions or billions of them, then light years; never AU)
+      placeDetail = rig.surface > 0 && h < 10 * rig.surface ? `${formatDistance(h)} up` : `${plainDistance(rig.surface > 0 ? h : d)} away`;
     }
-    // (in the ship the speed is told from its proper speed, with its nines: never "1.000 c")
+    // (in the ship the speed is its own, from its proper speed, as its instruments say it)
     const flight = this.game.flight;
-    const speed = flight.on ? fmtLight(flight.readout.properSpeed) : formatSpeed(rig.speed);
+    const speed = flight.on ? plainSpeed(flight.readout.properSpeed) : plainSpeedWords(rig.speed);
     if (rig.speed > 0) placeDetail = t ? `${placeDetail} · ${speed}` : speed;
     // (on foot the chip says where you stand, not where you last flew to)
     if (this.walk.walking) {

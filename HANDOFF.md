@@ -967,6 +967,12 @@ temperature, and size as well as mass.
   is the one the world in space already compiled. While a world is made the card also hides Look at
   and Share (class `making`), and the hint is one sentence shorter: the card's whole panel is in sight
   without scrolling on an iPhone (it scrolled by 56 px before), and the camera eases out less far.
+- *The chips at the top in plain words* (27 Nov 2026, evening; the fix list's #4, "make it simple"):
+  the place chip says how far in kilometres, millions or billions of them, then light years
+  (`plainDistance`, never AU), and how fast the camera moves in km/h, km/s or against light's speed
+  (`plainSpeedWords`; in the ship its own `plainSpeed`). The clock says how fast time runs in the Time
+  sheet's words, short ("3 hours a second", "◀ 2 days a second": `clockChipWords` through
+  `App.rateText`, which the ship's and the headset's panels and the live mark's "only ..." use too).
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun

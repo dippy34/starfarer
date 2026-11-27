@@ -694,6 +694,11 @@ export function rateWords(rate: number): string {
   return r === 1 ? 'real time' : `${round(r)} times real time`;
 }
 
+/** The speed of time as the clock at the top says it, short: "real time", "3 hours a second", "◀ 2 days a second" (backwards). */
+export function clockChipWords(rate: number): string {
+  return `${rate < 0 ? '◀ ' : ''}${rateWords(rate)}`;
+}
+
 /** The speed of time as the Time sheet says it: "Real time", "3 hours a second", "2 days a second, backwards". */
 export function clockSpeedWords(rate: number): string {
   return `${capital(rateWords(rate))}${rate < 0 ? ', backwards' : ''}`;

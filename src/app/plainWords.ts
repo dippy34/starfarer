@@ -30,6 +30,19 @@ export function plainDistance(m: number): string {
   return `${sig(m / 1e12)} billion km`;
 }
 
+/**
+ * A speed anyone reads (the chip at the top while the camera moves): whole km/h below a kilometre a
+ * second, then km/s, then a share or a multiple of light's speed (the camera can outrun light; a ship
+ * cannot, and says its own speed: src/game/FlightHud.ts plainSpeed).
+ */
+export function plainSpeedWords(mps: number): string {
+  const a = Math.abs(mps);
+  if (a < 1e3) return `${Math.round(a * 3.6).toLocaleString('en-US')} km/h`;
+  if (a < 0.01 * C_LIGHT) return `${(a / 1e3).toLocaleString('en-US', { maximumFractionDigits: a < 1e5 ? 1 : 0 })} km/s`;
+  const c = a / C_LIGHT;
+  return `${c.toLocaleString('en-US', { maximumSignificantDigits: c < 10 ? 2 : 3 })} × light speed`;
+}
+
 /** How long light takes over a distance, in the largest unit that reads well. */
 export function lightTime(m: number): string {
   const s = m / C_LIGHT;

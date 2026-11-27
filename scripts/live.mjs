@@ -79,7 +79,7 @@ async function find(page, name, detail = null) {
   await page.waitForFunction((n) => window.app.selection?.name === n && document.querySelector('#hud').dataset.sheet === 'card' && document.querySelector('#hud .card h2').textContent === n, name, { timeout: 20000 });
 }
 
-/** Ask for a rate of time with the Time sheet's buttons: `label` is what the clock chip then shows ("1 h/s"). */
+/** Ask for a rate of time with the Time sheet's buttons: `label` is what the clock chip then shows ("1 hour a second"). */
 async function rate(page, label) {
   if (!(await shown(page, '#hud .sheet.time.on'))) await press(page, '#hud .hud-tabs [data-tab="time"]');
   for (let i = 0; i < 16 && (await text(page, '#hud .chip.clock small')) !== label; i++) {
@@ -591,13 +591,13 @@ for (const kind of kinds) {
     await find(page, 'Metis');
     await openCard(page);
     check(on('a moon is found by name and has a card of its own'), (await text(page, '#hud .card h2')) === 'Metis' && (await shown(page, '#hud .card [data-act="remove"]')));
-    const asked = await rate(page, '1 h/s');
+    const asked = await rate(page, '1 hour a second');
     // (Io: on these orbits Europa runs into Ganymede a day and a half on, before it has gone round twice)
     const timed = await timeOrbits(page, ['Io'], 'Jupiter', 240);
     await pause(page);
     const was = [before.io.period / 86400];
     check(on("Io goes round Jupiter in the time Kepler's law gives for the new mass, far less than before"),
-      asked === '1 h/s' && timed.every((t, k) => t !== null && Math.abs(t / law[k] - 1) < 0.03 && t / was[k] < 0.55),
+      asked === '1 hour a second' && timed.every((t, k) => t !== null && Math.abs(t / law[k] - 1) < 0.03 && t / was[k] < 0.55),
       timed.map((t, k) => `Io ${t?.toFixed(3)} d (the law: ${law[k].toFixed(3)}; it was ${was[k].toFixed(3)})`).join(', '));
 
     const after = await page.evaluate(() => {
@@ -697,7 +697,7 @@ for (const kind of kinds) {
     // a month on: straight lines at the speed each had
     await find(page, 'Earth');
     await page.waitForFunction(() => !window.app.rig.autopilot, null, { timeout: 120000 });
-    const asked = await rate(page, '1 d/s');
+    const asked = await rate(page, '1 day a second');
     await page.waitForFunction(() => window.app.clock.jdTdb >= window.app.physics.live.jd0 + 30, null, { timeout: 240000 });
     await pause(page);
     const flown = await page.evaluate((start) => {
@@ -708,7 +708,7 @@ for (const kind of kinds) {
       }) };
     }, start);
     check(on('a month later every planet has gone straight on at its orbital speed, round nothing'),
-      asked === '1 d/s' && flown.days >= 30 && flown.planets.every((p) => p.off < 1e-3 && Math.abs(p.speed - 1) < 1e-3 && p.parent === null),
+      asked === '1 day a second' && flown.days >= 30 && flown.planets.every((p) => p.off < 1e-3 && Math.abs(p.speed - 1) < 1e-3 && p.parent === null),
       `${flown.days.toFixed(1)} days: off the straight line by at most ${(Math.max(...flown.planets.map((p) => p.off)) * 100).toFixed(3)} % of the way gone (${flown.planets.find((p) => p.off === Math.max(...flown.planets.map((q) => q.off))).name})`);
     const night = await discLight(page, 'Earth');
     const names = await page.evaluate(() => [...document.querySelectorAll('#labels .label')].filter((l) => l.style.display !== 'none').map((l) => l.textContent));
@@ -736,11 +736,11 @@ for (const kind of kinds) {
       };
     }), n);
     const still = await pace(12);
-    const top = await rate(page, '1000 yr/s');
+    const top = await rate(page, '1,000 years a second');
     const fast = await pace(12);
     await pause(page);
     check(on('a thousand years a second can be asked for in live physics, and a frame stays a frame: the stepping keeps to its share'),
-      top === '1000 yr/s' && fast.stepping < 16 && fast.median < still.median + 20 && (fast.jd - still.jd) / 365.25 > 50,
+      top === '1,000 years a second' && fast.stepping < 16 && fast.median < still.median + 20 && (fast.jd - still.jd) / 365.25 > 50,
       `the app's work on a frame: ${still.median.toFixed(1)} ms with time stopped, ${fast.median.toFixed(1)} ms at ${top}, of which at most ${fast.stepping.toFixed(1)} ms of stepping; ${Math.round((fast.jd - still.jd) / 365.25)} years went by`);
 
     // back: beyond the years the ephemeris knows, to the day it began
@@ -841,7 +841,7 @@ for (const kind of kinds) {
     // ...and so it goes, at first: about a tenth of that month on, as far round as Kepler has it. (Not for long. Half
     // way to the edge of the Earth's reach the Sun pulls hard: within three weeks the Moon is 4 % ahead, within ten
     // it has swung between half and one and a half times that distance, and after four months it is the Sun's.)
-    const asked = await rate(page, '6 h/s');
+    const asked = await rate(page, '6 hours a second');
     await page.waitForFunction((to) => window.app.clock.jdTdb >= to, circle.jd + circle.period / 864000, { timeout: 240000 });
     await pause(page);
     const went = await page.evaluate((circle) => {
@@ -849,7 +849,7 @@ for (const kind of kinds) {
       const days = a.clock.jdTdb - circle.jd;
       return { days, turned: Math.acos(d.x * circle.dir[0] + d.y * circle.dir[1] + d.z * circle.dir[2]) / (2 * Math.PI * (days * 86400 / circle.period)), parent: moon.parent?.name };
     }, circle);
-    check(on('about a tenth of that month later it is as far round the Earth as Kepler has it go'), asked === '6 h/s' && went.days < 0.2 * circle.period / 86400 && Math.abs(went.turned - 1) < 0.03 && went.parent === 'Earth',
+    check(on('about a tenth of that month later it is as far round the Earth as Kepler has it go'), asked === '6 hours a second' && went.days < 0.2 * circle.period / 86400 && Math.abs(went.turned - 1) < 0.03 && went.parent === 'Earth',
       `${went.days.toFixed(1)} days on: ${(went.turned * 100).toFixed(1)} % of the way Kepler has it go`);
     await ctx.close();
   }
@@ -918,7 +918,7 @@ for (const kind of kinds) {
     // quarter of its year (not after time has been stopped with the Time sheet's button, which on a loaded machine
     // can come many seconds, and months of its year, later), as the angle it has turned through about the pole of
     // its orbit, all the way round (the angle between two directions cannot tell 220 degrees from 140).
-    const asked = await rate(page, '7.0 d/s');
+    const asked = await rate(page, '7 days a second');
     const went = await (await page.waitForFunction((made) => {
       const a = window.app;
       if (a.clock.jdTdb < made.jd + made.period / 86400 / 4) return null;
@@ -932,7 +932,7 @@ for (const kind of kinds) {
     }, made, { timeout: 240000 })).jsonValue();
     await pause(page);
     check(on('a quarter of its year later it is a quarter of the way round the Sun, at the distance it was put at'),
-      asked === '7.0 d/s' && Math.abs(went.turned - 1) < 0.03 && Math.abs(went.far - 1) < 0.03 && went.parent === 'Sun',
+      asked === '7 days a second' && Math.abs(went.turned - 1) < 0.03 && Math.abs(went.far - 1) < 0.03 && went.parent === 'Sun',
       `${(went.year * 100).toFixed(1)} % of its year on: ${(went.turned * 100).toFixed(1)} % of the way Kepler has it go, at ${went.far.toFixed(3)} of its distance`);
 
     // a second sun
@@ -1981,7 +1981,7 @@ for (const kind of kinds) {
     await step('Back to reality: TRAPPIST-1 e on its rail again, at the moment the first change was made; live physics off', async () => {
       const moved = await exo();
       if (!moved.on) throw new Error('nothing is live to go back from');
-      await rate(page, '1 d/s');
+      await rate(page, '1 day a second');
       if (await page.evaluate(() => window.app.clock.paused)) {
         await press(page, '#hud .hud-tabs [data-tab="time"]');
         await press(page, '#hud .transport [data-act="pause"]');
