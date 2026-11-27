@@ -29,6 +29,23 @@ shows it (`scripts/verify.mjs` shot 13). Three pieces would make that kind of sh
 3. *Spin* (hard, later): the film's hole spins near the limit, which flattens one side of the
    shadow; ours is a non-spinning (Schwarzschild) hole. Kerr geodesics in a phone's shader.
 
+## God mode on more things: comets and black holes (the fix list's #9; planned 27 Nov 2026)
+
+Today the card says why not: comets and belt asteroids "stay on their recorded paths", and "live
+physics does not take black holes yet" (`src/app/powersFor.ts`). A plan, smallest first:
+
+1. *Comets in live physics.* A comet (`Comet` in `src/render/SmallBodies.ts`, drawn from its orbital
+   elements) joins the simulation when it is changed: its place and speed from its elements at that
+   date, as a body of no mass (it is pulled, it pulls nothing). Then Move, Throw and Remove work on it
+   as on a moon, and its tail follows the Sun from where it is. Mass only where one was measured (a
+   handful, from spacecraft); none is made up.
+2. *A black hole of your own.* Add round the Sun offers "A black hole" (from 1 to 20 Suns' mass):
+   it pulls everything in live physics, and it is drawn with the black hole renderer (its shadow,
+   and the bent sky round it). The renderer (`src/render/BlackHoleLayer.ts`) takes the catalogue's
+   holes when the app starts; it would take made ones too.
+3. *The catalogue's black holes:* Mass changes the size of the shadow and of the disk (both grow
+   with the mass); nothing near them is simulated, so that is all a change does there.
+
 ## God mode as a sandbox (27 Nov 2026)
 
 The owner, after testing God mode on a phone: "God mode feels more like you're editing something or
