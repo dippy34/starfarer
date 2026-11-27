@@ -270,7 +270,7 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .hud-impact.brief .impact-more { display: block; }
 #hud .hud-impact.brief .icon-btn { margin-top: 0; }
 .hud-impact.brief .impact-text :is(span, small) { display: none; }
-/* watching what a change does: the pace, Stop; then how long was watched, Replay (where the flight's chip goes) */
+/* watching what a change does: Watch is offered; the pace, Stop; then how long was watched, Replay (where the flight's chip goes) */
 .hud-watch {
   pointer-events: auto; align-self: center; display: flex; align-items: center; gap: 6px; max-width: 100%; box-sizing: border-box;
   padding: 4px 4px 4px 16px; border-radius: 27px; border-color: rgba(255, 176, 122, 0.5); font-size: 14px; font-weight: 550; color: var(--live);
@@ -282,7 +282,8 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 }
 #hud .hud-watch .watch-close { padding: 0; color: var(--dim); background: none; }
 #hud .hud-watch button:active { background: var(--press); }
-#hud .hud-watch:not(.ended) :is(.watch-replay, .watch-close), #hud .hud-watch.ended .watch-stop { display: none; }
+#hud .hud-watch:not(.ended, .offer) :is(.watch-start, .watch-replay, .watch-close), #hud .hud-watch.ended :is(.watch-start, .watch-stop),
+#hud .hud-watch.offer :is(.watch-stop, .watch-replay) { display: none; }
 
 .hud-slot { min-width: 0; display: flex; flex-direction: column; gap: 8px; container-type: inline-size; }
 .hud-slot > * { pointer-events: auto; }

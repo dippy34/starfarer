@@ -5,7 +5,7 @@ import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CameraRig } from '../src/app/CameraRig';
 import { LivePhysics } from '../src/app/LivePhysics';
-import { FRAME_MARGIN, viewFrame, WATCH_SECONDS, WATCH_SLOWEST } from '../src/app/Powers';
+import { FRAME_MARGIN, viewFrame, WATCH_SLOWEST } from '../src/app/Powers';
 import { Glide, planChange, REPLAY_OFFERED, sample, Watch } from '../src/app/Watch';
 import { newMoon } from '../src/app/WhatIf';
 import { UPos } from '../src/core/upos';
@@ -23,14 +23,14 @@ const TOUCH_MOST = 10 * YEAR;
 const saved = { index: 3, sign: 1, rate: 600, paused: true };
 
 describe('the watch, as bookkeeping', () => {
-  it('runs for fifteen seconds at its pace, then gives the rate of time back and offers Replay for a while', () => {
+  it('goes on until it is stopped, however long, then gives the rate of time back and offers Replay for a while', () => {
     const w = new Watch();
     w.start(3.4 * DAY, saved);
     expect(w.watching).toBe(true);
-    let over = 0;
-    for (let f = 1; f <= 60 * 20 && !over; f++) if (w.tick(1 / 60, 3.4 * DAY / 60, 1) === 'over') over = f;
-    expect(over / 60).toBeCloseTo(WATCH_SECONDS, 1);
-    expect(w.shown / DAY).toBeCloseTo(3.4 * WATCH_SECONDS, 0);
+    // ten minutes of real time at 60 frames a second, time running at the watch's pace
+    for (let f = 0; f < 60 * 600; f++) expect(w.tick(1 / 60, 3.4 * DAY / 60, 1)).toBeNull();
+    expect(w.watching).toBe(true);
+    expect(w.shown / DAY).toBeCloseTo(3.4 * 600, 0);
     expect(w.stop()).toEqual(saved);
     expect(w.state).toBe('ended');
     // (nothing more to give back)
@@ -67,6 +67,24 @@ describe('the watch, as bookkeeping', () => {
     expect(w.clear()).toEqual(saved);
     expect(w.state).toBe('idle');
     expect(w.clear()).toBeNull();
+  });
+
+  it('is offered after a change without touching time: nothing to give back, stays offered until started or put away', () => {
+    const w = new Watch();
+    w.offerWatch();
+    expect(w.state).toBe('offered');
+    expect(w.watching).toBe(false);
+    for (let f = 0; f < 1000; f++) expect(w.tick(1, 0, 1)).toBeNull();
+    expect(w.state).toBe('offered');
+    expect(w.stop()).toBeNull();
+    w.yieldRate();
+    expect(w.state).toBe('offered');
+    w.start(DAY, saved);
+    expect(w.watching).toBe(true);
+    // (put away instead: nothing given back, and idle)
+    w.offerWatch();
+    expect(w.clear()).toBeNull();
+    expect(w.state).toBe('idle');
   });
 });
 

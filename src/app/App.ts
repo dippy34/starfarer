@@ -299,8 +299,8 @@ export class App {
   private sizeFollows = false;
   /** watching what a change does (src/app/Watch.ts): the rate of time while it runs, then Replay */
   readonly watch = new Watch();
-  /** after a change, time and the camera show what it does (More: "Show me what happens", remembered on the device) */
-  showMe = recall('show-me') !== '0';
+  /** a change starts its watch by itself (More: "Show me what happens", remembered on the device; off unless switched on: the watch is offered with a Watch button) */
+  showMe = recall('show-me') === '1';
   /** the camera on its way to a watch's frame */
   private glide: Glide | null = null;
   /** Undo: the state before each of the last changes (src/app/History.ts) */
@@ -991,6 +991,7 @@ export class App {
       case 'place-done': this.mover.stop(true); break;
       case 'reality': this.backToReality(); break;
       case 'undo': this.undo(); break;
+      case 'watch-start': this.replay(); break;
       case 'watch-stop': this.stopWatch(); break;
       case 'replay': this.replay(); break;
       case 'watch-close': this.putRate(this.watch.clear()); break;
@@ -998,7 +999,7 @@ export class App {
       case 'show-me':
         this.showMe = !this.showMe;
         remember('show-me', this.showMe ? '1' : '0');
-        this.hud.toast(this.showMe ? 'After a change, time speeds up and the view frames what it does' : 'Changes no longer speed up time or move the view');
+        this.hud.toast(this.showMe ? 'After a change, the watch starts by itself: time speeds up and the view frames what it does' : 'After a change, nothing speeds up by itself: tap Watch to see what it does');
         break;
       case 'stop': this.rig.cancelGoto(); break;
       case 'pause': this.togglePause(); break;
@@ -1574,9 +1575,12 @@ export class App {
     if (!c.before.live.sim) this.begun = { jd: c.before.live.jd, rate: c.before.rate, present: c.before.present };
     this.replayFrom = null;
     const frame = this.planWatch(c);
-    if (!frame || !this.showMe) return;
+    if (!frame) return;
     this.replayFrom = { cp: this.physics.checkpoint(this.clock.jdTdb), frame };
-    if (watch) this.startWatch(frame);
+    // (time stays as the explorer had it, unless they asked for the watch to start by itself)
+    if (!watch || this.game.flight.on || this.walk.active) return;
+    if (this.showMe) this.startWatch(frame);
+    else this.watch.offerWatch();
   }
 
   /** The change under way came to nothing (a throw let go where it was taken hold of, or taken away by the browser): everything as it was before it began, and nothing kept for Undo. */
@@ -1663,7 +1667,7 @@ export class App {
     return planChange(c.kind, c.body, c.sample, this.sample(c.body), centre, this.input.touch ? WATCH_MOST_TOUCH : WATCH_MOST);
   }
 
-  /** Watch a change: time at the watch's pace for its length (src/app/Watch.ts), and the camera eased to its frame. */
+  /** Watch a change: time at the watch's pace until it is stopped (src/app/Watch.ts), and the camera eased to its frame. */
   private startWatch(f: WatchFrame): void {
     // (the ship keeps its own time, and walking its own camera)
     if (this.game.flight.on || this.walk.active) return;
@@ -1702,11 +1706,10 @@ export class App {
     this.glide = null;
   }
 
-  /** Each frame: the watch's pace, lowered if the stepping cannot keep up, and the explorer's put back when it is over; a run of keys ended by its pause. */
+  /** Each frame: the watch's pace, lowered if the stepping cannot keep up (it ends only when stopped); a run of keys ended by its pause. */
   private tickWatch(dt: number, ran: number): void {
     const what = this.watch.tick(dt, ran, this.physics.keeping);
     if (what === 'slower') this.clock.rate = this.watch.rate;
-    else if (what === 'over') this.putRate(this.watch.stop());
     const now = performance.now();
     if (this.run.due(now)) this.endChange();
     // (what was undone by the return to reality is let go once Undo is no longer offered)
@@ -1721,11 +1724,11 @@ export class App {
    * How much of a frame of `dt` seconds time runs for (a share of the rate asked for): all of it,
    * unless two worlds are about to hit, when time slows for their last coming together to take a
    * few seconds (SlowMotion), the camera framing them. Only while the explorer has changes shown
-   * (Show me: time and the view are not taken over otherwise), live physics is on and time runs on.
+   * (Show me, or a watch under way: time and the view are not taken over otherwise), live physics is on and time runs on.
    */
   private slowing(dt: number): number {
     const c = this.clock;
-    if (!this.physics.on || c.paused || !(c.rate > 0) || !this.showMe) {
+    if (!this.physics.on || c.paused || !(c.rate > 0) || !(this.showMe || this.watch.watching)) {
       if (this.slow.phase !== 'idle') this.slow.reset();
       return 1;
     }
@@ -3824,6 +3827,7 @@ export class App {
       undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0),
       realAgain: !this.physics.on && this.realAgain > 0 && this.history.size > 0,
       watch: this.watch.state === 'idle' ? null
+        : this.watch.state === 'offered' ? { text: 'See what it does', ended: false, offer: true }
         : this.watch.watching ? { text: slowed ? `Slowed: ${rateWords(runs)}` : `Watching: ${rateWords(this.watch.rate)}`, ended: false }
           : { text: `Watched: ${spanWords(this.watch.shown)}`, ended: true, replay: !!this.replayFrom },
       showMe: this.showMe,
