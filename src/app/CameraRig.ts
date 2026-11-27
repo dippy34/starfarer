@@ -483,6 +483,15 @@ export class CameraRig {
     const now = hitSphere(rel, this.rayA, s, this.hitB);
     if (!now) return;
     const q = this.q.setFromUnitVectors(now.normalize(), held.normalize());
+    if (nh > h) {
+      // Rising from near the ground, what is under the fingers lies out towards the horizon: holding it
+      // there would carry the camera along the ground ten times as far as it rose, and where the ground
+      // climbs that way as steeply it would never leave it (the touch suite's lift-off on the Moon). So,
+      // rising, the camera goes at most as far sideways as it goes up
+      const angle = 2 * Math.asin(Math.min(1, Math.hypot(q.x, q.y, q.z)));
+      const most = (nh - h) / (s + nh);
+      if (angle > most) q.slerp(IDENTITY, 1 - most / angle);
+    }
     if (Math.hypot(q.x, q.y, q.z) < 0.25) this.rotateAbout(rel, q);
   }
 }

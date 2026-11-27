@@ -123,3 +123,62 @@ describe('the side a world is arrived at', () => {
     expect(lit(new Vector3(0, 0, -2))).toBeNull();
   });
 });
+
+describe('a pinch near a world', () => {
+  const R = 1.7374e6;
+  /** a rig at `height` above a world of radius R (centre at the origin), on its +x side, looking along +y, level */
+  const standing = (height: number) => {
+    const rig = new CameraRig();
+    rig.viewport.width = 390;
+    rig.viewport.height = 844;
+    rig.target = target(R);
+    rig.surface = R;
+    rig.closest = R + 1.6;
+    rig.upos.set(R + height, 0, 0);
+    rig.lookAt(new Vector3(0, 1, 0), new Vector3(1, 0, 0));
+    return rig;
+  };
+  const pinched = (log: number, at: { x: number; y: number }) => ({ keys: new Set<string>(), consume: () => ({ ...emptyFrame(), pinch: log, pinchAt: at }) }) as unknown as Input;
+  /** where the ray at `at` meets the world's sphere (null: it misses) */
+  const under = (rig: CameraRig, at: { x: number; y: number }) => {
+    const o = rig.upos.toVector3(), d = rig.ray(at.x, at.y);
+    const b = o.dot(d), disc = b * b - (o.lengthSq() - R * R);
+    return b < 0 && disc >= 0 ? o.addScaledVector(d, -b - Math.sqrt(disc)) : null;
+  };
+
+  it('standing on the ground, closing the fingers lifts off: up at least as far as sideways, even with what is under them out towards the horizon', () => {
+    // (the touch suite's lift-off on the Moon: the fingers' middle a little below the horizon, the ground under it 13 m out;
+    // holding that spot under the fingers took the camera 13 m along the ground for 1.6 m up, and up a slope never off it)
+    const rig = standing(1.6), at = { x: 195, y: 500 };
+    expect(under(rig, at)).not.toBeNull();
+    const p0 = rig.upos.toVector3();
+    rig.update(1 / 60, pinched(Math.log(2), at));
+    const p1 = rig.upos.toVector3();
+    const up = p1.length() - p0.length(), sideways = p0.angleTo(p1) * R;
+    expect(up).toBeCloseTo(1.6, 6);
+    expect(sideways).toBeLessThanOrEqual(up * 1.001);
+  });
+
+  it('coming down, what is under the fingers stays under them, as before', () => {
+    const rig = standing(200), at = { x: 195, y: 520 };
+    const held = under(rig, at)!;
+    rig.update(1 / 60, pinched(-Math.log(2), at));
+    expect(under(rig, at)!.distanceTo(held)).toBeLessThan(1e-3 * rig.upos.toVector3().distanceTo(held));
+  });
+
+  it('far out, closing the fingers on a point of the globe keeps it under them, as before', () => {
+    const rig = new CameraRig();
+    rig.viewport.width = 390;
+    rig.viewport.height = 844;
+    rig.target = target(R);
+    rig.surface = R;
+    rig.closest = R * 1.002;
+    rig.upos.set(4 * R, 0, 0);
+    rig.lookAt(new Vector3(-1, 0, 0), new Vector3(0, 0, 1));
+    const at = { x: 250, y: 380 };
+    const held = under(rig, at)!;
+    rig.update(1 / 60, pinched(Math.log(1.3), at));
+    expect(rig.upos.toVector3().length()).toBeGreaterThan(4 * R);
+    expect(under(rig, at)!.distanceTo(held)).toBeLessThan(1e-6 * R);
+  });
+});
