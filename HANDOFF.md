@@ -792,6 +792,13 @@ temperature, and size as well as mass.
   more than 60 px above the buttons of time). And Back to reality is a change like the others: for
   20 seconds the mark at the top says "Back to reality · the real Solar System again" with Undo,
   which brings the changed world back as it was; then what it undid is let go.
+- *The Time sheet, simpler* (27 Nov 2026, the fix list's #4; the cheap team's task/time-panel, on
+  Claude Sonnet, reviewed here): its row of time keeps four buttons (Reverse, Slower, Pause, Faster);
+  "Now" left it. The one way back is the big "Back to now" (`.time-today`, the act `now`:
+  `App.realTime`), shown whenever the clock is not at the present moment at real time (a day or more
+  away, any other rate, backwards, or paused), never in live physics. The line under the clock says
+  the speed in words (`clockSpeedWords` in `Powers.ts`: "Real time", "1 minute a second", "2 days a
+  second, backwards"); the top chip is as it was.
 - *Back to reality and the date* (decided): it returns to the moment the first change was made, the
   date and the rate of time with it (stopped if it was; following the present again if it was:
   "Back to reality, and to the present"). Before, it kept the date the simulation had reached (or

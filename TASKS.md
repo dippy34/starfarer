@@ -77,7 +77,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/time-panel`: the Time panel, simpler: one way back to now, and its speed in words
 
-- **Status:** open. Small.
+- **Status:** done 27 Nov 2026: run 45979620921 on Claude Sonnet 5.5 ($1.34), reviewed by Claude, who ran the
+  whole touch suite it could not finish. Small.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the fix list's #4 ("make it simple"): the Time panel (`src/ui/Hud.ts`, the
   `.sheet.time` section near line 345) has a big "Back to today" button and, in its row of five, a

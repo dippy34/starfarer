@@ -694,6 +694,11 @@ export function rateWords(rate: number): string {
   return r === 1 ? 'real time' : `${round(r)} times real time`;
 }
 
+/** The speed of time as the Time sheet says it: "Real time", "3 hours a second", "2 days a second, backwards". */
+export function clockSpeedWords(rate: number): string {
+  return `${capital(rateWords(rate))}${rate < 0 ? ', backwards' : ''}`;
+}
+
 /** A stretch of time in words: "51 days", "6.6 hours", "1,200 years". */
 export function spanWords(seconds: number): string {
   const s = Math.abs(seconds), DAY = 86_400, YEAR = 365.25 * DAY;

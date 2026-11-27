@@ -175,8 +175,10 @@ export interface HudState {
   ship?: { chip: string; rows: [string, string][]; why: string } | null;
   /** the missions (src/game/Missions.ts): how many are done, and each with whether it is */
   missions?: { done: number; total: number; items: { title: string; detail: string; done: boolean }[] } | null;
-  /** the date shown is far from today's: the words of the way back ('' when it is today, or cannot go back) */
+  /** the clock is not at the present moment at real time: the words of the way back ('' when it is, or cannot go back) */
   today?: string;
+  /** the speed of time in plain words ("Real time", "2 days a second, backwards"): the Time sheet's line under the clock */
+  speed?: string;
   /** there is ground below to land and walk on (a touch screen shows a Walk button) */
   canWalk?: boolean;
   /** small print: frame rate, stars, the data in use */
@@ -371,7 +373,7 @@ ${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" ty
         <div class="sheet-grab"></div>
         <div class="sheet-head"><h2>Time</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
         <div class="time-now"><div class="time-date"></div><div class="time-clock"></div><div class="time-rate"></div></div>
-        <button class="btn time-today" type="button" data-act="today" hidden>${ICON.now}<span>Back to today</span></button>
+        <button class="btn time-today" type="button" data-act="now" hidden>${ICON.now}<span>Back to now</span></button>
         <div class="ship-time" hidden><dl></dl><p></p></div>
         <div class="live-sheet" hidden>
           <h3>Live physics</h3>
@@ -388,7 +390,6 @@ ${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" ty
           <button type="button" data-act="slower">${ICON.slower}<span>Slower</span></button>
           <button type="button" class="big" data-act="pause" aria-label="Pause or resume time">${ICON.pause}${ICON.play}</button>
           <button type="button" data-act="faster">${ICON.faster}<span>Faster</span></button>
-          <button type="button" data-act="now">${ICON.now}<span>Now</span></button>
         </div>
       </section>
       <section class="sheet flight" data-sheet="flight" aria-label="The ship's instruments">
@@ -858,7 +859,7 @@ export class Hud {
     this.$('.clock').classList.toggle('paused', s.paused);
     setText(this.$('.time-date'), longDay(day));
     setText(this.$('.time-clock'), `${clock} UTC`);
-    setText(this.$('.time-rate'), s.paused ? 'Paused' : ship ? ship.chip : s.rate === 'real time' ? 'Real time' : s.live?.slow ? `${s.rate} asked, ${s.live.slow}` : `${s.rate}`);
+    setText(this.$('.time-rate'), s.paused ? 'Paused' : ship ? ship.chip : s.live?.slow ? `${s.speed ?? s.rate} asked, ${s.live.slow}` : (s.speed ?? s.rate));
     this.renderShipTime(ship);
     this.$('.time').classList.toggle('paused', s.paused);
     this.$('.transport [data-act="reverse"]').setAttribute('aria-pressed', String(s.reversed));

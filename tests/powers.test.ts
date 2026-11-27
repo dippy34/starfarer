@@ -3,7 +3,7 @@ import {
   affected, aheadWords, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
   FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, starMassWords,
   orbitWords, powerWords, radiusWords, sameDensity, SIZE_DECADES, sizeFactor, sizeSlider, sizeTimesWords, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
-  WATCH_SLOWEST, watchPlan, watchRate,
+  WATCH_SLOWEST, watchPlan, watchRate, clockSpeedWords,
 } from '../src/app/Powers';
 import { G, L_SUN, M_EARTH, M_JUPITER, M_SUN, R_EARTH } from '../src/sim/physics';
 
@@ -387,6 +387,17 @@ describe('saying things', () => {
     expect(rateWords(3 * DAY)).toBe('3 days a second');
     expect(rateWords(DAY)).toBe('1 day a second');
     expect(rateWords(-1200 * 365.25 * DAY)).toBe('1,200 years a second');
+  });
+
+  it('the speed of time as the Time sheet says it, backwards included', () => {
+    expect(clockSpeedWords(1)).toBe('Real time');
+    expect(clockSpeedWords(60)).toBe('1 minute a second');
+    expect(clockSpeedWords(600)).toBe('10 minutes a second');
+    expect(clockSpeedWords(3 * 3600)).toBe('3 hours a second');
+    expect(clockSpeedWords(2 * DAY)).toBe('2 days a second');
+    expect(clockSpeedWords(365.25 * DAY)).toBe('1 year a second');
+    expect(clockSpeedWords(-2 * DAY)).toBe('2 days a second, backwards');
+    expect(clockSpeedWords(-1)).toBe('Real time, backwards');
   });
 
   it('what ends the path ahead, where it ends and on the card: a world taken over is that one\'s from then on, not one that goes round it in so long', () => {

@@ -69,7 +69,7 @@ import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
-import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, clockSpeedWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { type PowerPlace, powersFor, type PowerTable } from './powersFor';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
@@ -3912,7 +3912,9 @@ export class App {
       missions: { done: this.game.missions.doneCount, total: this.game.missions.total, items: this.game.missions.list },
       // (a day or more from today, and the date is the explorer's to set: not in live physics)
       canWalk: this.input.touch && !this.game.active && this.walk.canStartHere(),
-      today: !this.physics.on && Math.abs(c.jdTdb - (Date.now() / 86_400_000 + 2_440_587.5)) > 1 ? 'Back to today' : '',
+      // (not at the present moment at real time: a day or more away, any other rate, backwards, or paused; not in live physics)
+      today: !this.physics.on && (Math.abs(c.jdTdb - (Date.now() / 86_400_000 + 2_440_587.5)) > 1 || c.rate !== 1 || c.paused) ? 'Back to now' : '',
+      speed: clockSpeedWords(runs),
       status: [
         `${this.fps.toFixed(0)} fps`,
         `${(drawn / 1e3).toFixed(0)}k stars drawn, ${(loaded / 1e6).toFixed(2)}M of ${(total / 1e6).toFixed(2)}M loaded`,
