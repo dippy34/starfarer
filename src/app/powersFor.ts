@@ -44,7 +44,10 @@ const SIZE_DATA = 'Size needs a measured mass and size in our data';
 const ADD_KIND = 'Add works on planets, dwarf planets and stars only';
 const ADD_FULL = `The limit of ${MADE_MOST} made worlds has been reached`;
 const INVALID = 'Its position is not known at this date';
-const SMALL = 'Comets and belt asteroids stay on their recorded paths';
+const SMALL = 'Belt asteroids stay on their recorded paths, so far';
+const COMET_MASS = 'No measured mass for comets in our data';
+const COMET_SIZE = "A comet's size is not changed here";
+const COMET_MOVE = 'Moving a comet is not built yet';
 const CRAFT = 'Spacecraft follow their own paths, not the live simulation';
 const PLACE = 'A place is a viewpoint, not an object that can be changed';
 const DEEP_MASS = 'No measured mass for galaxies and nebulae in our data';
@@ -90,13 +93,24 @@ export function powersFor(obj: SpaceObject, made = 0, where: PowerPlace = {}): P
     if (where.system) return planetary(where.system, null, where);
     return table(no(STAR_MASS), no(NO_PLANETS), no(NO_PLANETS), no(NO_PLANETS), no(NO_PLANETS));
   }
-  if (obj instanceof Comet || obj.kind === 'asteroid' || obj.kind === 'comet') return none(SMALL);
+  if (obj instanceof Comet) return comet(obj, where);
+  if (obj.kind === 'asteroid' || obj.kind === 'comet') return none(SMALL);
   if (obj instanceof Galaxy || obj instanceof MilkyWay || obj instanceof DeepSkyObject) {
     return table(no(DEEP_MASS), no(DEEP), no(DEEP), no(DEEP), no(DEEP));
   }
   if (obj instanceof Spacecraft || obj.kind === 'spacecraft' || obj.kind === 'ship' || obj.kind === 'station') return none(CRAFT);
   if (obj instanceof Landmark || obj instanceof RingSpot || obj.kind === 'place') return none(PLACE);
   return none(UNKNOWN);
+}
+
+/**
+ * The powers over a comet: Remove, which hides it (live physics starts, as for any change); its
+ * mass and size are not in the data and a comet pulls nothing, so Mass, Size and Add stay off.
+ * Not while live physics runs in another star's system (one at a time).
+ */
+function comet(_c: Comet, where: PowerPlace): PowerTable {
+  if (where.live && where.live !== 'solar') return none(where.undo ? UNDO_ELSEWHERE : ONE_AT_A_TIME);
+  return table(no(COMET_MASS), no(COMET_SIZE), no(COMET_MOVE), no(ADD_KIND), WORKS);
 }
 
 /**

@@ -973,6 +973,17 @@ temperature, and size as well as mass.
   (`plainSpeedWords`; in the ship its own `plainSpeed`). The clock says how fast time runs in the Time
   sheet's words, short ("3 hours a second", "◀ 2 days a second": `clockChipWords` through
   `App.rateText`, which the ship's and the headset's panels and the live mark's "only ..." use too).
+- *God mode on a comet, step 1: take it away* (27 Nov 2026, evening; the cheap team's task/comet-powers
+  on Claude Sonnet, reviewed here): a comet's card offers Remove (Mass, Size, Move and Add off, each
+  with a reason: `comet` in `powersFor.ts`). `App.removeComet` starts live physics as any change does
+  (the change is made on the Sun, which does not change, so no watch is planned) and puts the comet in
+  `LivePhysics.away`: kept in checkpoints (Undo, Replay), emptied by Back to reality.
+  `SmallBodiesLayer.hide(away)` draws it at magnitude 99 (no point, so `CometTails` draws no coma,
+  tail or nucleus, and it is neither picked nor labelled), and search, `findByName` and the brightest
+  comet's tour skip it. It has no mass: nothing else moves differently. Not yet: moving or throwing a
+  comet (a `Body` stand-in of no mass from its elements, as `SimBody` is for other stars' planets) and
+  keeping a comet taken away in a save or a link (said in what live physics leaves out). Browser
+  checks: `LIVE_ONLY=comet` of `scripts/live.mjs`.
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun

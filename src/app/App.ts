@@ -1014,7 +1014,11 @@ export class App {
       case 'add-icegiant': this.add('icegiant'); break;
       case 'new-look': this.newLook(); break;
       case 'rings': this.toggleRings(); break;
-      case 'remove': { const b = this.powerBody(); if (b && this.powersOf(this.selection!).remove.works) this.removeBody(b); break; }
+      case 'remove': {
+        if (this.selection instanceof Comet) { if (this.powersOf(this.selection).remove.works) this.removeComet(this.selection); break; }
+        const b = this.powerBody(); if (b && this.powersOf(this.selection!).remove.works) this.removeBody(b);
+        break;
+      }
       case 'move': { const b = this.powerBody(); this.mover.toggle(b && this.powersOf(this.selection!).move.works ? b : null); break; }
       case 'move-keep': this.mover.leave('keep'); break;
       case 'move-circle': this.mover.leave('circle'); break;
@@ -1347,7 +1351,7 @@ export class App {
       const sun = this.system.sun.upos;
       let best: Comet | null = null, bm = Infinity;
       for (const c of this.small.cometObjects) {
-        if (c.row[8] === null || !['P', 'C', 'I'].includes(c.row[1])) continue;
+        if (this.solar.away.has(c) || c.row[8] === null || !['P', 'C', 'I'].includes(c.row[1])) continue;
         const r = c.upos.sub(sun, new Vector3()).length() / AU;
         const m = c.row[8] + (c.row[9] ?? 10) * Math.log10(Math.max(r, 0.1));
         if (r < 4 && m < bm) { bm = m; best = c; }
@@ -2100,6 +2104,30 @@ export class App {
   }
 
   /**
+   * Take a comet away: live physics starts, as for any change; its point and its tail are hidden
+   * until Undo or Back to reality. It has no mass, so nothing else moves differently, and nothing
+   * of it is watched. (The change is made on the Sun, which does not change: no watch is planned.)
+   */
+  removeComet(c: Comet): void {
+    if (!this.powersOf(c).remove.works || this.physics.away.has(c)) return;
+    this.useLive(this.solar);
+    this.beginChange('remove', this.system.sun, true, `taking away ${c.name}`);
+    const wasOn = this.physics.on;
+    this.physics.removeSmall(c, this.clock.jdTdb);
+    if (this.rig.target === c || this.rig.anchor === c) {
+      this.rig.cancelGoto();
+      this.rig.target = null;
+      this.rig.setAnchor(null);
+    }
+    if (this.selection === c) {
+      this.hud.selectionMoved();
+      this.select(null);
+    }
+    this.tellNews(wasOn);
+    this.endChange();
+  }
+
+  /**
    * Undo everything: the real Solar System again as it was when the first change was made, the
    * date and the rate of time with it (the clock following the present again if it was then),
    * what was made taken away, what the simulation drew cleared. It is a change like the others:
@@ -2278,7 +2306,7 @@ export class App {
     if (dso) return dso;
     const sc = this.craft.craft.find((c) => c.name.toLowerCase() === n || (n === 'iss' && c.name.startsWith('International')) || (n === 'jwst' && c.name.startsWith('James')) || (n === 'hubble' && c.name.startsWith('Hubble')));
     if (sc) { sc.update(this.clock.jdTdb); return sc; }
-    const c = this.small.cometObjects.find((x) => x.name.toLowerCase().includes(n));
+    const c = this.small.cometObjects.find((x) => !this.solar.away.has(x) && x.name.toLowerCase().includes(n));
     if (c) return c;
     const h = this.blackHoles.find((x) => x.name.toLowerCase() === n || x.data.aliases.some((a) => a.toLowerCase() === n));
     if (h) return h;
@@ -2322,7 +2350,7 @@ export class App {
       if (s >= 0) out.push({ label: b.name, detail: b.kind === 'moon' ? moonWords(b) : b.kind, id: `body:${b.id}`, score: s - (b.kind === 'planet' ? 0.5 : 0) });
     }
     this.small.cometObjects.forEach((c, i) => {
-      const s = score(c.name);
+      const s = this.solar.away.has(c) ? -1 : score(c.name);
       if (s >= 0) out.push({ label: c.name, detail: 'comet', id: `comet:${i}`, score: s + 0.2 });
     });
     {
@@ -3552,6 +3580,7 @@ export class App {
     }
     this.lookAhead(rawDt);
     this.small.present = this.solar.sunAsWas;
+    this.small.hide(this.solar.away);
     this.drawExo(jd);
     HITCH.lap('solarSystem');
     for (const h of this.blackHoles) h.update(jd);
