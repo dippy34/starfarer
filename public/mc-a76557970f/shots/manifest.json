@@ -1,5 +1,27 @@
 [
  {
+  "id": "20261127-135227-name-a-world-you-made",
+  "at": "2026-11-27T13:52:27+00:00",
+  "kind": "live",
+  "title": "Name a world you made",
+  "text": "While you place a world you made, type a name for it. It shows on its label, its card and in search, and saves keep it. Names of real things are refused.",
+  "link": "",
+  "pictures": [
+   {
+    "src": "20261127-135227-name-a-world-you-made-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Typing a name while placing it"
+   },
+   {
+    "src": "20261127-135227-name-a-world-you-made-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Big Blue, with its new name"
+   }
+  ]
+ },
+ {
   "id": "20261127-114119-a-simpler-time-panel",
   "at": "2026-11-27T11:41:19+00:00",
   "kind": "live",
@@ -322,28 +344,6 @@
     "w": 780,
     "h": 1688,
     "caption": "After: Andromeda"
-   }
-  ]
- },
- {
-  "id": "20261125-141848-after-a-crash-the-wreck-stays-on",
-  "at": "2026-11-25T14:18:48+00:00",
-  "kind": "live",
-  "title": "After a crash, the wreck stays on the ground",
-  "text": "During the 4-second countdown the ship used to float off into space while the Moon moved on, and the instruments showed nonsense. Now it stays where it hit.",
-  "link": "https://github.com/dippy34/starfarer/commit/2d58878",
-  "pictures": [
-   {
-    "src": "20261125-141848-after-a-crash-the-wreck-stays-on-1.jpg",
-    "w": 780,
-    "h": 1688,
-    "caption": "Before: 89 km up"
-   },
-   {
-    "src": "20261125-141848-after-a-crash-the-wreck-stays-on-2.jpg",
-    "w": 780,
-    "h": 1688,
-    "caption": "After: on the ground"
    }
   ]
  }
