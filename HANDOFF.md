@@ -973,6 +973,13 @@ temperature, and size as well as mass.
   (`plainSpeedWords`; in the ship its own `plainSpeed`). The clock says how fast time runs in the Time
   sheet's words, short ("3 hours a second", "◀ 2 days a second": `clockChipWords` through
   `App.rateText`, which the ship's and the headset's panels and the live mark's "only ..." use too).
+- *Create, in the tab bar* (27 Nov 2026, evening; the sandbox's "one Create button from anywhere"):
+  a fifth tab between Explore and Time (`data-tab="create"`, the Add icon). It is no sheet of its own:
+  `App.create` chooses what can take something new, the world the camera is at or the first of the
+  worlds it goes round that can (a planet takes a moon, a star worlds of every kind and a second sun),
+  anywhere else the Sun, selects it, and `Hud.openAdd` opens its card at Add once the card is of it
+  (or, where nothing can be added now, with the reason). Browser checks: `LIVE_ONLY=create` of
+  `scripts/live.mjs` (at the Moon: the Earth's Add; at the Sun; at Sirius: the Sun's).
 - *God mode on a comet, step 1: take it away* (27 Nov 2026, evening; the cheap team's task/comet-powers
   on Claude Sonnet, reviewed here): a comet's card offers Remove (Mass, Size, Move and Add off, each
   with a reason: `comet` in `powersFor.ts`). `App.removeComet` starts live physics as any change does

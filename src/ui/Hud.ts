@@ -48,6 +48,8 @@ export type HudAction =
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // a made world of a generated look (src/app/WhatIf.ts: WORLD_KINDS), and another look for the one being put in place
   | 'add-terran' | 'add-ocean' | 'add-desert' | 'add-lava' | 'add-ice' | 'add-giant' | 'add-icegiant' | 'new-look' | 'rings'
+  // Create (the tab bar): what can be made, on what is here (src/app/App.ts create)
+  | 'create'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
   // begin or end moving it with a finger, and what it is to do where it is left (or throw it); a world just made is in place
   | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle' | 'move-throw' | 'place-done'
@@ -447,6 +449,7 @@ ${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" ty
     <nav class="hud-tabs" aria-label="Main">
       <button type="button" data-tab="search">${ICON.search}<span>Search</span></button>
       <button type="button" data-tab="explore">${ICON.explore}<span>Explore</span></button>
+      <button type="button" data-tab="create">${ICON.add}<span>Create</span></button>
       <button type="button" data-tab="time">${ICON.time}<span>Time</span></button>
       <button type="button" data-tab="more">${ICON.more}<span>More</span></button>
     </nav>
@@ -504,7 +507,9 @@ export class Hud {
   private pictureStale = true;
   /** what the card's picture was last drawn from (a made world's colour changes while it is put in place) */
   private pictureKey = '';
-  /** what the picture of the world being made shows now (its look's key) */
+  /** the key of what Create chose: its card opens at Add when it comes (`openAdd`) */
+  private wantAdd: string | null = null;
+    /** what the picture of the world being made shows now (its look's key) */
   private portraitKey = '';
   private factKeys = '';
   private factValues: HTMLElement[] = [];
@@ -1092,6 +1097,14 @@ export class Hud {
       if (!this.moved) this.closeSheet();
       this.moved = false;
     }
+    // (Create: its card opens at Add, once the card is of what it was asked for)
+    if (this.wantAdd && sel.key === this.wantAdd) {
+      this.wantAdd = null;
+      this.endMove();
+      this.details = false;
+      // (and where nothing can be added now, it says why)
+      if (sel.powers.add.works) { this.power = 'add'; this.powerReason = null; } else { this.power = null; this.powerReason = 'add'; }
+    }
     // (every time: a catalogue star's name or number arrives after it is chosen)
     setText(card.querySelector('h2')!, sel.name);
     const pictureKey = JSON.stringify(sel.picture ?? null);
@@ -1261,6 +1274,13 @@ export class Hud {
   }
 
   /** A destination's picture: a world's photograph, or a shape in its colour. */
+  /** Create: the card of `key` (chosen now, or already) opens at Add, the list of what can be made. */
+  openAdd(key: string): void {
+    this.closeSheet();
+    this.wantAdd = key;
+    if (this.state) this.renderCard(this.state);
+  }
+
   /** The picture of the world being made, drawn afresh when it is of another look (its rows come bottom first). */
   private showPortrait(canvas: HTMLCanvasElement, shot: { key: string; width: number; height: number; pixels: Uint8Array } | null): void {
     canvas.hidden = !shot;
@@ -1354,6 +1374,8 @@ export class Hud {
   }
 
   private tab(name: string): void {
+    // (Create is no sheet of its own: it opens the card of what can take something new, at its Add)
+    if (name === 'create') { this.host.act('create'); return; }
     if (name === 'search') {
       if (this.sheet === 'explore' && this.typing) this.closeSheet();
       else this.openSearch();

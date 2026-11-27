@@ -334,7 +334,7 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo, comet); the rest are left out */
+/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo, comet, create); the rest are left out */
 const only = process.env.LIVE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 /** on a phone and at a desk, or one of them (LIVE_KINDS=desk) */
@@ -2000,6 +2000,36 @@ for (const kind of kinds) {
         `ran on ${(later.jd - moved.jd).toFixed(2)} days, then ${(later.off / s0.r).toFixed(3)} of its orbit off its rail; back: ${s.off} m off, ${((s.jd - s0.jd) * 86400).toFixed(3)} s from the first change; "${said.join('" then "')}"`);
     });
     await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ Create, in the tab bar: what can be made, from anywhere (App.create)
+  if (want('create')) {
+    /** Create tapped where `query` puts the camera: whose card opens, whether at Add, and what it offers there; the tab bar's buttons */
+    const created = async (query) => {
+      const { ctx, page } = await open(kind, query);
+      await press(page, '#hud .hud-tabs [data-tab="create"]');
+      await page.waitForFunction(() => document.querySelector('#hud').dataset.sheet === 'card' && !document.querySelector('#hud .card [data-panel="add"]').hidden, null, { timeout: 60000 }).catch(() => undefined);
+      await frames(page, 2);
+      const got = await page.evaluate(() => {
+        const card = document.querySelector('#hud .card'), panel = card.querySelector('[data-panel="add"]');
+        const tabs = [...document.querySelectorAll('#hud .hud-tabs [data-tab]')].map((b) => { const r = b.getBoundingClientRect(); return { tab: b.dataset.tab, w: r.width, h: r.height, in: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }; });
+        return {
+          card: card.querySelector('h2').textContent, selected: window.app.selection?.name ?? null, add: !panel.hidden && card.classList.contains('open'),
+          offers: [...panel.querySelectorAll('.row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => r.querySelector('b').textContent), tabs,
+        };
+      });
+      await ctx.close();
+      return got;
+    };
+    const atMoon = await created('target=Moon&dist=8');
+    check(on('Create, in the tab bar between Explore and Time, each tab a thumb high and in sight: at the Moon it opens the Earth\'s card at Add, offering a moon'),
+      atMoon.tabs.map((t) => t.tab).join() === 'search,explore,create,time,more' && atMoon.tabs.every((t) => t.w >= 44 && t.h >= 44 && t.in)
+        && atMoon.card === 'Earth' && atMoon.selected === 'Earth' && atMoon.add && atMoon.offers.includes('A moon'), JSON.stringify({ ...atMoon, tabs: atMoon.tabs.map((t) => `${t.tab} ${t.w.toFixed(0)}x${t.h.toFixed(0)}`) }));
+    const atSun = await created('target=Sun&dist=473&el=40');
+    check(on('at the Sun, Create opens its card at Add: worlds of every kind and a second sun'),
+      atSun.card === 'Sun' && atSun.add && atSun.offers.includes('A rocky world') && atSun.offers.includes('A gas giant') && atSun.offers.includes('A second sun'), JSON.stringify(atSun));
+    const far = await created('target=Sirius&dist=10');
+    check(on('far from the Solar System (at Sirius), Create opens the Sun\'s card at Add'), far.card === 'Sun' && far.selected === 'Sun' && far.add && far.offers.includes('A rocky world'), JSON.stringify(far));
   }
 
   // ------------------------------------------------------------------ comets: God mode on a comet (src/render/SmallBodies.ts, src/app/powersFor.ts)
