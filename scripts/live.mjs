@@ -1056,6 +1056,8 @@ for (const kind of kinds) {
     const hueAt = (s) => ({ x: hueBox.x + 15 + s * (hueBox.width - 30), y: hueBox.y + hueBox.height / 2 });
     const h0 = await looks();
     const beforeHue = h0.at ? await disk(h0.at) : null;
+    const thumb = () => page.evaluate(() => document.querySelector('#hud .card .thumb').getAttribute('style'));
+    const thumb0 = await thumb();
     await hand.press(hueAt(0));
     for (let i = 1; i <= 6; i++) await hand.slide(hueAt((0.5 * i) / 6));
     await hand.lift();
@@ -1063,10 +1065,11 @@ for (const kind of kinds) {
     const h1 = await looks();
     const afterHue = h1.at ? await disk(h1.at) : null;
     const hueRead = await page.evaluate(() => { const row = document.querySelector('#hud .card .hue-row'); return { hue: window.app.selection.meta.madeAs.hue ?? 0, row: !row.hidden, h: row.getBoundingClientRect().height }; });
-    check(on('its Colour slider, a thumb high, dragged half way along turns its colours half round the colour wheel: other colours, the same world, seed and rings'),
+    const thumb1 = await thumb();
+    check(on('its Colour slider, a thumb high, dragged half way along turns its colours half round the colour wheel: other colours on it and on the card\'s picture, the same world, seed and rings'),
       hueRead.row && hueRead.h >= 44 && Math.abs(hueRead.hue - 0.5) < 0.05 && h1.c1 !== h0.c1 && h1.name === h0.name && h1.madeAs.seed === h0.madeAs.seed && h1.madeAs.rings === true
-        && h1.material === 'generated-look' && !!beforeHue && !!afterHue && Buffer.compare(beforeHue, afterHue) !== 0,
-      JSON.stringify({ ...hueRead, c1: [h0.c1, h1.c1] }));
+        && h1.material === 'generated-look' && !!beforeHue && !!afterHue && Buffer.compare(beforeHue, afterHue) !== 0 && !!thumb0 && thumb1 !== thumb0,
+      JSON.stringify({ ...hueRead, c1: [h0.c1, h1.c1], picture: [thumb0, thumb1] }));
     await page.screenshot({ path: path.join(outDir, `live-${kind}-made-colour.png`) });
     await press(page, '#hud .card [data-act="place-done"]');
     await frames(page, 3);

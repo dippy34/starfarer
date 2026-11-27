@@ -486,6 +486,8 @@ export class Hud {
   get touchFirst(): boolean { return this.coarse; }
   /** the card's picture is to be drawn again (another selection, or the photographs have arrived) */
   private pictureStale = true;
+  /** what the card's picture was last drawn from (a made world's colour changes while it is put in place) */
+  private pictureKey = '';
   private factKeys = '';
   private factValues: HTMLElement[] = [];
   private workedKeys = '';
@@ -1044,8 +1046,10 @@ export class Hud {
     }
     // (every time: a catalogue star's name or number arrives after it is chosen)
     setText(card.querySelector('h2')!, sel.name);
-    if (this.pictureStale) {
+    const pictureKey = JSON.stringify(sel.picture ?? null);
+    if (this.pictureStale || pictureKey !== this.pictureKey) {
       this.pictureStale = false;
+      this.pictureKey = pictureKey;
       card.querySelector('.thumb')!.outerHTML = this.thumb(sel.picture);
     }
     setText(card.querySelector('.card-title p')!, sel.detail);
