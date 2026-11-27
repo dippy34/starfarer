@@ -747,7 +747,7 @@ export class Flight {
     const i = DRIVE_STEPS.findIndex((g) => g >= ship.driveAccel / G0 * (1 - 1e-9));
     const j = Math.max(0, Math.min(DRIVE_STEPS.length - 1, (i < 0 ? DRIVE_STEPS.length - 1 : i) + (up ? 1 : -1)));
     ship.driveAccel = DRIVE_STEPS[j] * G0;
-    const say = `Reactionless drive: ${fmtG(DRIVE_STEPS[j])} at full throttle${ship.drive === 'torch' ? ' (the autopilot flies on it)' : ''}`;
+    const say = `Field drive: ${fmtG(DRIVE_STEPS[j])} at full throttle${ship.drive === 'torch' ? ' (the autopilot flies on it)' : ''}`;
     this.app.hud.toast(say, 2);
     if (this.app.vr.active) this.app.vr.flash(say);
   }
@@ -1085,11 +1085,12 @@ export class Flight {
     const ship = this.ship;
     ship.drive = ship.drive === 'torch' ? 'reactionless' : 'torch';
     if (ship.drive === 'torch') this.cancelAutopilot('Autopilot off: it flies on the reactionless drive');
+    // (named as the drive's button names them: "Rocket" and "Field drive", the fix list's #14)
     const say = ship.drive === 'reactionless'
-      ? `Reactionless drive: ${fmtG(ship.driveAccel / G0)} at full throttle (= and - to set), no propellant, nothing felt (invented); motion: real relativity`
-      : 'Fusion torch: real thrust and propellant';
+      ? `Field drive: ${fmtG(ship.driveAccel / G0)} at full throttle (= and - to set), uses no fuel, nothing felt (invented); motion: real relativity`
+      : 'Rocket: real thrust, and it burns fuel';
     this.app.hud.toast(say, 3.5);
-    if (this.app.vr.active) this.app.vr.flash(ship.drive === 'reactionless' ? 'Reactionless drive' : 'Fusion torch');
+    if (this.app.vr.active) this.app.vr.flash(ship.drive === 'reactionless' ? 'Field drive' : 'Rocket');
   }
 
   /** Reaction wheels: the command sets an angular acceleration; SAS steers when the pilot does not. */

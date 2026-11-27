@@ -595,7 +595,7 @@ await simpleFlightControls();
   await f.tap(await at('.fl-which'));
   await f.frames(3);
   st = await driveNow();
-  check('on a phone: the plainly named drive switches between its rocket (its fuel left) and field drive (no fuel)', d0.drive === 'reactionless' && d1.drive === 'torch' && /^Main driveRocket · \d+\u00a0% fuel left$/.test(d1.label) && st.drive === 'reactionless' && /^Main driveField drive · needs no fuel$/.test(st.label), JSON.stringify({ d0, d1, d2: st }));
+  check('on a phone: the plainly named drive switches between its rocket (its fuel left) and field drive (no fuel)', d0.drive === 'reactionless' && d1.drive === 'torch' && /^RocketFuel \d+\u00a0%$/.test(d1.label) && st.drive === 'reactionless' && /^Field driveUses no fuel$/.test(st.label), JSON.stringify({ d0, d1, d2: st }));
 
   // steering: a finger dragged to the right across the sky turns the ship to the left (the sky goes
   // with the finger), then the ship holds its new attitude
@@ -985,7 +985,7 @@ await simpleFlightControls();
   await f.tap(await at('.fl-glance'));
   await f.frames(3);
   st = await phone.evaluate(() => document.querySelector('.flight-body').textContent.replace(/\s+/g, ' '));
-  check('one tap away, the full read-out says why a trip on the torch takes years, and what to do', !/torch's fuel can never get you there sooner/.test(foldedAdvice) && /torch's fuel can never get you there sooner/.test(st) && /Main drive to switch to the field drive/.test(st), st);
+  check('one tap away, the full read-out says why a trip on the torch takes years, and what to do', !/rocket's fuel can never get you there sooner/.test(foldedAdvice) && /rocket's fuel can never get you there sooner/.test(st) && /tap Rocket to switch to the field drive/.test(st), st);
 
   // leaving the ship with time running fast brings it back to real time
   await phone.evaluate(() => { window.app.clock.rate = 1e5; });

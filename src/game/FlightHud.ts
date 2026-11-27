@@ -675,13 +675,14 @@ export class FlightHud {
     const torch = r.drive === 'torch';
     this.driveRow.dataset.drive = r.drive;
     // (− and + set the reactionless drive, and choose it: the setting is its own)
-    const name = 'Main drive';
+    // (named in plain words, with what the number counts: "Main drive / Torch · 100 %" said neither, the
+    // fix list's #14; short, as on a small phone on its side the button has 80 px)
+    const name = torch ? 'Rocket' : 'Field drive';
     if (this.which.dataset.name !== name) {
       this.which.dataset.name = name;
       this.which.innerHTML = `${name}<small></small>`;
     }
-    // (in plain words what each is, and what the number counts: "Torch · 100 %" said neither, the fix list's #14)
-    setText(this.which.querySelector('small')!, torch ? `Rocket · ${Math.round(r.fuel * 100)}\u00a0% fuel left` : 'Field drive · needs no fuel');
+    setText(this.which.querySelector('small')!, torch ? `Fuel ${Math.round(r.fuel * 100)}\u00a0%` : 'Uses no fuel');
     setText(this.drive, fmtG(r.driveG).replace(/ g$/, '\u00a0×\u00a0gravity'));
     const chosen = ENGINE.find(([, g]) => !torch && Math.abs(g - r.driveG) < 1e-9);
     // (a power that is none of the four, as the autopilot sets one for the trip, is named for who set it, not by its drive)
@@ -758,7 +759,7 @@ function advice(r: FlightReadout): string {
   const year = 3.15576e7;
   const long = !Number.isFinite(r.etaShip) || r.etaShip > year;
   if (!long) return '';
-  if (r.drive === 'torch') return 'The torch\'s fuel can never get you there sooner: tap Main drive to switch to the field drive';
+  if (r.drive === 'torch') return 'The rocket\'s fuel can never get you there sooner: tap Rocket to switch to the field drive';
   if (r.etaBy === 'flip-and-burn') return 'At this setting it takes years: + makes the drive stronger';
   return '';
 }
