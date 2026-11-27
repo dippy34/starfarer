@@ -1014,15 +1014,34 @@ for (const kind of kinds) {
     });
     /** a picture of the world's disk (a small square round its middle), as bytes */
     const disk = async (at) => page.screenshot({ clip: { x: Math.max(0, at.x - 24), y: Math.max(0, at.y - 24), width: 48, height: 48 } });
+    /** the card's picture of the world being made: shown and in sight in the card, how much of it the world covers, a fingerprint of its pixels; and whether Look at and Share are out of the way */
+    const portrait = () => page.evaluate(() => {
+      const card = document.querySelector('#hud .card'), cv = card.querySelector('.placing .portrait'), r = cv?.getBoundingClientRect(), box = card.getBoundingClientRect();
+      const actions = card.querySelector('.card-actions'), act = actions.getBoundingClientRect();
+      const out = { shown: !!cv && !cv.hidden && !cv.closest('[hidden]') && r.width > 0, inCard: !!r && r.top >= box.top && r.bottom <= box.bottom && r.bottom <= innerHeight, w: r?.width ?? 0, h: r?.height ?? 0, cover: 0, print: 0, actions: act.height > 0 };
+      if (out.shown) {
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let h = 2166136261, n = 0;
+        for (let i = 0; i < d.length; i++) { h = Math.imul(h ^ d[i], 16777619); if ((i & 3) === 3 && d[i] > 128) n++; }
+        out.cover = n / (cv.width * cv.height);
+        out.print = h >>> 0;
+      }
+      return out;
+    });
     const g0 = await looks();
     check(on('"A gas giant" round the Sun makes a world with no map of its own, drawn with the generated look of its type (giant) and a seed, not a map'),
       g0.name === 'New gas giant' && g0.material === 'generated-look' && g0.type === 8 && g0.seed === g0.madeAs.seed % 97 && !g0.map && !g0.mapOf && g0.madeAs.kind === 'giant' && Number.isInteger(g0.madeAs.seed),
       `${g0.name}: material ${g0.material}, type ${g0.type}, seed ${g0.madeAs.seed}, map ${g0.map}`);
     check(on('while it is put in place the card offers "New look", a thumb high'), g0.newLook && g0.newLookH >= 44, `${g0.newLookH} px`);
+    const p0 = await portrait();
+    check(on('...and beside it a picture of the world as it looks, drawn and in sight in the card; while it is made the card keeps to making it (Look at and Share wait until Done)'),
+      p0.shown && p0.inCard && p0.w >= 100 && p0.h >= 80 && p0.cover > 0.3 && !p0.actions, JSON.stringify(p0));
     const before = g0.at ? await disk(g0.at) : null;
     await press(page, '#hud .card [data-act="new-look"]');
     await frames(page, 6);
     const g1 = await looks();
+    const p1 = await portrait();
+    check(on("New look draws the card's picture afresh"), p1.shown && p1.cover > 0.3 && p1.print !== p0.print, `${p0.print} -> ${p1.print}`);
     const after = g1.at ? await disk(g1.at) : null;
     check(on('"New look" gives it another seed and another look: the seed differs, its colours differ, it is drawn afresh, and it is still the same world'),
       g1.name === g0.name && g1.madeAs.seed !== g0.madeAs.seed && g1.material === 'generated-look' && g1.seed === g1.madeAs.seed % 97 && g1.c1 !== g0.c1 && !!before && !!after && Buffer.compare(before, after) !== 0,
@@ -1044,6 +1063,8 @@ for (const kind of kinds) {
     const r1 = await ringed();
     check(on('"Add rings" gives it a ring, drawn round it at its size, with the same look, and the button then offers "Remove rings"'),
       r1.rings && r1.ring === 'generated-ring' && r1.shown && Math.abs(r1.scale - 1) < 1e-6 && r1.words === 'Remove rings' && r1.pressed === 'true' && r1.seed === g1.madeAs.seed, JSON.stringify(r1));
+    const pRing = await portrait();
+    check(on("...and the card's picture shows it with its ring"), pRing.shown && pRing.print !== p1.print, `${p1.print} -> ${pRing.print}`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-made-rings.png`) });
     await press(page, '#hud .card [data-act="rings"]');
     await frames(page, 4);
@@ -1056,8 +1077,7 @@ for (const kind of kinds) {
     const hueAt = (s) => ({ x: hueBox.x + 15 + s * (hueBox.width - 30), y: hueBox.y + hueBox.height / 2 });
     const h0 = await looks();
     const beforeHue = h0.at ? await disk(h0.at) : null;
-    const thumb = () => page.evaluate(() => document.querySelector('#hud .card .thumb').getAttribute('style'));
-    const thumb0 = await thumb();
+    const thumb0 = (await portrait()).print;
     await hand.press(hueAt(0));
     for (let i = 1; i <= 6; i++) await hand.slide(hueAt((0.5 * i) / 6));
     await hand.lift();
@@ -1065,7 +1085,7 @@ for (const kind of kinds) {
     const h1 = await looks();
     const afterHue = h1.at ? await disk(h1.at) : null;
     const hueRead = await page.evaluate(() => { const row = document.querySelector('#hud .card .hue-row'); return { hue: window.app.selection.meta.madeAs.hue ?? 0, row: !row.hidden, h: row.getBoundingClientRect().height }; });
-    const thumb1 = await thumb();
+    const thumb1 = (await portrait()).print;
     check(on('its Colour slider, a thumb high, dragged half way along turns its colours half round the colour wheel: other colours on it and on the card\'s picture, the same world, seed and rings'),
       hueRead.row && hueRead.h >= 44 && Math.abs(hueRead.hue - 0.5) < 0.05 && h1.c1 !== h0.c1 && h1.name === h0.name && h1.madeAs.seed === h0.madeAs.seed && h1.madeAs.rings === true
         && h1.material === 'generated-look' && !!beforeHue && !!afterHue && Buffer.compare(beforeHue, afterHue) !== 0 && !!thumb0 && thumb1 !== thumb0,
@@ -1073,6 +1093,10 @@ for (const kind of kinds) {
     await page.screenshot({ path: path.join(outDir, `live-${kind}-made-colour.png`) });
     await press(page, '#hud .card [data-act="place-done"]');
     await frames(page, 3);
+    // (the card folds to its bar at Done: opened, it has Look at and Share again)
+    await openCard(page);
+    const pDone = { ...(await portrait()), making: await page.evaluate(() => document.querySelector('#hud .card').classList.contains('making')) };
+    check(on('Done: the picture goes with the rest of the making, and Look at and Share are back'), !pDone.shown && pDone.actions && !pDone.making, JSON.stringify(pDone));
     // a save of the scene, opened again: the same world, with the same type and seed, drawn the same way
     await page.evaluate(() => window.app.saveScene());
     const id = await page.evaluate(() => JSON.parse(localStorage.getItem('starfarer-saves'))[0].id);
@@ -1788,7 +1812,7 @@ for (const kind of kinds) {
     const inRect = (p, r) => !!p && p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom;
     check(on('a planet like Earth is made and waits to be put in place: time waits; the card has its mass, Done and a slider, and says how; the new world is in sight, clear of the card'),
       p0.name === 'Earth 2' && p0.placing && p0.paused && inRect(p0.at, p0.free) && p0.panel && p0.read === '1 Earth' && p0.what === "Rock, the Earth's size" && p0.done >= 44 && p0.slider >= 44 && !p0.seg
-        && p0.hint === 'Drag it to where you want it: let go and it goes round in a circle there, or flick it to throw it. Time waits until Done.',
+        && p0.hint === 'Drag it where you want it, or flick it to throw it. Time waits until Done.',
       `at (${p0.at?.x.toFixed(0)}, ${p0.at?.y.toFixed(0)}) in ${p0.free.left.toFixed(0)}-${p0.free.right.toFixed(0)} x ${p0.free.top.toFixed(0)}-${p0.free.bottom.toFixed(0)}; "${p0.read}", "${p0.what}"`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-placing.png`) });
     // its mass: the knob to 5 Earths

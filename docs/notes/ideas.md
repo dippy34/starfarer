@@ -102,6 +102,10 @@ come first):
    placing with a tap. *Seen on the live site (27 Nov, a phone 390 wide):* while a world is put in
    place, the card holds its mass, Name, New look and Add rings, Colour and three lines of help, and
    covers half the view: the help could fold away once read, or the look's controls share a row.
+   *Done the same evening:* a picture of the world, drawn with its own shaders, beside New look, rings
+   and Colour (framed with its orbit it is a dot, so that is where its look is seen); Look at and
+   Share hide while it is made; the help is a sentence shorter. The card's panel no longer scrolls on
+   an iPhone; it is still about 59 % of a 390 x 844 screen (HANDOFF "A picture of it while it is made").
    When a copy keeps its size rule, a copy of the Earth at the Earth's mass must stay the Earth's size.
 2. *Change anything.* Every world, real or made, gets one sheet of all its numbers to change (mass,
    size, spin, look, temperature, rings, its orbit), with "As it really is" to put it back.
