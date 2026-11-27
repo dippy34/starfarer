@@ -96,7 +96,10 @@ come first):
    put in place: its mass, New look, Add rings, and a Colour slider; saves and links keep all of it
    (HANDOFF.md, "Make anything, step 1"). *Being built:* a name of your own (TASKS.md task/name-it).
    *Still to do:* one Create button from anywhere; a star or a black hole of your own; size set by hand;
-   placing with a tap.
+   placing with a tap. *Seen on the live site (27 Nov, a phone 390 wide):* while a world is put in
+   place, the card holds its mass, Name, New look and Add rings, Colour and three lines of help, and
+   covers half the view: the help could fold away once read, or the look's controls share a row.
+   When a copy keeps its size rule, a copy of the Earth at the Earth's mass must stay the Earth's size.
 2. *Change anything.* Every world, real or made, gets one sheet of all its numbers to change (mass,
    size, spin, look, temperature, rings, its orbit), with "As it really is" to put it back.
 3. *An empty universe.* "New universe" on the title screen: empty space, stars far off, nothing else;
