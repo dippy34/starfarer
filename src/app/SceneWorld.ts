@@ -1,5 +1,5 @@
 import type { NBodyBodies } from '../sim/NBody';
-import { type Kind, MADE_FIRST_ID, MADE_MOST } from './WhatIf';
+import { isWorldKind, type Kind, MADE_FIRST_ID, MADE_MOST, WORLD_KINDS } from './WhatIf';
 
 /**
  * The changed universe, as a link or a save keeps it (the `w` of src/app/SceneLink.ts): live
@@ -45,6 +45,8 @@ export interface MadeRecord {
   /** a sun's temperature (K) and absolute magnitude now (0 for a world that is not a sun) */
   teff: number;
   absMag: number;
+  /** the seed of the generated look of a world of one (WorldKind: its type is its kind); none for the others (the simulation does not carry it: App.sceneView sets it) */
+  seed?: number;
 }
 
 export interface LiveWorld {
@@ -78,7 +80,10 @@ export const WORLD_BYTES_MOST = 256 * 1024;
 export class WorldError extends Error {}
 const bad = (why: string): never => { throw new WorldError(why); };
 
-const KINDS: readonly Kind[] = ['moon', 'earth', 'jupiter', 'sun'];
+/** (the first four are the first format's: a link written before the worlds of a generated look is read as ever) */
+const KINDS: readonly Kind[] = ['moon', 'earth', 'jupiter', 'sun', ...WORLD_KINDS];
+/** a look's seed is a whole number below this */
+export const SEED_MOST = 1_000_000;
 
 /**
  * A made world's name, as a link may give it: letters, digits, spaces and a few marks (apostrophes,
@@ -158,6 +163,10 @@ export function encodeWorld(w: LiveWorld): Uint8Array {
   o.uint(w.made.length);
   for (const m of w.made) {
     o.uint(m.id - MADE_FIRST_ID); o.u8(KINDS.indexOf(m.kind)); o.text(m.name); o.uint(m.home); o.u8(m.icy ? 1 : 0);
+    if (isWorldKind(m.kind)) {
+      if (m.seed === undefined) throw new Error('a world of a generated look has no seed');
+      o.uint(m.seed);
+    }
     o.f64(m.kg); o.f64(m.gm); o.f64(m.radius);
     if (m.kind === 'sun') { o.f64(m.teff); o.f64(m.absMag); }
   }
@@ -314,9 +323,10 @@ function walk(r: Reader, dry: boolean, doubles?: Reader): LiveWorld {
     if (!plainName(name)) bad('the name of a world made in it is not plain text');
     const home = r.uint(2 ** 31 - 1), icyAt = r.u8();
     if (icyAt > 1) bad('a world made in it could not be read');
+    const seed = isWorldKind(kind) ? r.uint(SEED_MOST - 1) : 0;
     const kg = f(1, GM_MOST / 6.674e-11, 'the mass of a world made in it'), gm = f(0, GM_MOST, 'the mass of a world made in it'), radius = f(1, RADIUS_MOST, 'the size of a world made in it');
     const teff = kind === 'sun' ? f(100, 1e6, 'the colour of a sun made in it') : 0, absMag = kind === 'sun' ? f(-30, 40, 'the light of a sun made in it') : 0;
-    made.push({ id, kind, name, home, icy: icyAt === 1, kg, gm, radius, teff, absMag });
+    made.push({ id, kind, name, home, icy: icyAt === 1, kg, gm, radius, teff, absMag, ...(isWorldKind(kind) ? { seed } : {}) });
   }
   const ng = r.uint(WORLD_LIMITS.gone), gone: number[] = [];
   for (let k = 0; k < ng; k++) gone.push(r.uint(2 ** 31 - 1));

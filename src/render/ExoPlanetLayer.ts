@@ -6,128 +6,17 @@ import {
 import { blackbodyRGB, luminance, magToIrradiance } from '../astro/photometry';
 import { PC } from '../core/units';
 import type { UPos } from '../core/upos';
-import { type ExoPlanet, hashKey, type PlanetarySystem, type PlanetType, rng } from '../universe/Planets';
+import { type ExoPlanet, hashKey, type PlanetarySystem, rng } from '../universe/Planets';
 import { SPRITE_FRAG, SPRITE_VERT } from './NearStars';
 import { BODY_VERT } from './shaders/body';
 import { EXO_BAKE_FRAG, EXO_FRAG, RING_GLSL } from './shaders/planet';
 import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS } from './shaders/xr';
 import { ExoPlanet as ExoPlanetClass, PlanetarySystem as SystemClass } from '../universe/Planets';
 import { CatalogStar } from '../universe/Stars';
-import { ExoGround, exoCraterSeed, exoQuantile, exoQuantiles, ROCKY_TYPES } from '../universe/ExoTerrain';
-import { MATERIALS } from './Materials';
+import { ExoGround, ROCKY_TYPES } from '../universe/ExoTerrain';
+import { generatedLook, type LookSpec, lookUniforms, type V3 } from './PlanetLook';
 import { earthLikeAtmosphere, type AtmosphereSpec, type ExoAtmosphere } from './Atmospheres';
 import { TerrainPatch, type TerrainCandidate } from './TerrainPatch';
-
-const TYPE_ID: Record<PlanetType, number> = { lava: 0, hot: 1, desert: 2, terran: 3, ocean: 4, ice: 5, subneptune: 6, icegiant: 7, giant: 8, hotgiant: 9 };
-type V3 = [number, number, number];
-
-const lum = (c: V3) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-
-/**
- * A planet's palette and surface parameters, varied by its seed within its type and chosen by its
- * temperature where that changes what it is made of. Colours are linear albedos (what fraction of
- * the starlight the surface reflects), so `albedo` (the disk's mean, for the eye's adaptation)
- * follows from them: lava and hot Jupiters are dark, ice worlds and water-cloud giants bright.
- */
-function paletteFor(p: ExoPlanet): Record<string, number | V3> {
-  const t = p.spec.type;
-  const T = p.spec.teqK;
-  const r = rng(hashKey(p.key + '/look'));
-  const jit = (c: V3, k = 0.14): V3 => { const m = 1 + k * (r() - 0.5); return [c[0] * m * (1 + 0.5 * k * (r() - 0.5)), c[1] * m * (1 + 0.5 * k * (r() - 0.5)), c[2] * m * (1 + 0.5 * k * (r() - 0.5))]; };
-  const pick = <T,>(a: T[]): T => a[Math.floor(r() * a.length)];
-  const base = {
-    uSeaLevel: 0, uIceLat: 1.2, uClouds: 0, uAtmo: 0, uBands: 10, uTurb: 0.6, uStorms: 0, uGlow: 0, uCraters: 0,
-    uSea: [0.02, 0.06, 0.15] as V3, uAtmoColor: [0.4, 0.6, 1.0] as V3, uC4: [0.5, 0.5, 0.5] as V3,
-  };
-  const giantLook = (pal: V3[], o: Record<string, number | V3>) => {
-    const [c1, c2, c3, c4] = pal.map((c) => jit(c));
-    return { ...base, uC1: c1, uC2: c2, uC3: c3, uC4: c4, albedo: 0.5 * (lum(c1) + lum(c2)), ...o };
-  };
-  switch (t) {
-    case 'lava': {
-      const c1 = jit([0.035, 0.03, 0.03]);
-      return { ...base, uC1: c1, uC2: jit([0.08, 0.065, 0.055]), uC3: [0.12, 0.1, 0.09], uC4: [0.2, 0.18, 0.15], uGlow: Math.min(1.6, Math.max(0.4, (T - 700) / 700)) * (0.8 + 0.4 * r()), albedo: 0.06 };
-    }
-    case 'hot': {
-      const pal = pick<V3[]>([
-        [[0.07, 0.065, 0.06], [0.12, 0.11, 0.1], [0.16, 0.15, 0.14]],      // grey, Mercury-like
-        [[0.08, 0.06, 0.045], [0.15, 0.12, 0.09], [0.2, 0.17, 0.13]],     // brown
-        [[0.09, 0.05, 0.035], [0.17, 0.1, 0.07], [0.22, 0.15, 0.11]],     // iron-red
-      ]).map((c) => jit(c));
-      return { ...base, uC1: pal[0], uC2: pal[1], uC3: pal[2], uC4: [0.26, 0.25, 0.24], uCraters: 0.6 + 0.4 * r(), uAtmo: r() < 0.2 ? 0.4 : 0, uAtmoColor: [1, 0.8, 0.5], albedo: 0.5 * (lum(pal[0]) + lum(pal[1])) };
-    }
-    case 'desert': {
-      const pal = pick<V3[]>([
-        [[0.1, 0.06, 0.04], [0.33, 0.18, 0.09], [0.25, 0.17, 0.12]],     // rust (Mars-like)
-        [[0.18, 0.14, 0.1], [0.45, 0.36, 0.24], [0.35, 0.3, 0.24]],      // pale sand
-        [[0.15, 0.11, 0.05], [0.42, 0.3, 0.13], [0.3, 0.24, 0.16]],      // ochre
-        [[0.1, 0.09, 0.08], [0.28, 0.24, 0.2], [0.22, 0.2, 0.18]],       // grey-brown
-      ]).map((c) => jit(c));
-      return {
-        ...base, uC1: pal[0], uC2: pal[1], uC3: pal[2], uC4: jit([0.5, 0.47, 0.42]), uCraters: 0.3 + 0.5 * r(),
-        uAtmo: 0.35, uAtmoColor: [1, 0.78, 0.6], uIceLat: T < 250 ? 0.8 + 0.12 * r() : 1.2, albedo: 0.65 * lum(pal[1]) + 0.35 * lum(pal[0]),
-      };
-    }
-    case 'terran': case 'ocean': {
-      // vegetation of other worlds needn't be green, but it stays dark (it absorbs starlight)
-      const veg = jit(pick<V3>([
-        [0.035, 0.06, 0.025], [0.035, 0.06, 0.025], [0.03, 0.055, 0.025], [0.045, 0.065, 0.03],   // green
-        [0.055, 0.06, 0.03], [0.025, 0.05, 0.04],                                                   // olive, teal
-        [0.06, 0.032, 0.025], [0.05, 0.032, 0.045], [0.07, 0.06, 0.025],                            // red, purple, ochre
-      ]));
-      const soil = jit(pick<V3>([[0.42, 0.31, 0.18], [0.36, 0.3, 0.22], [0.45, 0.26, 0.14], [0.4, 0.36, 0.28]]));
-      const clouds = t === 'ocean' ? 0.55 + 0.35 * r() : 0.4 + 0.4 * r();
-      return {
-        ...base, uC1: veg, uC2: soil, uC3: jit([0.17, 0.15, 0.13]), uC4: [0.6, 0.6, 0.6], uSea: jit(pick<V3>([[0.006, 0.018, 0.045], [0.007, 0.022, 0.04], [0.005, 0.015, 0.05]]), 0.3),
-        uClouds: clouds, uAtmo: 0.9, uAtmoColor: [0.35, 0.55, 1.0], albedo: 0.07 + 0.3 * clouds,
-      };
-    }
-    case 'ice': {
-      const [pal, craters] = pick<[V3[], number]>([
-        [[[0.42, 0.3, 0.2], [0.75, 0.72, 0.66], [0.85, 0.85, 0.85], [0.9, 0.92, 0.95]], 0.1],     // Europa-like
-        [[[0.6, 0.66, 0.72], [0.88, 0.9, 0.92], [0.95, 0.96, 0.97], [0.95, 0.97, 1]], 0.3],     // fresh ice
-        [[[0.12, 0.1, 0.09], [0.35, 0.32, 0.3], [0.55, 0.55, 0.55], [0.7, 0.72, 0.75]], 1],      // old, dirty, cratered
-        [[[0.22, 0.11, 0.06], [0.7, 0.62, 0.52], [0.8, 0.78, 0.75], [0.9, 0.88, 0.85]], 0.3],    // tholins
-      ]);
-      const c = pal.map((x) => jit(x));
-      return { ...base, uC1: c[0], uC2: c[1], uC3: c[2], uC4: c[3], uCraters: craters * (0.6 + 0.6 * r()), uAtmo: r() < 0.3 ? 0.3 : 0, uAtmoColor: [0.6, 0.7, 1], albedo: 0.7 * lum(c[1]) + 0.3 * lum(c[0]) };
-    }
-    case 'subneptune': {
-      const pal = T < 250 ? [[0.42, 0.6, 0.68], [0.5, 0.68, 0.74], [0.7, 0.82, 0.86], [0.45, 0.6, 0.7]]
-        : T < 600 ? pick<V3[]>([[[0.5, 0.55, 0.62], [0.62, 0.66, 0.7], [0.8, 0.82, 0.85], [0.55, 0.58, 0.62]], [[0.4, 0.5, 0.6], [0.52, 0.6, 0.68], [0.75, 0.8, 0.84], [0.5, 0.55, 0.6]]])
-        : pick<V3[]>([[[0.45, 0.36, 0.26], [0.58, 0.48, 0.36], [0.72, 0.64, 0.52], [0.55, 0.4, 0.28]], [[0.36, 0.4, 0.34], [0.48, 0.52, 0.45], [0.66, 0.68, 0.62], [0.45, 0.45, 0.38]]]);
-      return giantLook(pal as V3[], { uBands: 4 + 5 * r(), uTurb: 0.15 + 0.15 * r(), uStorms: Math.floor(3 * r()), uAtmo: 0.5, uAtmoColor: [0.6, 0.8, 1.0] });
-    }
-    case 'icegiant': {
-      const pal = T < 120 ? pick<V3[]>([
-        [[0.1, 0.22, 0.5], [0.16, 0.32, 0.62], [0.7, 0.8, 0.9], [0.12, 0.25, 0.55]],      // Neptune-like
-        [[0.36, 0.56, 0.62], [0.42, 0.64, 0.68], [0.6, 0.78, 0.8], [0.4, 0.6, 0.65]],     // Uranus-like
-      ]) : T < 500 ? [[0.25, 0.4, 0.48], [0.32, 0.48, 0.55], [0.65, 0.75, 0.8], [0.3, 0.42, 0.5]]
-        : [[0.3, 0.28, 0.27], [0.4, 0.38, 0.36], [0.6, 0.58, 0.55], [0.35, 0.3, 0.28]];   // too warm for methane
-      return giantLook(pal as V3[], { uBands: 4 + 4 * r(), uTurb: 0.3 + 0.25 * r(), uStorms: 1 + Math.floor(3 * r()), uAtmo: 0.4, uAtmoColor: [0.5, 0.7, 1.0] });
-    }
-    case 'giant': {
-      // ammonia clouds when cold (Jupiter, Saturn), water clouds when temperate (bright white),
-      // cloudless and blue when warmer still
-      const JUPITER: V3[] = [[0.36, 0.24, 0.15], [0.66, 0.6, 0.5], [0.8, 0.77, 0.7], [0.6, 0.3, 0.17]];
-      const SATURN: V3[] = [[0.5, 0.4, 0.26], [0.66, 0.57, 0.4], [0.75, 0.68, 0.52], [0.62, 0.48, 0.3]];
-      const RUDDY: V3[] = [[0.42, 0.3, 0.24], [0.6, 0.5, 0.42], [0.75, 0.7, 0.62], [0.55, 0.28, 0.2]];
-      const pal = T < 150 ? pick([JUPITER, JUPITER, SATURN, RUDDY])
-        : T < 350 ? [[0.6, 0.6, 0.6], [0.78, 0.78, 0.76], [0.88, 0.88, 0.87], [0.7, 0.65, 0.6]]
-        : [[0.12, 0.18, 0.35], [0.18, 0.26, 0.45], [0.35, 0.42, 0.6], [0.2, 0.2, 0.35]];
-      const saturn = pal === SATURN;
-      return giantLook(pal as V3[], {
-        uBands: saturn ? 12 + 6 * r() : 7 + 5 * r(), uTurb: saturn ? 0.25 + 0.15 * r() : T < 150 ? 0.6 + 0.5 * r() : 0.3 + 0.3 * r(),
-        uStorms: saturn ? 1 + Math.floor(2 * r()) : 3 + Math.floor(6 * r()), uAtmo: 0.25, uAtmoColor: [0.9, 0.85, 0.8],
-      });
-    }
-    case 'hotgiant': {
-      const pal = T > 1800 ? [[0.2, 0.17, 0.15], [0.32, 0.28, 0.24], [0.45, 0.4, 0.35], [0.3, 0.18, 0.12]]   // silicate clouds
-        : pick<V3[]>([[[0.03, 0.03, 0.045], [0.06, 0.055, 0.075], [0.12, 0.11, 0.13], [0.1, 0.05, 0.04]], [[0.02, 0.04, 0.09], [0.035, 0.06, 0.13], [0.08, 0.11, 0.2], [0.05, 0.06, 0.12]]]);
-      return giantLook(pal as V3[], { uBands: 5 + 5 * r(), uTurb: 0.6 + 0.4 * r(), uStorms: Math.floor(3 * r()), uGlow: Math.min(1.5, Math.max(0.2, (T - 900) / 800)), uAtmo: 0.04, uAtmoColor: [0.6, 0.5, 0.9] });
-    }
-  }
-}
 
 const RING_VERT = /* glsl */ `
 #include <common>
@@ -231,37 +120,9 @@ export class ExoPlanetLayer {
   private draw(p: ExoPlanet): PlanetDraw {
     let d = this.draws.get(p);
     if (d) return d;
-    const pal = paletteFor(p);
-    const seed = p.spec.seed % 97;
-    {
-      // climate and seas: the sea covers the planet's own fraction of the surface
-      const rc = rng(hashKey(p.key + '/climate'));
-      const t = p.spec.type;
-      if (t === 'terran' || t === 'ocean') pal.uSeaLevel = exoQuantile(seed, t === 'ocean' ? 0.85 + 0.11 * rc() : 0.4 + 0.35 * rc());
-      const [q10, q50, q90] = ROCKY_TYPES.has(TYPE_ID[t]) ? exoQuantiles(seed, [0.1, 0.5, 0.9]) : [0.3, 0.4, 0.5];
-      pal.uHMid = q50;
-      pal.uHSpan = Math.max(0.02, q90 - q10);
-      pal.uTeq = p.spec.teqK;
-      pal.uDry = t === 'ocean' ? 0.1 * rc() : t === 'terran' ? 0.1 + 0.5 * rc() : 1;
-      pal.uRelief = Math.min(20e3, p.radius * 0.002) / p.radius;
-      pal.uRadius = p.radius;
-      pal.uRing = p.spec.rings ? 1 : 0;
-      pal.uRingSeed = p.spec.seed % 13;
-      pal.uRingIn = 1.2 + 0.4 * rc();
-      pal.uRingOut = Math.min(2.95, pal.uRingIn + 0.7 + 0.9 * rc());
-    }
-    const albedo = Number(pal.albedo);
-    delete pal.albedo;
-    const u: Record<string, { value: unknown }> = {
-      uType: { value: TYPE_ID[p.spec.type] }, uSeed: { value: seed }, uLumpy: { value: 0 }, uClipScale: { value: 1 },
-      uSunDir: { value: new Vector3(1, 0, 0) }, uSunColor: { value: new Vector3(1, 1, 1) }, uSunIrr: { value: Math.PI },
-      uExposure: this.exposure, uTime: { value: 0 }, uBodyToWorld: { value: new Matrix3() },
-      uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK, uLite: LITE.uLite, uCSeed: { value: exoCraterSeed(p.name) },
-      uTerrain: { value: 0 }, uHScale: { value: 0 }, uCamAlt: { value: 1e9 }, uHoleDir: { value: new Vector3(0, 0, 1) }, uHoleCos: { value: 2 },
-      uTerrCube: { value: null }, uBaked: { value: 0 },
-      ...MATERIALS, uTanE: { value: new Vector3(1, 0, 0) }, uTanN: { value: new Vector3(0, 1, 0) },
-    };
-    for (const [k, v] of Object.entries(pal)) u[k] = { value: Array.isArray(v) ? new Vector3(...v) : v };
+    const spec: LookSpec = { key: p.key, name: p.name, type: p.spec.type, teqK: p.spec.teqK, seed: p.spec.seed, radius: p.radius, rings: p.spec.rings };
+    const look = generatedLook(spec), pal = look.pal, albedo = look.albedo;
+    const u = lookUniforms(spec, look, this.exposure);
     const mesh = new Mesh(this.sphere, new ShaderMaterial({ name: 'exoplanet', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: u }));
     mesh.matrixAutoUpdate = false;
     mesh.frustumCulled = false;
@@ -296,9 +157,9 @@ export class ExoPlanetLayer {
     orbit.userData.filled = false;
     orbit.renderOrder = 5;
     this.group.add(orbit);
-    const type = TYPE_ID[p.spec.type];
+    const type = look.typeId;
     const ground = ROCKY_TYPES.has(type)
-      ? new ExoGround(p, type, p.spec.seed % 97, Number(pal.uSeaLevel ?? 0), Number(pal.uCraters ?? 0), Number(pal.uHMid), Number(pal.uHSpan)) : null;
+      ? new ExoGround(p, type, look.seed, Number(pal.uSeaLevel ?? 0), Number(pal.uCraters ?? 0), Number(pal.uHMid), Number(pal.uHSpan)) : null;
     // temperate and ocean worlds get an Earth-like atmosphere (pressure varies from planet to planet)
     let air: AtmosphereSpec | null = null;
     if (type === 3 || type === 4) {

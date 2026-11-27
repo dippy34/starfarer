@@ -869,7 +869,9 @@ for (const kind of kinds) {
     await press(page, '#hud .card [data-power="add"]');
     await frames(page, 2);
     const offers = await page.evaluate(() => [...document.querySelectorAll('#hud .card [data-panel="add"] .row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => r.querySelector('b').textContent));
-    check(on('what can be added to a star: a planet like Earth, one like Jupiter, a second sun'), offers.join() === 'A planet like Earth,A planet like Jupiter,A second sun', offers.join(', '));
+    // (the first three rows as they were, then the made worlds of a generated look: each a thumb high)
+    check(on('what can be added to a star: a planet like Earth, one like Jupiter, a second sun, and the seven worlds of a generated look'),
+      offers.join() === 'A planet like Earth,A planet like Jupiter,A second sun,A rocky world,An ocean world,A desert world,A lava world,An icy world,A gas giant,An ice giant', offers.join(', '));
     await page.screenshot({ path: path.join(outDir, `live-${kind}-add.png`) });
     const eye = await page.evaluate(() => { const a = window.app; return a.rig.upos.sub(a.system.sun.upos, new (a.system.sun.pos.constructor)()).toArray(); });
     await press(page, '#hud .card [data-act="add-jupiter"]');
@@ -985,6 +987,61 @@ for (const kind of kinds) {
     });
     check(on('"Back to reality": nothing of what was made is left, and every body is where the ephemeris has it'),
       !real.on && real.bodies === real.fresh && real.off === 0 && real.made === 0 && real.suns === 'Sun' && real.found === 0, `${real.bodies} bodies, ${real.off} out of place, the suns: ${real.suns}`);
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ a made world of a generated look: no map, a seed, New look, kept in a save
+  if (want('made')) {
+    const { ctx, page } = await open(kind, 'target=Sun&dist=473&el=40');
+    await quiet(page);
+    await press(page, '#hud .card [data-power="add"]');
+    await press(page, '#hud .card [data-act="add-giant"]');
+    await page.waitForFunction(() => window.app.selection?.name === 'New gas giant', null, { timeout: 20000 });
+    await until(page, () => !window.app.glide, null, 60);
+    // (setup, not a power: the eye near it, so that it is drawn as a disk)
+    await page.evaluate(() => { const a = window.app, b = a.selection; a.placeNear(b, 6 * b.radius * a.rig.framing, 35, 12); });
+    await frames(page, 6);
+    /** what the world is drawn with now: its material, the look's type and seed, whether it has a map, and what it is made as */
+    const looks = () => page.evaluate(() => {
+      const a = window.app, m = a.selection, mesh = a.bodies.meshes.get(m), u = mesh?.material.uniforms;
+      const V = m.pos.constructor, at = a.project(m.upos.sub(a.rig.upos, new V()));
+      return {
+        name: m.name, material: mesh?.material.name ?? null, type: u?.uType?.value ?? null, seed: u?.uSeed?.value ?? null, map: !!u?.uMap, mapOf: m.texture, madeAs: { ...m.meta.madeAs },
+        c1: u?.uC1 ? u.uC1.value.toArray().map((x) => Number(x.toFixed(4))).join() : '', at: at && { x: at.x, y: at.y },
+        newLook: !document.querySelector('#hud .card .new-look').hidden, newLookH: document.querySelector('#hud .card .new-look').getBoundingClientRect().height,
+      };
+    });
+    /** a picture of the world's disk (a small square round its middle), as bytes */
+    const disk = async (at) => page.screenshot({ clip: { x: Math.max(0, at.x - 24), y: Math.max(0, at.y - 24), width: 48, height: 48 } });
+    const g0 = await looks();
+    check(on('"A gas giant" round the Sun makes a world with no map of its own, drawn with the generated look of its type (giant) and a seed, not a map'),
+      g0.name === 'New gas giant' && g0.material === 'generated-look' && g0.type === 8 && g0.seed === g0.madeAs.seed % 97 && !g0.map && !g0.mapOf && g0.madeAs.kind === 'giant' && Number.isInteger(g0.madeAs.seed),
+      `${g0.name}: material ${g0.material}, type ${g0.type}, seed ${g0.madeAs.seed}, map ${g0.map}`);
+    check(on('while it is put in place the card offers "New look", a thumb high'), g0.newLook && g0.newLookH >= 44, `${g0.newLookH} px`);
+    const before = g0.at ? await disk(g0.at) : null;
+    await press(page, '#hud .card [data-act="new-look"]');
+    await frames(page, 6);
+    const g1 = await looks();
+    const after = g1.at ? await disk(g1.at) : null;
+    check(on('"New look" gives it another seed and another look: the seed differs, its colours differ, it is drawn afresh, and it is still the same world'),
+      g1.name === g0.name && g1.madeAs.seed !== g0.madeAs.seed && g1.material === 'generated-look' && g1.seed === g1.madeAs.seed % 97 && g1.c1 !== g0.c1 && !!before && !!after && Buffer.compare(before, after) !== 0,
+      `seed ${g0.madeAs.seed} -> ${g1.madeAs.seed}; colour ${g0.c1} -> ${g1.c1}`);
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-made-giant.png`) });
+    await press(page, '#hud .card [data-act="place-done"]');
+    await frames(page, 3);
+    // a save of the scene, opened again: the same world, with the same type and seed, drawn the same way
+    await page.evaluate(() => window.app.saveScene());
+    const id = await page.evaluate(() => JSON.parse(localStorage.getItem('starfarer-saves'))[0].id);
+    await page.evaluate((id) => window.app.openSave(id), id);
+    await until(page, () => window.app.made.length === 1 && window.app.physics.on, null, 60);
+    await page.evaluate(() => { const a = window.app, b = a.made[0]; a.select(b); a.placeNear(b, 6 * b.radius * a.rig.framing, 35, 12); });
+    await frames(page, 6);
+    const g2 = await looks();
+    check(on('a save of the scene, opened again, brings the world back with the same type and seed, drawn with the same generated look'),
+      g2.name === 'New gas giant' && g2.madeAs.kind === 'giant' && g2.madeAs.seed === g1.madeAs.seed && g2.material === 'generated-look' && g2.seed === g1.seed && g2.c1 === g1.c1 && !g2.map,
+      `${g2.name}: ${g2.madeAs.kind}, seed ${g2.madeAs.seed} (saved: ${g1.madeAs.seed})`);
+    check(on('it is a made world like the others: Mass, Size, Move, Add and Remove'),
+      await page.evaluate(() => [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => b.textContent).join()) === 'Mass,Size,Move,Add,Remove');
     await ctx.close();
   }
 
