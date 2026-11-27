@@ -5,6 +5,7 @@ import { touchFirst } from '../core/device';
 import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
 import { type AimView, aimShape } from './aimShape';
 import { ICON } from './icons';
+import { OfflinePanel } from './OfflinePanel';
 
 /**
  * The interface over the view, laid out as a phone app: two chips at the top (where you are, what
@@ -489,6 +490,8 @@ export class Hud {
     this.toastEl = this.$('.hud-toast');
     this.fabs = this.$('.hud-fabs');
     this.coach = this.$('.hud-coach');
+    // Use offline: its own panel, mounted here and nowhere else in the Hud's logic.
+    new OfflinePanel(this.$('.more .list'));
     // a phone or a tablet: touch wording from the start (a finger on the view says so too, see update)
     this.coarse = touchFirst();
     el.classList.toggle('touch', this.coarse);

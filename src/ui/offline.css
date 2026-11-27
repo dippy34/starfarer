@@ -1,0 +1,36 @@
+/* Use offline (src/ui/OfflinePanel.ts), inside More's list: a flat panel of the display's
+   tokens -- dark ink on the panel, a hairline above it, squared keys, left aligned. */
+#hud .offline-panel {
+  margin: var(--sf-s3) 0 var(--sf-s4); padding-top: var(--sf-s3);
+  border-top: var(--sf-edge-line);
+  text-align: left;
+}
+#hud .offline-panel h3 {
+  margin: 0 0 var(--sf-s2); font: var(--sf-t-legend); letter-spacing: var(--sf-legend-track);
+  text-transform: uppercase; color: var(--sf-ink-2);
+}
+#hud .offline-status { margin: 0 0 var(--sf-s2); font: var(--sf-t-body); color: var(--sf-ink); }
+#hud .offline-note { margin: var(--sf-s1) 0 0; font: var(--sf-t-small); color: var(--sf-ink-2); }
+/* keys: squared, a finger tall; the download is the panel's one bright key */
+#hud .offline-panel .btn {
+  display: flex; width: 100%; align-items: center; justify-content: center; min-height: var(--sf-touch);
+  margin: var(--sf-s3) 0 0; padding: var(--sf-s1) var(--sf-s3);
+  background: var(--sf-panel-2); border: 0; border-radius: var(--sf-r-key);
+  font: var(--sf-t-body); font-weight: 600; color: var(--sf-ink); white-space: normal;
+}
+#hud .offline-panel .btn.primary { background: var(--sf-accent); color: var(--sf-accent-ink); }
+#hud .offline-panel .btn[disabled] { color: var(--sf-ink-3); }
+/* the download's progress: a flat track, a filled bar and the words under it, read at a glance */
+#hud .offline-panel progress {
+  display: block; width: 100%; height: 10px; margin: var(--sf-s3) 0 0;
+  border: 0; border-radius: var(--sf-r-key);
+  -webkit-appearance: none; appearance: none;
+  background: var(--sf-panel-2); color: var(--sf-accent);
+}
+#hud .offline-panel progress::-webkit-progress-bar { background: var(--sf-panel-2); border-radius: var(--sf-r-key); }
+#hud .offline-panel progress::-webkit-progress-value { background: var(--sf-accent); border-radius: var(--sf-r-key); }
+#hud .offline-panel progress::-moz-progress-bar { background: var(--sf-accent); border-radius: var(--sf-r-key); }
+#hud .offline-progress-words {
+  margin: var(--sf-s1) 0 0; font: var(--sf-t-small); color: var(--sf-ink-2);
+  font-variant-numeric: tabular-nums;
+}

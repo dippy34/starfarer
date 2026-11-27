@@ -93,10 +93,13 @@ jobs:
         job: ${{ fromJSON(needs.plan.outputs.jobs) }}
     name: ${{ matrix.job.name }}
     steps:
-      # the scripts, package.json and vite.config.ts (root files come with a sparse checkout); not the data
+      # the scripts, package.json and vite.config.ts (root files come with a sparse checkout), and
+      # src/offline, which vite.config.ts imports (vite preview loads the config); not the data
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: scripts
+          sparse-checkout: |
+            scripts
+            src/offline
       - uses: actions/setup-node@v4
         with:
           node-version: 22
