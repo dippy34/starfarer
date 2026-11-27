@@ -54,6 +54,8 @@ const RULES = [
   [/^[^/]+\.md$/, []],
   [/^LICENSE$/, []],
   [/^\.github\/workflows\/deploy-pages\.yml$/, []],
+  // the owner's progress page and its pictures (public/mc-a76557970f/: no suite opens it, and the app never reads it)
+  [/^public\/mc-a76557970f\//, []],
   [/^scripts\/(affected|remote-test|bench|bench-decode|exoterrain-gpu|og-image)\.mjs$/, []],
   [/^src\/perf\//, ['interact']],                       // the perf HUD and bench (bench.mjs is not in the set)
   // the scripts themselves
