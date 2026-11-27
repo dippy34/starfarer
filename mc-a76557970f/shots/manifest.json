@@ -1,5 +1,27 @@
 [
  {
+  "id": "20261127-091353-no-surprise-fast-forward-after-a",
+  "at": "2026-11-27T09:13:53+00:00",
+  "kind": "live",
+  "title": "No surprise fast-forward after an edit",
+  "text": "After a change, time stays as you had it, and the chip offers Watch: it plays what the change does until you stop it. (More, Show me what happens, brings back the automatic watch.)",
+  "link": "https://dippy34.github.io/starfarer/",
+  "pictures": [
+   {
+    "src": "20261127-091353-no-surprise-fast-forward-after-a-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "After an edit: Watch"
+   },
+   {
+    "src": "20261127-091353-no-surprise-fast-forward-after-a-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Watching, until Stop"
+   }
+  ]
+ },
+ {
   "id": "20261126-063740-god-mode-round-other-stars",
   "at": "2026-11-26T06:37:40+00:00",
   "kind": "live",

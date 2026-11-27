@@ -11,6 +11,7 @@ const pinUrl = (clientId) => new URL(`__starfarer_offline_pin_${clientId}`, self
 
 async function putPin(clientId, cacheName) {
   if (!clientId || pinned.get(clientId) === cacheName) return;
+  if (!active) return;
   pinned.set(clientId, cacheName);
   const control = await caches.open(CONTROL);
   await control.put(pinUrl(clientId), new Response(cacheName));
@@ -19,8 +20,7 @@ async function putPin(clientId, cacheName) {
 async function getPin(clientId) {
   if (!clientId) return null;
   if (pinned.has(clientId)) return pinned.get(clientId);
-  const control = await caches.open(CONTROL);
-  const response = await control.match(pinUrl(clientId));
+  const response = await caches.match(pinUrl(clientId), { cacheName: CONTROL });
   const cacheName = response ? await response.text() : null;
   if (cacheName) pinned.set(clientId, cacheName);
   return cacheName;
@@ -41,8 +41,8 @@ async function prune(current, options = {}) {
     for (const client of windows) keep.add(await getPin(client.id));
     for (const name of await caches.keys()) {
       if (!name.startsWith(`${PREFIX}v-`) || keep.has(name)) continue;
-      const cache = await caches.open(name);
-      const complete = !!(await cache.match(copyUrl()));
+      // (looked up, not opened: opening creates a cache, and Remove may have just deleted this one)
+      const complete = !!(await caches.match(copyUrl(), { cacheName: name }));
       if (complete || (options.keepStaging && !options.keepStaging.includes(name))) await caches.delete(name);
     }
   };
@@ -64,9 +64,7 @@ async function readActive() {
     activeRead = (async () => {
       // Cache Storage creates on open. After Remove, this unregistered worker may still serve an
       // already-open tab until its next navigation; even then it must not recreate an empty cache.
-      if (!(await caches.keys()).includes(CONTROL)) return null;
-      const control = await caches.open(CONTROL);
-      const response = await control.match(controlUrl());
+      const response = await caches.match(controlUrl(), { cacheName: CONTROL });
       active = response ? await response.json() : null;
       return active;
     })();
@@ -138,9 +136,9 @@ self.addEventListener('fetch', (event) => {
     const clientId = event.resultingClientId || event.clientId;
     const cacheName = navigating ? current.cacheName : await getPin(event.clientId) ?? current.cacheName;
     await putPin(clientId, cacheName);
-    const cache = await caches.open(cacheName);
     const wanted = navigating ? new URL('index.html', self.registration.scope).href : request.url;
-    const cached = await cache.match(wanted, { ignoreSearch: true });
+    // (looked up, not opened: a request still under way when Remove deleted the copy must not create it again empty)
+    const cached = await caches.match(wanted, { cacheName, ignoreSearch: true });
     // An incomplete or test-limited copy never invents a fallback: it goes to the network, and an
     // actual missing offline file therefore remains visible to the app and to the browser check.
     return cached ?? fetch(request);
