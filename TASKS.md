@@ -75,6 +75,35 @@ need the OpenCode workspace's region set to Global.
 
 ## Tasks
 
+### `task/time-panel`: the Time panel, simpler: one way back to now, and its speed in words
+
+- **Status:** open (after task/make-anything). Small.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the fix list's #4 ("make it simple"): the Time panel (`src/ui/Hud.ts`, the
+  `.sheet.time` section near line 345) has a big "Back to today" button and, in its row of five, a
+  "Now" button that do exactly the same (`App.act`: `case 'now': case 'today': this.realTime()`), and
+  it gives the speed as "◀ 1 min/s".
+- **What to do:** read `HANDOFF.md` "Design" first.
+  - The row keeps four: Reverse, Slower, Pause/Play and Faster ("Now" goes from it).
+  - The big button, "Back to now", shows whenever the clock is not at the present moment at real time
+    (a day or more away, or any other rate, or reversed, or paused away from now); in live physics as
+    today (hidden). It does what Now does.
+  - Under the clock, the speed in words: "Real time", "1 minute a second", "3 hours a second",
+    "2 days a second", "1 year a second", and ", backwards" when reversed (`App.rateText` is the short
+    form the top chip keeps: leave the chip as it is).
+  - Plain words, the `--sf-*` tokens, every target at least 44 px.
+- **Done when:**
+  - Unit tests for the speed in words (each unit, backwards, real time).
+  - Browser checks (in `scripts/touch.mjs`, where the Time sheet is checked): the row has four buttons
+    and no Now; "Back to now" shows after Faster and after Reverse, and brings real time back; the speed
+    reads in words. They fail on the code before the change. Checks that pressed Now press "Back to
+    now" instead; none is made weaker; list each changed check in the report.
+  - Pictures, upright at 390x844 and sideways at 844x390, of the Time sheet at real time and at
+    "2 days a second, backwards".
+  - Run `scripts/touch.mjs` and `LIVE_ONLY=watch` of `scripts/live.mjs` (the Time sheet's buttons in
+    live physics); Claude runs the rest. `npm run check` passes.
+- **Don't touch:** the clock and its rates (`src/core/time.ts`), the top chip, the watch.
+
 ### `task/make-anything`: God mode's sandbox, step 1: made worlds of every kind, each with a look of its own
 
 - **Status:** open. Large.
