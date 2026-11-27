@@ -121,8 +121,17 @@ Two copies of the app, so that play testers have one that does not change under 
   forced, which it was once). The account's other projects are the owner's own: leave them be.
   The release then moves `main` to the released commit, `git push origin <sha>:main`, which is
   always a fast-forward (below).
-- *Developers' site:* https://dippy34.github.io/starfarer, from this branch as before (every push
-  that passed its suites; `deploy-pages.yml`). It is the newest work; testers are not given it.
+- *Developers' site:* https://dev.starfarer.pages.dev since 27 Nov 2026 (the owner: "you can host
+  it on dev site on cloudflare"; GitHub Pages' 1 GB was near): a preview branch, `dev`, of the same
+  Pages project, deployed by Claude after every push to this branch that passed its suites, exactly
+  as a release but with `--branch dev` (the owner agreed that every update uses the Cloudflare login,
+  not only releases): `npm run check`, then `WRANGLER_SEND_METRICS=false npx --yes wrangler@4 pages
+  deploy dist --project-name starfarer --branch dev --commit-hash <sha> --commit-message "<what>"
+  --commit-dirty=false`, and `rm -rf dist`. The testers' site (`main`) is not touched by it. The old
+  copy, https://dippy34.github.io/starfarer, still follows this branch by itself (`deploy-pages.yml`)
+  while it fits GitHub's 1 GB. Both are the newest work; testers are not given them.
+- *Play testers' feedback* (the owner, 27 Nov): testers report to the owner directly; no feedback
+  button in the app.
 - *Branches* (the owner, 27 Nov 2026: "there's another branch that receives all the updates and
   only when approved all the changes go to main"): every update lands on this branch,
   `claude/friendly-hypatia-up418z`, and the developers' site follows it. `main` holds only what
@@ -1519,9 +1528,9 @@ keep B for later, C not needed with A).
 ## Next
 
 0. (27 Nov 2026, after the night's work; the owner's fix list is the order) Waiting on the owner: the
-   iPhone's benchmark code (#2, `docs/notes/phone-speed.md`), a yes or no on hosting the developers'
-   site on Cloudflare (#3: 926 MB in 13,095 files, near GitHub Pages' 1 GB), a Google Form link for a
-   "Send feedback" button, and "release". Ready to build: God mode on comets, then a black hole of
+   "release" (the owner's word for: copy the developers' site to the testers'). Answered on 27 Nov:
+   the iPhone 13's benchmark (`docs/notes/phone-speed.md`), the developers' site on Cloudflare (yes,
+   done), no feedback button (testers report to the owner). Ready to build: God mode on comets, then a black hole of
    your own (#9, `docs/notes/ideas.md`), and the sandbox's next steps (one Create button from
    anywhere; size set by hand). The top chips in plain words (#4) are the rest of "make it simple".
    Investigate first: the offline suite's two-tab step failed in 3 of 8 runs since the Time panel and in
