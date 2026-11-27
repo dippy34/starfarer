@@ -1,5 +1,61 @@
 [
  {
+  "id": "20261127-114119-a-simpler-time-panel",
+  "at": "2026-11-27T11:41:19+00:00",
+  "kind": "live",
+  "title": "A simpler Time panel",
+  "text": "One way back: a big Back to now button that shows only when you are away from now. The speed in words: Real time, 1 minute a second, 2 days a second, backwards.",
+  "link": "",
+  "pictures": [
+   {
+    "src": "20261127-114119-a-simpler-time-panel-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "At real time: four buttons, the speed in words"
+   },
+   {
+    "src": "20261127-114119-a-simpler-time-panel-2.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Two days a second backwards: Back to now appears"
+   }
+  ]
+ },
+ {
+  "id": "20261127-114119-make-your-own-worlds",
+  "at": "2026-11-27T11:41:19+00:00",
+  "kind": "live",
+  "title": "Make your own worlds",
+  "text": "God mode: on the Sun's card, Add now makes seven kinds of worlds of your own, each with a look of its own. While you place one: New look, Add rings, and a Colour slider. Saves and links keep it all.",
+  "link": "",
+  "pictures": [
+   {
+    "src": "20261127-114119-make-your-own-worlds-1.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "Add: the seven new worlds under the three from before"
+   },
+   {
+    "src": "20261127-114119-make-your-own-worlds-2.jpg",
+    "w": 960,
+    "h": 591,
+    "caption": "Six of the new kinds, just made"
+   },
+   {
+    "src": "20261127-114119-make-your-own-worlds-3.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "A gas giant with rings"
+   },
+   {
+    "src": "20261127-114119-make-your-own-worlds-4.jpg",
+    "w": 390,
+    "h": 844,
+    "caption": "The same giant, its colours turned with the Colour slider"
+   }
+  ]
+ },
+ {
   "id": "20261127-091353-no-surprise-fast-forward-after-a",
   "at": "2026-11-27T09:13:53+00:00",
   "kind": "live",
@@ -288,46 +344,6 @@
     "w": 780,
     "h": 1688,
     "caption": "After: on the ground"
-   }
-  ]
- },
- {
-  "id": "20261125-141846-a-calmer-crash-screen-and-a-slim",
-  "at": "2026-11-25T14:18:46+00:00",
-  "kind": "live",
-  "title": "A calmer crash screen and a slim info card",
-  "text": "The crash screen says what happened in plain numbers and what to do next. The info card is one small bar; one tap opens the rest.",
-  "link": "https://github.com/dippy34/starfarer/commit/95946c0",
-  "pictures": [
-   {
-    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-1.jpg",
-    "w": 960,
-    "h": 2078,
-    "caption": "Crash: before"
-   },
-   {
-    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-2.jpg",
-    "w": 780,
-    "h": 1688,
-    "caption": "Crash: after"
-   },
-   {
-    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-3.jpg",
-    "w": 960,
-    "h": 2078,
-    "caption": "Card: before"
-   },
-   {
-    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-4.jpg",
-    "w": 960,
-    "h": 2078,
-    "caption": "Card: after"
-   },
-   {
-    "src": "20261125-141846-a-calmer-crash-screen-and-a-slim-5.jpg",
-    "w": 960,
-    "h": 2078,
-    "caption": "Card: one tap"
    }
   ]
  }
