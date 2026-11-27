@@ -7,8 +7,9 @@ import { BLOOM, BLOOM_LEVELS } from './shaders/bloom';
 import { installToneMapping, TONE_GLSL } from './shaders/tone';
 import { HITCH } from '../core/hitch';
 import { PERF } from '../perf/Perf';
-import { Governor, QUALITY, renderScale, XR_VOLUME_FACTOR } from './Quality';
+import { Governor, governorBudget, QUALITY, renderScale, XR_VOLUME_FACTOR } from './Quality';
 import { OUTPUT_FRAGMENT } from './shaders/xr';
+import { touchFirst } from '../core/device';
 
 /**
  * HDR renderer.
@@ -158,6 +159,8 @@ ${OUTPUT_FRAGMENT}
   private cssW = 1;
   private cssH = 1;
   readonly governor = new Governor(Governor.wanted());
+  /** a phone or a tablet: its governor gives up sharpness only below PHONE_FPS (Quality.ts) */
+  private readonly phone = touchFirst();
 
   /** dolly carrying the camera (and VR controllers); its orientation is the explorer's orientation */
   readonly rig = new Group();
@@ -486,10 +489,10 @@ ${OUTPUT_FRAGMENT}
 
   render(): void {
     const gl = this.gl;
-    // adaptive quality: budget 60 Hz on a desktop, the session's rate in a headset
-    const budget = this.presenting ? 1000 / ((gl.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72) : 1000 / 60;
-    HITCH.budgetMs = budget;
-    if (this.governor.update(performance.now(), budget, PERF.cpuMs[PERF.head], PERF.gpuMs[PERF.head])) this.applyQuality();
+    // adaptive quality: budget 60 Hz on a desktop, the session's rate in a headset; a phone gives up sharpness only below PHONE_FPS
+    const display = this.presenting ? 1000 / ((gl.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72) : 1000 / 60;
+    HITCH.budgetMs = display;
+    if (this.governor.update(performance.now(), governorBudget(display, this.phone && !this.presenting), PERF.cpuMs[PERF.head], PERF.gpuMs[PERF.head])) this.applyQuality();
     // (the headset's frame has no bloom pass)
     BLOOM.uBloom.value = this.presenting || !this.bloomTargets.length ? 0 : this.bloomStrength;
     if (this.presenting) {

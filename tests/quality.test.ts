@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Governor, LOWEST_RATIO, QUALITY, RENDER_SCALE, renderScale } from '../src/render/Quality';
+import { Governor, governorBudget, LOWEST_RATIO, PHONE_FPS, QUALITY, RENDER_SCALE, renderScale } from '../src/render/Quality';
 
 /** run `n` frames of `dt` ms from time `t`; returns the end time */
 const run = (g: Governor, t: number, n: number, dt: number, budget = 1000 / 60): number => {
@@ -63,6 +63,25 @@ describe('quality governor', () => {
     expect(QUALITY.level).toBe(1);
     v = run(k, v, 2, 35);                  // (a late pair right after does not step back down)
     expect(QUALITY.level).toBe(1);
+    QUALITY.level = 0;
+  });
+
+  it('on a phone, looks come first: 40 frames a second keeps full sharpness; under 30 it gives some up', () => {
+    const budget = governorBudget(1000 / 60, true);
+    expect(budget * 1.3).toBeCloseTo(1000 / PHONE_FPS, 9);
+    expect(governorBudget(1000 / 60, false)).toBe(1000 / 60);
+    expect(governorBudget(1000 / 90, true)).toBeCloseTo(1000 / PHONE_FPS / 1.3, 9);
+    QUALITY.level = 0;
+    const g = new Governor(true);
+    let t = run(g, 0, 600, 25, budget);     // 40 fps for 15 s: full sharpness
+    expect(QUALITY.level).toBe(0);
+    t = run(g, t, 35, 40, budget);          // 25 fps: one level down (at most one a second)
+    expect(QUALITY.level).toBe(1);
+    // (the same 40 fps on a desktop's 60 Hz budget is late)
+    QUALITY.level = 0;
+    const d = new Governor(true);
+    run(d, 0, 120, 25);
+    expect(QUALITY.level).toBeGreaterThan(0);
     QUALITY.level = 0;
   });
 

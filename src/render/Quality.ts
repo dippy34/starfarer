@@ -33,6 +33,19 @@ export const QUALITY = { level: 0, levels: 4, enabled: true, cpuBound: false };
 
 /** a late frame whose main thread took this share of the budget is CPU-bound */
 export const CPU_BOUND_SHARE = 0.8;
+/**
+ * A phone counts a frame late only below this rate. Starfarer is a place to look at, not a game to
+ * react in (the owner, 27 Nov 2026: "this isn't a competitive game so FPS doesn't matter that much"):
+ * on a phone the picture stays as sharp and as detailed as it can while it runs at this rate or
+ * better, and only below it does the governor give up resolution.
+ */
+export const PHONE_FPS = 30;
+
+/** The budget the governor is given (a frame is late past 1.3 of it): the display's or the headset's (`displayMs`), and on a phone the slower of that and PHONE_FPS's. */
+export function governorBudget(displayMs: number, phone: boolean): number {
+  return phone ? Math.max(displayMs, 1000 / PHONE_FPS / 1.3) : displayMs;
+}
+
 /** a step up: misses were at most this share of the last UP_WINDOW frames ... */
 export const UP_MISS_SHARE = 0.05;
 export const UP_WINDOW = 300;
