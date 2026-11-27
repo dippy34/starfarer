@@ -105,6 +105,50 @@ need the OpenCode workspace's region set to Global.
     live physics); Claude runs the rest. `npm run check` passes.
 - **Don't touch:** the clock and its rates (`src/core/time.ts`), the top chip, the watch.
 
+### `task/comet-powers`: God mode on comets: throw one, move it, take it away
+
+- **Status:** open. Large.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the fix list's #9 and its Tier 3 row ("God mode does not work on everything yet ... black
+  holes, comets, belt asteroids ..."). A comet's card says "Comets and belt asteroids stay on their recorded
+  paths" (`src/app/powersFor.ts`, `SMALL`). The owner wants God mode on more things, comets first
+  (`docs/notes/ideas.md`, "God mode on more things").
+- **How comets work now:** `src/render/SmallBodies.ts` (`SmallBodiesLayer`, `Comet`): a worker
+  (`src/workers/comets.worker.ts`) moves every catalogued comet on its own orbit round the Sun (two bodies,
+  `keplerState`), and `syncCometObjects` puts each `Comet.upos` there; the points are one `Points` geometry.
+  `src/render/CometTails.ts` draws the coma, tails and nucleus of the active ones from `Comet.upos`. While live
+  physics has changed the Sun, `SmallBodiesLayer.present = false` hides them all. Live physics:
+  `src/app/LivePhysics.ts` (`make` adds a body to the simulation; `checkpoint`/`restore` for Undo and Replay;
+  `world`/`adoptWorld` for saves and links, `src/app/SceneWorld.ts`); the simulation (`src/sim/NBody.ts`) takes
+  bodies of no mass (gm 0: pulled, pulling nothing). Moving and throwing a world: `src/app/Mover.ts`.
+- **What to do:** read `HANDOFF.md` "God mode, wave 1" (the powers, Undo, Replay, Back to reality) first.
+  Do these in this order, and if time runs short stop after a whole one and say what is left:
+  1. *Take it away.* A comet's card offers Remove (Mass, Size and Add stay off, each with a plain reason:
+     no measured mass). Removing it starts live physics as removing a world does, hides its point and its
+     tail, and Undo, Replay and Back to reality bring it back.
+  2. *Move it and throw it.* Move works on a comet as on a moon: put it somewhere, or flick it to throw it.
+     From then on the simulation carries it, with no mass, from where its own orbit had it at that moment
+     (place and speed from its elements), and its point, its card's distance and its tail follow the
+     simulation (its tail still points away from the Sun from where it is). A comet thrown at the Earth hits
+     it as other worlds do (the impact card).
+  3. *Kept.* A save of the scene and a link keep the comets changed (taken away, or carried by the
+     simulation, with their place and motion); links written before read as ever.
+  The other comets, the belt asteroids and everything else are as before. No catalogue data changes: a
+  comet's own elements are never rewritten.
+- **Done when:**
+  - Unit tests for whatever new rules there are (the powers table for a comet; a comet's place and speed
+    from its elements matching the worker's; and, for step 3, the bytes keep it).
+  - Browser checks in `scripts/live.mjs` (a new block `comet`, phone and desk): Halley (or the brightest
+    comet now, as `tour:comet` picks it) can be removed and comes back with Undo; it can be thrown, and its
+    point and tail move with the simulation; for step 3, a save brings it back changed. They fail on the
+    code before the change.
+  - Pictures, upright at 390x844: the comet's card with its powers, and a thrown comet with its tail.
+  - Run `LIVE_ONLY=comet,made,throw` of `scripts/live.mjs` (phone and desk) and `scripts/share.mjs`; Claude
+    runs the whole set after. `npm run check` passes.
+- **Don't touch:** the camera rig, the watch (`src/app/Watch.ts`), the Time panel, the tab bar, the made
+  worlds' looks (`src/render/PlanetLook.ts`). Keep `NBody`'s existing behaviour for bodies with mass exactly
+  as it is.
+
 ### `task/name-it`: name a world you made
 
 - **Status:** done 27 Nov 2026: run 45990265243 on Claude Sonnet 5.5 ($1.67), reviewed by Claude. Medium.
