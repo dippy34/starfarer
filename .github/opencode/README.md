@@ -38,14 +38,16 @@ month, which expire at the month's end): a start note's line `model: anthropic/c
 the owner on GitHub (never pasted in a chat). The run puts it in a file outside the repository for
 OpenCode alone: the AI's commands don't get it, and any copy in the run's files is blanked before
 they are uploaded (they can be downloaded, unlike the masked logs). Such a run uses only Anthropic's
-API: no OpenCode sign-in, and its junior is Claude Haiku 5.5. List prices per million tokens: Haiku 5.5
-$0.10 in and $0.50 out ($0.50 and $2.50 once a request passes 100,000 tokens), Sonnet 5.5 $2 and $10;
-context read again from the cache costs a tenth of that or less. Claude's first estimates: about $1–3 for a Haiku run and $5–10 for a
-Sonnet run of up to 80 minutes, so about 25 Sonnet runs a month, or many more on Haiku. Each run's
-`usage.txt` holds what it really used. When the credits run out, requests are refused until the
-next month's; nothing more is charged unless the owner adds paid credit. Which plan a task uses is
-Claude's call, written in its start note: Sonnet for the tasks that most need care, Haiku for small or
-wording jobs, the Go plan for the rest.
+API: no OpenCode sign-in, and its junior is Claude Haiku 5.5. List prices per million tokens: Haiku
+5.5 $0.10 in and $0.50 out ($0.50 and $2.50 once a request passes 100,000 tokens), Sonnet 5.5 $2 and
+$10; context read again from the cache costs a tenth of that or less. Claude's first estimate was
+$5–10 for a Sonnet run. The first real one (task/offline's second try, 27 Nov 2026, run 45920621727)
+cost $1.33 for 39 minutes of work: 290,000 tokens written to the cache, 1.9 million read back from
+it and 22,000 written by the model. At that rate the $200 is over 100 Sonnet runs a month. Each
+run's `usage.txt` holds what it really used. When the credits run out, requests are refused until
+the next month's; nothing more is charged unless the owner adds paid credit. Which plan a task uses
+is Claude's call, written in its start note: Sonnet for the tasks that most need care, Haiku for
+small or wording jobs, the Go plan for the rest.
 
 The same day the owner asked about a $10 add-on for unlimited smaller models. Claude advised against
 it for now. The slow step is reviewing the runs' work, which uses the owner's Claude limit, and weaker
