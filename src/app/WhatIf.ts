@@ -19,6 +19,12 @@ import { circularVelocity, M_MOON, massWords, starMassWords } from './Powers';
  * ground to stand on that ground is not the original's. While it is being put in place its mass
  * can be set, from a small moon to two suns across the four kinds (MADE_MASS), and its size then
  * follows from its mass by the rule for what it is (madeSize), and for a sun its light and colour.
+ *
+ * A star can also be given a made world of a generated look (WORLD_KINDS: a rocky, ocean, desert,
+ * lava or icy world, an ice giant, a gas giant): no original and no map, drawn with the look of its
+ * type that the made-up planets of other stars have (src/render/PlanetLook.ts), varied by a seed.
+ * Its type and seed are kept with it (`madeAs`), so that Undo, Replay, a save and a link bring back
+ * the same world.
  */
 
 /** the bodies made here are numbered from this on (the catalogue's ids end far below) */
@@ -26,10 +32,22 @@ export const MADE_FIRST_ID = 900_000_001;
 /** as many as this between one return to reality and the next (the layers that draw bodies have room for a few more than the catalogue's) */
 export const MADE_MOST = 24;
 
-/** what can be made: a moon, or a copy of the Earth, of Jupiter, of the Sun */
-export type Kind = 'moon' | 'earth' | 'jupiter' | 'sun';
+/**
+ * The worlds that are made with a generated look of their own (src/render/PlanetLook.ts), named by
+ * the type of the look, in the order Add offers them: no map, no original, and a seed that varies
+ * the look within its type.
+ */
+export const WORLD_KINDS = ['terran', 'ocean', 'desert', 'lava', 'ice', 'giant', 'icegiant'] as const;
+export type WorldKind = (typeof WORLD_KINDS)[number];
+export const isWorldKind = (k: string): k is WorldKind => (WORLD_KINDS as readonly string[]).includes(k);
+
+/** what can be made: a moon, a copy of the Earth, of Jupiter, of the Sun, or a world of a generated look */
+export type Kind = 'moon' | 'earth' | 'jupiter' | 'sun' | WorldKind;
+/** a copy: of the Earth, of Jupiter, of the Sun */
+export type CopyKind = 'earth' | 'jupiter' | 'sun';
+export const isCopyKind = (k: string): k is CopyKind => k === 'earth' || k === 'jupiter' || k === 'sun';
 /** the catalogue's number of the body each copy is a copy of */
-export const TWIN_OF: Record<Exclude<Kind, 'moon'>, number> = { earth: 399, jupiter: 599, sun: 10 };
+export const TWIN_OF: Record<CopyKind, number> = { earth: 399, jupiter: 599, sun: 10 };
 
 /** rock and ice (kg/m³): what moons this side of the frost line and beyond it are mostly made of */
 const ROCK = 3000, ICE = 1500;
@@ -77,12 +95,12 @@ export interface Plan {
 
 /**
  * What can be added to a world: a moon to a planet or a dwarf planet; to a star a planet like the
- * Earth, one like Jupiter, or another sun. Nothing once `made` bodies have been made already and
+ * Earth, one like Jupiter, another sun, or a made world of a generated look. Nothing once `made` bodies have been made already and
  * there is room for no more.
  */
 export function canAdd(b: Body, made: number): Kind[] {
   if (!b.valid || !(b.gm > 0) || made >= MADE_MOST) return [];
-  if (b.kind === 'star') return ['earth', 'jupiter', 'sun'];
+  if (b.kind === 'star') return ['earth', 'jupiter', 'sun', ...WORLD_KINDS];
   return b.kind === 'planet' || b.kind === 'dwarf' ? ['moon'] : [];
 }
 
@@ -137,6 +155,35 @@ export function newTwin(like: Body, texture: string | null, star: Body, eye: Arr
   };
 }
 
+/** What a generated look gives the body that wears it: its mean albedo and a colour for it seen as a point. */
+export interface MadeLook { albedo: number; color: [number, number, number] }
+
+/** A new seed for a look (a whole number below a million), not `not`. */
+export function newSeed(random: () => number, not = -1): number {
+  let seed = Math.floor(random() * 1e6);
+  if (seed === not) seed = (seed + 1) % 1e6;
+  return seed;
+}
+
+/**
+ * A made world of a generated look (`kind`: its type) for the star `star`: no map and no original, its size from its
+ * mass (madeSize), `look` for its brightness; on a circle round the star in the plane the planets move in, the way they go,
+ * between the star and the eye where there is room (`eye`: from the star's centre to the eye, m). `count`: how many of this
+ * kind have been made before; `id`: its number; `seed`: what varies its look within its kind.
+ */
+export function newWorld(kind: WorldKind, star: Body, eye: ArrayLike<number>, count: number, id: number, seed: number, look: MadeLook, zones: Zones = SUN_ZONES): Plan {
+  const kg = WORLD_BASE[kind], gm = G * kg, radius = madeSize(kind, kg, false).radius;
+  const orbit = Math.min(zones.farthest, Math.max(zones.nearestPlanet, TOWARDS_EYE * Math.hypot(eye[0], eye[1], eye[2])));
+  return {
+    ...circle(orbit, star.gm + gm, PLANETS_POLE, eye),
+    json: {
+      id, name: `New ${WORLD_NAME[kind]}${count > 0 ? ` ${count + 1}` : ''}`, type: 'planet', parent: star.id, made: true,
+      radii: [radius / 1e3, radius / 1e3, radius / 1e3], gm: gm / 1e9, albedo: look.albedo, color: look.color,
+      ephem: { kind: 'placed' }, madeAs: { kind, kg, icy: false, seed },
+    },
+  };
+}
+
 /**
  * A circle of radius `orbit` (m) about what a body is given to, the two together having `mu` (G
  * times their masses, m³/s²), in the plane whose normal is `normal`, turning the way a right
@@ -180,6 +227,29 @@ export const MADE_MASS: Record<Kind, readonly [number, number]> = {
   earth: [0.05 * M_EARTH, ROCKY_MOST],
   jupiter: [ROCKY_MOST, STAR_FROM],
   sun: [STAR_FROM, 2 * M_SUN],
+  // made worlds of a generated look: rock, ocean, desert and lava worlds as the Earth's, an icy one from a thousandth of
+  // the Earth's mass (about a seventh of the Moon's) to 5, an ice giant from 5 to 50 Earths, a gas giant from 10 Earths to 13 Jupiters
+  terran: [0.05 * M_EARTH, ROCKY_MOST],
+  ocean: [0.05 * M_EARTH, ROCKY_MOST],
+  desert: [0.05 * M_EARTH, ROCKY_MOST],
+  lava: [0.05 * M_EARTH, ROCKY_MOST],
+  ice: [0.001 * M_EARTH, 5 * M_EARTH],
+  icegiant: [5 * M_EARTH, 50 * M_EARTH],
+  giant: [ROCKY_MOST, BROWN_DWARF_FROM],
+};
+
+/**
+ * What a made world of a generated look has when it is first made (kg): the Earth's mass for the
+ * rock, ocean, desert and lava worlds, a hundredth of it for an icy one (as Europa's 0.008 and
+ * Ganymede's 0.025), Uranus's 14.5 for an ice giant, Jupiter's for a gas giant. The slider moves it from there.
+ */
+export const WORLD_BASE: Record<WorldKind, number> = {
+  terran: M_EARTH, ocean: M_EARTH, desert: M_EARTH, lava: M_EARTH, ice: 0.01 * M_EARTH, icegiant: 14.5 * M_EARTH, giant: M_JUPITER,
+};
+
+/** What each kind of made world is, in words: "A rocky world". */
+export const WORLD_NAME: Record<WorldKind, string> = {
+  terran: 'rocky world', ocean: 'ocean world', desert: 'desert world', lava: 'lava world', ice: 'icy world', giant: 'gas giant', icegiant: 'ice giant',
 };
 
 /** How a made body's size follows from its mass (madeSize). */
@@ -201,7 +271,9 @@ const BETWEEN = Math.log(R_JUPITER / ROCK_TOP) / Math.log(GIANT_FROM / ROCKY_MOS
 /**
  * The size of a body made as `kind` with `kg` of mass (`icy`: a moon made beyond the frost line):
  * - a moon: a ball of rock (3,000 kg/m³), or of ice and rock (1,500), as newMoon makes one;
- * - a world like the Earth: rock at the Earth's mean density, R = R⊕ (M / M⊕)^⅓ (5 Earths: 1.71 R⊕);
+ * - a world like the Earth, and a rock, ocean, desert or lava world: rock at the Earth's mean density, R = R⊕ (M / M⊕)^⅓ (5 Earths: 1.71 R⊕);
+ * - an icy world: a ball of ice and rock (1,500 kg/m³), as an icy moon; an ice giant: that rock's size up to 10 Earths, then as between, below;
+ * - a gas giant: as a giant like Jupiter (below), from 10 Earths;
  * - a giant from 0.3 Jupiters on, and a brown dwarf: about Jupiter's size;
  * - between 10 Earths and 0.3 Jupiters, where a world's size depends on how much gas it has
  *   gathered: the straight line between the two in the logarithm, from the rock of 10 Earths
@@ -211,7 +283,15 @@ const BETWEEN = Math.log(R_JUPITER / ROCK_TOP) / Math.log(GIANT_FROM / ROCKY_MOS
 export function madeSize(kind: Kind, kg: number, icy: boolean): Sized {
   switch (kind) {
     case 'moon': return { radius: radiusFromDensity(kg, icy ? ICE : ROCK), rule: icy ? 'ice' : 'rock' };
-    case 'earth': return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
+    case 'earth': case 'terran': case 'ocean': case 'desert': case 'lava': return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
+    case 'ice': return { radius: radiusFromDensity(kg, ICE), rule: 'ice' };
+    // (an ice giant below 10 Earths is as big as rock of its mass, as the rule between 10 Earths and Jupiter's size starts from there)
+    case 'icegiant':
+      if (kg < ROCKY_MOST) return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
+      return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
+    case 'giant':
+      if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: 'giant' };
+      return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
     case 'jupiter':
       if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: kg >= BROWN_DWARF_FROM ? 'brown dwarf' : 'giant' };
       return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
@@ -254,6 +334,12 @@ const km = (m: number) => `${Math.round(m / 1e3).toLocaleString('en-US')} km`;
 /** What a body made as `kind` with `kg` of mass is, in words: its mass, and what it is and how big. */
 export function madeWords(kind: Kind, kg: number, icy: boolean): { mass: string; what: string } {
   const s = madeSize(kind, kg, icy), mass = kind === 'sun' ? starMassWords(kg) : massWords(kg);
+  if (isWorldKind(kind)) {
+    const a = WORLD_NAME[kind], name = (/^[aeiou]/.test(a) ? 'An ' : 'A ') + a;
+    const size = s.rule === 'ice' ? `${km(s.radius)} in radius` : s.rule === 'giant' ? "Jupiter's size"
+      : Math.abs(s.radius / R_EARTH - 1) < 0.005 ? "the Earth's size" : `${times(s.radius / R_EARTH)} times the Earth's size`;
+    return { mass, what: `${name}, ${size}` };
+  }
   switch (s.rule) {
     case 'rock': return { mass, what: `Rock, ${km(s.radius)} in radius` };
     case 'ice': return { mass, what: `Ice and rock, ${km(s.radius)} in radius` };
@@ -271,9 +357,10 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
   switch (s.rule) {
     case 'rock': case 'ice': {
       const rho = s.rule === 'ice' ? ICE : ROCK;
-      return { label, text, math: `R = (3M / 4πρ)^⅓ = (3·${num(kg)} kg / (4π·${rho.toLocaleString('en-US')} kg/m³))^⅓ = ${text}: a ball of ${s.rule === 'ice' ? 'ice and rock (beyond the frost line)' : 'rock'}` };
+      return { label, text, math: `R = (3M / 4πρ)^⅓ = (3·${num(kg)} kg / (4π·${rho.toLocaleString('en-US')} kg/m³))^⅓ = ${text}: a ball of ${s.rule === 'ice' ? (kind === 'ice' ? 'ice and rock' : 'ice and rock (beyond the frost line)') : 'rock'}` };
     }
     case 'earth':
+      if (kind === 'icegiant') return { label, text, math: `R = R⊕ (M / M⊕)^⅓ = 6,371 km·(${num(kg / M_EARTH)})^⅓ = ${text}: an ice giant below 10 Earths is taken as big as rock of its mass (from 10 Earths the rule between a rock and Jupiter's size applies)` };
       return { label, text, math: `R = R⊕ (M / M⊕)^⅓ = 6,371 km·(${num(kg / M_EARTH)})^⅓ = ${text}: rock at the Earth's mean density, ${EARTH_DENSITY.toLocaleString('en-US')} kg/m³` };
     case 'between':
       return { label, text, math: `R = R₁₀ (M / 10 M⊕)^${num(BETWEEN, 3)} = ${km(ROCK_TOP)}·(${num(kg / ROCKY_MOST)})^${num(BETWEEN, 3)} = ${text}: between a rock of 10 Earths and Jupiter's size at 0.3 Jupiters (a world's size here depends on how much gas it has gathered)` };
@@ -287,10 +374,15 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
 /**
  * A made world described again from what a link or a save kept of it (src/app/SceneWorld.ts), as
  * newMoon and newTwin described it when it was made: `home` is what it was made for, `like` what
- * a copy is a copy of (null for a moon), `texture` the key of that one's map. Its mass and size
+ * a copy is a copy of (null for a moon or a world of a generated look), `texture` the key of that one's map, `look` the
+ * brightness of a world of a generated look (null for the others). Its mass and size
  * as it was made are set by whoever makes it (LivePhysics.adoptWorld): this is its look and name.
  */
-export function madeAgain(m: MadeRecord, home: Body, like: Body | null, texture: string | null): BodyJson {
+export function madeAgain(m: MadeRecord, home: Body, like: Body | null, texture: string | null, look: MadeLook | null = null): BodyJson {
+  if (isWorldKind(m.kind) && look) {
+    const plan = newWorld(m.kind, home, [1, 0, 0], 0, m.id, m.seed ?? 0, look);
+    return { ...plan.json, name: m.name, madeAs: { kind: m.kind, kg: m.kg, icy: false, seed: m.seed ?? 0 } };
+  }
   const plan = m.kind === 'moon' || !like ? newMoon(home, [1, 0, 0], m.icy ? Infinity : 0, 0, m.id) : newTwin(like, texture, home, [1, 0, 0], 0, m.id);
   return { ...plan.json, name: m.name, madeAs: { kind: m.kind, kg: m.kg, icy: m.icy } };
 }

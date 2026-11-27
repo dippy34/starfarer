@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { LivePhysics } from '../src/app/LivePhysics';
+import type { MadeRecord } from '../src/app/SceneWorld';
 import {
-  canAdd, EARTH_DENSITY, GIANT_FROM, MADE_FIRST_ID, MADE_MASS, MADE_MOST, madeAbsMag, madeMassAt, madeSize, madeSlider, madeWords, madeWorking,
-  newMoon, newTwin, type Plan, ROCKY_MOST, STAR_FROM,
+  canAdd, EARTH_DENSITY, GIANT_FROM, MADE_FIRST_ID, MADE_MASS, MADE_MOST, madeAbsMag, madeAgain, madeMassAt, madeSize, madeSlider, madeWords, madeWorking,
+  newMoon, newTwin, newWorld, type Plan, ROCKY_MOST, STAR_FROM, WORLD_BASE, WORLD_KINDS, WORLD_NAME,
 } from '../src/app/WhatIf';
 import { workedOut } from '../src/app/Worked';
 import { OBLIQUITY_J2000 } from '../src/core/frames';
@@ -54,7 +55,7 @@ describe('what can be added to a world', () => {
     const { named } = await setup();
     expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
     expect(canAdd(named('Pluto'), 0)).toEqual(['moon']);
-    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun']);
+    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS]);
     expect(canAdd(named('Moon'), 0)).toEqual([]);   // a moon of a moon: not yet
     expect(canAdd(named('Earth'), MADE_MOST)).toEqual([]);
     expect(canAdd(named('Sun'), MADE_MOST)).toEqual([]);
@@ -369,5 +370,130 @@ describe('the size of what is made, from its mass', () => {
     expect(madeWorking('jupiter', 30 * M_EARTH, false).math).toMatch(/: between a rock of 10 Earths and Jupiter's size at 0\.3 Jupiters/);
     // (nothing of the catalogue's says so)
     expect(workedOut(named('Earth')).some((w) => w.label.includes('made by you'))).toBe(false);
+  });
+});
+
+describe('worlds of a generated look', () => {
+  /** relative difference of a from b */
+  const off = (a: number, b: number) => Math.abs(a / b - 1);
+  const ROCKY = ['terran', 'ocean', 'desert', 'lava'] as const;
+
+  it('have the masses they are made with: rock, ocean, desert and lava from a twentieth of the Earth to ten Earths; ice from a thousandth to 5; ice giants from 5 to 50; gas giants from 10 Earths to 13 Jupiters', () => {
+    for (const kind of ROCKY) {
+      const [lo, hi] = MADE_MASS[kind];
+      expect(off(lo, 0.05 * M_EARTH)).toBeLessThan(1e-12);
+      expect(off(hi, 10 * M_EARTH)).toBeLessThan(1e-12);
+    }
+    const [ilo, ihi] = MADE_MASS.ice;
+    expect(off(ilo, 0.001 * M_EARTH)).toBeLessThan(1e-12);
+    expect(off(ihi, 5 * M_EARTH)).toBeLessThan(1e-12);
+    const [glo, ghi] = MADE_MASS.icegiant;
+    expect(off(glo, 5 * M_EARTH)).toBeLessThan(1e-12);
+    expect(off(ghi, 50 * M_EARTH)).toBeLessThan(1e-12);
+    const [gilo, gihi] = MADE_MASS.giant;
+    expect(off(gilo, 10 * M_EARTH)).toBeLessThan(1e-12);
+    expect(off(gihi, 13 * M_JUPITER)).toBeLessThan(1e-12);
+  });
+
+  it('of rock, ocean, desert and lava: the Earth\'s density, R = R⊕ (M / M⊕)^⅓, at the bottom, at 1 Earth and at the top of their mass', () => {
+    for (const kind of ROCKY) {
+      const [lo, hi] = MADE_MASS[kind];
+      for (const kg of [lo, M_EARTH, hi]) {
+        const s = madeSize(kind, kg, false);
+        expect(s.rule).toBe('earth');
+        expect(off(s.radius, R_EARTH * Math.cbrt(kg / M_EARTH))).toBeLessThan(1e-12);
+      }
+    }
+  });
+
+  it('of ice: a ball of ice and rock (1,500 kg/m³), the rule \'ice\', at the bottom, middle and top of its mass', () => {
+    const [lo, hi] = MADE_MASS.ice, mid = Math.sqrt(lo * hi);
+    for (const kg of [lo, mid, hi]) {
+      const s = madeSize('ice', kg, false);
+      expect(s.rule).toBe('ice');
+      expect(off(s.radius, Math.cbrt((3 * kg) / (4 * Math.PI * 1500)))).toBeLessThan(1e-12);
+    }
+  });
+
+  it('of ice giants: as rock of their mass below 10 Earths, then between a rock and Jupiter\'s size, never smaller for more mass, and below Jupiter\'s size at 50 Earths', () => {
+    expect(madeSize('icegiant', 5 * M_EARTH, false).rule).toBe('earth');
+    expect(madeSize('icegiant', 9.99 * M_EARTH, false).rule).toBe('earth');
+    expect(madeSize('icegiant', ROCKY_MOST, false).rule).toBe('between');
+    expect(off(madeSize('icegiant', ROCKY_MOST, false).radius, madeSize('icegiant', ROCKY_MOST * (1 - 1e-9), false).radius)).toBeLessThan(1e-6);
+    let last = 0;
+    for (let k = 0; k <= 200; k++) {
+      const r = madeSize('icegiant', (5 + (45 * k) / 200) * M_EARTH, false).radius;
+      expect(r).toBeGreaterThanOrEqual(last);
+      last = r;
+    }
+    expect(madeSize('icegiant', 50 * M_EARTH, false).radius).toBeLessThan(R_JUPITER);
+  });
+
+  it('of gas giants: between a rock and Jupiter\'s size below 0.3 Jupiters, continuous and increasing with mass; Jupiter\'s size from 0.3 Jupiters on', () => {
+    const below = GIANT_FROM * (1 - 1e-9);
+    expect(madeSize('giant', below, false).rule).toBe('between');
+    expect(off(madeSize('giant', below, false).radius, R_JUPITER)).toBeLessThan(1e-6);
+    expect(madeSize('giant', GIANT_FROM, false).rule).toBe('giant');
+    expect(madeSize('giant', GIANT_FROM, false).radius).toBe(R_JUPITER);
+    expect(madeSize('giant', 13 * M_JUPITER, false).radius).toBe(R_JUPITER);
+    expect(madeSize('giant', 10 * M_EARTH, false).rule).toBe('between');
+    let last = 0;
+    for (let k = 0; k <= 100; k++) {
+      const [lo, hi] = MADE_MASS.giant, r = madeSize('giant', lo * (hi / lo) ** (k / 100), false).radius;
+      expect(r).toBeGreaterThanOrEqual(last);
+      last = r;
+    }
+  });
+
+  it('each kind has a finite positive radius at both ends of its mass, and is named in words: "A" or "An", and its plain name', () => {
+    for (const kind of WORLD_KINDS) {
+      const [lo, hi] = MADE_MASS[kind];
+      for (const kg of [lo, hi]) {
+        const r = madeSize(kind, kg, false).radius;
+        expect(Number.isFinite(r) && r > 0).toBe(true);
+        const w = madeWords(kind, kg, false).what;
+        expect(w.startsWith('A ') || w.startsWith('An ')).toBe(true);
+        expect(w).toContain(WORLD_NAME[kind]);
+      }
+    }
+    expect(WORLD_NAME).toEqual({
+      terran: 'rocky world', ocean: 'ocean world', desert: 'desert world', lava: 'lava world', ice: 'icy world', giant: 'gas giant', icegiant: 'ice giant',
+    });
+  });
+
+  it('can be added to a star, and to nothing else but a planet or dwarf planet to a moon', async () => {
+    const { named } = await setup();
+    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS]);
+    expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
+  });
+
+  it('are made for a star as a planet of their kind, named "New" and with their mass and seed', async () => {
+    const { named } = await setup();
+    const star = named('Sun'), eye = [3 * AU, 4 * AU, 1 * AU];
+    for (const kind of WORLD_KINDS) {
+      const plan = newWorld(kind, star, eye, 0, MADE_FIRST_ID, 7, { albedo: 0.3, color: [0.5, 0.5, 0.5] });
+      const json = plan.json;
+      expect(json.madeAs).toEqual({ kind, kg: WORLD_BASE[kind], icy: false, seed: 7 });
+      expect(json.texture).toBeUndefined();
+      expect(json.type).toBe('planet');
+      expect(json.made).toBe(true);
+      expect(json.parent).toBe(star.id);
+      expect(off(json.radii![0] * 1e3, madeSize(kind, WORLD_BASE[kind], false).radius)).toBeLessThan(1e-12);
+      expect(json.name!.startsWith('New ')).toBe(true);
+    }
+  });
+
+  it('are made again from what was kept of them, with their seed and kind', async () => {
+    const { named } = await setup();
+    const star = named('Sun'), look = { albedo: 0.3, color: [0.5, 0.5, 0.5] as [number, number, number] };
+    for (const kind of WORLD_KINDS) {
+      const m: MadeRecord = {
+        id: MADE_FIRST_ID, kind, name: `New ${WORLD_NAME[kind]}`, home: star.id, icy: false, kg: WORLD_BASE[kind],
+        gm: 0, radius: 0, teff: 0, absMag: 0, seed: 12345,
+      };
+      const json = madeAgain(m, star, null, null, look);
+      expect(json.madeAs!.seed).toBe(12345);
+      expect(json.madeAs!.kind).toBe(kind);
+    }
   });
 });

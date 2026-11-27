@@ -10,6 +10,7 @@ import { fmtDuration, G, L_SUN, luminosity } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { BodiesLayer } from '../render/Bodies';
+import { generatedLook, madeLook } from '../render/PlanetLook';
 import { PlanetTerrain } from '../render/PlanetTerrain';
 import { RingSpot } from '../universe/RingSpot';
 import { Landmark, LANDMARKS } from '../universe/Landmarks';
@@ -63,7 +64,7 @@ import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, settleOn, TAU_STARS, type Frame } from './Exposure';
-import { canAdd, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newTwin, TWIN_OF } from './WhatIf';
+import { canAdd, isCopyKind, isWorldKind, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, type MadeLook, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newSeed, newTwin, newWorld, TWIN_OF, WORLD_BASE, type WorldKind } from './WhatIf';
 import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
@@ -688,6 +689,8 @@ export class App {
     let world: string | null = null;
     const w = this.solar.world();
     if (w) {
+      // (what a world of a generated look is drawn from is kept with it: the simulation does not know it)
+      for (const m of w.made) m.seed = (this.system.byId.get(m.id)?.meta.madeAs as BodyJson['madeAs'])?.seed ?? 0;
       const bytes = encodeWorld(w);
       this.solar.rebase(decodeWorld(bytes));
       world = toBase64Url(bytes);
@@ -868,8 +871,8 @@ export class App {
 
   /** A made world described again from a link or a save (src/app/WhatIf.ts: madeAgain): its look from what it is a copy of. */
   private madeJson(m: MadeRecord): BodyJson {
-    const like = m.kind === 'moon' ? null : this.system.byId.get(TWIN_OF[m.kind]) ?? null;
-    return madeAgain(m, this.system.byId.get(m.home)!, like, like ? this.bodies.textureKey(like) : null);
+    const like = isCopyKind(m.kind) ? this.system.byId.get(TWIN_OF[m.kind]) ?? null : null;
+    return madeAgain(m, this.system.byId.get(m.home)!, like, like ? this.bodies.textureKey(like) : null, isWorldKind(m.kind) ? this.lookOf(m.kind, m.seed ?? 0) : null);
   }
 
   /**
@@ -983,6 +986,14 @@ export class App {
       case 'add-earth': this.add('earth'); break;
       case 'add-jupiter': this.add('jupiter'); break;
       case 'add-sun': this.add('sun'); break;
+      case 'add-terran': this.add('terran'); break;
+      case 'add-ocean': this.add('ocean'); break;
+      case 'add-desert': this.add('desert'); break;
+      case 'add-lava': this.add('lava'); break;
+      case 'add-ice': this.add('ice'); break;
+      case 'add-giant': this.add('giant'); break;
+      case 'add-icegiant': this.add('icegiant'); break;
+      case 'new-look': this.newLook(); break;
       case 'remove': { const b = this.powerBody(); if (b && this.powersOf(this.selection!).remove.works) this.removeBody(b); break; }
       case 'move': { const b = this.powerBody(); this.mover.toggle(b && this.powersOf(this.selection!).move.works ? b : null); break; }
       case 'move-keep': this.mover.leave('keep'); break;
@@ -1488,11 +1499,14 @@ export class App {
   add(kind: Kind, to: SpaceObject | null = this.selection): Body | null {
     if (!(to instanceof Body) || !this.powersOf(to).add.works || !canAdd(to, this.made.length).includes(kind) || this.powerBody(to) !== to) return null;
     const eye = this.rig.upos.sub(to.upos, new Vector3()).toArray(), id = MADE_FIRST_ID + this.madeEver++;
-    const like = kind === 'moon' ? null : this.system.byId.get(TWIN_OF[kind])!;
+    const like = isCopyKind(kind) ? this.system.byId.get(TWIN_OF[kind])! : null;
     const sun = this.system.sunAt(to.pos);
+    const seed = newSeed(Math.random);
     const plan = like
       ? newTwin(like, this.bodies.textureKey(like), to, eye, this.made.filter((m) => m.twinOf === like).length, id)
-      : newMoon(to, eye, sun ? to.pos.distanceTo(sun.pos) : Infinity, this.made.filter((m) => this.system.homeOf(m) === to).length, id);
+      : isWorldKind(kind)
+        ? newWorld(kind, to, eye, this.made.filter((m) => (m.meta.madeAs as BodyJson['madeAs'])?.kind === kind).length, id, seed, this.lookOf(kind, seed))
+        : newMoon(to, eye, sun ? to.pos.distanceTo(sun.pos) : Infinity, this.made.filter((m) => this.system.homeOf(m) === to).length, id);
     const where = to.kind === 'star' ? `${farWords(plan.orbit)} from ${the(to.name)}` : `${formatDistance(plan.orbit - to.radius)} up`;
     this.beginChange('add', to, true, `making ${plan.json.name}`);
     const wasOn = this.physics.on;
@@ -1523,6 +1537,25 @@ export class App {
     this.placement = null;
     if (p && p.paused !== null) this.clock.paused = p.paused;
     if (this.pending?.kind === 'add') this.endChange(done);
+  }
+
+  /** What the generated look of a made world of `kind` and `seed` gives it: its albedo and a colour for it seen as a point (src/render/PlanetLook.ts). */
+  private lookOf(kind: WorldKind, seed: number): MadeLook {
+    const look = generatedLook(madeLook(kind, seed, madeSize(kind, WORLD_BASE[kind], false).radius));
+    return { albedo: look.albedo, color: [...(look.pal.uC2 as [number, number, number])] };
+  }
+
+  /** New look: the world being put in place, if it has a generated look, gets another seed (and so another look of its type). */
+  newLook(): void {
+    const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'];
+    if (!b || !as || as.seed === undefined || !isWorldKind(as.kind)) return;
+    as.seed = newSeed(Math.random, as.seed);
+    const look = this.lookOf(as.kind, as.seed);
+    b.albedo = look.albedo;
+    b.color = look.color;
+    // (drawn afresh from its new seed)
+    this.bodies.changed(b);
+    this.updateHud();
   }
 
   /** The mass slider of the world being put in place (0 to 1): that mass from now, and the size that follows from it, and a sun's light and colour (src/app/WhatIf.ts: madeSize). */
@@ -3777,7 +3810,7 @@ export class App {
         const as = pb.meta.madeAs as BodyJson['madeAs'];
         if (as && this.mover.placing && this.mover.body === pb) {
           const kind = as.kind as Kind;
-          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy) };
+          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: as.seed !== undefined && isWorldKind(kind) };
         }
       }
     }
