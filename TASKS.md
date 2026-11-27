@@ -107,7 +107,7 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/name-it`: name a world you made
 
-- **Status:** open. Medium.
+- **Status:** done 27 Nov 2026: run 45990265243 on Claude Sonnet 5.5 ($1.67), reviewed by Claude. Medium.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** God mode as a sandbox (`docs/notes/ideas.md`; the owner, 27 Nov 2026: "adding whatever
   you want and creating infinite amount of different possibilities"). A made world is named by Add

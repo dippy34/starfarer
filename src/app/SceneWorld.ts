@@ -100,6 +100,22 @@ export function plainName(s: string): boolean {
   return s.length > 0 && s.length <= WORLD_LIMITS.name && /^[\p{L}\p{N}][\p{L}\p{N} '’.\-]*$/u.test(s) && s.trim() === s;
 }
 
+/** what a name the explorer typed for a world of their own is told when it is not taken */
+export const NAME_WHY = { plain: `Letters, digits and spaces only, ${WORLD_LIMITS.name} at most`, taken: 'That name is taken' } as const;
+
+/**
+ * The rule that takes a name a person typed for a world they made: spaces at either end are trimmed first, what is
+ * left must be plain (`plainName`: letters, digits, spaces and a few marks, at most WORLD_LIMITS.name characters),
+ * and no other thing may have it, in any letter case (`taken`: whether something else answers to that name).
+ * The name to keep, or why not.
+ */
+export function takeName(typed: string, taken: (name: string) => boolean): { name: string } | { why: string } {
+  const name = typed.trim();
+  if (!plainName(name)) return { why: NAME_WHY.plain };
+  if (taken(name)) return { why: NAME_WHY.taken };
+  return { name };
+}
+
 /** A line of the log, as a link may give it: printable text, without control characters, of bounded length. */
 function plainLine(s: string): boolean {
   return s.length > 0 && s.length <= WORLD_LIMITS.line && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029‪-‮⁦-⁩<>]/.test(s);

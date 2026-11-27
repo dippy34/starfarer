@@ -76,7 +76,7 @@ import { type ChangeKind, Glide, planChange, type RateState, sample, type Sample
 import { recall, remember } from '../platform/storage';
 import { forgetFragment, handOn, linkFragment, onFragmentChange, pageLink } from '../platform/share';
 import { decodeLink, encodeLink, isoOf, type Named, type SceneView } from './SceneLink';
-import { decodeWorld, encodeWorld, fromBase64Url, HUE_STEPS, type LiveWorld, type MadeRecord, toBase64Url, WorldError } from './SceneWorld';
+import { decodeWorld, encodeWorld, fromBase64Url, HUE_STEPS, type LiveWorld, type MadeRecord, takeName, toBase64Url, WorldError } from './SceneWorld';
 import { deleteScene, savedFragment, savedScenes, saveScene, SAVES_MOST } from './Saves';
 import { liveDate } from '../sim/SystemSim';
 import { type Sunlit, temperatureOf, type Worked, workedOut } from './Worked';
@@ -1579,6 +1579,25 @@ export class App {
     b.albedo = look.albedo;
     b.color = look.color;
     this.bodies.recolour(b);
+  }
+
+  /**
+   * The Name field of the world being put in place was left, or Enter pressed: `typed` is its name from now (src/app/SceneWorld.ts:
+   * takeName) unless it is not plain or another thing has it (`findByName` finds something else by it), when the name stays.
+   * Null when it was taken; otherwise a plain line saying why not. Only a world made is renamed, never a catalogue name.
+   */
+  renameMade(typed: string): string | null {
+    const b = this.mover.placing ? this.mover.body : null;
+    if (!b || !b.meta.madeAs) return null;
+    const v = takeName(typed, (n) => { const o = this.findByName(n); return !!o && o !== b; });
+    if ('why' in v) return v.why;
+    if (v.name !== b.name) {
+      b.rename(v.name);
+      // (Undo says what it undoes by the name it has now)
+      if (this.pending?.kind === 'add') this.pending.before.what = `making ${v.name}`;
+      this.updateHud();
+    }
+    return null;
   }
 
   /** Add rings, or Remove rings: the world being put in place, if it has a generated look, gets a ring, or loses it (the rest of its look stays). */
@@ -3844,7 +3863,7 @@ export class App {
         if (as && this.mover.placing && this.mover.body === pb) {
           const kind = as.kind as Kind;
           const looked = as.seed !== undefined && isWorldKind(kind);
-          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null, hue: looked ? as.hue ?? 0 : null };
+          selection.place = { name: pb.name, slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null, hue: looked ? as.hue ?? 0 : null };
         }
       }
     }

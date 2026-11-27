@@ -1088,6 +1088,92 @@ for (const kind of kinds) {
     check(on('...and with its rings'), r3.rings && r3.ring === 'generated-ring' && r3.shown, JSON.stringify(r3));
     check(on('it is a made world like the others: Mass, Size, Move, Add and Remove'),
       await page.evaluate(() => [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => b.textContent).join()) === 'Mass,Size,Move,Add,Remove');
+
+    // ---------------------------------------------------------------- naming a world of your own (the name field of the placing panel)
+    await find(page, 'Sun');
+    await press(page, '#hud .hud-flight [data-act="stop"]');
+    await press(page, '#hud .card [data-power="add"]');
+    await press(page, '#hud .card [data-act="add-ocean"]');
+    await page.waitForFunction(() => window.app.selection?.meta?.made && window.app.selection.name !== 'New gas giant', null, { timeout: 20000 });
+    await until(page, () => !window.app.glide, null, 60);
+    const own = await page.evaluate(() => window.app.selection.name);
+    await page.evaluate(() => { const a = window.app, b = a.selection; a.placeNear(b, 6 * b.radius * a.rig.framing, 35, 12); });
+    await frames(page, 6);
+    const nameState = () => page.evaluate(() => {
+      const f = document.querySelector('#hud .card .name-field'), says = document.querySelector('#hud .card .name-says'), lab = document.querySelector('#hud .card .name-row span');
+      const r = f?.getBoundingClientRect();
+      const a = window.app;
+      return {
+        offered: !!f && !f.closest('[hidden]') && r.height > 0, h: r?.height ?? 0, value: f?.value ?? null, label: lab?.textContent ?? null, title: document.querySelector('#hud .card h2').textContent,
+        body: a.selection?.name, says: says && !says.hidden ? says.textContent : '', paused: a.clock.paused, jd: a.clock.jdTdb, focus: document.activeElement === f,
+      };
+    });
+    const n0 = await nameState();
+    check(on('while a world of your own is put in place, the card offers its name in a field labelled "Name", a thumb high, filled with the name it has'),
+      n0.offered && n0.h >= 44 && n0.label === 'Name' && n0.value === own && n0.title === own, JSON.stringify(n0));
+    const field = page.locator('#hud .card .name-field');
+    const typeName = async (text) => { await field.scrollIntoViewIfNeeded(); await field.click(); await page.keyboard.press('Control+a'); await page.keyboard.type(text); };
+    // a Space typed in the field is a space, not "pause" or "start time"
+    await typeName('Big Blue');
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Backspace');
+    await frames(page, 3);
+    const n1 = await nameState();
+    check(on('a Space typed in the name field does not pause or start time (time still waits where it was), and it is not taken before it is left'),
+      n1.focus && n1.value === 'Big Blue' && n1.paused && n1.jd === n0.jd && n1.title === own && n1.body === own, JSON.stringify(n1));
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-name-typed.png`) });
+    await page.keyboard.press('Enter');
+    await frames(page, 4);
+    const n2 = await nameState();
+    check(on('"Big Blue" typed and Enter pressed: the card\'s title says Big Blue, the field is let go of, and no line complains'),
+      n2.title === 'Big Blue' && n2.body === 'Big Blue' && n2.value === 'Big Blue' && !n2.focus && n2.says === '', JSON.stringify(n2));
+    // refused: a catalogue name in any letter case, a star's, another made world's, and what is not plain; the name stays, with a line saying why
+    for (const [typed, why] of [['earth', 'That name is taken'], ['Sirius', 'That name is taken'], ['new gas giant', 'That name is taken'], ['Big <b>', 'Letters, digits and spaces only, 40 at most'], ['x'.repeat(41), 'Letters, digits and spaces only, 40 at most']]) {
+      await typeName(typed);
+      await page.keyboard.press('Enter');
+      await frames(page, 3);
+      const n = await nameState();
+      check(on(`"${typed.length > 20 ? typed.slice(0, 8) + '...' : typed}" is refused with its line, and the name stays Big Blue`), n.says === why && n.title === 'Big Blue' && n.body === 'Big Blue', JSON.stringify(n));
+    }
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-name-refused.png`) });
+    // (its own name, in another letter case, is allowed; and the new name is kept when the field is left by a tap elsewhere)
+    await typeName('  Big blue  ');
+    await page.locator('#hud .card .placing .power-read b').click();
+    await frames(page, 3);
+    const n3 = await nameState();
+    check(on('its own name in another letter case, with spaces at either end, is taken when the field is left (trimmed), and the line goes'), n3.title === 'Big blue' && n3.says === '', JSON.stringify(n3));
+    await typeName('Big Blue');
+    await page.keyboard.press('Enter');
+    await frames(page, 3);
+    await press(page, '#hud .card [data-act="place-done"]');
+    await frames(page, 3);
+    // (the card put away, so that the world and its label are in sight)
+    await press(page, '#hud .card [data-act="deselect"]');
+    await frames(page, 3);
+    // (setup, not a power: the eye near it, with the world in the part of the view the interface leaves clear, so that its name can stand by it)
+    await page.evaluate(() => {
+      const a = window.app, b = a.made.find((m) => m.name === 'Big Blue'), V = b.pos.constructor, free = a.hud.freeArea();
+      for (const dist of [6, 12, 25, 60]) for (let az = 0; az < 360; az += 30) {
+        a.placeNear(b, dist * b.radius * a.rig.framing, az, 25);
+        a.frame();
+        const p = a.project(b.upos.sub(a.rig.upos, new V()));
+        if (p && p.x > free.left + 60 && p.x < free.right - 60 && p.y > free.top + 20 && p.y < free.bottom - 20) return;
+      }
+    });
+    await frames(page, 6);
+    const named = await page.evaluate(() => {
+      const a = window.app, b = a.made.find((m) => m.name === 'Big Blue'), V = b.pos.constructor, at = a.project(b.upos.sub(a.rig.upos, new V()));
+      return { labels: [...document.querySelectorAll('#labels .label')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.textContent), search: a.searchItems('Big Blue').map((r) => r.label), found: a.findByName('big blue') === b, at: !!at };
+    });
+    check(on('the new name is its label in the view (the card put away), and a search finds it by it'), named.labels.includes('Big Blue') && named.search.includes('Big Blue') && named.found, JSON.stringify(named));
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-name-label.png`) });
+    // a save of the scene, opened again, brings the name back
+    await page.evaluate(() => window.app.saveScene());
+    const id2 = await page.evaluate(() => JSON.parse(localStorage.getItem('starfarer-saves'))[0].id);
+    await page.evaluate((id) => window.app.openSave(id), id2);
+    await until(page, () => window.app.made.length === 2 && window.app.physics.on, null, 60);
+    const back = await page.evaluate(() => ({ names: window.app.made.map((m) => m.name).join(), search: window.app.searchItems('Big Blue').map((r) => r.label).join() }));
+    check(on('a save of the scene, opened again, brings back Big Blue (and the other world as it was)'), back.names === 'New gas giant,Big Blue' && /Big Blue/.test(back.search), JSON.stringify(back));
     await ctx.close();
   }
 

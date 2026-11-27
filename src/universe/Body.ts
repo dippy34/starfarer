@@ -76,9 +76,14 @@ export class Body implements SpaceObject {
   /** for a copy the explorer has made of a body of the catalogue (src/app/WhatIf.ts): that body */
   twinOf: Body | null = null;
 
-  constructor(readonly id: number, readonly name: string, kind: BodyType) {
+  constructor(readonly id: number, public name: string, kind: BodyType) {
     this.kind = kind;
     this.key = `sol:${id}`;
+  }
+
+  /** A world the explorer made is given the name they chose (src/app/App.ts: renameMade). No body of the catalogue is ever renamed. */
+  rename(name: string): void {
+    this.name = name;
   }
 
   get parentObject(): SpaceObject | null {

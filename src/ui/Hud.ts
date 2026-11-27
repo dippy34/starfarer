@@ -75,6 +75,8 @@ export interface HudHost {
   setMadeMass(s: number): void;
   /** the Colour slider of a world of a generated look being put in place: its colours turned `s` of a turn (0 to 1) */
   setMadeHue(s: number): void;
+  /** the Name field of a world being put in place was left, or Enter pressed: null if `typed` is its name now, else why not (plain words) */
+  renameMade(typed: string): string | null;
   /** a saved scene was chosen from More's list (src/app/Saves.ts), or its Delete tapped twice */
   openSave(id: string): void;
   deleteSave(id: string): void;
@@ -124,6 +126,7 @@ export interface HudState {
     move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string; ahead: string } | null;
     /** It has just been made and is being put in place: where its mass slider stands (0 to 1), its mass and what it is at that mass, in words. */
     place: {
+      /** the name it has now */ name: string;
       slider: number; mass: string; what: string;
       /** it has a generated look that New look changes */ newLook: boolean;
       /** whether it has rings (Add rings, Remove rings), or null: it cannot have them (it is not of a generated look) */ rings: boolean | null;
@@ -324,6 +327,8 @@ const TEMPLATE = `
         <div class="power-panel" data-panel="move" hidden>
           <div class="placing" hidden>
             <div class="power-read"><span><b></b><small></small></span><button class="place-done" type="button" data-act="place-done">Done</button></div>
+            <label class="name-row"><span>Name</span><input class="name-field" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" aria-describedby="name-says"/></label>
+            <p class="name-says" id="name-says" role="status" hidden></p>
             <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass"/>
             <div class="look-row"><button class="new-look" type="button" data-act="new-look" hidden>New look</button><button class="made-rings" type="button" data-act="rings" aria-pressed="false" hidden>Add rings</button></div>
             <label class="hue-row" hidden><span>Colour</span><input class="hue-slider" type="range" min="0" max="255" step="1" value="0" aria-label="Its colour: turn all its colours round the colour wheel"/></label>
@@ -500,6 +505,9 @@ export class Hud {
   private readonly sizeSlider: HTMLInputElement;
   private readonly placeSlider: HTMLInputElement;
   private readonly hueSlider: HTMLInputElement;
+  private readonly nameField: HTMLInputElement;
+  /** the Name field has the focus: what is typed in it is not written over */
+  private naming = false;
   private readonly cats: HTMLElement;
   private readonly list: HTMLElement;
   private readonly toastEl: HTMLElement;
@@ -518,6 +526,7 @@ export class Hud {
     this.sizeSlider = el.querySelector<HTMLInputElement>('.card [data-panel="size"] .size-slider')!;
     this.placeSlider = el.querySelector<HTMLInputElement>('.card .placing .slider')!;
     this.hueSlider = el.querySelector<HTMLInputElement>('.card .placing .hue-slider')!;
+    this.nameField = el.querySelector<HTMLInputElement>('.card .placing .name-field')!;
     this.cats = this.$('.cats');
     this.list = this.$('.explore .list');
     this.toastEl = this.$('.hud-toast');
@@ -564,6 +573,16 @@ export class Hud {
     this.hueSlider.addEventListener('pointerdown', () => { this.hueSliding = true; });
     for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.hueSlider.addEventListener(done, () => { this.hueSliding = false; });
     this.hueSlider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
+    // the name of a world being put in place: taken when the field is left or Enter is pressed (not at every key), and the
+    // field is let go of; every key typed in it is its own (no shortcut sees it)
+    this.nameField.addEventListener('focus', () => { this.naming = true; });
+    this.nameField.addEventListener('input', () => this.sayName(''));
+    this.nameField.addEventListener('blur', () => { this.naming = false; this.takeName(); });
+    this.nameField.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); this.nameField.blur(); }
+      else if (e.key === 'Escape') { this.nameField.value = this.nameWas; this.nameField.blur(); }
+    });
     for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
     // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
     const full = this.$('[data-fullscreen]');
@@ -571,6 +590,22 @@ export class Hud {
     document.addEventListener('fullscreenchange', () => setText(full.querySelector('b')!, document.fullscreenElement ? 'Leave full screen' : 'Full screen'));
     this.trackKeyboard();
     this.showSlot();
+  }
+
+  /** the name the Name field was last given by the app (Escape puts it back) */
+  private nameWas = '';
+
+  /** The Name field was left: the app takes the name, or says why not (the field keeps what was typed, with the line under it) and the name stays. */
+  private takeName(): void {
+    const why = this.host.renameMade(this.nameField.value);
+    this.sayName(why ?? '');
+    if (!why) this.nameWas = this.nameField.value.trim();
+  }
+
+  private sayName(why: string): void {
+    const line = this.el.querySelector<HTMLElement>('.card .name-says')!;
+    setText(line, why);
+    line.hidden = !why;
   }
 
   get root(): HTMLElement {
@@ -1106,7 +1141,11 @@ export class Hud {
       for (const h of ['keep', 'circle', 'throw'] as const) movePanel.querySelector(`[data-act="move-${h}"]`)!.setAttribute('aria-pressed', String(how === h));
       const place = movePanel.querySelector<HTMLElement>('.placing')!;
       place.hidden = !sel.place;
+      if (!sel.place) this.sayName('');
       if (sel.place) {
+        // (the name it has, unless the field is being typed in or the line under it is saying why the last was refused)
+        if (!this.naming && !place.querySelector<HTMLElement>('.name-says')!.textContent && this.nameField.value !== sel.place.name) this.nameField.value = sel.place.name;
+        if (!this.naming && !place.querySelector<HTMLElement>('.name-says')!.textContent) this.nameWas = sel.place.name;
         setText(place.querySelector('.power-read b')!, sel.place.mass);
         setText(place.querySelector('.power-read small')!, sel.place.what);
         place.querySelector<HTMLElement>('.new-look')!.hidden = !sel.place.newLook;

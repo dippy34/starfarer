@@ -931,6 +931,15 @@ temperature, and size as well as mass.
   for the eye included, is unchanged). While it moves, `BodiesLayer.recolour` sets the material's
   colours in place (a new material at every step would be built again). It is `madeAs.hue`, kept in
   256 steps (`HUE_STEPS`): 4 in that same byte, and the step a byte after the seed (none when 0).
+  *A name of your own* (the same night; the cheap team's task/name-it on Claude Sonnet, reviewed here):
+  while any made world is put in place, a Name field (16 px text, so an iPhone does not zoom in on
+  it) gives it a name, taken when the field is left or Enter pressed (`App.renameMade`,
+  `SceneWorld.takeName`): trimmed, plain (`plainName`) and no other thing's name in any letter case
+  (`findByName` finds nothing else by it), else a line under the field says why and the name stays.
+  So no made world can take a catalogue name ("Saturn" would have met the code that finds Saturn's
+  rings by name). `Body.name` is now writable for this (`Body.rename`); no catalogue body is renamed.
+  Keys typed in the field stop there (Space is not "pause"). A save or a link keeps it as
+  `MadeRecord.name`; the first log line keeps the name it was made with.
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun
