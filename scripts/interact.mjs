@@ -82,6 +82,27 @@ st = await page.evaluate(() => {
 check('time acceleration advances the clock', st.jd - before.jd > 1, `Δ=${(st.jd - before.jd).toFixed(2)} d`);
 check('camera co-moves with Mars under acceleration', st.dist > 2.5 && st.dist < 5, `dist=${st.dist.toFixed(2)} R`);
 
+// 2b. Zoomed out beyond the reach of Mars's own pull, Mars still what the camera turns round: the camera keeps riding with
+// it. (It rode with the Sun out there: zoomed out to see a planet and the moons round it, time running fast, the owner saw
+// them fly out of the view, 27 Nov 2026; at a day a second the Earth was 84 degrees off the view after 6 seconds.)
+const far = await page.evaluate(() => {
+  const a = window.app, m = a.findByName('Mars'), V = a.rig.ray(0, 0).constructor;
+  const dir = new V(0.3, 1, 0.2).normalize(), reach = 3 * m.soiRadius();
+  a.rig.target = m;
+  a.rig.upos.copy(m.upos).addVec(dir, reach);
+  a.rig.lookAt(dir.clone().negate(), new V(0, 0, 1));
+  return { reach, jd: a.clock.jdTdb };
+});
+await page.evaluate(() => { window.app.clock.paused = false; window.app.clock.rate = 86400; });
+await page.waitForFunction((jd) => window.app.clock.jdTdb - jd >= 2, far.jd, { timeout: 600000 });
+const kept = await page.evaluate(() => {
+  const a = window.app, m = a.findByName('Mars'), V = a.rig.ray(0, 0).constructor;
+  a.clock.rate = 1;
+  const rel = m.upos.sub(a.rig.upos, new V());
+  return { anchor: a.rig.anchor?.name ?? null, off: Math.acos(Math.min(1, rel.clone().normalize().dot(a.rig.forward()))) * 180 / Math.PI, dist: rel.length() };
+});
+check('zoomed out beyond Mars\'s own pull, time running fast, the camera keeps riding with Mars', kept.anchor === 'Mars' && kept.off < 0.5 && Math.abs(kept.dist / far.reach - 1) < 0.01, JSON.stringify({ ...kept, reach: far.reach }));
+
 // 3. Free flight with W
 const p0 = await page.evaluate(() => window.app.rig.upos.toVector3().toArray());
 await page.mouse.move(640, 360);
