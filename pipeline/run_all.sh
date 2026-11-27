@@ -24,7 +24,7 @@ python3 build_stars.py             # AT-HYG + HYG + Gaia -> public/data/stars
 #   python3 -I fetch_star_teff_gaia.py <athyg_40.csv.gz> <gaia dir>                             (Gaia DR3 ESP-HS)
 #   python3 -I build_star_teff.py <athyg_40.csv.gz> <hyg_v44.csv.gz> <gaia dir>                -> stars/t, stars-teff-gaia
 python3 build_blackholes.py         # BlackCAT + SIMBAD + published masses -> public/data/blackholes.json
-python3 build_exoplanets.py        # NASA Exoplanet Archive -> public/data/exoplanets.json
+python3 build_exoplanets.py        # NASA Exoplanet Archive -> public/data/exoplanets.json (with its own estimated-value marks)
 python3 build_spacecraft.py        # JPL Horizons trajectories -> public/data/spacecraft.json
 python3 build_galaxies.py          # SIMBAD nearby galaxies -> public/data/galaxies.json
 python3 build_deepsky.py           # SIMBAD + Sharpless/RCW nebulae and clusters -> public/data/deepsky.json

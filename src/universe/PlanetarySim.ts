@@ -44,7 +44,8 @@ export class SimBody extends Body {
 }
 
 /** How a body's mass is known, for the card: measured; estimated (the archive's mark); from a planet's orbit (a star the archive gives no mass for); generated; or not at all. */
-export type MassKnown = 'measured' | 'estimated' | 'orbits' | 'generated' | 'unknown';
+/** how a world's mass is known; 'least': only the least it can be (the star's wobble alone, the orbit's tilt unknown: the archive's "Msini") */
+export type MassKnown = 'measured' | 'estimated' | 'least' | 'orbits' | 'generated' | 'unknown';
 
 export class PlanetarySim implements SimSystem, LiveDraw {
   readonly bodies: SimBody[] = [];
@@ -75,7 +76,7 @@ export class PlanetarySim implements SimSystem, LiveDraw {
       // (measured only in a transit, as src/app/powersFor.ts sizeOf has it)
       b.radiusEstimated = !s.real || s.est.includes('radius') || s.method !== 'Transit';
       b.albedo = s.albedo;
-      this.join(b, star, !s.real ? 'generated' : s.est.includes('mass') ? 'estimated' : 'measured');
+      this.join(b, star, !s.real ? 'generated' : s.est.includes('mass') ? 'estimated' : s.est.includes('massMin') ? 'least' : 'measured');
     });
   }
 
