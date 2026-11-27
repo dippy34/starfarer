@@ -160,6 +160,8 @@ const shownOf = (b: Body): SpaceObject => (b instanceof SimBody ? b.shows : b);
 const LINK_LOOKUP_WAIT = 8000;
 /** the look ahead starts again from a change at most this often (ms) */
 const AHEAD_AGAIN_MS = 200;
+/** the camera rides with the planet of what it turns round out to this many times that planet's sphere of influence (Earth: 28 million km) */
+const HOME_REACH = 30;
 
 /** The moment the world here was last the real one: the date, the rate of time, and whether the clock was following the present then. */
 interface Start { jd: number; rate: RateState; present: boolean }
@@ -2429,6 +2431,12 @@ export class App {
       this.rig.setAnchor(sel);
       return;
     }
+    // The world the camera turns and zooms round keeps carrying it, zoomed out beyond the reach of its planet's own pull
+    // (a planet and its moons seen together, a moon put far out): left to its star's alone, the camera stayed where it
+    // was while the planet went on round its star, and with time running fast the worlds it was looking at flew out of
+    // the view, still the target (the owner, 27 Nov 2026). Out to many times that reach; further, its star again.
+    const home = this.rig.autopilot ? null : planetOf(this.rig.target);
+    if (home?.valid && (!best || best.kind === 'star') && home.upos.sub(this.rig.upos, rel).length() < HOME_REACH * home.soiRadius()) best = home;
     this.rig.setAnchor(best);
   }
 
@@ -3889,6 +3897,14 @@ function starReach(reach: number, magnitude: number): number {
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
+}
+
+/** The planet a body belongs to (a moon's planet; a planet, dwarf planet or a world made round a star: itself); null for a star or not a body. */
+function planetOf(o: SpaceObject | null): Body | null {
+  if (!(o instanceof Body) || o.kind === 'star') return null;
+  let b: Body = o;
+  while (b.parent instanceof Body && b.parent.kind !== 'star') b = b.parent;
+  return b;
 }
 
 /** A sun the explorer made: a star of the main sequence of its mass, its size, colour and light following it (src/app/WhatIf.ts: madeSize). */
