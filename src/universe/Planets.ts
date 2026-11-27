@@ -201,7 +201,8 @@ export class ExoPlanet implements SpaceObject {
       ['Type', s.real ? `Exoplanet: ${typeName[s.type]}${s.year ? `, found ${s.year} (${s.method})` : ''}` : `Generated planet: ${typeName[s.type]}`],
       ['Star', this.system.host.name],
       ['Radius', `${re.toFixed(re < 3 ? 2 : 1)} Earth radii${est('radius')}`],
-      ['Mass', me > 100 ? `${(me / 317.8).toFixed(2)} Jupiter masses${est('mass')}` : `${me.toFixed(me < 3 ? 2 : 1)} Earth masses${est('mass')}`],
+      // (a least mass, from the star's wobble alone, is said to be one: the archive's "Msini")
+      ['Mass', `${s.est.includes('massMin') ? 'at least ' : ''}${me > 100 ? `${(me / 317.8).toFixed(2)} Jupiter masses` : `${me.toFixed(me < 3 ? 2 : 1)} Earth masses`}${est('mass')}`],
       ['Orbit', `${(s.aM / AU).toPrecision(3)} AU${est('a')}, ${s.periodS / DAY < 400 ? `${(s.periodS / DAY).toFixed(s.periodS / DAY < 10 ? 2 : 1)} days` : `${(s.periodS / DAY / 365.25).toFixed(1)} years`}`],
       ['Eccentricity', `${s.e.toFixed(2)}${est('e')}`],
       ['Temperature', `~${Math.round(s.teqK)} K (equilibrium)`],

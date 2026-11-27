@@ -23,6 +23,8 @@ bash pipeline/run_all.sh        # or: npm run data
 | `build_terrain.py` | SVS LOLA LDEM 16 ppd, USGS MOLA 463 m and MESSENGER 665 m DEMs, NOAA ETOPO 2022 60″, Dawn Ceres HAMO DTM (`earth` or `ceres` alone: `python3 build_terrain.py earth`) | `terrain/{moon,mars,mercury,earth,ceres}.png` (16-bit heights in RGB, 2048x1024) + `terrain/terrain.json` |
 | `build_terrain_patches.py` | PDS LOLA `LDEM_128.IMG` and the MOLA 463 m mosaic, read row by row with range requests; ETOPO 2022 15″ tiles for Earth (`earth` alone: `python3 build_terrain_patches.py earth`) | `terrain/patches/*.png` around the landmarks, listed in `terrain/terrain.json` |
 | `build_stars.py` | AT-HYG v4.0, HYG v4.4, the Gaia subset | `stars/` (CC BY-SA 4.0) and `stars-gaia/` (CC BY-NC 3.0 IGO): brightest-first octree tiles, `named.json` |
+| `build_exoplanets.py` | NASA Exoplanet Archive, `pscomppars` (TAP) | `exoplanets.json`: confirmed planets by host star; each planet's `est` lists what was estimated, by this script (Kepler's third law, Chen & Kipping 2017) or by the archive itself (`mass`: from the size; `massMin`: only the least mass, "Msini"; `radius`: worked out from the mass) |
+| `mark_estimates.py` | the same table's `pl_bmassprov` and `pl_rade_reflink` | adds the archive's own "worked out, not measured" marks to the `exoplanets.json` there is, changing nothing else (27 Nov 2026: 2,951 masses from the size, 913 least masses, 1,519 sizes) |
 
 ## Moon calibration
 
