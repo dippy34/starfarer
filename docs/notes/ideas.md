@@ -29,7 +29,7 @@ shows it (`scripts/verify.mjs` shot 13). Three pieces would make that kind of sh
 3. *Spin* (hard, later): the film's hole spins near the limit, which flattens one side of the
    shadow; ours is a non-spinning (Schwarzschild) hole. Kerr geodesics in a phone's shader.
 
-## Sizes of made worlds from a published mass-radius relation (planned 27 Nov 2026)
+## Sizes of made worlds from a published mass-radius relation (done 27 Nov 2026, the fix list's #13)
 
 Today a made world's size follows its mass by rules decided here (`madeSize` in `src/app/WhatIf.ts`:
 the Earth's density for rock, then a straight line in the logarithm up to Jupiter's size), and an ice
@@ -53,7 +53,10 @@ was fitted on are mostly hot and puffed up. So, by kind:
 - a gas giant: keep Jupiter's size from 0.3 Jupiters (the relation's own Jovian piece gives 1.25 of
   Jupiter's radius at Jupiter's mass);
 - an icy world: keep the ball of ice and rock (the paper has no class for it).
-The card's working (`madeWorking`) then names the paper and the piece used.
+The card's working (`madeWorking`) names the paper and the piece used. Built so (`TERRAN_SLOPE`,
+`NEPTUNIAN_SLOPE` in `src/app/WhatIf.ts`), through the Earth's own size rather than their 1.008 (it
+lies within their constant's range), so that a rocky world of the Earth's mass is the Earth's size;
+with that, Uranus's mass gives 3.87 R⊕ (it measures 3.98) and Neptune's 4.28 (3.87).
 
 ## God mode on more things: comets and black holes (the fix list's #9; planned 27 Nov 2026)
 

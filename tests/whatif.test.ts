@@ -395,15 +395,21 @@ describe('worlds of a generated look', () => {
     expect(off(gihi, 13 * M_JUPITER)).toBeLessThan(1e-12);
   });
 
-  it('of rock, ocean, desert and lava: the Earth\'s density, R = R⊕ (M / M⊕)^⅓, at the bottom, at 1 Earth and at the top of their mass', () => {
+  it('of rock, ocean, desert and lava: as measured rocky worlds are (Chen & Kipping 2017), R = R⊕ (M / M⊕)^0.279, at the bottom, at 1 Earth and at the top of their mass', () => {
     for (const kind of ROCKY) {
       const [lo, hi] = MADE_MASS[kind];
       for (const kg of [lo, M_EARTH, hi]) {
         const s = madeSize(kind, kg, false);
-        expect(s.rule).toBe('earth');
-        expect(off(s.radius, R_EARTH * Math.cbrt(kg / M_EARTH))).toBeLessThan(1e-12);
+        expect(s.rule).toBe('terran');
+        expect(off(s.radius, R_EARTH * Math.pow(kg / M_EARTH, 0.279))).toBeLessThan(1e-12);
       }
+      // (the Earth's mass, the Earth's size; 5 Earths 1.57 of it, smaller than rock of the Earth's density, 1.71)
+      expect(madeSize(kind, M_EARTH, false).radius).toBe(R_EARTH);
+      expect(madeSize(kind, 5 * M_EARTH, false).radius / R_EARTH).toBeCloseTo(1.567, 3);
     }
+    // the planets the relation was checked against (NASA's fact sheet): Mars and Venus within 2 %
+    expect(Math.abs(madeSize('terran', 0.107 * M_EARTH, false).radius / (3389.5e3) - 1)).toBeLessThan(0.02);
+    expect(Math.abs(madeSize('terran', 0.815 * M_EARTH, false).radius / (6051.8e3) - 1)).toBeLessThan(0.02);
   });
 
   it('of ice: a ball of ice and rock (1,500 kg/m³), the rule \'ice\', at the bottom, middle and top of its mass', () => {
@@ -415,11 +421,15 @@ describe('worlds of a generated look', () => {
     }
   });
 
-  it('of ice giants: as rock of their mass below 10 Earths, then between a rock and Jupiter\'s size, never smaller for more mass, and below Jupiter\'s size at 50 Earths', () => {
-    expect(madeSize('icegiant', 5 * M_EARTH, false).rule).toBe('earth');
-    expect(madeSize('icegiant', 9.99 * M_EARTH, false).rule).toBe('earth');
-    expect(madeSize('icegiant', ROCKY_MOST, false).rule).toBe('between');
-    expect(off(madeSize('icegiant', ROCKY_MOST, false).radius, madeSize('icegiant', ROCKY_MOST * (1 - 1e-9), false).radius)).toBeLessThan(1e-6);
+  it('of ice giants: as Neptunian worlds are (Chen & Kipping 2017), R ∝ M^0.589 above 2.04 Earths, meeting the rocky rule there; Uranus and Neptune as measured; never smaller for more mass, and below Jupiter\'s size at 50 Earths', () => {
+    expect(madeSize('icegiant', 5 * M_EARTH, false).rule).toBe('neptunian');
+    expect(madeSize('icegiant', 2 * M_EARTH, false).rule).toBe('terran');
+    const at = 2.04 * M_EARTH;
+    expect(off(madeSize('icegiant', at, false).radius, madeSize('icegiant', at * (1 + 1e-9), false).radius)).toBeLessThan(1e-6);
+    expect(off(madeSize('icegiant', 10 * at, false).radius, madeSize('icegiant', at, false).radius * Math.pow(10, 0.589))).toBeLessThan(1e-12);
+    // Uranus (14.54 Earths, 25,362 km) within 3 %, Neptune (17.15 Earths, 24,622 km) within the relation's own 14.6 % scatter
+    expect(Math.abs(madeSize('icegiant', 14.54 * M_EARTH, false).radius / 25_362e3 - 1)).toBeLessThan(0.03);
+    expect(Math.abs(madeSize('icegiant', 17.15 * M_EARTH, false).radius / 24_622e3 - 1)).toBeLessThan(0.146);
     let last = 0;
     for (let k = 0; k <= 200; k++) {
       const r = madeSize('icegiant', (5 + (45 * k) / 200) * M_EARTH, false).radius;

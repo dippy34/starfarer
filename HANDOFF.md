@@ -911,10 +911,13 @@ temperature, and size as well as mass.
   place, picks another. A link or save keeps it (`SceneWorld.ts`: the seven kinds appended to
   `KINDS`, the seed a number after the "icy" byte; old links read as before); the simulation does not
   carry it, so `App.sceneView` puts it on the records from the bodies before writing. Sizes: the
-  rocky four as the Earth's rule, the icy world a ball of ice and rock (1,500 kg/m³), the gas giant as
-  Jupiter's rules, the ice giant as rock below 10 Earths and then the rule between (so a Uranus of
-  14.5 Earths comes out 2.8 R⊕; it measures 4.0: a published mass-radius relation would do better,
-  docs/notes/ideas.md, "Sizes of made worlds"). The card's small picture is still the generic one.
+  rocky four and the ice giant follow a published mass-radius relation (Chen & Kipping 2017, ApJ 834,
+  17: R ∝ M^0.279 for rocky worlds, M^0.589 above 2.04 Earths; `TERRAN_SLOPE`, `NEPTUNIAN_SLOPE` in
+  WhatIf.ts), taken through the Earth's own size (their constant, 1.008 ± 0.046 R⊕, has it within):
+  Mars and Venus within 2 %, Uranus within 3 %, Neptune within 11 %. Decided: a copy of the Earth
+  keeps the Earth's density, as a copy; the gas giant keeps Jupiter's size (the relation's giants
+  are hot, puffed-up ones: Jupiter's mass would come out 1.25 Jupiters); the icy world stays a ball
+  of ice and rock (the relation has no such class). docs/notes/ideas.md, "Sizes of made worlds". The card's small picture is still the generic one.
   *Rings* (added the same night, by Claude): "Add rings" beside New look gives any of them a ring, and
   "Remove rings" takes it away. It is the ring of the made-up planets of other stars (its shader,
   `ringMaterial` and `lightRing`, moved with the look into `PlanetLook.ts`; ExoPlanetLayer draws as

@@ -253,7 +253,20 @@ export const WORLD_NAME: Record<WorldKind, string> = {
 };
 
 /** How a made body's size follows from its mass (madeSize). */
-export type SizeRule = 'rock' | 'ice' | 'earth' | 'between' | 'giant' | 'brown dwarf' | 'star';
+export type SizeRule = 'rock' | 'ice' | 'earth' | 'terran' | 'neptunian' | 'between' | 'giant' | 'brown dwarf' | 'star';
+
+/**
+ * The published mass-radius relation the worlds of your own follow (Chen & Kipping 2017, "Probabilistic
+ * Forecasting of the Masses and Radii of Other Worlds", ApJ 834, 17, Table 1): R ∝ M^0.2790 for rocky
+ * (Terran) worlds, R ∝ M^0.589 for Neptunian ones above 2.04 Earths, the two meeting there. Taken
+ * through the Earth's own size (their constant, 1.008 +0.046/-0.045 R⊕, has the Earth within it), so
+ * a rocky world of the Earth's mass is the Earth's size. Checked against the planets (docs/notes/ideas.md):
+ * Mars and Venus within 2 %, Uranus within 3 % and Neptune within 12 % (their scatter is 14.6 %). Not for
+ * gas giants: their Jovian piece makes Jupiter's mass 1.25 Jupiters across (its giants are mostly hot,
+ * puffed-up ones), so those keep Jupiter's size.
+ */
+export const TERRAN_SLOPE = 0.279, NEPTUNIAN_SLOPE = 0.589, NEPTUNIAN_FROM = 2.04 * M_EARTH;
+const NEPTUNIAN_BASE = R_EARTH * Math.pow(NEPTUNIAN_FROM / M_EARTH, TERRAN_SLOPE);
 
 export interface Sized {
   /** its mean radius (m), and the rule that gave it */
@@ -271,8 +284,10 @@ const BETWEEN = Math.log(R_JUPITER / ROCK_TOP) / Math.log(GIANT_FROM / ROCKY_MOS
 /**
  * The size of a body made as `kind` with `kg` of mass (`icy`: a moon made beyond the frost line):
  * - a moon: a ball of rock (3,000 kg/m³), or of ice and rock (1,500), as newMoon makes one;
- * - a world like the Earth, and a rock, ocean, desert or lava world: rock at the Earth's mean density, R = R⊕ (M / M⊕)^⅓ (5 Earths: 1.71 R⊕);
- * - an icy world: a ball of ice and rock (1,500 kg/m³), as an icy moon; an ice giant: that rock's size up to 10 Earths, then as between, below;
+ * - a world like the Earth (a copy): rock at the Earth's mean density, R = R⊕ (M / M⊕)^⅓ (5 Earths: 1.71 R⊕);
+ * - a rock, ocean, desert or lava world of your own: rocky worlds as measured ones are, R = R⊕ (M / M⊕)^0.279 (TERRAN_SLOPE: 5 Earths 1.57 R⊕);
+ * - an icy world: a ball of ice and rock (1,500 kg/m³), as an icy moon; an ice giant: as a rocky world up to 2.04 Earths, then
+ *   as Neptunian worlds are, R ∝ M^0.589 (NEPTUNIAN_SLOPE: Uranus's mass 3.87 R⊕, it measures 3.98);
  * - a gas giant: as a giant like Jupiter (below), from 10 Earths;
  * - a giant from 0.3 Jupiters on, and a brown dwarf: about Jupiter's size;
  * - between 10 Earths and 0.3 Jupiters, where a world's size depends on how much gas it has
@@ -283,12 +298,13 @@ const BETWEEN = Math.log(R_JUPITER / ROCK_TOP) / Math.log(GIANT_FROM / ROCKY_MOS
 export function madeSize(kind: Kind, kg: number, icy: boolean): Sized {
   switch (kind) {
     case 'moon': return { radius: radiusFromDensity(kg, icy ? ICE : ROCK), rule: icy ? 'ice' : 'rock' };
-    case 'earth': case 'terran': case 'ocean': case 'desert': case 'lava': return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
+    // (a copy of the Earth keeps the Earth's density, as a copy; a rocky world of your own follows the published relation)
+    case 'earth': return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
+    case 'terran': case 'ocean': case 'desert': case 'lava': return { radius: R_EARTH * Math.pow(kg / M_EARTH, TERRAN_SLOPE), rule: 'terran' };
     case 'ice': return { radius: radiusFromDensity(kg, ICE), rule: 'ice' };
-    // (an ice giant below 10 Earths is as big as rock of its mass, as the rule between 10 Earths and Jupiter's size starts from there)
     case 'icegiant':
-      if (kg < ROCKY_MOST) return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
-      return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
+      if (kg <= NEPTUNIAN_FROM) return { radius: R_EARTH * Math.pow(kg / M_EARTH, TERRAN_SLOPE), rule: 'terran' };
+      return { radius: NEPTUNIAN_BASE * Math.pow(kg / NEPTUNIAN_FROM, NEPTUNIAN_SLOPE), rule: 'neptunian' };
     case 'giant':
       if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: 'giant' };
       return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
@@ -343,7 +359,8 @@ export function madeWords(kind: Kind, kg: number, icy: boolean): { mass: string;
   switch (s.rule) {
     case 'rock': return { mass, what: `Rock, ${km(s.radius)} in radius` };
     case 'ice': return { mass, what: `Ice and rock, ${km(s.radius)} in radius` };
-    case 'earth': return { mass, what: Math.abs(s.radius / R_EARTH - 1) < 0.005 ? "Rock, the Earth's size" : `Rock, ${times(s.radius / R_EARTH)} times the Earth's size` };
+    case 'earth': case 'terran': return { mass, what: Math.abs(s.radius / R_EARTH - 1) < 0.005 ? "Rock, the Earth's size" : `Rock, ${times(s.radius / R_EARTH)} times the Earth's size` };
+    case 'neptunian': return { mass, what: `Rock, ice and gas, ${times(s.radius / R_EARTH)} times the Earth's size` };
     case 'between': return { mass, what: `Rock and gas, ${times(s.radius / R_EARTH)} times the Earth's size` };
     case 'giant': return { mass, what: "A giant of gas, Jupiter's size" };
     case 'brown dwarf': return { mass, what: "A brown dwarf, Jupiter's size" };
@@ -360,8 +377,11 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
       return { label, text, math: `R = (3M / 4πρ)^⅓ = (3·${num(kg)} kg / (4π·${rho.toLocaleString('en-US')} kg/m³))^⅓ = ${text}: a ball of ${s.rule === 'ice' ? (kind === 'ice' ? 'ice and rock' : 'ice and rock (beyond the frost line)') : 'rock'}` };
     }
     case 'earth':
-      if (kind === 'icegiant') return { label, text, math: `R = R⊕ (M / M⊕)^⅓ = 6,371 km·(${num(kg / M_EARTH)})^⅓ = ${text}: an ice giant below 10 Earths is taken as big as rock of its mass (from 10 Earths the rule between a rock and Jupiter's size applies)` };
       return { label, text, math: `R = R⊕ (M / M⊕)^⅓ = 6,371 km·(${num(kg / M_EARTH)})^⅓ = ${text}: rock at the Earth's mean density, ${EARTH_DENSITY.toLocaleString('en-US')} kg/m³` };
+    case 'terran':
+      return { label, text, math: `R = R⊕ (M / M⊕)^0.279 = 6,371 km·(${num(kg / M_EARTH)})^0.279 = ${text}: rocky worlds as measured ones are (Chen & Kipping 2017: rock is squeezed smaller as the mass grows)` };
+    case 'neptunian':
+      return { label, text, math: `R = R₂ (M / 2.04 M⊕)^0.589 = ${km(NEPTUNIAN_BASE)}·(${num(kg / NEPTUNIAN_FROM)})^0.589 = ${text}: worlds of rock, ice and gas above 2 Earths, as measured ones are (Chen & Kipping 2017; Uranus's mass gives 3.9 times the Earth's size, it measures 4.0)` };
     case 'between':
       return { label, text, math: `R = R₁₀ (M / 10 M⊕)^${num(BETWEEN, 3)} = ${km(ROCK_TOP)}·(${num(kg / ROCKY_MOST)})^${num(BETWEEN, 3)} = ${text}: between a rock of 10 Earths and Jupiter's size at 0.3 Jupiters (a world's size here depends on how much gas it has gathered)` };
     case 'giant': case 'brown dwarf':
