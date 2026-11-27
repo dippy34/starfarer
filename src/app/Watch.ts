@@ -4,15 +4,17 @@ import type { Body } from '../universe/Body';
 import type { SimSystem } from '../sim/SystemSim';
 import type { CameraRig } from './CameraRig';
 import { goesRound, type LivePhysics, weighty } from './LivePhysics';
-import { affected, WATCH_SECONDS, WATCH_SLOWEST, type Watched, watchPlan, type Weighed } from './Powers';
+import { affected, WATCH_SLOWEST, type Watched, watchPlan, type Weighed } from './Powers';
 
 /**
- * Watch it happen: after a change, time runs for WATCH_SECONDS at a pace at which what follows can
- * be seen (src/app/Powers.ts: watchPlan), while the camera eases to a frame that holds the worlds
- * the change matters to (`Glide`). Then the explorer's own rate of time comes back, and Replay is
- * offered: the moment just after the change again, watched again (the simulation goes the same
- * way twice). A finger on the view takes the camera back at once, and time keeps the watch's pace;
- * Stop gives the rate back as well. The app (src/app/App.ts) asks for each of these; this is the
+ * Watch it happen: after a change, time stays as the explorer had it and the watch is offered. When
+ * it is asked for (or by itself, with "Show me what happens" on), time runs at a pace at which what
+ * follows can be seen (src/app/Powers.ts: watchPlan), while the camera eases to a frame that holds
+ * the worlds the change matters to (`Glide`). It has no end of its own: it goes on until it is
+ * stopped (Stop, Escape, the rate of time taken in hand, another change), slowing only when the
+ * stepping cannot keep up. Then the explorer's own rate of time comes back, and Replay is offered:
+ * the moment just after the change again, watched again (the simulation goes the same way twice).
+ * A finger on the view takes the camera back at once, and time keeps the watch's pace. The app (src/app/App.ts) asks for each of these; this is the
  * planning and the bookkeeping, kept clear of the page so that it can be tested by itself.
  */
 
@@ -73,12 +75,11 @@ const BEHIND_FRAMES = 12, SLOWER = 0.6;
 export const REPLAY_OFFERED = 30;
 
 export class Watch {
-  /** watching: time runs at `rate`; ended: Replay is offered; idle: neither */
-  state: 'idle' | 'watching' | 'ended' = 'idle';
+  /** offered: a change has been made and its watch can be asked for; watching: time runs at `rate`; ended: Replay is offered; idle: none of them */
+  state: 'idle' | 'offered' | 'watching' | 'ended' = 'idle';
   /** how fast time runs while watching (simulated seconds a second) */
   rate = 0;
-  /** how much of the watch is left (s), and how much simulated time it has shown (s) */
-  left = 0;
+  /** how much simulated time the watch has shown (s) */
   shown = 0;
   private saved: RateState | null = null;
   private behind = 0;
@@ -92,7 +93,6 @@ export class Watch {
   start(rate: number, saved: RateState): void {
     this.state = 'watching';
     this.rate = rate;
-    this.left = WATCH_SECONDS;
     this.shown = 0;
     this.saved = saved;
     this.behind = 0;
@@ -101,9 +101,9 @@ export class Watch {
   /**
    * A frame of `dt` seconds, in which `ran` simulated seconds went by and the stepping managed
    * `share` of the time asked for lately. 'slower': the rate was lowered, the stepping not keeping
-   * up; 'over': the watch has run its course (`stop` says what to put back).
+   * up. (A watch has no end of its own.)
    */
-  tick(dt: number, ran: number, share: number): 'slower' | 'over' | null {
+  tick(dt: number, ran: number, share: number): 'slower' | null {
     if (this.state === 'ended') {
       this.offered -= dt;
       if (this.offered <= 0) this.state = 'idle';
@@ -111,8 +111,6 @@ export class Watch {
     }
     if (this.state !== 'watching') return null;
     this.shown += Math.abs(ran);
-    this.left -= dt;
-    if (this.left <= 0) return 'over';
     this.behind = share < BEHIND ? this.behind + 1 : 0;
     if (this.behind >= BEHIND_FRAMES && this.rate > WATCH_SLOWEST) {
       this.rate = Math.max(WATCH_SLOWEST, this.rate * SLOWER);
@@ -122,7 +120,13 @@ export class Watch {
     return null;
   }
 
-  /** It ends, having run its course or been stopped, and Replay is offered: the rate of time to put back (null if it was not watching). */
+  /** A change has been made: its watch is offered, and time is left as it is. */
+  offerWatch(): void {
+    this.state = 'offered';
+    this.saved = null;
+  }
+
+  /** It ends, having been stopped, and Replay is offered: the rate of time to put back (null if it was not watching). */
   stop(): RateState | null {
     if (this.state !== 'watching') return null;
     const saved = this.saved;
@@ -135,7 +139,7 @@ export class Watch {
     if (this.state === 'watching') this.offer();
   }
 
-  /** Forget it (another change, Undo, Back to reality): the rate of time to put back if it was watching. */
+  /** Forget it (another change, the offer put away, Undo, Back to reality): the rate of time to put back if it was watching. */
   clear(): RateState | null {
     const saved = this.state === 'watching' ? this.saved : null;
     this.state = 'idle';

@@ -36,9 +36,9 @@ export type HudAction =
   | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle' | 'move-throw' | 'place-done'
   // the size of the selected world follows its mass at the same density, or not
   | 'size-link'
-  // undo the last change; watching what a change does (src/app/Watch.ts): stop, watch it again, put the offer away;
-  // whether changes are watched at all
-  | 'undo' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me'
+  // undo the last change; watching what a change does (src/app/Watch.ts): start it, stop, watch it again, put the offer away;
+  // whether a change starts its watch by itself
+  | 'undo' | 'watch-start' | 'watch-stop' | 'replay' | 'watch-close' | 'show-me'
   // a link to the scene as it is now: the share sheet on a phone, copied at a desk (src/app/SceneLink.ts); the scene kept on this device (src/app/Saves.ts)
   | 'share' | 'save';
 
@@ -125,10 +125,11 @@ export interface HudState {
   realAgain: boolean;
   /**
    * Watching what a change does (src/app/Watch.ts): what the chip says, whether the watch is over,
-   * and if so whether it can be watched again (Replay). Null: no watch, nothing offered.
+   * and if so whether it can be watched again (Replay); `offer`: the watch can be started (Watch).
+   * Null: no watch, nothing offered.
    */
-  watch: { text: string; ended: boolean; replay?: boolean } | null;
-  /** changes are watched: time speeds up and the camera frames what follows (the switch in More) */
+  watch: { text: string; ended: boolean; replay?: boolean; offer?: boolean } | null;
+  /** a change starts its watch by itself: time speeds up and the camera frames what follows (the switch in More) */
   showMe: boolean;
   /** the destination of the flight in progress */
   flying: string | null;
@@ -261,6 +262,7 @@ const TEMPLATE = `
       </div>
       <div class="hud-watch" role="status" hidden>
         <span class="watch-text"></span>
+        <button class="watch-start" type="button" data-act="watch-start">${ICON.play}Watch</button>
         <button class="watch-stop" type="button" data-act="watch-stop">${ICON.stop}Stop</button>
         <button class="watch-replay" type="button" data-act="replay">${ICON.replay}Replay</button>
         <button class="watch-close" type="button" data-act="watch-close" aria-label="Close">${ICON.close}</button>
@@ -381,7 +383,7 @@ const TEMPLATE = `
           <button class="switch" type="button" role="switch" data-act="labels" aria-checked="true"><span><b>Names</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="orbits" aria-checked="true"><span><b>Orbits</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="minor" aria-checked="false"><span><b>Orbits of asteroids and comets</b></span><i></i></button>
-          <button class="switch" type="button" role="switch" data-act="show-me" aria-checked="true"><span><b>Show me what happens</b><small>After you change a world, time speeds up for a while and the view frames what follows</small></span><i></i></button>
+          <button class="switch" type="button" role="switch" data-act="show-me" aria-checked="false"><span><b>Show me what happens</b><small>After you change a world, the watch starts by itself: time speeds up and the view frames what follows, until you stop it</small></span><i></i></button>
           <h3>Travel</h3>
           <button class="switch" type="button" role="switch" data-act="ship" aria-checked="false"><span><b>Spaceship</b><small>Physics all the way up: as fast as you like, never faster than light. Go there flies it</small></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="pilot-controls" aria-checked="false"><span><b>Pilot controls</b><small>Show every steering, side-thrust and drive setting; off keeps one Engine chip and Hold steering</small></span><i></i></button>
@@ -934,6 +936,7 @@ export class Hud {
     chip.hidden = !w;
     if (!w) return;
     chip.classList.toggle('ended', w.ended);
+    chip.classList.toggle('offer', !!w.offer);
     setText(this.$('.watch-text'), w.text);
     this.$('.watch-replay').hidden = !w.ended || !w.replay;
   }
