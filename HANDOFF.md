@@ -1524,6 +1524,8 @@ keep B for later, C not needed with A).
    "Send feedback" button, and "release". Ready to build: God mode on comets, then a black hole of
    your own (#9, `docs/notes/ideas.md`), and the sandbox's next steps (one Create button from
    anywhere; size set by hand). The top chips in plain words (#4) are the rest of "make it simple".
+   Investigate first: the offline suite's two-tab step failed in 3 of 8 runs since the Time panel and in
+   none before it (docs/notes/testing.md, "offline").
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
    black hole steps).
 2. Terrain: stream sharper elevation tiles everywhere (the full LOLA/MOLA/ETOPO resolution; today
