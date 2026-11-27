@@ -53,7 +53,7 @@ describe('a trip that would take years, in plain words', () => {
   it('on the fusion torch: why, and what to do', () => {
     // Sirius coasting on the torch (a playtester read "to go 130,252 yr" and nothing else)
     const g = glance(readout({ drive: 'torch', target: 'Sirius', targetDist: 8.1e16, etaShip: 130_252 * 3.15576e7, etaUniverse: 130_252 * 3.15576e7, etaBy: 'coasting' }));
-    expect(g.toGo).toBe("there in 130,252 yr for you · 130,252 yr outside. The torch's fuel can never get you there sooner: tap Main drive to switch to the field drive");
+    expect(g.toGo).toBe("there in 130,252 yr for you · 130,252 yr outside. The rocket's fuel can never get you there sooner: tap Rocket to switch to the field drive");
   });
   it('a short trip needs no advice', () => {
     expect(glance(readout({ target: 'Moon', targetDist: 3.8e8, etaShip: 3600, etaUniverse: 3600, etaBy: 'flip-and-burn' })).toGo).toBe('there in 1 h 0 min for you · 1 h 0 min outside');
