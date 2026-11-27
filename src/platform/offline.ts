@@ -71,9 +71,7 @@ const urlFor = (path: string, network = false) => {
 };
 
 async function response(cacheName: string, path: string): Promise<Response | null> {
-  if (!(await caches.keys()).includes(cacheName)) return null;
-  const cache = await caches.open(cacheName);
-  return await cache.match(urlFor(path)) ?? null;
+  return await caches.match(urlFor(path), { cacheName }) ?? null;
 }
 
 async function activeCopy(): Promise<ActiveCopy | null> {
@@ -377,5 +375,13 @@ export async function removeOfflineCopy(): Promise<void> {
       await registration.unregister();
     }
   }
-  if ('caches' in globalThis) await Promise.all((await caches.keys()).filter((name) => name.startsWith(PREFIX)).map((name) => caches.delete(name)));
+  if (!('caches' in globalThis)) return;
+  // A request the old worker was still answering can open (and so create again, empty) a cache just deleted: what
+  // comes back is deleted again, a few times over a second (the offline suite saw one left behind, 27 Nov 2026)
+  for (let tries = 0; tries < 6; tries++) {
+    const left = (await caches.keys()).filter((name) => name.startsWith(PREFIX));
+    if (!left.length && tries > 0) return;
+    await Promise.all(left.map((name) => caches.delete(name)));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
 }
