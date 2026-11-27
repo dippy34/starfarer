@@ -1,0 +1,4 @@
+# Started by Claude, 27 Nov 2026: the owner, testing God mode, found that a change speeds time up by
+# itself and the watch then ends by itself ("48 days"). First try, on Claude Sonnet 5.5 (the owner's
+# Claude API credits).
+model: anthropic/claude-sonnet-5-5

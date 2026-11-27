@@ -75,6 +75,56 @@ need the OpenCode workspace's region set to Global.
 
 ## Tasks
 
+### `task/watch-button`: after a change, no surprise fast-forward; a "Watch" button that plays until stopped
+
+- **Status:** open. Medium.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the owner, 27 Nov 2026, testing God mode on a phone: "when you edit something, it
+  creates live physics, which speeds everything up, and then ends after a random amount of time. Last
+  time I tried it was 48 days." Today every change (mass, move, add, remove, a world put in place)
+  starts a watch by itself (`App.endChange` -> `startWatch`, `src/app/App.ts`): time runs at a pace
+  chosen to show the change (`planChange`, `src/app/Watch.ts`) for `WATCH_SECONDS` of real time, then
+  the explorer's own rate comes back and the chip says "Watched: 48 days" with Replay. The More switch
+  "Show me what happens" (`show-me`, on by default) turns the watch off altogether. The owner found
+  both the sudden speed-up and the end that comes by itself confusing.
+- **What to do:** read `HANDOFF.md` "Design" first (plain words, the `--sf-*` tokens, every target at
+  least 44 px).
+  - After a change, time stays exactly as the explorer had it (paused stays paused, and the rate is
+    kept). The live physics switches on as today. If the change has a watch (`planWatch` returns a
+    frame), the watch chip (`.hud-watch`, `src/ui/Hud.ts` `renderWatch`) offers it: a short line
+    such as "See what it does" and a button "Watch" (a new `data-act`, for example `watch-start`),
+    beside the Close button. Undo is offered as today.
+  - Watch: from the moment just after the change (the checkpoint Replay uses today, `replayFrom`),
+    time runs at the watch's pace and the camera eases to the frame, as a watch does today. The chip
+    says "Watching: 3.2 days a second" with Stop, as today. It keeps going until the explorer stops
+    it: Stop, Escape, a change of the rate of time by hand, or a new change. It has no end of its
+    own: remove the end after `WATCH_SECONDS` (keep slowing down near a hit, and keep slowing down
+    when the stepping cannot keep up).
+  - Stop: the explorer's own rate comes back, and Replay is offered, as today ("Watched: 48 days").
+    Replay watches again from just after the change, until stopped.
+  - The More switch "Show me what happens" now means "start the watch by itself after a change". It
+    is off by default (`recall('show-me') === '1'`), and its toast says so in plain words. On, a
+    change starts its watch by itself, which then also runs until stopped.
+  - A world put in place with Done (`placed`) is offered its watch the same way.
+- **Done when:**
+  - Unit tests for `Watch` (`tests/watch.test.ts`): a watch no longer ends by itself after
+    `WATCH_SECONDS`; it still slows down when the stepping is behind.
+  - `scripts/live.mjs`: new checks, on a phone and at a desk, that after a change time is as before
+    (paused stays paused, the rate unchanged) and the chip offers Watch; that Watch runs the watch
+    (the chip says "Watching: ...", time at the watch's pace); and that 30 seconds later it is still
+    watching, until Stop. They fail on the code before the change. Update the checks that expected the
+    watch to start or end by itself so that they tap Watch, or Stop, first (for example "after fifteen
+    seconds the watch ends", "Done: time runs, and what follows is watched", "let go, Mars falls ...
+    watched; time slows ..."); none is made weaker; list each one changed in the report. The check
+    "with Show me what happens off in More, a change is made and nothing is watched" becomes: with it
+    on, the watch starts by itself.
+  - The suites run here are long: run `LIVE_ONLY=watch,throw,hit,place` of `scripts/live.mjs` (phone
+    and desk), and `scripts/whatif.mjs`. Claude runs the whole set after.
+  - Pictures, upright at 390x844: the chip offering Watch after a change, and watching.
+  - `npm run check` passes.
+- **Don't touch:** `src/app/LivePhysics.ts` and `src/sim/` (the physics itself), the camera rig, the
+  tab bar.
+
 ### `task/everest-summit`: the Everest walking spot sits below the summit
 
 - **Status:** on hold. The owner wants general space and reliability first, not Earth-only polish.
