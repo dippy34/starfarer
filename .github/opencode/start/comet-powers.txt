@@ -1,0 +1,5 @@
+# Started by Claude, 27 Nov 2026: the fix list's #9, step 1, God mode on comets (take one away, move
+# it, throw it, keep it in saves). The copy starts at the live branch plus the change still being
+# tested (phones: looks first), so that the work builds on it.
+model: anthropic/claude-sonnet-5-5
+base: 28a055423ec70e31fd0f4778a14488d8f075abf6
