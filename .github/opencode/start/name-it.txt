@@ -1,0 +1,5 @@
+# Started by Claude, 27 Nov 2026 (overnight, the owner asleep): God mode as a sandbox, a name of your
+# own for a world you made. The copy starts at the live branch plus Make anything, its rings and its
+# Colour slider (still being tested), so that the work builds on them.
+model: anthropic/claude-sonnet-5-5
+base: 0000170cb86eeed432fdbc1c08d2a24f0faee5ee
