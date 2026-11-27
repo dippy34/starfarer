@@ -1,11 +1,23 @@
 import { CATEGORIES, type Category, type Destination, type Picture } from '../app/destinations';
 import type { PowerName, PowerTable } from '../app/powersFor';
+import type { Kind } from '../app/WhatIf';
 import { type Box, isClear, largestClear, worth } from '../core/clearArea';
 import { touchFirst } from '../core/device';
 import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
 import { type AimView, aimShape } from './aimShape';
 import { ICON } from './icons';
 import { OfflinePanel } from './OfflinePanel';
+
+/** The worlds Add makes with a generated look (src/app/WhatIf.ts: WORLD_KINDS), in order: the kind, its icon, its name, and what it is. */
+const WORLD_ROWS = [
+  ['terran', ICON.rocky, 'A rocky world', 'Land, seas and clouds, with a look of its own'],
+  ['ocean', ICON.rocky, 'An ocean world', 'Water almost everywhere, with a little land'],
+  ['desert', ICON.rocky, 'A desert world', 'Dry and dusty, like Mars'],
+  ['lava', ICON.rocky, 'A lava world', 'Scorched rock, glowing where it is hottest'],
+  ['ice', ICON.rocky, 'An icy world', 'Ice over rock, from a small icy moon to a few Earths'],
+  ['giant', ICON.giant, 'A gas giant', 'Banded clouds and storms, from 10 Earths to 13 Jupiters'],
+  ['icegiant', ICON.giant, 'An ice giant', 'Cloudy and blue-green, like Uranus and Neptune'],
+] as const;
 
 /**
  * The interface over the view, laid out as a phone app: two chips at the top (where you are, what
@@ -31,6 +43,8 @@ export type HudAction =
   | 'sunrise' | 'walk' | 'free'
   // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
+  // a made world of a generated look (src/app/WhatIf.ts: WORLD_KINDS), and another look for the one being put in place
+  | 'add-terran' | 'add-ocean' | 'add-desert' | 'add-lava' | 'add-ice' | 'add-giant' | 'add-icegiant' | 'new-look'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
   // begin or end moving it with a finger, and what it is to do where it is left (or throw it); a world just made is in place
   | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle' | 'move-throw' | 'place-done'
@@ -85,7 +99,7 @@ export interface HudState {
     /** every power: whether it works here, or the short reason it does not (src/app/powersFor.ts) */
     powers: PowerTable;
     /** what can be added to it (src/app/WhatIf.ts); nothing: an empty list */
-    add: readonly ('moon' | 'earth' | 'jupiter' | 'sun')[];
+    add: readonly Kind[];
     /**
      * Its mass, where it has a known one to change: where the slider stands, the mass and its factor
      * in words, what changes with it (`says`), and what the textbook predicts of a body of that mass
@@ -107,7 +121,7 @@ export interface HudState {
     /** `ahead`: what the simulation run ahead says of where it goes (src/app/Foresight.ts), when it has said */
     move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string; ahead: string } | null;
     /** It has just been made and is being put in place: where its mass slider stands (0 to 1), its mass and what it is at that mass, in words. */
-    place: { slider: number; mass: string; what: string } | null;
+    place: { slider: number; mass: string; what: string; /** it has a generated look that New look changes */ newLook: boolean } | null;
   } | null;
   /**
    * Live physics, or null while the Solar System is the real one: since when, what the mark at the
@@ -302,6 +316,7 @@ const TEMPLATE = `
           <div class="placing" hidden>
             <div class="power-read"><span><b></b><small></small></span><button class="place-done" type="button" data-act="place-done">Done</button></div>
             <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass"/>
+            <button class="new-look" type="button" data-act="new-look" hidden>New look</button>
           </div>
           <p class="power-hint">
             <span class="hint-move"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it.</span>
@@ -322,6 +337,8 @@ const TEMPLATE = `
           <button class="row" type="button" data-act="add-earth">${ICON.rocky}<span class="row-text"><b>A planet like Earth</b><small>Its size and mass, on a circle round this star</small></span></button>
           <button class="row" type="button" data-act="add-jupiter">${ICON.giant}<span class="row-text"><b>A planet like Jupiter</b><small>318 Earths: heavy enough to throw worlds out</small></span></button>
           <button class="row" type="button" data-act="add-sun">${ICON.sun}<span class="row-text"><b>A second sun</b><small>A star like the Sun: they go round each other</small></span></button>
+          <p class="power-hint add-worlds-head" hidden>Or a world of your own, with a look of its own:</p>
+${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" type="button" data-act="add-${kind}" hidden>${icon}<span class="row-text"><b>${name}</b><small>${line}</small></span></button>`).join('\n')}
           <p class="power-hint">It starts between you and this world, with time waiting: put it where you want it, give it the mass you want, then Done. After that it is moved, made heavier and removed like any other.</p>
         </div>
         <div class="facts" hidden>
@@ -1049,7 +1066,10 @@ export class Hud {
     addButton.setAttribute('aria-expanded', String(this.power === 'add'));
     const addPanel = card.querySelector<HTMLElement>('[data-panel="add"]')!;
     addPanel.hidden = this.power !== 'add';
-    if (this.power === 'add') for (const kind of ['moon', 'earth', 'jupiter', 'sun'] as const) addPanel.querySelector<HTMLElement>(`[data-act="add-${kind}"]`)!.hidden = !sel.add.includes(kind);
+    if (this.power === 'add') {
+      for (const kind of ['moon', 'earth', 'jupiter', 'sun', ...WORLD_ROWS.map((r) => r[0])] as const) addPanel.querySelector<HTMLElement>(`[data-act="add-${kind}"]`)!.hidden = !sel.add.includes(kind);
+      addPanel.querySelector<HTMLElement>('.add-worlds-head')!.hidden = !WORLD_ROWS.some((r) => sel.add.includes(r[0]));
+    }
     const movePanel = card.querySelector<HTMLElement>('[data-panel="move"]')!;
     movePanel.hidden = !moving;
     if (sel.move && moving) {
@@ -1068,6 +1088,7 @@ export class Hud {
       if (sel.place) {
         setText(place.querySelector('.power-read b')!, sel.place.mass);
         setText(place.querySelector('.power-read small')!, sel.place.what);
+        place.querySelector<HTMLElement>('.new-look')!.hidden = !sel.place.newLook;
         if (!this.placeSliding && Math.abs(Number(this.placeSlider.value) - sel.place.slider) > 0.002) this.placeSlider.value = String(sel.place.slider);
       }
     }

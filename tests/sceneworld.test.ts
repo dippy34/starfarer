@@ -8,7 +8,8 @@ import { LivePhysics } from '../src/app/LivePhysics';
 import { aheadWords, circularVelocity, whenWords } from '../src/app/Powers';
 import { decodeLink, encodeLink } from '../src/app/SceneLink';
 import { decodeWorld, encodeWorld, fromBase64Url, type LiveWorld, toBase64Url, WorldError } from '../src/app/SceneWorld';
-import { MADE_FIRST_ID, madeAgain, newMoon, newTwin, TWIN_OF } from '../src/app/WhatIf';
+import { savedFragment, savedScenes, saveScene } from '../src/app/Saves';
+import { isCopyKind, isWorldKind, MADE_FIRST_ID, madeAgain, newMoon, newTwin, newWorld, TWIN_OF, WORLD_KINDS } from '../src/app/WhatIf';
 import { SimClock } from '../src/core/time';
 import { NBody } from '../src/sim/NBody';
 import { liveDate } from '../src/sim/SystemSim';
@@ -96,6 +97,13 @@ function linkOf(world: LiveWorld) {
   return { raw, view, url: `https://dippy34.github.io/starfarer/#${view}` };
 }
 
+/** The changed universe a link carries, as bytes. */
+function decodeLinkWorld(link: string): Uint8Array {
+  const d = decodeLink(link);
+  if (!d.ok || !d.view.world) throw new Error('no changed universe in the link');
+  return fromBase64Url(d.view.world)!;
+}
+
 /** Deflate (raw, as CompressionStream('deflate-raw') would): what packing would have saved, measured. */
 const deflated = (b: Uint8Array) => deflateRawSync(b, { level: 9 }).length;
 
@@ -107,7 +115,7 @@ function unplaned(bytes: Uint8Array, doubles: number): Uint8Array {
 }
 
 /** What `adoptWorld` needs to make a world again: its look from the catalogue. */
-const remake = (sys: SolarSystem) => (m: Parameters<typeof madeAgain>[0]) => madeAgain(m, sys.byId.get(m.home)!, m.kind === 'moon' ? null : sys.byId.get(TWIN_OF[m.kind])!, null);
+const remake = (sys: SolarSystem) => (m: Parameters<typeof madeAgain>[0]) => madeAgain(m, sys.byId.get(m.home)!, isCopyKind(m.kind) ? sys.byId.get(TWIN_OF[m.kind])! : null, null, isWorldKind(m.kind) ? { albedo: 0.3, color: [0.5, 0.5, 0.5] } : null);
 
 /** Every simulated body's place and motion, to the last bit. */
 const bits = (sim: NBody) => { sim.read(); return [...sim.ids].map((id, i) => [id, ...[0, 1, 2].map((c) => sim.pos[3 * i + c]), ...[0, 1, 2].map((c) => sim.vel[3 * i + c])]); };
@@ -215,6 +223,52 @@ describe('the changed universe in a link', () => {
     expect(b.sys.isGone(b.named('Venus'))).toBe(true);
     expect(b.physics.made.map((m) => m.name)).toEqual(['Earth 2', "Mars's new moon"]);
     expect(b.physics.log.map((e) => e.text)).toEqual(a.physics.log.map((e) => e.text));
+  }, 240_000);
+
+  it('a world of a generated look comes back with its kind and its seed: in the bytes, in a link, in a save on the device, made again', async () => {
+    const a = await universe(), sun = a.sys.sun, look = { albedo: 0.3, color: [0.5, 0.5, 0.5] as [number, number, number] };
+    // one of each kind, each with a seed of its own (what App.sceneView does: the seed rides with the body, not in the simulation)
+    const seeds = WORLD_KINDS.map((_, i) => 1 + 123457 * (i + 1) % 999_983);
+    WORLD_KINDS.forEach((kind, i) => {
+      const plan = newWorld(kind, sun, [1.2e11 * (1 + 0.6 * i), 4e10, 0], 0, MADE_FIRST_ID + i, seeds[i], look);
+      a.physics.make(plan.json, sun, plan.pos, plan.vel, JD, `${plan.json.name} is new.`);
+    });
+    const world = a.physics.world()!;
+    for (const m of world.made) m.seed = (a.sys.byId.get(m.id)!.meta.madeAs as { seed?: number }).seed;
+    expect(world.made.map((m) => [m.kind, m.seed])).toEqual(WORLD_KINDS.map((k, i) => [k, seeds[i]]));
+    // the bytes
+    const sent = decodeWorld(encodeWorld(world));
+    expect(sent.made.map((m) => [m.kind, m.seed])).toEqual(WORLD_KINDS.map((k, i) => [k, seeds[i]]));
+    // a link, and a save of it on the device
+    const link = encodeLink({ selected: null, at: null, camera: [1, 2, 3], turn: [0, 0, 0, 1], fov: 50, jd: world.jd0 + world.sim.time / DAY, rate: 1, paused: true, world: toBase64Url(encodeWorld(world)) });
+    const read = decodeWorld(decodeLinkWorld(link));
+    expect(read.made.map((m) => [m.kind, m.seed])).toEqual(WORLD_KINDS.map((k, i) => [k, seeds[i]]));
+    const store = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = { get length() { return store.size; }, getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); }, key: (i: number) => [...store.keys()][i] ?? null, clear: () => store.clear() };
+    try {
+      expect(saveScene('Sun, changed', link, true)).toBe('kept');
+      const kept = savedFragment(savedScenes()[0].id)!;
+      const back = decodeWorld(decodeLinkWorld(kept));
+      expect(back.made.map((m) => [m.kind, m.seed])).toEqual(WORLD_KINDS.map((k, i) => [k, seeds[i]]));
+    } finally { delete (globalThis as { localStorage?: unknown }).localStorage; }
+    // made again, on another device: the same kind and seed
+    a.physics.rebase(sent);
+    const b = await universe();
+    b.physics.adoptWorld(read, remake(b.sys));
+    WORLD_KINDS.forEach((kind, i) => {
+      const as = b.sys.byId.get(MADE_FIRST_ID + i)!.meta.madeAs as { kind: string; seed: number; kg: number };
+      expect([as.kind, as.seed]).toEqual([kind, seeds[i]]);
+    });
+  }, 240_000);
+
+  it('a world of a generated look without its seed cannot be written; one with a seed beyond what a look has cannot be read', async () => {
+    const a = await universe(), sun = a.sys.sun;
+    const plan = newWorld('giant', sun, [1.2e11, 4e10, 0], 0, MADE_FIRST_ID, 5, { albedo: 0.3, color: [0.5, 0.5, 0.5] });
+    a.physics.make(plan.json, sun, plan.pos, plan.vel, JD, 'new');
+    const world = a.physics.world()!;
+    expect(() => encodeWorld(world)).toThrow();
+    world.made[0].seed = 1_000_000;
+    expect(() => decodeWorld(encodeWorld(world))).toThrow(WorldError);
   }, 240_000);
 
   it('is checked against the catalogue: a link that names what is not here changes nothing', async () => {

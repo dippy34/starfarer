@@ -891,6 +891,23 @@ temperature, and size as well as mass.
   formula, the numbers, the rule). Afterwards the Mass power changes a made world's pull only, as
   any world's (its "real mass" is the one it was made with); Part 4 brings Size.
   `LivePhysics.resize` gives a made world its new mass and size in the simulation (collisions use it).
+- *Make anything, step 1: worlds of every kind, each with a look of its own* (27 Nov 2026; the fix
+  list's #21, built by the cheap team on Claude Sonnet, reviewed here). A star's Add offers, after
+  the four, seven made worlds (`WORLD_KINDS` in `src/app/WhatIf.ts`: a rocky, ocean, desert, lava or
+  icy world, a gas giant, an ice giant), with no original and no map: each is drawn with the look the
+  made-up planets of other stars have, varied by a seed. That look now lives in one place,
+  `src/render/PlanetLook.ts` (`paletteFor`, `generatedLook`, `lookUniforms`, moved out of
+  ExoPlanetLayer.ts, which draws exactly as before; `madeLook` is a made world's: a fixed typical
+  temperature per kind, `MADE_TEMPERATURE`, so a type and seed always look the same). `BodiesLayer`
+  draws a body whose `madeAs` has a `seed` with that material (`generated-look`, no landing
+  terrain). The seed is kept in `madeAs.seed`; "New look", under the mass slider while it is put in
+  place, picks another. A link or save keeps it (`SceneWorld.ts`: the seven kinds appended to
+  `KINDS`, the seed a number after the "icy" byte; old links read as before); the simulation does not
+  carry it, so `App.sceneView` puts it on the records from the bodies before writing. Sizes: the
+  rocky four as the Earth's rule, the icy world a ball of ice and rock (1,500 kg/m³), the gas giant as
+  Jupiter's rules, the ice giant as rock below 10 Earths and then the rule between (so a Uranus of
+  14.5 Earths comes out 2.8 R⊕; it measures 4.0: a published mass-radius relation would do better,
+  as for #46). Left for later: rings on made worlds; the card's small picture is the generic one.
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun

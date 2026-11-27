@@ -14,6 +14,9 @@ import type { AtmosphereSpec } from './Atmospheres';
 import type { TileDetail } from './TileDetail';
 import { BLOOM } from './shaders/bloom';
 import { BODY_FRAG, BODY_VERT, GLARE_FRAG, GLARE_VERT } from './shaders/body';
+import { EXO_FRAG } from './shaders/planet';
+import { generatedLook, lookUniforms, madeLook } from './PlanetLook';
+import type { PlanetType } from '../universe/Planets';
 import { STAR_FRAG } from './shaders/star';
 import { RING_FRAG, RING_VERT } from './shaders/rings';
 import { STAR_NEAR, StarCorona } from './StarCorona';
@@ -398,8 +401,9 @@ export class BodiesLayer {
   mapTier(b: Body): 'none' | 'small' | 'full' | 'hi' {
     const m = this.meshes.get(b);
     const key = this.textureKey(b);
-    const t = m && (m.material as ShaderMaterial).uniforms.uMap.value;
-    if (!t || !key) return 'none';
+    if (!m || !key) return 'none';
+    const t = (m.material as ShaderMaterial).uniforms.uMap.value;
+    if (!t) return 'none';
     if (t === this.hiTex.get(key)?.tex) return 'hi';
     if (t === this.loadedTex.get(key)?.tex) return 'full';
     return 'small';
@@ -507,7 +511,7 @@ export class BodiesLayer {
    */
   ownLight(b: Body): number {
     const m = this.meshes.get(b);
-    return m && ((m.material as ShaderMaterial).uniforms.uHasNight.value as number) > 0.5 ? CITY_LIGHT : 0;
+    return m && ((m.material as ShaderMaterial).uniforms.uHasNight?.value as number) > 0.5 ? CITY_LIGHT : 0;
   }
 
   /**
@@ -530,7 +534,7 @@ export class BodiesLayer {
   surfaceMap(b: Body): { tex: Texture; albedoScale: number; clouds: Texture | null } | null {
     const m = this.meshes.get(b);
     const u = m && (m.material as ShaderMaterial).uniforms;
-    if (!u || (u.uHasMap.value as number) < 0.5 || !u.uMap.value) return null;
+    if (!u || !u.uHasMap || (u.uHasMap.value as number) < 0.5 || !u.uMap.value) return null;
     const clouds = (u.uHasClouds?.value as number) > 0.5 ? (u.uClouds.value as Texture) : null;
     return { tex: u.uMap.value as Texture, albedoScale: u.uAlbedoScale.value as number, clouds };
   }
@@ -559,7 +563,49 @@ export class BodiesLayer {
     return out;
   }
 
+  /** the worlds the explorer made with a generated look (src/app/WhatIf.ts): drawn from the look of their type and seed, with no map */
+  private looked = new Set<Body>();
+
+  /** The type and seed of the generated look a body wears (what it was made as, and its seed), or null: it has a map, or a look of its own, as the catalogue's bodies do. */
+  lookOf(b: Body): { type: PlanetType; seed: number } | null {
+    const as = b.meta.madeAs as { kind: string; seed?: number } | undefined;
+    return as && as.seed !== undefined ? { type: as.kind as PlanetType, seed: as.seed } : null;
+  }
+
+  /** The mesh of a world made with a generated look: the material of the made-up planets of other stars (src/render/ExoPlanetLayer.ts), from the same look (PlanetLook.ts). */
+  private createLooked(b: Body, type: PlanetType, seed: number): Mesh {
+    const spec = madeLook(type, seed, b.radius);
+    const mat = new ShaderMaterial({ name: 'generated-look', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: lookUniforms(spec, generatedLook(spec), this.surfaceExposure) });
+    const mesh = new Mesh(this.sphere(-180), mat);
+    mesh.matrixAutoUpdate = false;
+    mesh.frustumCulled = false;
+    mesh.name = b.name;
+    mesh.renderOrder = 1;
+    this.group.add(mesh);
+    this.meshes.set(b, mesh);
+    this.looked.add(b);
+    return mesh;
+  }
+
+  /** What a generated look needs of its sun and of where it is, each frame (the made-up planets of other stars have it set in ExoPlanetLayer.update). */
+  private shineLooked(b: Body, u: Record<string, { value: unknown }>, view: BodyView, sunRel: Vector3 | null, sunLight: number, rot3: Matrix3): void {
+    rot3.setFromMatrix4(b.orientation);
+    (u.uBodyToWorld.value as Matrix3).copy(rot3);
+    u.uTime.value = this.time;
+    u.uCamAlt.value = view.dist - b.radius;
+    // (its size follows its mass while it is made: the relief is a share of the radius)
+    u.uRadius.value = b.radius;
+    u.uRelief.value = Math.min(20e3, b.radius * 0.002) / b.radius;
+    if (sunRel) {
+      const toSun = new Vector3().copy(sunRel).sub(view.rel), rSun = toSun.length();
+      (u.uSunDir.value as Vector3).copy(toSun).divideScalar(rSun);
+      u.uSunIrr.value = sunIrradianceAt(rSun, sunLight);
+    } else u.uSunIrr.value = 0;
+  }
+
   private createMesh(b: Body): Mesh {
+    const wears = this.lookOf(b);
+    if (wears) return this.createLooked(b, wears.type, wears.seed);
     const texKey = this.textureKey(b);
     const mapInfo = texKey ? this.manifest.maps[texKey] : undefined;
     const isStar = b.kind === 'star';
@@ -854,6 +900,7 @@ export class BodiesLayer {
         mesh.matrix.copy(m4);
         mesh.matrixWorldNeedsUpdate = true;
         const u = (mesh.material as ShaderMaterial).uniforms;
+        if (this.looked.has(b)) { this.shineLooked(b, u, view, sunRel, sunLight, rot3); continue; }
         this.updateMaps(b, u, view.pixelRadius, now);
         rot3.setFromMatrix4(b.orientation);
         u.uBodyToWorld.value.copy(rot3);
@@ -938,6 +985,7 @@ export class BodiesLayer {
     this.views.delete(gone);
     this.sunlit.delete(gone);
     this.sunLooks.delete(gone);
+    this.looked.delete(gone);
   }
 
   private occluders: Body[] | null = null;
@@ -1010,7 +1058,7 @@ export class BodiesLayer {
 
   /** Can the body have landing terrain? Solid, round (not lumpy) and without a thick atmosphere. */
   private terrainOk(b: Body): boolean {
-    if (b.kind === 'star' || b.isGasGiant || ['Venus', 'Titan'].includes(b.name) || b.radius < 150e3) return false;
+    if (b.kind === 'star' || b.isGasGiant || this.looked.has(b) || ['Venus', 'Titan'].includes(b.name) || b.radius < 150e3) return false;
     const m = this.meshes.get(b);
     return !!m && ((m.material as ShaderMaterial).uniforms.uLumpy.value as number) === 0;
   }
