@@ -44,7 +44,7 @@ export type HudAction =
   // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // a made world of a generated look (src/app/WhatIf.ts: WORLD_KINDS), and another look for the one being put in place
-  | 'add-terran' | 'add-ocean' | 'add-desert' | 'add-lava' | 'add-ice' | 'add-giant' | 'add-icegiant' | 'new-look'
+  | 'add-terran' | 'add-ocean' | 'add-desert' | 'add-lava' | 'add-ice' | 'add-giant' | 'add-icegiant' | 'new-look' | 'rings'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
   // begin or end moving it with a finger, and what it is to do where it is left (or throw it); a world just made is in place
   | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle' | 'move-throw' | 'place-done'
@@ -121,7 +121,11 @@ export interface HudState {
     /** `ahead`: what the simulation run ahead says of where it goes (src/app/Foresight.ts), when it has said */
     move: { on: boolean; how: 'keep' | 'circle' | 'throw'; placing: boolean; plane: string; orbit: string; ahead: string } | null;
     /** It has just been made and is being put in place: where its mass slider stands (0 to 1), its mass and what it is at that mass, in words. */
-    place: { slider: number; mass: string; what: string; /** it has a generated look that New look changes */ newLook: boolean } | null;
+    place: {
+      slider: number; mass: string; what: string;
+      /** it has a generated look that New look changes */ newLook: boolean;
+      /** whether it has rings (Add rings, Remove rings), or null: it cannot have them (it is not of a generated look) */ rings: boolean | null;
+    } | null;
   } | null;
   /**
    * Live physics, or null while the Solar System is the real one: since when, what the mark at the
@@ -316,7 +320,7 @@ const TEMPLATE = `
           <div class="placing" hidden>
             <div class="power-read"><span><b></b><small></small></span><button class="place-done" type="button" data-act="place-done">Done</button></div>
             <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass"/>
-            <button class="new-look" type="button" data-act="new-look" hidden>New look</button>
+            <div class="look-row"><button class="new-look" type="button" data-act="new-look" hidden>New look</button><button class="made-rings" type="button" data-act="rings" aria-pressed="false" hidden>Add rings</button></div>
           </div>
           <p class="power-hint">
             <span class="hint-move"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it.</span>
@@ -1089,6 +1093,10 @@ export class Hud {
         setText(place.querySelector('.power-read b')!, sel.place.mass);
         setText(place.querySelector('.power-read small')!, sel.place.what);
         place.querySelector<HTMLElement>('.new-look')!.hidden = !sel.place.newLook;
+        const rings = place.querySelector<HTMLElement>('.made-rings')!;
+        rings.hidden = sel.place.rings === null;
+        rings.setAttribute('aria-pressed', String(!!sel.place.rings));
+        setText(rings, sel.place.rings ? 'Remove rings' : 'Add rings');
         if (!this.placeSliding && Math.abs(Number(this.placeSlider.value) - sel.place.slider) > 0.002) this.placeSlider.value = String(sel.place.slider);
       }
     }

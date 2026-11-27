@@ -34,8 +34,8 @@ interface BodyJson {
   /** not from any catalogue: made by the explorer (src/app/WhatIf.ts), and if as a copy of a body of the catalogue, of which */
   made?: boolean;
   twinOf?: number;
-  /** what it was made as (src/app/WhatIf.ts, Kind), the mass its size was worked out from (kg), for a moon whether of ice, and for a world of a generated look the seed of its look */
-  madeAs?: { kind: string; kg: number; icy: boolean; seed?: number };
+  /** what it was made as (src/app/WhatIf.ts, Kind), the mass its size was worked out from (kg), for a moon whether of ice, and for a world of a generated look the seed of its look and whether it has rings */
+  madeAs?: { kind: string; kg: number; icy: boolean; seed?: number; rings?: boolean };
 }
 
 export type { BodyJson };

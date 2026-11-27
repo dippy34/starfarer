@@ -1027,6 +1027,29 @@ for (const kind of kinds) {
       g1.name === g0.name && g1.madeAs.seed !== g0.madeAs.seed && g1.material === 'generated-look' && g1.seed === g1.madeAs.seed % 97 && g1.c1 !== g0.c1 && !!before && !!after && Buffer.compare(before, after) !== 0,
       `seed ${g0.madeAs.seed} -> ${g1.madeAs.seed}; colour ${g0.c1} -> ${g1.c1}`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-made-giant.png`) });
+    // rings: "Add rings" gives it a ring round its equator, at its size; "Remove rings" takes it away; the rest of its look stays
+    const ringed = () => page.evaluate(() => {
+      const a = window.app, m = a.selection, ring = a.bodies.group.children.find((o) => o.name === `${m.name} rings`);
+      const btn = document.querySelector('#hud .card .made-rings');
+      return {
+        rings: !!m.meta.madeAs.rings, ring: ring?.material.name ?? null, shown: !!ring?.visible, scale: ring ? ring.matrix.getMaxScaleOnAxis() / m.radius : 0,
+        words: btn.hidden ? null : btn.textContent, pressed: btn.getAttribute('aria-pressed'), h: btn.getBoundingClientRect().height, seed: m.meta.madeAs.seed,
+      };
+    });
+    const r0 = await ringed();
+    check(on('while it is put in place the card offers "Add rings", a thumb high, and it has none yet'), !r0.rings && !r0.ring && r0.words === 'Add rings' && r0.pressed === 'false' && r0.h >= 44, JSON.stringify(r0));
+    await press(page, '#hud .card [data-act="rings"]');
+    await frames(page, 6);
+    const r1 = await ringed();
+    check(on('"Add rings" gives it a ring, drawn round it at its size, with the same look, and the button then offers "Remove rings"'),
+      r1.rings && r1.ring === 'generated-ring' && r1.shown && Math.abs(r1.scale - 1) < 1e-6 && r1.words === 'Remove rings' && r1.pressed === 'true' && r1.seed === g1.madeAs.seed, JSON.stringify(r1));
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-made-rings.png`) });
+    await press(page, '#hud .card [data-act="rings"]');
+    await frames(page, 4);
+    const r2 = await ringed();
+    check(on('"Remove rings" takes the ring away'), !r2.rings && !r2.ring && r2.words === 'Add rings', JSON.stringify(r2));
+    await press(page, '#hud .card [data-act="rings"]');
+    await frames(page, 4);
     await press(page, '#hud .card [data-act="place-done"]');
     await frames(page, 3);
     // a save of the scene, opened again: the same world, with the same type and seed, drawn the same way
@@ -1040,6 +1063,8 @@ for (const kind of kinds) {
     check(on('a save of the scene, opened again, brings the world back with the same type and seed, drawn with the same generated look'),
       g2.name === 'New gas giant' && g2.madeAs.kind === 'giant' && g2.madeAs.seed === g1.madeAs.seed && g2.material === 'generated-look' && g2.seed === g1.seed && g2.c1 === g1.c1 && !g2.map,
       `${g2.name}: ${g2.madeAs.kind}, seed ${g2.madeAs.seed} (saved: ${g1.madeAs.seed})`);
+    const r3 = await page.evaluate(() => { const a = window.app, m = a.made[0], ring = a.bodies.group.children.find((o) => o.name === `${m.name} rings`); return { rings: !!m.meta.madeAs.rings, ring: ring?.material.name ?? null, shown: !!ring?.visible }; });
+    check(on('...and with its rings'), r3.rings && r3.ring === 'generated-ring' && r3.shown, JSON.stringify(r3));
     check(on('it is a made world like the others: Mass, Size, Move, Add and Remove'),
       await page.evaluate(() => [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => b.textContent).join()) === 'Mass,Size,Move,Add,Remove');
     await ctx.close();

@@ -690,7 +690,11 @@ export class App {
     const w = this.solar.world();
     if (w) {
       // (what a world of a generated look is drawn from is kept with it: the simulation does not know it)
-      for (const m of w.made) m.seed = (this.system.byId.get(m.id)?.meta.madeAs as BodyJson['madeAs'])?.seed ?? 0;
+      for (const m of w.made) {
+        const as = this.system.byId.get(m.id)?.meta.madeAs as BodyJson['madeAs'];
+        m.seed = as?.seed ?? 0;
+        if (as?.rings) m.rings = true;
+      }
       const bytes = encodeWorld(w);
       this.solar.rebase(decodeWorld(bytes));
       world = toBase64Url(bytes);
@@ -994,6 +998,7 @@ export class App {
       case 'add-giant': this.add('giant'); break;
       case 'add-icegiant': this.add('icegiant'); break;
       case 'new-look': this.newLook(); break;
+      case 'rings': this.toggleRings(); break;
       case 'remove': { const b = this.powerBody(); if (b && this.powersOf(this.selection!).remove.works) this.removeBody(b); break; }
       case 'move': { const b = this.powerBody(); this.mover.toggle(b && this.powersOf(this.selection!).move.works ? b : null); break; }
       case 'move-keep': this.mover.leave('keep'); break;
@@ -1554,6 +1559,16 @@ export class App {
     b.albedo = look.albedo;
     b.color = look.color;
     // (drawn afresh from its new seed)
+    this.bodies.changed(b);
+    this.updateHud();
+  }
+
+  /** Add rings, or Remove rings: the world being put in place, if it has a generated look, gets a ring, or loses it (the rest of its look stays). */
+  toggleRings(): void {
+    const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'];
+    if (!b || !as || as.seed === undefined || !isWorldKind(as.kind)) return;
+    as.rings = !as.rings;
+    // (drawn afresh, with its ring or without)
     this.bodies.changed(b);
     this.updateHud();
   }
@@ -3810,7 +3825,8 @@ export class App {
         const as = pb.meta.madeAs as BodyJson['madeAs'];
         if (as && this.mover.placing && this.mover.body === pb) {
           const kind = as.kind as Kind;
-          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: as.seed !== undefined && isWorldKind(kind) };
+          const looked = as.seed !== undefined && isWorldKind(kind);
+          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null };
         }
       }
     }

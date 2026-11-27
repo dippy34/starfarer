@@ -907,7 +907,17 @@ temperature, and size as well as mass.
   rocky four as the Earth's rule, the icy world a ball of ice and rock (1,500 kg/m³), the gas giant as
   Jupiter's rules, the ice giant as rock below 10 Earths and then the rule between (so a Uranus of
   14.5 Earths comes out 2.8 R⊕; it measures 4.0: a published mass-radius relation would do better,
-  as for #46). Left for later: rings on made worlds; the card's small picture is the generic one.
+  as for #46). The card's small picture is still the generic one.
+  *Rings* (added the same night, by Claude): "Add rings" beside New look gives any of them a ring, and
+  "Remove rings" takes it away. It is the ring of the made-up planets of other stars (its shader,
+  `ringMaterial` and `lightRing`, moved with the look into `PlanetLook.ts`; ExoPlanetLayer draws as
+  before): from 1.15 to 3 radii, its ringlets from the look's own numbers (so the rest of the look is
+  the same with it or without), icy when the kind's temperature is below 150 K, dark and dusty
+  otherwise. `BodiesLayer` keeps it in `lookedRings`, in the world's equator plane (its
+  `orientation`'s XY plane, as Saturn's), lit and shadowed by the planet, and `ringOuter` counts it
+  (the night-side exposure). It is `madeAs.rings`; a link or save keeps it in the byte that says
+  "icy" (2: with rings; a world of a generated look is never an icy moon, so 0 or 2, and anything
+  else is refused).
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun

@@ -1,8 +1,9 @@
-import { Matrix3, Vector3 } from 'three';
+import { DoubleSide, Matrix3, type Mesh, ShaderMaterial, Vector3 } from 'three';
 import { exoCraterSeed, exoQuantile, exoQuantiles, ROCKY_TYPES } from '../universe/ExoTerrain';
 import { hashKey, type PlanetType, rng } from '../universe/Planets';
 import { MATERIALS } from './Materials';
-import { GLOBALS, LITE } from './shaders/xr';
+import { RING_GLSL } from './shaders/planet';
+import { FIX_LOGDEPTH, GLOBALS, LITE, OUTPUT_FRAGMENT, PROJECT_PARS } from './shaders/xr';
 
 /**
  * The generated look of a world: the palette and surface parameters of the made-up planets of other
@@ -147,10 +148,13 @@ function paletteFor(p: LookSpec): Record<string, number | V3> {
  */
 const MADE_TEMPERATURE: Partial<Record<PlanetType, number>> = { terran: 288, ocean: 288, desert: 300, lava: 1500, ice: 80, giant: 120, icegiant: 60 };
 
-/** The generated look of a made world of `kind` with `seed` and mean radius `radius` (m): what it is drawn from (its kind is its type). */
-export function madeLook(kind: PlanetType, seed: number, radius: number): LookSpec {
+/**
+ * The generated look of a made world of `kind` with `seed` and mean radius `radius` (m): what it is drawn from (its kind is its
+ * type), with a ring if `rings` (the ring does not change the rest of the look: its numbers are drawn either way).
+ */
+export function madeLook(kind: PlanetType, seed: number, radius: number, rings = false): LookSpec {
   const key = `made/${kind}/${seed}`;
-  return { key, name: key, type: kind, teqK: MADE_TEMPERATURE[kind] ?? 288, seed, radius, rings: false };
+  return { key, name: key, type: kind, teqK: MADE_TEMPERATURE[kind] ?? 288, seed, radius, rings };
 }
 
 /** The look of the world `spec` describes (its palette, seas and climate, ring); deterministic in the spec. */
@@ -194,4 +198,82 @@ export function lookUniforms(spec: LookSpec, look: Look, exposure: { value: numb
   };
   for (const [k, v] of Object.entries(look.pal)) u[k] = { value: Array.isArray(v) ? new Vector3(...v) : v };
   return u;
+}
+
+// The ring of a generated look (`LookSpec.rings`): a flat ring from 1.15 to 3 radii of its planet
+// (a RingGeometry in its XY plane, the planet's equator), its own ringlets from the look's
+// uRingIn, uRingOut and uRingSeed, lit by the star and shadowed by the planet; drawn by
+// ExoPlanetLayer for the made-up planets of other stars and by BodiesLayer for made worlds.
+const RING_VERT = /* glsl */ `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+${PROJECT_PARS}
+varying vec2 vXY;
+void main() {
+  vXY = position.xy;
+  gl_Position = projectView(modelViewMatrix * vec4(position, 1.0));
+  #include <logdepthbuf_vertex>
+${FIX_LOGDEPTH}
+}`;
+const RING_FRAG = /* glsl */ `
+#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform vec3 uColor;
+uniform float uSeed;
+uniform float uIn;
+uniform float uOut;
+uniform float uLight;   // reflected radiance x exposure for a white ring particle
+uniform vec3 uSunL;     // star direction in the ring frame
+uniform vec3 uCamL;     // camera position in the ring frame (planet radii)
+varying vec2 vXY;
+${RING_GLSL}
+void main() {
+  float r = length(vXY);
+  float fw = fwidth(r) / (uOut - uIn);
+  float dens = ringDensity(r, uSeed, uIn, uOut, fw);
+  if (dens <= 0.0) discard;
+  float t = (r - uIn) / (uOut - uIn);
+  // colour: a little redder and darker inwards, ringlets of slightly different tint
+  vec3 col = uColor * mix(vec3(0.82, 0.76, 0.7), vec3(1.0), smoothstep(0.0, 0.6, t)) * (0.85 + 0.3 * ringNoise(t * 57.0, uSeed + 21.0));
+  // the planet's shadow (sphere of radius 1 between this point and the star)
+  vec3 P = vec3(vXY, 0.0);
+  float b = dot(P, uSunL);
+  float sh = b < 0.0 ? smoothstep(0.97, 1.03, sqrt(max(dot(P, P) - b * b, 0.0))) : 1.0;
+  // lit face, or light diffusing through to the unlit face
+  float lit = sign(uSunL.z) == sign(uCamL.z) ? 1.0 : 0.25 * (1.0 - dens);
+  float mu0 = abs(uSunL.z);
+  float tau = dens * 1.8;
+  float refl = (1.0 - exp(-tau / max(mu0, 0.05))) * lit;
+  gl_FragColor = vec4(col * uLight * refl * sh, dens * 0.92);
+${OUTPUT_FRAGMENT}
+  #include <logdepthbuf_fragment>
+}`;
+
+/** A ring's inner and outer radius (in its planet's radii) as drawn: the look's ringlets lie within. */
+export const RING_SPAN = [1.15, 3.0] as const;
+
+/** The material of the ring of the look `look` of `spec`: icy when cold, dark and dusty otherwise. */
+export function ringMaterial(spec: LookSpec, look: Look, name: string): ShaderMaterial {
+  const pal = look.pal, icy = spec.teqK < 150;
+  const c3 = pal.uC3 as V3;
+  const c: V3 = icy ? [0.62 + 0.15 * c3[0], 0.57 + 0.15 * c3[1], 0.5 + 0.15 * c3[2]] : [0.22, 0.2, 0.19];
+  return new ShaderMaterial({
+    name, vertexShader: RING_VERT, fragmentShader: RING_FRAG,
+    uniforms: { uColor: { value: new Vector3(...c) }, uSeed: { value: pal.uRingSeed }, uIn: { value: pal.uRingIn }, uOut: { value: pal.uRingOut },
+      uLight: { value: 1 }, uSunL: { value: new Vector3(0, 0, 1) }, uCamL: { value: new Vector3(0, 0, 1) },
+      uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK },
+    transparent: true, depthWrite: false, side: DoubleSide,
+  });
+}
+
+/**
+ * Light a ring for this frame: `light` is the reflected radiance of a white particle times the
+ * exposure; `sun` the direction to its star and `cam` where the eye is (in its planet's radii), both
+ * in the ring's own frame (its plane the XY plane).
+ */
+export function lightRing(ring: Mesh, light: number, sun: Vector3, cam: Vector3): void {
+  const u = (ring.material as ShaderMaterial).uniforms;
+  u.uLight.value = light;
+  (u.uSunL.value as Vector3).copy(sun);
+  (u.uCamL.value as Vector3).copy(cam);
 }
