@@ -154,7 +154,9 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/watch-button`: after a change, no surprise fast-forward; a "Watch" button that plays until stopped
 
-- **Status:** open. Medium.
+- **Status:** done 27 Nov 2026 (1155e9b): run 45954923204 on Claude Sonnet 5.5 ($1.28), reviewed by Claude
+  (HANDOFF.md brought up to date); full set 45962237797 passed but for a flake. On the developers'
+  site; on the play testers' site at the next release. Medium.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the owner, 27 Nov 2026, testing God mode on a phone: "when you edit something, it
   creates live physics, which speeds everything up, and then ends after a random amount of time. Last
