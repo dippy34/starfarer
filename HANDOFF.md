@@ -717,16 +717,20 @@ temperature, and size as well as mass.
 
 - *Watch it happen* (`src/app/Watch.ts`, the arithmetic in `src/app/Powers.ts`). When a change
   ends (the finger lifts off the mass slider or off a dragged world, Add or Remove is tapped, Keeps
-  its speed / Goes in a circle is chosen), time runs for 15 seconds at a pace at which what follows
-  can be seen, and the camera eases to a frame that holds the worlds the change matters to. A chip
-  where the flight's chip goes says "Watching: 26.3 minutes a second" with Stop; then "Watched: 6.4
-  hours" with Replay (offered for 30 s). Stop, and the end of the watch, put the explorer's rate of
-  time back as it was (stopped, if it was); a finger on the view (or the wheel) takes the camera
-  back at once and time keeps the watch's pace; any of Faster, Slower, Pause, Reverse, Now during a
-  watch makes the watch's pace the explorer's (its step the one at or below it) and goes on from
-  there. A switch in More ("Show me what happens") turns it off, remembered on the device through
+  its speed / Goes in a circle is chosen), time stays as the explorer had it, and the chip where the
+  flight's chip goes offers the watch: "See what it does" with Watch (the owner, 27 Nov 2026: a
+  change "speeds everything up, and then ends after a random amount of time"; task/watch-button).
+  Watch goes back to the moment just after the change and runs time at a pace at which what follows
+  can be seen, the camera easing to a frame that holds the worlds the change matters to; the chip
+  says "Watching: 26.3 minutes a second" with Stop. It has no end of its own: Stop, Escape, another
+  change or the rate of time taken in hand end it; then "Watched: 6.4 hours" with Replay (offered
+  for 30 s). Stop puts the explorer's rate of time back as it was (stopped, if it was); a finger on
+  the view (or the wheel) takes the camera back at once and time keeps the watch's pace; any of
+  Faster, Slower, Pause, Reverse, Now during a watch makes the watch's pace the explorer's (its step
+  the one at or below it) and goes on from there. A switch in More ("Show me what happens", off to
+  begin with) starts the watch by itself after each change, remembered on the device through
   `src/platform/storage.ts` (the first module of `src/platform`: the browser's storage is reached
-  from there in new code).
+  from there in new code). Time slows near a hit only while a watch runs or that switch is on.
   - *Which worlds a change matters to* (`Powers.affected`): those whose acceleration it changes by a
     hundredth or more, weighed at one moment (a mass changed by Δm pulls GΔm/r² harder; a world taken
     away no longer pulls; one made pulls; one moved pulls from its new place, it and what goes round it

@@ -18,10 +18,11 @@
 //     body like any other (found by name, listed, with a mass to change), and a quarter of its
 //     year later a quarter of the way round; a second sun, which shines and lights what is nearer
 //     it; taken away again, and nothing of either left after "Back to reality"
-//   - a change watched (the first block; the others switch watching off in More, as they time the physics by the
-//     clock): let go of the mass slider, time runs at the pace of what follows for fifteen seconds and the camera
-//     eases out until the worlds it matters to fit in what the interface leaves clear, upright and sideways; Stop,
-//     and the end of the watch, put the rate of time back; Replay; a finger on the view takes the camera back
+//   - a change watched (the first block; the others leave "Show me what happens" off in More, its default, as they
+//     time the physics by the clock): let go of the mass slider, time is as it was and the chip offers Watch; Watch
+//     runs time at the pace of what follows, until Stop (thirty seconds on it is still on), and the camera
+//     eases out until the worlds it matters to fit in what the interface leaves clear, upright and sideways; Stop
+//     puts the rate of time back; with the switch on, a change starts its watch by itself; Replay; a finger on the view takes the camera back
 //     - Undo, a change at a time, the date with it; "Back to reality" returns to the moment the first change was made
 //     and is itself undone by Undo for a moment; the Time sheet's buttons do not move when live physics comes on
 //   - the Moon thrown: the slingshot's marks, the orbit line at the speed of escape a parabola drawn from it, the path the
@@ -229,9 +230,15 @@ const watching = (page) => page.evaluate(() => {
   const a = window.app, chip = document.querySelector('#hud .hud-watch'), seen = (el) => !!el && !el.hidden && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().height > 0;
   return {
     state: a.watch?.state ?? 'none', rate: a.watch?.rate ?? 0, clock: a.clock.rate, paused: a.clock.paused, jd: a.clock.jdTdb, on: a.physics.on,
-    chip: seen(chip), text: chip?.querySelector('.watch-text').textContent ?? '', stop: seen(chip?.querySelector('.watch-stop')), replay: seen(chip?.querySelector('.watch-replay')),
+    chip: seen(chip), text: chip?.querySelector('.watch-text').textContent ?? '', start: seen(chip?.querySelector('.watch-start')), stop: seen(chip?.querySelector('.watch-stop')), glide: !!a.glide, replay: seen(chip?.querySelector('.watch-replay')),
   };
 });
+
+/** The change's watch is asked for: Watch is tapped on the chip that offers it, and the watch is waited for. */
+async function watchIt(page) {
+  await press(page, '#hud .hud-watch .watch-start');
+  await until(page, () => window.app.watch.watching, null, 60);
+}
 
 /** Where a body is from the camera (m), where it is on the screen, and the part of the view the interface leaves clear. */
 const framing = (page, name, centre) => page.evaluate(([name, centre]) => {
@@ -317,8 +324,8 @@ async function handOf(page, touch) {
 }
 
 /**
- * Changes not watched (More: "Show me what happens", off): for the blocks that time the physics of a power by
- * the clock, where fifteen seconds at a watch's pace would run past what they measure.
+ * Changes not watched by themselves (More: "Show me what happens", off, as it is to begin with): for the blocks that
+ * time the physics of a power by the clock, where a watch's pace would run past what they measure.
  */
 async function quiet(page) {
   await press(page, '#hud .hud-tabs [data-tab="more"]');
@@ -349,11 +356,19 @@ for (const kind of kinds) {
     await press(page, '#hud .sheet.time [data-close]');
     const before = await framing(page, 'Callisto', 'Jupiter');
 
-    // Jupiter made twenty times heavier, and let go
+    // Jupiter made twenty times heavier, and let go: time is as it was (stopped), and the chip offers the watch
     await slideMass(page, touch, Math.log10(20));
+    await frames(page, 3);
+    const offer = await watching(page);
+    check(on('after a change time is as it was before (paused stays paused, the rate is kept), nothing is watched by itself, and the chip offers Watch beside Close'),
+      offer.on && offer.state === 'offered' && offer.paused === real.paused && offer.clock === real.rate && !offer.glide && offer.chip && offer.start && !offer.stop && offer.text === 'See what it does',
+      `${offer.state}, "${offer.text}", paused ${offer.paused} (before: ${real.paused}), rate ${offer.clock} (before: ${real.rate}), Watch ${offer.start}`);
+    if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-watch-offered.png`) });
+    // Watch: time at the pace of what follows, and a chip says so, with Stop
+    await watchIt(page);
     const w0 = await watching(page);
     const factor = await page.evaluate(() => window.app.findByName('Jupiter').gm / window.app.physics.realGm(window.app.findByName('Jupiter')));
-    check(on('let go of the mass slider, time runs at the pace of what follows, and a chip says so, with Stop'),
+    check(on('tap Watch, time runs at the pace of what follows, and a chip says so, with Stop'),
       factor > 15 && factor < 27 && w0.state === 'watching' && w0.chip && w0.stop && !w0.paused && w0.clock === w0.rate && /^Watching: [\d.]+ (minutes|hours) a second$/.test(w0.text) && w0.rate > 60 && w0.rate < 3600 * 3,
       `${factor.toFixed(1)} times; "${w0.text}", the clock at ${(w0.clock / 60).toFixed(1)} min/s, paused before: ${real.paused}`);
     // (the pace is the chip's to tell: the mark at the top says since when, short enough for a phone, whether or not the
@@ -370,30 +385,21 @@ for (const kind of kinds) {
     check(on('the camera eases out to frame the moons the change matters to, Jupiter in the middle of the part of the view the interface leaves clear'),
       fit.d > 1.5 * before.d && moons.every((m) => inside(m.at, fit.free)) && Math.hypot(fit.centreAt.x - mid.x, fit.centreAt.y - mid.y) < 8 && inside(fit.centreAt, fit.free),
       `from ${(before.d / 1e9).toFixed(2)} to ${(fit.d / 1e9).toFixed(2)} million km; Jupiter ${Math.hypot(fit.centreAt.x - mid.x, fit.centreAt.y - mid.y).toFixed(1)} px from the middle of the clear part (${fit.free.left.toFixed(0)}-${fit.free.right.toFixed(0)} x ${fit.free.top.toFixed(0)}-${fit.free.bottom.toFixed(0)}); the moons ${moons.map((m) => `(${m.at?.x.toFixed(0)}, ${m.at?.y.toFixed(0)})`).join(' ')}`);
-    // (at a desk Stop is pressed first: on a loaded machine a picture of 1280 x 800 can take longer than the watch)
-    if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-watch.png`) });
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-watch.png`) });
 
-    // the watch ends by itself (phone), or is stopped (desk): the rate of time comes back as it was, and Replay is offered
-    let end;
-    if (kind === 'phone') {
-      await until(page, () => window.app.watch.state !== 'watching', null, 240);
-      end = await watching(page);
-    } else {
-      // (Stop is pressed on a watch that is on, and the watch is held on until it is: it counts its fifteen seconds in
-      // frames of a second at most and the camera eases in steps of a tenth, so at a frame a second the watch is over
-      // after fifteen frames, before the camera has finished easing out, and a Stop pressed through the interface's
-      // own checks of the button ("element is not visible") is no longer there: the suite ended there at
-      // SLOW_FRAME_MS=1000, as it did on a loaded machine. The watch's own end is what the phone's run checks. If it
-      // is over already, Replay, which is checked next, starts it again.)
-      const hold = () => page.evaluate(() => { const w = window.app.watch; if (w.state !== 'watching') return false; w.left = 1e6; return true; });
-      let held = await hold();
-      for (let k = 0; !held && k < 5; k++) { await press(page, '#hud .hud-watch .watch-replay'); held = await hold(); }
-      await press(page, '#hud .hud-watch .watch-stop');
-      await frames(page, 2);
-      end = await watching(page);
-      await page.screenshot({ path: path.join(outDir, `live-${kind}-watch.png`) });
-    }
-    check(on(`${kind === 'phone' ? 'after fifteen seconds the watch ends' : 'Stop ends the watch'}: time is as it was before (stopped), and the chip offers Replay`),
+    // it has no end of its own: thirty seconds later it is still watching, at its pace, until Stop
+    const t0 = await watching(page);
+    await page.waitForTimeout(30000);
+    const t1 = await watching(page);
+    check(on('thirty seconds later the watch is still on, time still at its pace and the chip still saying "Watching"'),
+      t1.state === 'watching' && t1.stop && !t1.replay && /^(Watching|Slowed): /.test(t1.text) && t1.jd > t0.jd && !t1.paused && (t1.clock === t1.rate || /^Slowed/.test(t1.text)),
+      `${t1.state}, "${t1.text}", ${((t1.jd - t0.jd) * 24).toFixed(1)} h on in thirty seconds`);
+
+    // Stop: the rate of time comes back as it was, and Replay is offered
+    await press(page, '#hud .hud-watch .watch-stop');
+    await frames(page, 2);
+    const end = await watching(page);
+    check(on('Stop ends the watch: time is as it was before (stopped), and the chip offers Replay'),
       end.state === 'ended' && end.paused === real.paused && end.clock === real.rate && end.chip && end.replay && !end.stop && /^Watched: [\d.]+ (hours|days|minutes)$/.test(end.text),
       `"${end.text}", paused ${end.paused}, rate ${end.clock}`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-watched.png`) });
@@ -429,7 +435,6 @@ for (const kind of kinds) {
 
     // several steps: twenty times, then Callisto taken away; Undo brings Callisto back with Jupiter still heavy, Undo again the real one
     await slideMass(page, touch, Math.log10(20));
-    await press(page, '#hud .hud-watch .watch-stop');
     await find(page, 'Callisto');
     await press(page, '#hud .hud-flight [data-act="stop"]').catch(() => undefined);
     await press(page, '#hud .card [data-act="remove"]');
@@ -448,6 +453,7 @@ for (const kind of kinds) {
     await find(page, 'Jupiter');
     await press(page, '#hud .hud-flight [data-act="stop"]').catch(() => undefined);
     await slideMass(page, touch, Math.log10(20));
+    await watchIt(page);
     await until(page, () => window.app.clock.jdTdb > window.app.physics.live.jd0 + 0.05, null, 60);
     await press(page, '#hud .hud-watch .watch-stop');
     const changed = await page.evaluate(() => ({ jd: window.app.clock.jdTdb, jd0: window.app.physics.live.jd0 }));
@@ -486,6 +492,7 @@ for (const kind of kinds) {
       await find(page, 'Jupiter');
       await press(page, '#hud .hud-flight [data-act="stop"]').catch(() => undefined);
       await slideMass(page, touch, Math.log10(10));
+      await watchIt(page);
       await until(page, () => window.app.watch.watching && !window.app.glide, null, 60);
       const side = await Promise.all(['Io', 'Europa', 'Ganymede', 'Callisto'].map((n) => framing(page, n, 'Jupiter')));
       const f = side[0].free, centre = { x: (f.left + f.right) / 2, y: (f.top + f.bottom) / 2 };
@@ -503,22 +510,29 @@ for (const kind of kinds) {
       await frames(page, 6);
     }
 
-    // at a desk, Ctrl+Z undoes; and with "Show me what happens" off, a change is not watched
+    // at a desk, Ctrl+Z undoes; and with "Show me what happens" on (it is off to begin with), a change starts its watch by itself
     if (!touch) {
       await page.keyboard.press('Control+z');
       await frames(page, 2);
       check(on('Ctrl+Z undoes the last change'), await page.evaluate(() => !window.app.physics.on && /^Undone: changing Jupiter's mass/.test(document.querySelector('#hud .hud-toast').textContent)));
     }
     await press(page, '#hud .hud-tabs [data-tab="more"]');
+    const switchBefore = await page.locator('#hud .switch[data-act="show-me"]').getAttribute('aria-checked');
     await press(page, '#hud .switch[data-act="show-me"]');
+    await frames(page, 2);
+    const switchAfter = await page.locator('#hud .switch[data-act="show-me"]').getAttribute('aria-checked');
+    const toldIt = await toast(page);
     await press(page, '#hud .sheet.more [data-close]');
     await find(page, 'Jupiter');
     await press(page, '#hud .hud-flight [data-act="stop"]').catch(() => undefined);
     await massPanel(page);
-    const quiet0 = await page.evaluate(() => ({ jd: window.app.clock.jdTdb, rate: window.app.clock.rate, paused: window.app.clock.paused }));
     await slideMass(page, touch, Math.log10(5));
-    const quiet = await watching(page);
-    check(on('with "Show me what happens" off in More, a change is made and nothing is watched'), quiet.on && quiet.state === 'idle' && !quiet.chip && quiet.paused === quiet0.paused && quiet.clock === quiet0.rate, `${quiet.state}, chip ${quiet.chip}`);
+    await until(page, () => window.app.watch.watching, null, 60);
+    const byItself = await watching(page);
+    check(on('"Show me what happens" is off to begin with; with it on in More, a change starts its watch by itself (and the toast says so)'),
+      switchBefore === 'false' && switchAfter === 'true' && /watch starts by itself/.test(toldIt) && byItself.on && byItself.state === 'watching' && byItself.chip && byItself.stop && !byItself.paused && byItself.clock === byItself.rate && /^(Watching|Slowed): /.test(byItself.text),
+      `switch ${switchBefore} then ${switchAfter}, "${toldIt}"; ${byItself.state}, "${byItself.text}"`);
+    await press(page, '#hud .hud-watch .watch-stop');
     await ctx.close();
   }
 
@@ -1024,6 +1038,7 @@ for (const kind of kinds) {
     });
 
     // the slingshot: a finger on the Moon pulled back, a little short of the mark of a circle
+    const clock0 = await page.evaluate(() => ({ paused: window.app.clock.paused, rate: window.app.clock.rate }));
     await hand.press(view.dot);
     for (let i = 1; i <= 8; i++) await hand.slide(along((107 * i) / 8));
     await frames(page, 2);
@@ -1121,11 +1136,15 @@ for (const kind of kinds) {
     await frames(page, 2);
     const thrown = await page.evaluate(() => {
       const a = window.app;
-      return { ...window.atThrow, watch: a.watch.state, chip: document.querySelector('#hud .watch-text').textContent, paused: a.clock.paused, arrow: !document.querySelector('#hud .aim').hasAttribute('hidden') };
+      return { ...window.atThrow, watch: a.watch.state, chip: document.querySelector('#hud .watch-text').textContent, paused: a.clock.paused, rate: a.clock.rate, arrow: !document.querySelector('#hud .aim').hasAttribute('hidden') };
     });
-    check(on('let go, the Moon goes round the Earth in a circle from where it was, and the throw is watched'),
-      thrown.e < 1e-6 && thrown.parent === 'Earth' && Math.abs(thrown.r - 1) < 1e-6 && thrown.watch === 'watching' && /^Watching: [\d.]+ days a second$/.test(thrown.chip) && !thrown.paused && !thrown.arrow,
-      `e ${thrown.e?.toExponential(1)} round ${thrown.parent}, ${thrown.r?.toFixed(7)} of its distance; "${thrown.chip}", ${thrown.watch}, paused ${thrown.paused}, the arrow ${thrown.arrow ? "still drawn" : "gone"}`);
+    check(on('let go, the Moon goes round the Earth in a circle from where it was, time is as it was and the throw is offered to watch'),
+      thrown.e < 1e-6 && thrown.parent === 'Earth' && Math.abs(thrown.r - 1) < 1e-6 && thrown.watch === 'offered' && thrown.chip === 'See what it does' && thrown.paused === clock0.paused && thrown.rate === clock0.rate && !thrown.arrow,
+      `e ${thrown.e?.toExponential(1)} round ${thrown.parent}, ${thrown.r?.toFixed(7)} of its distance; "${thrown.chip}", ${thrown.watch}, paused ${thrown.paused} (before: ${clock0.paused}), the arrow ${thrown.arrow ? "still drawn" : "gone"}`);
+    await watchIt(page);
+    const thrownWatched = await watching(page);
+    check(on('tap Watch, and the throw is watched: time runs at the pace of what follows'),
+      thrownWatched.state === 'watching' && /^Watching: [\d.]+ days a second$/.test(thrownWatched.text) && !thrownWatched.paused && thrownWatched.clock === thrownWatched.rate, `"${thrownWatched.text}", paused ${thrownWatched.paused}`);
     // days on, the frame still holds the Earth and the Moon: the camera rides with the Earth, which it frames from beyond
     // the Earth's reach (riding with the Sun there, it would see the Earth leave the frame at days a second)
     await until(page, () => !window.app.glide, null, 60);
@@ -1140,7 +1159,7 @@ for (const kind of kinds) {
       `${kept.days.toFixed(1)} days on; the Earth at ${kept.earth ? `(${kept.earth.x.toFixed(0)}, ${kept.earth.y.toFixed(0)})` : 'nowhere'}, the Moon at ${kept.moon ? `(${kept.moon.x.toFixed(0)}, ${kept.moon.y.toFixed(0)})` : 'nowhere'} in ${kept.free.left.toFixed(0)}-${kept.free.right.toFixed(0)} x ${kept.free.top.toFixed(0)}-${kept.free.bottom.toFixed(0)}; riding with ${kept.anchor}${kept.anchor === 'Earth' ? '' : `; the log: ${kept.log.join(' / ')}`}`);
     const words = await markWords(page);
     check(on('while the throw is watched the mark at the top says since when, its words whole'), words.small === 'since 1 Oct 2026' && words.whole, `"${words.small}", whole: ${words.whole}`);
-    // (Undo ends the watch, whether or not its fifteen seconds are over)
+    // (Undo ends the watch)
     await listen(page);
     await press(page, '#hud .live-mark .live-undo');
     await frames(page, 2);
@@ -1447,9 +1466,11 @@ for (const kind of kinds) {
     const aim = await page.evaluate(() => ({ now: document.querySelector('#hud .power-now').textContent, ahead: document.querySelector('#hud .card .power-ahead')?.textContent ?? '' }));
     check(on('Mars aimed at the Earth: the card says its path goes into the Earth, and, run ahead with every pull counted, that it hits it, and when'),
       !!view && aim.now === 'Now on a path into Earth: it hits it.' && /^With every pull counted, it hits Earth in [\d.]+ (hours|days)\.$/.test(aim.ahead), `"${aim.now}" "${aim.ahead}"`);
-    // let go: watched, it falls at the Earth
+    // let go, and Watch tapped: watched, it falls at the Earth
     await listen(page);
     await hand.lift();
+    await frames(page, 2);
+    await watchIt(page);
     await until(page, () => window.app.slow?.phase === 'coming', null, 120);
     const slowed = await page.evaluate(() => {
       const a = window.app, V = a.findByName('Earth').pos.constructor, at = (n) => a.project(a.findByName(n).upos.sub(a.rig.upos, new V()));
@@ -1462,7 +1483,7 @@ for (const kind of kinds) {
       const a = window.app, box = document.querySelector('#hud .hud-impact');
       return { t: performance.now(), mars: a.findByName('Mars').valid, free: a.hud.freeArea(), card: !box || box.hidden ? null : { head: box.querySelector('b').textContent, body: box.querySelector('span').textContent, small: box.querySelector('small').textContent, close: box.querySelector('[data-impact-close]').getBoundingClientRect().height, whole: getComputedStyle(box.querySelector('span')).display !== 'none' && getComputedStyle(box.querySelector('small')).display !== 'none' } };
     });
-    check(on('let go, Mars falls at the Earth, watched; as the two come near, time slows, and the chip says how slow, so that the last of the fall takes about three seconds'),
+    check(on('let go and Watch tapped, Mars falls at the Earth, watched; as the two come near, time slows, and the chip says how slow, so that the last of the fall takes about three seconds'),
       slowed.phase === 'coming' && slowed.watch === 'watching' && slowed.cap < slowed.rate && /^Slowed: [\d.]+ (minutes|hours) a second$/.test(slowed.chip) && hit.t - slowed.t > 2500 && !hit.mars,
       `"${slowed.chip}" (the watch at ${(slowed.rate / 3600).toFixed(1)} h/s); the hit ${((hit.t - slowed.t) / 1000).toFixed(1)} s later`);
     check(on('the camera frames the two, round the Earth, in the part of the view the interface leaves clear'),
@@ -1560,6 +1581,7 @@ for (const kind of kinds) {
   if (want('place')) {
     const { ctx, page, touch } = await open(kind, 'target=Sun&dist=473&el=40');
     const hand = await handOf(page, touch);
+    const clock0 = await page.evaluate(() => ({ paused: window.app.clock.paused, rate: window.app.clock.rate }));
     await press(page, '#hud .card [data-power="add"]');
     await press(page, '#hud .card [data-act="add-earth"]');
     await until(page, () => !window.app.glide, null, 60);
@@ -1609,8 +1631,11 @@ for (const kind of kinds) {
       const a = window.app, pair = a.slow?.pair;
       return { placing: a.mover.placing, panel: !document.querySelector('#hud .card [data-panel="move"]').hidden, slowed: pair && `${a.slow.phase} for ${pair.map((b) => b.name).join(' and ')}, ${(pair[0].pos.distanceTo(pair[1].pos) / 1e3).toFixed(0)} km apart` };
     });
-    check(on('Done: time runs, and what follows is watched'), p3.state === 'watching' && !p3.paused && /^Watching: [\d.]+ (days|hours) a second$/.test(p3.text) && !left.placing && !left.panel, `"${p3.text}"${left.slowed ? `; slowed ${left.slowed}` : ''}`);
-    // (Undo ends the watch, whether or not its fifteen seconds are over)
+    check(on('Done: time is as it was before the world was made, and the chip offers to watch what follows'), p3.state === 'offered' && p3.paused === clock0.paused && p3.clock === clock0.rate && p3.chip && p3.start && p3.text === 'See what it does' && !left.placing && !left.panel, `"${p3.text}", ${p3.state}, paused ${p3.paused} (before: ${clock0.paused})${left.slowed ? `; slowed ${left.slowed}` : ''}`);
+    await watchIt(page);
+    const p3w = await watching(page);
+    check(on('tap Watch: time runs, and what follows is watched'), p3w.state === 'watching' && !p3w.paused && p3w.clock === p3w.rate && /^Watching: [\d.]+ (days|hours) a second$/.test(p3w.text), `"${p3w.text}"`);
+    // (Undo ends the watch)
     await listen(page);
     await press(page, '#hud .live-mark .live-undo');
     await frames(page, 2);
