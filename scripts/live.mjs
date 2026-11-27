@@ -334,7 +334,7 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo); the rest are left out */
+/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo, comet); the rest are left out */
 const only = process.env.LIVE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 /** on a phone and at a desk, or one of them (LIVE_KINDS=desk) */
@@ -1998,6 +1998,84 @@ for (const kind of kinds) {
       check(on('Back to reality: TRAPPIST-1 e on its rail again, at the moment the first change was made; live physics off'),
         ran && later.off > 0.1 * s0.r && !s.on && !s.live && s.off === 0 && s.jd === s0.jd && s.radius && s.star === 0 && said.some((t) => t.startsWith('Back to reality')),
         `ran on ${(later.jd - moved.jd).toFixed(2)} days, then ${(later.off / s0.r).toFixed(3)} of its orbit off its rail; back: ${s.off} m off, ${((s.jd - s0.jd) * 86400).toFixed(3)} s from the first change; "${said.join('" then "')}"`);
+    });
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ comets: God mode on a comet (src/render/SmallBodies.ts, src/app/powersFor.ts)
+  if (want('comet')) {
+    const { ctx, page } = await open(kind, 'target=Earth&dist=6');
+    const step = async (name, fn) => { try { await fn(); } catch (e) { check(on(name), false, String(e).split('\n')[0]); } };
+    await quiet(page);
+    // the brightest comet now, as the tour picks it (Halley is far out in 2026); another comet to see that the rest are left alone
+    const names = await page.evaluate(() => {
+      const a = window.app, best = a.prepareTour('comet');
+      const other = a.small.cometObjects.find((c) => c !== best && c.apparentMag < 90 && c.name !== best.name);
+      return { name: best.name, key: best.key, other: other.key };
+    });
+    const state = () => page.evaluate(([key, other]) => {
+      const a = window.app, c = a.small.cometObjects.find((x) => x.key === key), o = a.small.cometObjects.find((x) => x.key === other), i = a.small.cometObjects.indexOf(c);
+      return {
+        on: a.physics.on, away: a.physics.away?.size ?? 0, gone: a.physics.away?.has(c) ?? false, mag: c.apparentMag, drawn: a.small.comets.geometry.attributes.aMag.array[i], other: o.apparentMag,
+        selected: a.selection?.key ?? null, found: a.findByName(c.name) === c, toast: document.querySelector('#hud .hud-toast').textContent, mark: !document.querySelector('#hud .live-mark').hidden,
+        tail: a.cometTails.drawn.some((x) => x.key === key),
+      };
+    }, [names.key, names.other]);
+    const powers = () => page.evaluate(() => Object.fromEntries(['mass', 'size', 'move', 'add', 'remove'].map((n) => {
+      const el = document.querySelector(`#hud .card [data-power="${n}"], #hud .card [data-act="${n}"]`);
+      return [n, el.getAttribute('aria-disabled') !== 'true'];
+    })));
+    await page.evaluate((key) => { const a = window.app, c = a.small.cometObjects.find((x) => x.key === key); a.select(c); a.goTo(c); }, names.key);
+    await page.waitForFunction((n) => window.app.selection?.name === n && document.querySelector('#hud').dataset.sheet === 'card' && document.querySelector('#hud .card h2').textContent === n, names.name, { timeout: 20000 });
+    await frames(page, 3);
+    await openCard(page);
+    const s0 = await state(), p0 = await powers();
+    if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-comet-card.png`) });
+
+    await step(`a comet's card offers Remove; Mass, Size and Add are off, each with its reason (${names.name})`, async () => {
+      const reasons = {};
+      for (const n of ['mass', 'size', 'add']) {
+        await press(page, `#hud .card [data-power="${n}"]`);
+        await frames(page, 2);
+        reasons[n] = await text(page, '#hud .card .power-reason');
+      }
+      check(on(`a comet's card offers Remove; Mass, Size and Add are off, each with its reason (${names.name})`),
+        p0.remove && !p0.mass && !p0.size && !p0.add && !s0.on && s0.mag < 90 && s0.tail && /measured mass/.test(reasons.mass) && reasons.size.length > 8 && reasons.add.length > 8,
+        JSON.stringify({ ...p0, reasons }));
+    });
+
+    await step('Remove: live physics starts, the comet is gone from the sky and from search, and nothing else is changed', async () => {
+      await press(page, '#hud .card [data-act="remove"]');
+      await frames(page, 3);
+      const s = await state();
+      check(on('Remove: live physics starts, the comet is gone from the sky and from search, and nothing else is changed'),
+        s.on && s.gone && s.away === 1 && s.mag > 90 && s.drawn > 90 && !s.tail && s.selected === null && !s.found && s.mark && s.other < 90 && /is gone/.test(s.toast),
+        JSON.stringify(s));
+    });
+
+    await step('Undo brings the comet back: its point and its tail, and the real Solar System again', async () => {
+      await press(page, '#hud .live-mark .live-undo');
+      await frames(page, 3);
+      const s = await state();
+      check(on('Undo brings the comet back: its point and its tail, and the real Solar System again'),
+        !s.on && !s.gone && s.away === 0 && s.mag < 90 && s.drawn === s.mag && s.tail && s.found && /^Undone: taking away /.test(s.toast), JSON.stringify(s));
+    });
+
+    await step('Back to reality brings a comet taken away back, and Undo takes it away again', async () => {
+      await page.evaluate((key) => { const a = window.app; const c = a.small.cometObjects.find((x) => x.key === key); a.select(c); a.goTo(c); }, names.key);
+      await page.waitForFunction((n) => window.app.selection?.name === n && document.querySelector('#hud').dataset.sheet === 'card' && document.querySelector('#hud .card h2').textContent === n, names.name, { timeout: 20000 });
+      await frames(page, 3);
+      await press(page, '#hud .card [data-act="remove"]');
+      await frames(page, 3);
+      const gone = await state();
+      await press(page, '#hud .live-mark .live-back');
+      await frames(page, 3);
+      const back = await state();
+      await press(page, '#hud .live-mark .live-undo');
+      await frames(page, 3);
+      const again = await state();
+      check(on('Back to reality brings a comet taken away back, and Undo takes it away again'),
+        gone.gone && !back.on && !back.gone && back.mag < 90 && back.drawn === back.mag && again.on && again.gone && again.mag > 90, JSON.stringify({ gone: gone.gone, back, again: again.gone }));
     });
     await ctx.close();
   }

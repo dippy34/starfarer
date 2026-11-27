@@ -465,6 +465,40 @@ describe('undo and replay', () => {
     expect(sys.sun.valid).toBe(true);
   }, 60_000);
 
+  it('...after a comet was taken away: it comes back with Undo and with the return to reality, and nothing else moves', async () => {
+    const { sys, physics, clock, named, run } = await setup();
+    const comet = { key: 'comet:test', name: 'Halley', kind: 'comet', radius: 0, parentObject: null, upos: sys.sun.upos, info: () => [] as [string, string][] };
+    // the real Solar System: nothing is away, and a checkpoint of it has nothing away
+    expect(physics.away.size).toBe(0);
+    const real = physics.checkpoint(clock.jdTdb);
+    expect(real.away).toEqual([]);
+    const earth = state(named('Earth'));
+    physics.removeSmall(comet, clock.jdTdb);
+    expect(physics.on).toBe(true);
+    expect(physics.changes).toBe(1);
+    expect(physics.away.has(comet)).toBe(true);
+    expect(physics.takeNews()).toEqual(['Halley is gone.']);
+    // (it has no mass: the planets are where they were)
+    state(named('Earth')).forEach((x, k) => expect(Math.abs(x - earth[k])).toBeLessThan(1e-2));
+    run(clock.jdTdb + 1);
+    expect(physics.away.has(comet)).toBe(true);
+    // Undo: back to the real Solar System, the comet there again
+    physics.restore(real);
+    expect(physics.on).toBe(false);
+    expect(physics.away.size).toBe(0);
+    // taken away once more and a checkpoint of that kept (Replay): restoring it has it away again
+    physics.removeSmall(comet, clock.jdTdb);
+    const kept = physics.checkpoint(clock.jdTdb);
+    expect(kept.away).toEqual([comet]);
+    physics.restore(real);
+    physics.restore(kept);
+    expect(physics.away.has(comet)).toBe(true);
+    // and Back to reality brings it back
+    physics.backToReality(clock);
+    expect(physics.away.size).toBe(0);
+    expect(physics.on).toBe(false);
+  }, 60_000);
+
   it('...after a collision: both come back, with the small moons that rode on the one absorbed', async () => {
     const { named, left } = await undone(({ physics, sys, named }) => {
       // Mars sent at the Sun from 0.02 AU at 200 km/s: Phobos and Deimos, which ride on it, go with it

@@ -201,9 +201,6 @@ export class SmallBodiesLayer {
       this.cometMag = ev.data.mag;
       const g = this.comets!.geometry;
       (g.attributes.position as BufferAttribute).copyArray(this.cometPos!);
-      (g.attributes.aMag as BufferAttribute).copyArray(this.cometMag!);
-      g.attributes.position.needsUpdate = true;
-      g.attributes.aMag.needsUpdate = true;
       this.syncCometObjects();
     };
   }
@@ -214,9 +211,23 @@ export class SmallBodiesLayer {
     for (let i = 0; i < this.cometObjects.length; i++) {
       const c = this.cometObjects[i];
       c.upos.copy(sun.upos).addXYZ(p[i * 3] * AU, p[i * 3 + 1] * AU, p[i * 3 + 2] * AU);
-      c.apparentMag = this.shown ? m[i] : 99;
+      c.apparentMag = this.shown && !this.away.has(c) ? m[i] : 99;
     }
+    // (a comet taken away is too faint to be drawn, and has no tail)
+    const mag = this.comets!.geometry.attributes.aMag as BufferAttribute;
+    mag.copyArray(m);
+    for (let i = 0; i < this.cometObjects.length; i++) if (this.away.has(this.cometObjects[i])) mag.setX(i, 99);
+    mag.needsUpdate = true;
+    this.comets!.geometry.attributes.position.needsUpdate = true;
   }
+
+  /** The comets taken away (live physics: LivePhysics.away) are not drawn, and cannot be picked. */
+  hide(away: ReadonlySet<SpaceObject>): void {
+    if (away.size === this.away.size && [...away].every((o) => this.away.has(o))) return;
+    this.away = new Set(away);
+    if (this.cometPos) this.syncCometObjects();
+  }
+  private away: ReadonlySet<SpaceObject> = new Set();
 
   /**
    * The belt's asteroids and the comets go round the Sun on their catalogued paths, each worked
