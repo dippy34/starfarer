@@ -75,6 +75,54 @@ need the OpenCode workspace's region set to Global.
 
 ## Tasks
 
+### `task/make-anything`: God mode's sandbox, step 1: made worlds of every kind, each with a look of its own
+
+- **Status:** open. Large.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the owner, 27 Nov 2026: "God mode feels more like you're editing something or adding
+  some preset things instead of actually unlocking your full potential ... creating infinite amount of
+  different possibilities." Today Add (the card's Add panel, `src/ui/Hud.ts` near line 320; the making,
+  `src/app/WhatIf.ts`; the placing, `App` and `src/app/Mover.ts`) makes four things only: a moon round a
+  planet, and round a star a copy of the Earth, a copy of Jupiter or a second sun. A copy wears the
+  original's map (`Body.texture`, `src/render/Bodies.ts` `textureKey`). Meanwhile the app already draws
+  the made-up planets of other stars with generated looks of ten types, each varied by a seed
+  (`src/render/ExoPlanetLayer.ts`: `TYPE_ID`, the palette set from the type and the seed near line 235,
+  the `EXO_FRAG` material near line 265, rings near line 277). The plan for the sandbox is in
+  `docs/notes/ideas.md` ("God mode as a sandbox"); this is its first step.
+- **What to do:** read `HANDOFF.md` "Design" first (plain words, the `--sf-*` tokens, every target at
+  least 44 px), and "Part 1: watch it happen" (a change is offered its watch).
+  - In the card's Add panel, round a star, after the rows there are, add rows for made worlds with a
+    generated look: "A rocky world" (`terran`), "An ocean world" (`ocean`), "A desert world" (`desert`),
+    "A lava world" (`lava`), "An icy world" (`ice`), "A gas giant" (`giant`), "An ice giant"
+    (`icegiant`), each with a short plain line saying what it is. Keep the four rows there are (the live
+    suite uses them).
+  - Such a world is made, put in place and moved exactly as "A planet like Earth" is now (on a circle
+    round the star, the mass slider while it is put in place, Done), with these differences: it has no
+    map of its own; it is drawn with the generated look of its type and a random seed (share the code
+    that builds the look with `ExoPlanetLayer`: move it into a function both use, rather than copying
+    it), lit by its star as the other worlds are; and while it is put in place a "New look" button gives
+    it another seed. Its mass range is its type's: rocky, ocean, desert and lava from a twentieth of the
+    Earth to 10 Earths; icy from a thousandth of the Earth to 5 Earths; an ice giant from 5 to 50 Earths;
+    a gas giant from 10 Earths to 13 Jupiters. Its size follows its mass by the rules `madeSize` already
+    has (rock, ice, between, giant), and its facts say what it is and that it was made, as now.
+  - Its type and seed are kept with it (`madeAs`), so that Undo, Replay, a save on the device and a
+    shared link bring back the same world (`madeAgain`, `src/app/Saves.ts`, `src/app/SceneLink.ts`).
+  - Do these in this order, and if time runs short stop after a whole one and say what is left: the
+    rows and the generated look; New look; keeping it in saves and links.
+- **Done when:**
+  - Unit tests: each new kind's mass range and size rule; `madeAs` with a type and a seed survives a
+    save and a link (the save's and the link's own tests).
+  - Browser checks in `scripts/live.mjs` (the `made` block, phone and desk): round the Sun, "A gas
+    giant" makes a world drawn with the generated look (its mesh's material is the generated look, not
+    a map), and "New look" changes its seed and what it looks like; a save of the scene, opened again,
+    brings it back with the same type and seed. They fail on the code before the change.
+  - Pictures, upright at 390x844, of each of the seven kinds just made near the Earth's orbit (the card
+    showing its name).
+  - Run `LIVE_ONLY=made,place` of `scripts/live.mjs` (phone and desk) and `scripts/share.mjs`; Claude
+    runs the whole set after. `npm run check` passes.
+- **Don't touch:** `src/app/LivePhysics.ts` and `src/sim/` (the physics), the camera rig, the watch
+  (`src/app/Watch.ts`), the tab bar. No catalogue data changes: a made world never changes a real one.
+
 ### `task/watch-button`: after a change, no surprise fast-forward; a "Watch" button that plays until stopped
 
 - **Status:** open. Medium.
