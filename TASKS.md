@@ -272,7 +272,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/simple-flight`: the ship's controls, simple by default
 
-- **Status:** started 26 Nov 2026 (first try). Medium.
+- **Status:** done 27 Nov 2026 (run 45906482372, reviewed by Claude, 030d8f8): on the developers' site; on the play
+  testers' site from the next release. Medium.
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** the owner, 26 Nov 2026, with a phone screenshot of the ship flying to Gacrux: "the
   flying controls still look a bit too advanced and not intuitive enough like the steering and side
