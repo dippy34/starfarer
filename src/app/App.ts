@@ -9,8 +9,9 @@ import { AU, DAY, formatDistance, formatSpeed, PC, SUN_RADIUS } from '../core/un
 import { fmtDuration, G, L_SUN, luminosity } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
-import { BodiesLayer } from '../render/Bodies';
+import { BodiesLayer, makeSphere } from '../render/Bodies';
 import { generatedLook, madeLook } from '../render/PlanetLook';
+import { PlanetPortrait } from '../render/PlanetPortrait';
 import { PlanetTerrain } from '../render/PlanetTerrain';
 import { RingSpot } from '../universe/RingSpot';
 import { Landmark, LANDMARKS } from '../universe/Landmarks';
@@ -43,7 +44,8 @@ import { DeepSkyObject, loadDeepSky } from '../universe/DeepSky';
 import { Galaxy, loadGalaxies } from '../universe/Galaxies';
 import { loadSpacecraft, Spacecraft } from '../universe/Spacecraft';
 import { aimStrokes, ringStrokes } from '../ui/aimShape';
-import { Hud, type HudAction, type HudState } from '../ui/Hud';
+import { Hud, PORTRAIT_CSS, type HudAction, type HudState } from '../ui/Hud';
+
 import { BlackHole, loadBlackHoles } from '../universe/BlackHoles';
 import { Awe } from './Awe';
 import { Body, type SpaceObject } from '../universe/Body';
@@ -90,6 +92,9 @@ import { VRSupport } from './VR';
 import { FreeFly } from './FreeFly';
 import { Walk } from './Walk';
 import { PERF } from '../perf/Perf';
+
+/** a picture of a world being made, as the card takes it */
+type HudPortrait = NonNullable<NonNullable<NonNullable<HudState['selection']>['place']>['portrait']>;
 
 /**
  * How bright a star's face is shown (its mean, before the tone curve): a disk large enough to
@@ -326,6 +331,9 @@ export class App {
    * it), and the mass it was made with (kg: its slider means exactly that near it).
    */
   private placement: { paused: boolean | null; base: number } | null = null;
+  /** the studio that pictures a world being made, for its card, and its last picture (portraitOf) */
+  private portrait: PlanetPortrait | null = null;
+  private portraitShot: HudPortrait | null = null;
   /**
    * The world the camera was last framed round (a change's watch, or a new world being put in
    * place): the camera rides with it while the watch lasts, or the placing, even from beyond its
@@ -1546,6 +1554,8 @@ export class App {
   placed(done: boolean): void {
     const p = this.placement;
     this.placement = null;
+    this.portrait?.release();
+    this.portraitShot = null;
     if (p && p.paused !== null) this.clock.paused = p.paused;
     if (this.pending?.kind === 'add') this.endChange(done);
   }
@@ -1554,6 +1564,25 @@ export class App {
   private lookOf(kind: WorldKind, seed: number, hue = 0): MadeLook {
     const look = generatedLook(madeLook(kind, seed, madeSize(kind, WORLD_BASE[kind], false).radius, false, hue));
     return { albedo: look.albedo, color: [...(look.pal.uC2 as [number, number, number])] };
+  }
+
+  /**
+   * The picture of a world being made, as it looks now, for its card (src/render/PlanetPortrait.ts): drawn again only
+   * when its look changes (New look, rings, its colour), not as its mass slides; at the card's size times the screen's
+   * density (three at the most).
+   */
+  private portraitOf(b: Body): HudPortrait | null {
+    const wears = this.bodies.lookOf(b);
+    if (!wears) return null;
+    // (the canvas's own density, not the scene's: the governor's lower resolution does not blur the card)
+    const scale = Math.min(3, Math.max(1, this.renderer.pixelRatio));
+    const width = Math.round(PORTRAIT_CSS.width * scale), height = Math.round(PORTRAIT_CSS.height * scale);
+    const key = `${wears.type}/${wears.seed}/${wears.rings ? 1 : 0}/${wears.hue}/${width}x${height}`;
+    if (this.portraitShot?.key !== key) {
+      this.portrait ??= new PlanetPortrait(this.renderer.gl, makeSphere(-180));
+      this.portraitShot = { key, ...this.portrait.draw(madeLook(wears.type, wears.seed, b.radius, wears.rings, wears.hue), width, height) };
+    }
+    return this.portraitShot;
   }
 
   /** New look: the world being put in place, if it has a generated look, gets another seed (and so another look of its type). */
@@ -3873,7 +3902,10 @@ export class App {
         if (as && this.mover.placing && this.mover.body === pb) {
           const kind = as.kind as Kind;
           const looked = as.seed !== undefined && isWorldKind(kind);
-          selection.place = { name: pb.name, slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null, hue: looked ? as.hue ?? 0 : null };
+          selection.place = {
+            name: pb.name, slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null, hue: looked ? as.hue ?? 0 : null,
+            portrait: looked ? this.portraitOf(pb) : null,
+          };
         }
       }
     }

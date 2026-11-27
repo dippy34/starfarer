@@ -74,7 +74,7 @@ const CITY_LIGHT = 1e-4;
 const FACE_WANT_PX = 24;
 
 /** Unit sphere in body-fixed coordinates with the texture seam at `lonLeftDeg`. */
-function makeSphere(lonLeftDeg: number, wSeg = 128, hSeg = 64): BufferGeometry {
+export function makeSphere(lonLeftDeg: number, wSeg = 128, hSeg = 64): BufferGeometry {
   const pos: number[] = [], uv: number[] = [], idx: number[] = [];
   const lon0 = (lonLeftDeg * Math.PI) / 180;
   for (let j = 0; j <= hSeg; j++) {

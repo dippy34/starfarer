@@ -9,6 +9,9 @@ import { ICON } from './icons';
 import { OfflinePanel } from './OfflinePanel';
 
 /** The worlds Add makes with a generated look (src/app/WhatIf.ts: WORLD_KINDS), in order: the kind, its icon, its name, and what it is. */
+/** the picture of a world being made, beside its look's controls (CSS px): the app draws it at this size times the screen's density */
+export const PORTRAIT_CSS = { width: 128, height: 96 } as const;
+
 const WORLD_ROWS = [
   ['terran', ICON.rocky, 'A rocky world', 'Land, seas and clouds, with a look of its own'],
   ['ocean', ICON.rocky, 'An ocean world', 'Water almost everywhere, with a little land'],
@@ -131,6 +134,8 @@ export interface HudState {
       /** it has a generated look that New look changes */ newLook: boolean;
       /** whether it has rings (Add rings, Remove rings), or null: it cannot have them (it is not of a generated look) */ rings: boolean | null;
       /** how far its colours are turned (the Colour slider, 0 to 1), or null: it has no such colours */ hue: number | null;
+      /** a picture of it as it looks now (src/render/PlanetPortrait.ts), and what it is a picture of; null: none (it is not of a generated look) */
+      portrait: { key: string; width: number; height: number; pixels: Uint8Array } | null;
     } | null;
   } | null;
   /**
@@ -330,13 +335,18 @@ const TEMPLATE = `
             <label class="name-row"><span>Name</span><input class="name-field" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" aria-describedby="name-says"/></label>
             <p class="name-says" id="name-says" role="status" hidden></p>
             <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass"/>
-            <div class="look-row"><button class="new-look" type="button" data-act="new-look" hidden>New look</button><button class="made-rings" type="button" data-act="rings" aria-pressed="false" hidden>Add rings</button></div>
-            <label class="hue-row" hidden><span>Colour</span><input class="hue-slider" type="range" min="0" max="255" step="1" value="0" aria-label="Its colour: turn all its colours round the colour wheel"/></label>
+            <div class="look-box">
+              <div class="look-controls">
+                <div class="look-row"><button class="new-look" type="button" data-act="new-look" hidden>New look</button><button class="made-rings" type="button" data-act="rings" aria-pressed="false" hidden>Add rings</button></div>
+                <label class="hue-row" hidden><span>Colour</span><input class="hue-slider" type="range" min="0" max="255" step="1" value="0" aria-label="Its colour: turn all its colours round the colour wheel"/></label>
+              </div>
+              <canvas class="portrait" role="img" aria-label="How it looks" style="width:${PORTRAIT_CSS.width}px;height:${PORTRAIT_CSS.height}px" hidden></canvas>
+            </div>
           </div>
           <p class="power-hint">
             <span class="hint-move"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it.</span>
             <span class="hint-throw"><span class="touch-only">Pull back from it and let go, like a slingshot, or flick it.</span><span class="mouse-only">Drag back from it and let go, like a slingshot, or flick it.</span> The arrow's marks: going round in a circle, and escaping.</span>
-            <span class="hint-place">Drag it to where you want it: let go and it goes round in a circle there, or flick it to throw it. Time waits until Done.</span>
+            <span class="hint-place">Drag it where you want it, or flick it to throw it. Time waits until Done.</span>
             <span class="move-plane"></span>
           </p>
           <div class="seg" role="group" aria-label="What it does where you leave it">
@@ -494,6 +504,8 @@ export class Hud {
   private pictureStale = true;
   /** what the card's picture was last drawn from (a made world's colour changes while it is put in place) */
   private pictureKey = '';
+  /** what the picture of the world being made shows now (its look's key) */
+  private portraitKey = '';
   private factKeys = '';
   private factValues: HTMLElement[] = [];
   private workedKeys = '';
@@ -1156,8 +1168,11 @@ export class Hud {
         place.querySelector<HTMLElement>('.hue-row')!.hidden = sel.place.hue === null;
         if (sel.place.hue !== null && !this.hueSliding && Number(this.hueSlider.value) !== Math.round(sel.place.hue * 256)) this.hueSlider.value = String(Math.round(sel.place.hue * 256));
         if (!this.placeSliding && Math.abs(Number(this.placeSlider.value) - sel.place.slider) > 0.002) this.placeSlider.value = String(sel.place.slider);
+        this.showPortrait(place.querySelector<HTMLCanvasElement>('.portrait')!, sel.place.portrait);
       }
     }
+    // (while a world is made the card keeps to what making it needs: Look at and Share wait until Done)
+    card.classList.toggle('making', !!sel.move && moving && !!sel.place);
     const panel = card.querySelector<HTMLElement>('[data-panel="mass"]')!;
     panel.hidden = this.power !== 'mass';
     if (sel.mass && this.power === 'mass') {
@@ -1246,6 +1261,20 @@ export class Hud {
   }
 
   /** A destination's picture: a world's photograph, or a shape in its colour. */
+  /** The picture of the world being made, drawn afresh when it is of another look (its rows come bottom first). */
+  private showPortrait(canvas: HTMLCanvasElement, shot: { key: string; width: number; height: number; pixels: Uint8Array } | null): void {
+    canvas.hidden = !shot;
+    if (!shot || shot.key === this.portraitKey) return;
+    this.portraitKey = shot.key;
+    canvas.width = shot.width;
+    canvas.height = shot.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(shot.width, shot.height), row = shot.width * 4;
+    for (let y = 0; y < shot.height; y++) img.data.set(shot.pixels.subarray((shot.height - 1 - y) * row, (shot.height - y) * row), y * row);
+    ctx.putImageData(img, 0, 0);
+  }
+
   private thumb(p?: Picture): string {
     if (!p) return '<span class="thumb plain"></span>';
     const cell = p.world ? this.thumbs?.bodies[p.world] : undefined;

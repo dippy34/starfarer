@@ -952,6 +952,21 @@ temperature, and size as well as mass.
   rings by name). `Body.name` is now writable for this (`Body.rename`); no catalogue body is renamed.
   Keys typed in the field stop there (Space is not "pause"). A save or a link keeps it as
   `MadeRecord.name`; the first log line keeps the name it was made with.
+  *A picture of it while it is made* (27 Nov 2026, evening; the owner's word that the card covered
+  half the screen): framed with its orbit, a new world is a dot, so the card shows it beside New look,
+  rings and Colour, 128 x 96 CSS px (`PORTRAIT_CSS` in `Hud.ts`). `src/render/PlanetPortrait.ts`
+  draws it with the very shaders of its look (`BODY_VERT`, `EXO_FRAG`, and the ring's) in a studio of
+  its own: 12 radii away, its pole leant 0.45 rad towards the eye, lit from the upper left a little
+  from in front, framed to its ringlets' outer edge (`uRingOut`), at the exposure the eye settles on
+  when a world fills the view (0.45 over the radiance of its lit ground) and tone-mapped as the
+  composite does (`spTone`, then sRGB), with an alpha of its cover. Into its own targets (a half-float
+  one with 4 samples, then 8-bit), read back, and drawn into the card's canvas by `Hud.showPortrait`
+  (rows bottom first). Only when its look changes (`App.portraitOf`: its type, seed, rings, colour
+  and the picture's size in device pixels, three to a CSS pixel at the most), never as its mass
+  slides; its targets are let go at Done. Its materials are made and let go each time: the program
+  is the one the world in space already compiled. While a world is made the card also hides Look at
+  and Share (class `making`), and the hint is one sentence shorter: the card's whole panel is in sight
+  without scrolling on an iPhone (it scrolled by 56 px before), and the camera eases out less far.
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun
