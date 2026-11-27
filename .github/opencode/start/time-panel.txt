@@ -1,0 +1,6 @@
+# Started by Claude, 27 Nov 2026 (overnight, the owner asleep): the fix list's #4, "make it simple",
+# for the Time panel. The copy starts at the live branch plus the changes still being tested (the
+# drive's plain words, the honest numbers of other stars' planets, and Make anything), so that the
+# work builds on them.
+model: anthropic/claude-sonnet-5-5
+base: 61594f5cdccc85e756898959ba9106eb7bbfe05d
