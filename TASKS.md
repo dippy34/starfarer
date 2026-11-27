@@ -348,9 +348,13 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/offline`: a copy of everything on the phone, for use with no internet
 
-- **Status:** second try running (27 Nov 2026), on Claude Sonnet 5.5 (the owner's Claude API
-  credits), from the first try (run 45720347631) with the review's seven fixes
-  (`.github/opencode/start/offline.txt`). Medium.
+- **Status:** done 27 Nov 2026 (2dc1872): the first try (run 45720347631) and its second try with
+  the review's seven fixes (run 45920621727, on Claude Sonnet 5.5 with the owner's Claude API
+  credits: $1.33), reviewed by Claude with two small changes. The browser suites' jobs now check
+  out `src/offline` too, which `vite.config.ts` imports. Checked in runs 45927284510 and
+  45935774349: every suite passed (offline included), but for two documented flakes and two
+  jobs whose setup failed. On the developers' site; on the play testers' site at the next
+  release.
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** the owner: "would it be possible to create an offline version that has everything
   downloaded". The app loads nothing from other sites: everything is on its own site, the app and
