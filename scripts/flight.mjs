@@ -573,15 +573,15 @@ await simpleFlightControls();
   check('the Time chip says the warp the ship\'s clock runs at', st.chip === st.sheet && shown > 0 && Math.abs(shown / st.measured - 1) < 0.25 && /Aboard\s*×/.test(st.rows) && /In the universe/.test(st.rows), JSON.stringify({ chip: st.chip, measured: Math.round(st.measured), rows: st.rows.slice(0, 120) }));
   await phone.screenshot({ path: path.join(outDir, 'f17-phone-time.png'), timeout: 180000 });
 
-  // Now, in the ship: back to today and real time, the ship carried along with the world it was near
+  // Back to now, in the ship: back to today and real time, the ship carried along with the world it was near
   // (here the Sun, 0.1 light years off: the same distance from it after)
   const sunDist = () => phone.evaluate(() => window.app.game.flight.ship.upos.sub(window.app.system.sun.upos).length());
   const sun0 = await sunDist();
-  await f.tap(await at('.transport [data-act="now"]'));
+  await f.tap(await at('#hud .time-today'));
   await f.frames(3);
   st = await phone.evaluate(() => ({ rate: window.app.clock.rate, fromToday: window.app.clock.jdTdb - (Date.now() / 86400000 + 2440587.5), on: window.app.game.flight.on }));
   const sun1 = await sunDist();
-  check('Now in the ship: back to today, real time, the ship carried with the Sun', st.rate === 1 && Math.abs(st.fromToday) < 0.01 && st.on && Math.abs(sun1 / sun0 - 1) < 1e-3, JSON.stringify({ ...st, sun0, sun1 }));
+  check('Back to now in the ship: back to today, real time, the ship carried with the Sun', st.rate === 1 && Math.abs(st.fromToday) < 0.01 && st.on && Math.abs(sun1 / sun0 - 1) < 1e-3, JSON.stringify({ ...st, sun0, sun1 }));
   await f.tap(await at('.hud-tabs [data-tab="time"]')); // (closes the sheet: the lever shows again)
   await f.frames(2);
 
