@@ -63,7 +63,9 @@ with that, Uranus's mass gives 3.87 R⊕ (it measures 3.98) and Neptune's 4.28 (
 Today the card says why not: comets and belt asteroids "stay on their recorded paths", and "live
 physics does not take black holes yet" (`src/app/powersFor.ts`). A plan, smallest first:
 
-1. *Comets in live physics.* A comet (`Comet` in `src/render/SmallBodies.ts`, drawn from its orbital
+1. *Comets in live physics.* (*27 Nov, evening:* Remove works on a comet, with Undo and Back to reality;
+   moving and throwing one, and keeping it in saves and links, are still to do: TASKS.md task/comet-powers.)
+   A comet (`Comet` in `src/render/SmallBodies.ts`, drawn from its orbital
    elements) joins the simulation when it is changed: its place and speed from its elements at that
    date, as a body of no mass (it is pulled, it pulls nothing). Then Move, Throw and Remove work on it
    as on a moon, and its tail follows the Sun from where it is. Mass only where one was measured (a

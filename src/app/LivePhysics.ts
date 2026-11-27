@@ -2,7 +2,7 @@ import type { SimClock } from '../core/time';
 import { AU, DAY } from '../core/units';
 import { LEFT_OUT, NBody, type NBodyBodies, type NBodySnapshot, type SimEvent } from '../sim/NBody';
 import { apply, capture, type Live, liveDate, release, riders, type SimSystem } from '../sim/SystemSim';
-import type { Body } from '../universe/Body';
+import type { Body, SpaceObject } from '../universe/Body';
 import type { BodyJson, Family } from '../universe/SolarSystem';
 import { dayWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
 import { type LiveWorld, type MadeRecord, WORLD_LIMITS, WorldError } from './SceneWorld';
@@ -46,7 +46,7 @@ const ALSO_LEFT_OUT: readonly string[] = [
   'A moon too light to pull on anything, and a world whose mass is not known, keeps its real path round its planet until you change that planet or it.',
   'A world keeps its size whatever mass you give it, unless you change that too: with Size, or with Same density, which has it grow as a ball of rock would (R = R₀ (M / M₀)^⅓; a real giant planet stops growing above about a Jupiter\'s mass, squeezed by its own weight). Its face is drawn as it is, larger or smaller; what theory says a world of that mass would turn into is told, not shown. A sun you add is the exception: its size, colour and light follow its mass as a star of the main sequence, before Done and after.',
   'You cannot land on a world whose size you have changed: its ground is drawn as measured, for its real size. Its air keeps its measured depth over its new ground; Saturn\'s rings keep their measured size.',
-  'The 75,000 small asteroids of the belt and the comets cannot be simulated one by one: they keep their real paths while the Sun is as it was, and are left out once you change it or take it away. The real spacecraft are left out too: they flew their paths in the real Solar System.',
+  'The 75,000 small asteroids of the belt and the comets cannot be simulated one by one: they keep their real paths while the Sun is as it was, and are left out once you change it or take it away. A comet can be taken away (it comes back with Undo); it cannot be moved or thrown yet, and a comet taken away is not kept in a link or a save yet. The real spacecraft are left out too: they flew their paths in the real Solar System.',
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
   'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up. Its size follows the mass you give it by a rule, said in its details: rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence. A star made lighter than the Sun is drawn as if all its light were visible light: a red dwarf would look fainter.',
   'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
@@ -102,6 +102,8 @@ export interface LiveCheckpoint {
   readonly bodies: readonly Kept[];
   readonly made: readonly Body[];
   readonly real: readonly [Body, Real][];
+  /** the small things taken away */
+  readonly away: readonly SpaceObject[];
   readonly log: readonly { jd: number; text: string }[];
   /** the share of the time asked for that the stepping managed, the rate what is on rails was chosen for, the frames it has fallen short, the stage, the simulation's own word on crossing */
   readonly pace: readonly [number, number, number, number, number];
@@ -134,6 +136,11 @@ export class LivePhysics {
    * reality).
    */
   readonly made: Body[] = [];
+  /**
+   * The small things the explorer has taken away (comets: they are not bodies of the system, and
+   * the simulation does not carry them): hidden by whoever draws them, until the return to reality.
+   */
+  readonly away = new Set<SpaceObject>();
   /** how many changes have been made, ever: a gesture that changed nothing leaves it as it was */
   changes = 0;
   private news: string[] = [];
@@ -320,6 +327,19 @@ export class LivePhysics {
     this.settle(live);
   }
 
+  /**
+   * Take a comet away (or any small thing drawn on its own recorded path): live physics starts
+   * from here as for any change, and it is hidden until Undo or the return to reality. It has no
+   * mass, so nothing else is pulled differently.
+   */
+  removeSmall(o: SpaceObject, jd: number): void {
+    const live = this.start(jd);
+    this.changes++;
+    this.away.add(o);
+    this.tell(liveDate(live), `${o.name} is gone.`);
+    this.settle(live);
+  }
+
   // ------------------------------------------------------------------ each frame
 
   /**
@@ -394,6 +414,7 @@ export class LivePhysics {
     if (!live) return '';
     for (const [b, r] of this.real) { b.gm = r.gm; b.systemGm = r.systemGm; b.radius = r.radius; b.radii = r.radii; }
     this.real.clear();
+    this.away.clear();
     this.system.settle();
     for (const b of this.made.splice(0).reverse()) this.drop(b);
     this.live = null;
@@ -421,6 +442,7 @@ export class LivePhysics {
       bodies: this.system.bodies.map((b) => ({ ...this.system.familyOf(b), gm: b.gm, systemGm: b.systemGm, radius: b.radius, radii: [b.radii[0], b.radii[1], b.radii[2]], teff: b.teff, absMag: b.absMag })),
       made: [...this.made],
       real: [...this.real].map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]),
+      away: [...this.away],
       log: this.log.map((e) => ({ ...e })),
       pace: [this.share, this.rate, this.slowFor, this.stage, this.cross],
     };
@@ -449,6 +471,8 @@ export class LivePhysics {
     for (const b of leaving) this.drop(b, false);
     this.made.splice(0, this.made.length, ...cp.made);
     this.real = new Map(cp.real.map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]));
+    this.away.clear();
+    for (const o of cp.away) this.away.add(o);
     this.log.splice(0, this.log.length, ...cp.log.map((e) => ({ ...e })));
     this.news = [];
     this.hits = [];

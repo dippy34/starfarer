@@ -182,16 +182,30 @@ describe('the powers beyond the Solar System', () => {
     expect(reason(powersFor(hole), 'mass')).toMatch(/black holes/);
   });
 
-  it('a comet and a belt asteroid stay on their recorded paths', () => {
+  it('a belt asteroid stays on its recorded path', () => {
+    // A belt point has no selectable class of its own; this stand-in covers its object kind.
+    const belt: SpaceObject = { key: 'belt:test', name: 'Belt asteroid', kind: 'asteroid', upos: new UPos(), radius: 0, parentObject: null, info: () => [] };
+    expectNoPowers(powersFor(belt));
+    expect(reason(powersFor(belt), 'move')).toMatch(/recorded paths/);
+  });
+
+  it('a comet can be taken away; its mass, size and Add stay off, each with a plain reason', () => {
     const data = JSON.parse(readFileSync(new URL('../public/data/solar/comets.json', import.meta.url), 'utf8')) as { comets: ConstructorParameters<typeof Comet>[2][] };
     const row = data.comets.find((r) => r[0].includes('Halley')) ?? data.comets[0];
     const comet = new Comet('comet:test', row[0], row);
-    // A belt point has no selectable class of its own; this stand-in covers its object kind.
-    const belt: SpaceObject = { key: 'belt:test', name: 'Belt asteroid', kind: 'asteroid', upos: new UPos(), radius: 0, parentObject: null, info: () => [] };
-    for (const object of [comet, belt]) {
-      expectNoPowers(powersFor(object));
-      expect(reason(powersFor(object), 'move')).toMatch(/recorded paths/);
+    const t = powersFor(comet);
+    expect(t.remove).toEqual({ works: true });
+    for (const name of ['mass', 'size', 'add'] as const) {
+      expect(t[name].works).toBe(false);
+      expect(reason(t, name).length).toBeLessThanOrEqual(60);
     }
+    expect(reason(t, 'mass')).toMatch(/No measured mass/);
+    // not while live physics runs in another star's system
+    const elsewhere = powersFor(comet, 0, { live: {} as never });
+    expectNoPowers(elsewhere);
+    expect(reason(elsewhere, 'remove')).toMatch(/one at a time/);
+    // it works while live physics runs in the Solar System
+    expect(powersFor(comet, 0, { live: 'solar' }).remove.works).toBe(true);
   });
 
   it('a galaxy, including the Milky Way, and a nebula explain missing mass and physics', () => {
