@@ -426,18 +426,64 @@ const centreOf = async (page, sel) => {
   await tapOn('.chip.clock');
   st = await state(page);
   const timeOpen = st.sheet === 'time';
+  // the Time sheet's row keeps four (Reverse, Slower, Pause/Play, Faster); the one way back is the big "Back to now", which shows only when the clock is not at the present moment at real time
+  const timeUi = () => page.evaluate(() => {
+    const vis = (e) => !!e && !e.hidden && e.getBoundingClientRect().height > 0;
+    const back = document.querySelector('#hud .time-today');
+    const b = back && back.getBoundingClientRect();
+    return {
+      row: [...document.querySelectorAll('#hud .transport button')].map((e) => e.dataset.act),
+      now: document.querySelectorAll('#hud .transport [data-act="now"]').length,
+      back: vis(back), backText: back ? back.textContent.trim() : '', backH: b ? Math.round(b.height) : 0,
+      words: document.querySelector('#hud .time-rate').textContent.trim(),
+      awayDays: Number((window.app.clock.jdTdb - (Date.now() / 86400000 + 2440587.5)).toFixed(4)), rate: window.app.clock.rate, paused: window.app.clock.paused,
+      small: [...document.querySelectorAll('#hud .transport button, #hud .time-today')].filter((e) => !e.hidden).some((e) => e.getBoundingClientRect().height < 44),
+    };
+  });
+  // (the page starts on its own date: put the clock at the present moment first, so that "Back to now" has nothing to offer)
+  await page.evaluate(() => window.app.clock.setUtcNow());
+  await f.frames(2);
+  const atStart = await timeUi();
+  check('the Time sheet\'s row has four buttons and no Now; at real time there is no Back to now and the speed reads "Real time"',
+    JSON.stringify(atStart.row) === JSON.stringify(['reverse', 'slower', 'pause', 'faster']) && atStart.now === 0 && !atStart.back && atStart.words === 'Real time' && !atStart.small, JSON.stringify(atStart));
   await tapOn('.transport [data-act="pause"]');
   const paused = (await state(page)).paused;
   await tapOn('.transport [data-act="pause"]');
   await tapOn('.transport [data-act="faster"]');
   await tapOn('.transport [data-act="faster"]');
   const fast = (await state(page)).rate;
+  await f.frames(2);
+  const afterFaster = await timeUi();
+  check('after Faster, "Back to now" shows (44 px or more) and the speed reads in words',
+    afterFaster.back && afterFaster.backText === 'Back to now' && afterFaster.backH >= 44 && afterFaster.words === '1 minute a second' && !afterFaster.small, JSON.stringify({ fast, ...afterFaster }));
   await tapOn('.transport [data-act="reverse"]');
   const rev = (await state(page)).rate;
   await f.frames(2);
+  const afterReverse = await timeUi();
+  check('after Reverse, "Back to now" shows and the speed says "backwards"', afterReverse.back && afterReverse.words === '1 minute a second, backwards', JSON.stringify({ rev, ...afterReverse }));
   await page.screenshot({ path: path.join(outDir, 'touch-9-time.png'), timeout: 300000 });
-  await tapOn('.transport [data-act="now"]');
+  await tapOn('#hud .time-today');
+  await f.frames(2);
   st = await state(page);
+  const afterBack1 = await timeUi();
+  check('"Back to now" brings real time back, forwards, and goes away', st.rate === 1 && !st.paused && !afterBack1.back && afterBack1.words === 'Real time', JSON.stringify({ rate: st.rate, ...afterBack1 }));
+  // (Faster alone, and Reverse alone, from real time)
+  await tapOn('.transport [data-act="faster"]');
+  await f.frames(2);
+  const fasterOnly = await timeUi();
+  await tapOn('#hud .time-today');
+  await f.frames(2);
+  const backA = await timeUi();
+  await tapOn('.transport [data-act="reverse"]');
+  await f.frames(2);
+  const reverseOnly = await timeUi();
+  await tapOn('#hud .time-today');
+  await f.frames(2);
+  st = await state(page);
+  const backB = await timeUi();
+  check('"Back to now" shows after Faster alone and after Reverse alone, and each time brings real time back',
+    fasterOnly.back && fasterOnly.words === '10 times real time' && !backA.back && backA.words === 'Real time'
+    && reverseOnly.back && reverseOnly.words === 'Real time, backwards' && !backB.back && st.rate === 1, JSON.stringify({ fasterOnly: fasterOnly.words, backA: backA.back, reverseOnly: reverseOnly.words, backB: backB.back, rate: st.rate }));
   const nowOk = await page.evaluate(() => Math.abs((window.app.clock.jdTdb - 2440587.5) * 86400e3 - Date.now()) < 120e3);
   check('the clock chip opens Time; pause, faster, reverse and now do what they say', timeOpen && paused && fast === 60 && rev === -60 && st.rate === 1 && !st.paused && nowOk, JSON.stringify({ timeOpen, paused, fast, rev, rate: st.rate, nowOk }));
 
