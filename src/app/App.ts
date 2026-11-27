@@ -1460,6 +1460,7 @@ export class App {
     if (!(b instanceof SimBody)) return { words: '', says: '' };
     const known = this.exoSim?.source.massKnown(b) ?? 'measured';
     if (known === 'estimated') return { words: ' (estimated)', says: 'The archive estimated its mass from its size' };
+    if (known === 'least') return { words: ' (at least)', says: 'The least it can be: only its star\'s wobble was measured, not how its orbit is tilted' };
     if (known === 'orbits') return { words: ' (from its planets)', says: 'Weighed by a planet\'s orbit: the archive gives no mass' };
     if (known === 'generated') return { words: ' (generated)', says: 'A made-up system: its masses are generated' };
     return { words: '', says: '' };

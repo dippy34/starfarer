@@ -93,6 +93,27 @@ describe('another star\'s planets under live physics', () => {
     expect(source.simulable).toBe(true);
   });
 
+  it('Proxima Centauri b: only its least mass is known (its star\'s wobble alone: the archive\'s "Msini") and its size was worked out, and the card and the Mass power say so', () => {
+    // (the archive's own marks, read by pipeline/mark_estimates.py: before, the card gave both as measured)
+    const proxima = systems.archiveSystem(systems.findHost('Proxima Cen')!)!;
+    const b = proxima.planets.find((p) => p.spec.name === 'Proxima Cen b')!;
+    expect(b.spec.est).toEqual(expect.arrayContaining(['massMin', 'radius']));
+    expect(b.info().find(([k]) => k === 'Mass')![1]).toMatch(/^at least [\d.]+ Earth masses$/);
+    expect(b.info().find(([k]) => k === 'Radius')![1]).toMatch(/\(estimated\)$/);
+    const source = new PlanetarySim(proxima);
+    const sb = source.bodies.find((x) => x.name === 'Proxima Cen b')!;
+    expect(source.massKnown(sb)).toBe('least');
+    expect(sb.radiusEstimated).toBe(true);
+  });
+
+  it('the archive\'s marks are all there: thousands of masses and sizes worked out, nearly a thousand least masses', () => {
+    const d = JSON.parse(readFileSync(join(process.cwd(), 'public', 'data', 'exoplanets.json'), 'utf8')) as { systems: { planets: { est: string[] }[] | null }[] };
+    const marks = (f: string) => d.systems.flatMap((x) => x.planets ?? []).filter((p) => p.est.includes(f)).length;
+    expect(marks('mass')).toBeGreaterThan(2900);
+    expect(marks('massMin')).toBeGreaterThan(900);
+    expect(marks('radius')).toBeGreaterThan(1500);
+  });
+
   for (const [label, sys] of [['TRAPPIST-1 (real)', () => trappist], ['a generated system', generated]] as const) {
     it(`${label}: turning live physics on moves nothing: each planet's place and velocity about its star are the rail's`, () => {
       const system = sys();

@@ -7,7 +7,7 @@ which is operated by the California Institute of Technology, under contract with
 Aeronautics and Space Administration under the Exoplanet Exploration Program."
 
 Planets are grouped into systems by host star. Values the archive lacks are filled in and flagged
-("est" lists the estimated fields):
+("est" lists the estimated fields; "massMin": only the least mass is known, the archive's "Msini"):
   * semi-major axis from the period and stellar mass (Kepler's third law), or the reverse;
   * radius from mass, or mass from radius, with the probabilistic mass-radius relation of
     Chen & Kipping 2017 (ApJ 834, 17), mean branch;
@@ -23,6 +23,7 @@ import math
 import urllib.parse
 
 from common import OUT, RAW, download, write_json
+from mark_estimates import marks
 
 COLS = [
     "pl_name", "hostname", "sy_snum", "sy_pnum", "sy_dist", "ra", "dec", "sy_vmag",
@@ -30,6 +31,8 @@ COLS = [
     "pl_rade", "pl_bmasse", "pl_eqt", "pl_insol", "pl_dens",
     "st_teff", "st_rad", "st_mass", "st_spectype", "st_age",
     "hip_name", "hd_name", "gaia_dr3_id", "discoverymethod", "disc_year",
+    # (how the archive knows the mass and the radius: mark_estimates.py)
+    "pl_bmassprov", "pl_rade_reflink",
 ]
 TAP = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query={}&format=csv"
 G = 6.674e-11
@@ -110,6 +113,10 @@ def main() -> None:
             est.append("mass")
         if rad is None:
             continue
+        # the values the archive itself worked out rather than measured
+        for flag in marks((r["pl_bmassprov"] or "").strip(), "CALCULATED_VALUE" in (r["pl_rade_reflink"] or "")):
+            if flag not in est:
+                est.append(flag)
         e = num(r["pl_orbeccen"])
         if e is None:
             e = 0.0

@@ -186,7 +186,7 @@ function ofBlackHole(bh: BlackHole): Worked[] {
 function ofExoPlanet(p: ExoPlanet): Worked[] {
   const s = p.spec;
   // (only what was measured: a size or a mass that was estimated to draw the planet proves nothing)
-  if (!s.real || s.est.includes('mass') || s.est.includes('radius') || !(s.massKg > 0) || !(s.radiusM > 0)) return [];
+  if (!s.real || s.est.includes('mass') || s.est.includes('massMin') || s.est.includes('radius') || !(s.massKg > 0) || !(s.radiusM > 0)) return [];
   return [
     row('Surface gravity', surfaceGravity(s.massKg, s.radiusM)),
     row('Escape velocity', escapeVelocity(s.massKg, s.radiusM)),
