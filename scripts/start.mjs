@@ -78,6 +78,21 @@ if (which !== 'vr') {
   // 1. the bare URL: the loading screen first, following the real loading
   let page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   collectErrors(page, errors);
+  // Every percent the screen shows, written down in the page as it changes: read only now and then from here, a slow
+  // runner could miss the last jump ("reached 44 %", the screen gone before the next look) and take it for a bar
+  // that never got past half (27 Nov 2026)
+  await page.addInitScript(() => {
+    window.__bootPercents = [];
+    const watch = () => {
+      const el = document.querySelector('#boot .boot-percent');
+      if (!el) return false;
+      const note = () => { const v = parseInt(el.textContent ?? '', 10); if (Number.isFinite(v)) window.__bootPercents.push(v); };
+      note();
+      new MutationObserver(note).observe(el, { childList: true, characterData: true, subtree: true });
+      return true;
+    };
+    if (!watch()) document.addEventListener('DOMContentLoaded', watch, { once: true });
+  });
   await page.goto(base, { waitUntil: 'commit' });
   await page.waitForSelector('#boot .boot-title', { timeout: 30000 });
   const first = await bootState(page);
@@ -93,7 +108,11 @@ if (which !== 'vr') {
     if (!shot && b.percent >= 30) { shot = true; await page.screenshot({ path: path.join(outDir, 'start-0-loading.png'), timeout: 300000 }); }
     await page.waitForTimeout(120);
   }
-  check('the bar never goes back', !back && most > 50, `reached ${most} %`);
+  // (and every value the page showed, the last ones too, which a look from here can miss)
+  const shownPercents = await page.evaluate(() => window.__bootPercents ?? []);
+  for (let i = 1; i < shownPercents.length; i++) if (shownPercents[i] < Math.max(...shownPercents.slice(0, i))) back = true;
+  most = Math.max(most, ...shownPercents);
+  check('the bar never goes back', !back && most > 50 && shownPercents.length > 0, `reached ${most} %; shown ${shownPercents.length} values, ${shownPercents.slice(-6).join(', ')} last`);
   await page.waitForFunction(() => window.app && window.app.frameCount > 10 && !document.getElementById('boot'), null, { timeout: 300000 });
   // (the last pieces finish as the screen goes: the app keeps the record of how the start went)
   const record = await page.evaluate(() => window.app.loading.stages.map((s) => ({ state: s.state, text: `${s.label} · ${s.note}` })));
