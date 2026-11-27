@@ -48,6 +48,12 @@ come first):
    from it), rings, a name. Placed with a tap, thrown by a drag (the slingshot there is), or put on a
    circle round anything. What is made keeps saying that it was made, as now; no catalogue data is
    ever changed to look like it.
+   *Done 27 Nov 2026 (night):* round a star, Add makes seven worlds of your own (rocky, ocean,
+   desert, lava, icy, gas giant, ice giant), each drawn with a generated look of its own; while one is
+   put in place: its mass, New look, Add rings, and a Colour slider; saves and links keep all of it
+   (HANDOFF.md, "Make anything, step 1"). *Being built:* a name of your own (TASKS.md task/name-it).
+   *Still to do:* one Create button from anywhere; a star or a black hole of your own; size set by hand;
+   placing with a tap.
 2. *Change anything.* Every world, real or made, gets one sheet of all its numbers to change (mass,
    size, spin, look, temperature, rings, its orbit), with "As it really is" to put it back.
 3. *An empty universe.* "New universe" on the title screen: empty space, stars far off, nothing else;
