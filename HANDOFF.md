@@ -1515,6 +1515,12 @@ keep B for later, C not needed with A).
 
 ## Next
 
+0. (27 Nov 2026, after the night's work; the owner's fix list is the order) Waiting on the owner: the
+   iPhone's benchmark code (#2, `docs/notes/phone-speed.md`), a yes or no on hosting the developers'
+   site on Cloudflare (#3: 926 MB in 13,095 files, near GitHub Pages' 1 GB), a Google Form link for a
+   "Send feedback" button, and "release". Ready to build: God mode on comets, then a black hole of
+   your own (#9, `docs/notes/ideas.md`), and the sandbox's next steps (one Create button from
+   anywhere; size set by hand). The top chips in plain words (#4) are the rest of "make it simple".
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
    black hole steps).
 2. Terrain: stream sharper elevation tiles everywhere (the full LOLA/MOLA/ETOPO resolution; today
