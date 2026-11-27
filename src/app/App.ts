@@ -1012,6 +1012,7 @@ export class App {
       case 'add-ice': this.add('ice'); break;
       case 'add-giant': this.add('giant'); break;
       case 'add-icegiant': this.add('icegiant'); break;
+      case 'create': this.create(); break;
       case 'new-look': this.newLook(); break;
       case 'rings': this.toggleRings(); break;
       case 'remove': {
@@ -1567,6 +1568,19 @@ export class App {
   private lookOf(kind: WorldKind, seed: number, hue = 0): MadeLook {
     const look = generatedLook(madeLook(kind, seed, madeSize(kind, WORLD_BASE[kind], false).radius, false, hue));
     return { albedo: look.albedo, color: [...(look.pal.uC2 as [number, number, number])] };
+  }
+
+  /**
+   * Create (the tab bar): what can be made, on the card of what is here: the world the camera is at, or the
+   * first of the worlds it goes round that can take something new (a planet a moon; a star worlds of every kind
+   * and a second sun); anywhere else the Sun. The card opens at Add (or says why nothing can be added now).
+   */
+  create(): void {
+    let at: SpaceObject | null = this.rig.target;
+    while (at instanceof Body && !this.powersOf(at).add.works && at.parent) at = at.parent;
+    const to = at instanceof Body && this.powersOf(at).add.works ? at : this.system.sun;
+    if (this.selection !== to) this.select(to);
+    this.hud.openAdd(to.key);
   }
 
   /**
