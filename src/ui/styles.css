@@ -469,6 +469,15 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
 #hud .new-look, #hud .made-rings { min-height: 44px; padding: 0 16px; border-radius: 14px; background: var(--fill); font-size: 13.5px; font-weight: 600; color: var(--fg); }
 #hud .new-look:active, #hud .made-rings:active { filter: brightness(1.25); }
 #hud .made-rings[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--line); }
+/* (its colours turned round the colour wheel: the track is the wheel) */
+.hue-row { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-top: 4px; font-size: 13.5px; font-weight: 600; color: var(--fg); }
+.hue-row[hidden] { display: none; }
+#hud .hue-slider { flex: 1; min-width: 0; height: 44px; margin: 0; padding: 0; background: none; -webkit-appearance: none; appearance: none; cursor: pointer; touch-action: none; outline: none; }
+#hud .hue-slider::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #d96b6b, #d9b46b, #8fd96b, #6bd9c4, #6b8fd9, #b46bd9, #d96b6b); }
+#hud .hue-slider::-moz-range-track { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #d96b6b, #d9b46b, #8fd96b, #6bd9c4, #6b8fd9, #b46bd9, #d96b6b); }
+#hud .hue-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 30px; height: 30px; margin-top: -11px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+#hud .hue-slider::-moz-range-thumb { width: 30px; height: 30px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+#hud .hue-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent); }
 /* the ring round the world being moved (the view's own corner is its origin: it is placed by a transform) */
 .move-handle {
   position: absolute; left: -24px; top: -24px; width: 48px; height: 48px; box-sizing: border-box; border-radius: 50%;

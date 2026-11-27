@@ -918,6 +918,12 @@ temperature, and size as well as mass.
   (the night-side exposure). It is `madeAs.rings`; a link or save keeps it in the byte that says
   "icy" (2: with rings; a world of a generated look is never an icy moon, so 0 or 2, and anything
   else is refused).
+  *Colour* (the same night): a Colour slider under them turns all the look's colours round the colour
+  wheel (`turnHue` in `PlanetLook.ts`: a rotation about the grey axis, so greys stay grey and the sum
+  of red, green and blue is kept; `LookSpec.hue`, a share of a turn; the rest of the look, its albedo
+  for the eye included, is unchanged). While it moves, `BodiesLayer.recolour` sets the material's
+  colours in place (a new material at every step would be built again). It is `madeAs.hue`, kept in
+  256 steps (`HUE_STEPS`): 4 in that same byte, and the step a byte after the seed (none when 0).
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun

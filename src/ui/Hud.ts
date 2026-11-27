@@ -73,6 +73,8 @@ export interface HudHost {
   sizeHeld(held: boolean): void;
   /** the mass slider of a world just made, being put in place, was put at `s` (0 to 1; src/app/WhatIf.ts: madeMassAt) */
   setMadeMass(s: number): void;
+  /** the Colour slider of a world of a generated look being put in place: its colours turned `s` of a turn (0 to 1) */
+  setMadeHue(s: number): void;
   /** a saved scene was chosen from More's list (src/app/Saves.ts), or its Delete tapped twice */
   openSave(id: string): void;
   deleteSave(id: string): void;
@@ -125,6 +127,7 @@ export interface HudState {
       slider: number; mass: string; what: string;
       /** it has a generated look that New look changes */ newLook: boolean;
       /** whether it has rings (Add rings, Remove rings), or null: it cannot have them (it is not of a generated look) */ rings: boolean | null;
+      /** how far its colours are turned (the Colour slider, 0 to 1), or null: it has no such colours */ hue: number | null;
     } | null;
   } | null;
   /**
@@ -321,6 +324,7 @@ const TEMPLATE = `
             <div class="power-read"><span><b></b><small></small></span><button class="place-done" type="button" data-act="place-done">Done</button></div>
             <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass"/>
             <div class="look-row"><button class="new-look" type="button" data-act="new-look" hidden>New look</button><button class="made-rings" type="button" data-act="rings" aria-pressed="false" hidden>Add rings</button></div>
+            <label class="hue-row" hidden><span>Colour</span><input class="hue-slider" type="range" min="0" max="255" step="1" value="0" aria-label="Its colour: turn all its colours round the colour wheel"/></label>
           </div>
           <p class="power-hint">
             <span class="hint-move"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it.</span>
@@ -470,6 +474,7 @@ export class Hud {
   private sliding = false;
   private sizing = false;
   private placeSliding = false;
+  private hueSliding = false;
   /** what the slingshot's arrow was last drawn as */
   private aimKey = '';
   private logKey = '';
@@ -491,6 +496,7 @@ export class Hud {
   private readonly slider: HTMLInputElement;
   private readonly sizeSlider: HTMLInputElement;
   private readonly placeSlider: HTMLInputElement;
+  private readonly hueSlider: HTMLInputElement;
   private readonly cats: HTMLElement;
   private readonly list: HTMLElement;
   private readonly toastEl: HTMLElement;
@@ -508,6 +514,7 @@ export class Hud {
     this.slider = el.querySelector<HTMLInputElement>('.card [data-panel="mass"] .mass-slider')!;
     this.sizeSlider = el.querySelector<HTMLInputElement>('.card [data-panel="size"] .size-slider')!;
     this.placeSlider = el.querySelector<HTMLInputElement>('.card .placing .slider')!;
+    this.hueSlider = el.querySelector<HTMLInputElement>('.card .placing .hue-slider')!;
     this.cats = this.$('.cats');
     this.list = this.$('.explore .list');
     this.toastEl = this.$('.hud-toast');
@@ -549,6 +556,11 @@ export class Hud {
     this.placeSlider.addEventListener('pointerdown', () => { this.placeSliding = true; });
     for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.placeSlider.addEventListener(done, () => { this.placeSliding = false; });
     this.placeSlider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
+    // (its steps are a byte's: a link keeps the colour exactly)
+    this.hueSlider.addEventListener('input', () => this.host.setMadeHue(Number(this.hueSlider.value) / 256));
+    this.hueSlider.addEventListener('pointerdown', () => { this.hueSliding = true; });
+    for (const done of ['pointerup', 'pointercancel', 'change', 'blur']) this.hueSlider.addEventListener(done, () => { this.hueSliding = false; });
+    this.hueSlider.addEventListener('keydown', (e) => { if (SLIDER_KEYS.has(e.key)) e.stopPropagation(); });
     for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
     // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
     const full = this.$('[data-fullscreen]');
@@ -1097,6 +1109,8 @@ export class Hud {
         rings.hidden = sel.place.rings === null;
         rings.setAttribute('aria-pressed', String(!!sel.place.rings));
         setText(rings, sel.place.rings ? 'Remove rings' : 'Add rings');
+        place.querySelector<HTMLElement>('.hue-row')!.hidden = sel.place.hue === null;
+        if (sel.place.hue !== null && !this.hueSliding && Number(this.hueSlider.value) !== Math.round(sel.place.hue * 256)) this.hueSlider.value = String(Math.round(sel.place.hue * 256));
         if (!this.placeSliding && Math.abs(Number(this.placeSlider.value) - sel.place.slider) > 0.002) this.placeSlider.value = String(sel.place.slider);
       }
     }

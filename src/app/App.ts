@@ -76,7 +76,7 @@ import { type ChangeKind, Glide, planChange, type RateState, sample, type Sample
 import { recall, remember } from '../platform/storage';
 import { forgetFragment, handOn, linkFragment, onFragmentChange, pageLink } from '../platform/share';
 import { decodeLink, encodeLink, isoOf, type Named, type SceneView } from './SceneLink';
-import { decodeWorld, encodeWorld, fromBase64Url, type LiveWorld, type MadeRecord, toBase64Url, WorldError } from './SceneWorld';
+import { decodeWorld, encodeWorld, fromBase64Url, HUE_STEPS, type LiveWorld, type MadeRecord, toBase64Url, WorldError } from './SceneWorld';
 import { deleteScene, savedFragment, savedScenes, saveScene, SAVES_MOST } from './Saves';
 import { liveDate } from '../sim/SystemSim';
 import { type Sunlit, temperatureOf, type Worked, workedOut } from './Worked';
@@ -694,6 +694,7 @@ export class App {
         const as = this.system.byId.get(m.id)?.meta.madeAs as BodyJson['madeAs'];
         m.seed = as?.seed ?? 0;
         if (as?.rings) m.rings = true;
+        if (as?.hue) m.hue = as.hue;
       }
       const bytes = encodeWorld(w);
       this.solar.rebase(decodeWorld(bytes));
@@ -876,7 +877,7 @@ export class App {
   /** A made world described again from a link or a save (src/app/WhatIf.ts: madeAgain): its look from what it is a copy of. */
   private madeJson(m: MadeRecord): BodyJson {
     const like = isCopyKind(m.kind) ? this.system.byId.get(TWIN_OF[m.kind]) ?? null : null;
-    return madeAgain(m, this.system.byId.get(m.home)!, like, like ? this.bodies.textureKey(like) : null, isWorldKind(m.kind) ? this.lookOf(m.kind, m.seed ?? 0) : null);
+    return madeAgain(m, this.system.byId.get(m.home)!, like, like ? this.bodies.textureKey(like) : null, isWorldKind(m.kind) ? this.lookOf(m.kind, m.seed ?? 0, m.hue ?? 0) : null);
   }
 
   /**
@@ -1545,8 +1546,8 @@ export class App {
   }
 
   /** What the generated look of a made world of `kind` and `seed` gives it: its albedo and a colour for it seen as a point (src/render/PlanetLook.ts). */
-  private lookOf(kind: WorldKind, seed: number): MadeLook {
-    const look = generatedLook(madeLook(kind, seed, madeSize(kind, WORLD_BASE[kind], false).radius));
+  private lookOf(kind: WorldKind, seed: number, hue = 0): MadeLook {
+    const look = generatedLook(madeLook(kind, seed, madeSize(kind, WORLD_BASE[kind], false).radius, false, hue));
     return { albedo: look.albedo, color: [...(look.pal.uC2 as [number, number, number])] };
   }
 
@@ -1555,12 +1556,29 @@ export class App {
     const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'];
     if (!b || !as || as.seed === undefined || !isWorldKind(as.kind)) return;
     as.seed = newSeed(Math.random, as.seed);
-    const look = this.lookOf(as.kind, as.seed);
+    const look = this.lookOf(as.kind, as.seed, as.hue ?? 0);
     b.albedo = look.albedo;
     b.color = look.color;
     // (drawn afresh from its new seed)
     this.bodies.changed(b);
     this.updateHud();
+  }
+
+  /**
+   * The Colour slider of the world being put in place, if it has a generated look: all its colours turned `s` of a turn
+   * round the colour wheel (0 to 1; kept in 256 steps, as a link keeps it), its point's colour and brightness with them.
+   */
+  setMadeHue(s: number): void {
+    const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'];
+    if (!b || !as || as.seed === undefined || !isWorldKind(as.kind)) return;
+    const hue = (((Math.round(s * HUE_STEPS) % HUE_STEPS) + HUE_STEPS) % HUE_STEPS) / HUE_STEPS;
+    if (hue === (as.hue ?? 0)) return;
+    if (hue) as.hue = hue;
+    else delete as.hue;
+    const look = this.lookOf(as.kind, as.seed, hue);
+    b.albedo = look.albedo;
+    b.color = look.color;
+    this.bodies.recolour(b);
   }
 
   /** Add rings, or Remove rings: the world being put in place, if it has a generated look, gets a ring, or loses it (the rest of its look stays). */
@@ -3826,7 +3844,7 @@ export class App {
         if (as && this.mover.placing && this.mover.body === pb) {
           const kind = as.kind as Kind;
           const looked = as.seed !== undefined && isWorldKind(kind);
-          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null };
+          selection.place = { slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null, hue: looked ? as.hue ?? 0 : null };
         }
       }
     }

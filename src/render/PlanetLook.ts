@@ -25,6 +25,8 @@ export interface LookSpec {
   /** mean radius (m) */
   radius: number;
   rings: boolean;
+  /** a turn of all its colours round the colour wheel (a share of a whole turn, 0 to 1): a made world's own choice; none for the others */
+  hue?: number;
 }
 
 /** A look: the shader's uniform values that depend on the world alone, the disk's mean albedo, the type's number and the seed the shader gets. */
@@ -152,14 +154,27 @@ const MADE_TEMPERATURE: Partial<Record<PlanetType, number>> = { terran: 288, oce
  * The generated look of a made world of `kind` with `seed` and mean radius `radius` (m): what it is drawn from (its kind is its
  * type), with a ring if `rings` (the ring does not change the rest of the look: its numbers are drawn either way).
  */
-export function madeLook(kind: PlanetType, seed: number, radius: number, rings = false): LookSpec {
+export function madeLook(kind: PlanetType, seed: number, radius: number, rings = false, hue = 0): LookSpec {
   const key = `made/${kind}/${seed}`;
-  return { key, name: key, type: kind, teqK: MADE_TEMPERATURE[kind] ?? 288, seed, radius, rings };
+  return { key, name: key, type: kind, teqK: MADE_TEMPERATURE[kind] ?? 288, seed, radius, rings, hue };
+}
+
+/**
+ * A colour turned `turn` of a whole turn round the colour wheel: rotated about the grey axis
+ * (equal red, green and blue), so greys stay grey and a colour keeps about its brightness; none
+ * below zero.
+ */
+export function turnHue(c: V3, turn: number): V3 {
+  const a = 2 * Math.PI * turn, cos = Math.cos(a), s = Math.sin(a) / Math.sqrt(3), k = (1 - cos) / 3;
+  const d = cos + k, p = k - s, q = k + s;
+  return [Math.max(0, d * c[0] + p * c[1] + q * c[2]), Math.max(0, q * c[0] + d * c[1] + p * c[2]), Math.max(0, p * c[0] + q * c[1] + d * c[2])];
 }
 
 /** The look of the world `spec` describes (its palette, seas and climate, ring); deterministic in the spec. */
 export function generatedLook(spec: LookSpec): Look {
   const pal = paletteFor(spec);
+  // (a made world's colours turned as its maker chose: every colour of the palette, the rest of the look as it was)
+  if (spec.hue) for (const [k, v] of Object.entries(pal)) if (Array.isArray(v)) pal[k] = turnHue(v, spec.hue);
   const seed = spec.seed % 97;
   // climate and seas: the sea covers the planet's own fraction of the surface
   const rc = rng(hashKey(spec.key + '/climate'));
@@ -252,11 +267,15 @@ ${OUTPUT_FRAGMENT}
 /** A ring's inner and outer radius (in its planet's radii) as drawn: the look's ringlets lie within. */
 export const RING_SPAN = [1.15, 3.0] as const;
 
-/** The material of the ring of the look `look` of `spec`: icy when cold, dark and dusty otherwise. */
+/** The colour of the ring of the look `look` of `spec`: icy when cold (tinted by the planet's own), dark and dusty otherwise. */
+export function ringColor(spec: LookSpec, look: Look): V3 {
+  const c3 = look.pal.uC3 as V3;
+  return spec.teqK < 150 ? [0.62 + 0.15 * c3[0], 0.57 + 0.15 * c3[1], 0.5 + 0.15 * c3[2]] : [0.22, 0.2, 0.19];
+}
+
+/** The material of the ring of the look `look` of `spec` (ringColor). */
 export function ringMaterial(spec: LookSpec, look: Look, name: string): ShaderMaterial {
-  const pal = look.pal, icy = spec.teqK < 150;
-  const c3 = pal.uC3 as V3;
-  const c: V3 = icy ? [0.62 + 0.15 * c3[0], 0.57 + 0.15 * c3[1], 0.5 + 0.15 * c3[2]] : [0.22, 0.2, 0.19];
+  const pal = look.pal, c = ringColor(spec, look);
   return new ShaderMaterial({
     name, vertexShader: RING_VERT, fragmentShader: RING_FRAG,
     uniforms: { uColor: { value: new Vector3(...c) }, uSeed: { value: pal.uRingSeed }, uIn: { value: pal.uRingIn }, uOut: { value: pal.uRingOut },
