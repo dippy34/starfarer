@@ -84,7 +84,9 @@ const ready = async (page) => {
   await page.evaluate(inPage);
 };
 const state = (page) => page.evaluate(() => window.probe.state());
-const settle = (page) => page.waitForFunction(() => !window.app.rig.autopilot && !window.app.input.gestures.gliding, null, { timeout: 600000 });
+// (the camera at rest: no flight, no flick still gliding, and no double tap's zoom still under way: it glides
+// over 0.45 s of the app's time, at most 0.1 s a frame, so on a runner's slow frames it can outlast any fixed wait)
+const settle = (page) => page.waitForFunction(() => !window.app.rig.autopilot && !window.app.input.gestures.gliding && !window.app.rig.gliding, null, { timeout: 600000 });
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const centreOf = async (page, sel) => {
   const r = await page.evaluate((s) => { const b = document.querySelector(s).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
@@ -285,6 +287,8 @@ const centreOf = async (page, sel) => {
   f.wait(1);
   await f.doubleTap(spot);
   await page.waitForTimeout(1200);
+  // (until the zoom has ended, not for a fixed time alone: 25 Nov's 3.97 and 27 Nov's 5.59 on its side were read mid-glide)
+  await settle(page);
   await f.frames(3);
   const near = await page.evaluate((p) => ({ from: window.probe.from('Moon'), px: window.probe.drawn(p), flying: window.app.rig.autopilot }), held);
   check('a double tap on the world you are at comes six times closer to that spot', !near.flying && Math.abs(far.height / near.from.height - 6) < 0.05 && Math.hypot(near.px.x - spot.x, near.px.y - spot.y) < 3, JSON.stringify({ ratio: far.height / near.from.height, px: near.px }));
@@ -292,12 +296,22 @@ const centreOf = async (page, sel) => {
   // one finger set to look
   await page.evaluate(() => window.app.goTo(window.app.findByName('Moon')));
   await settle(page);
-  await f.tap(await centreOf(page, '.look-fab'));
+  // (what the tap met, for the day it misses again, TASKS.md task/look-button: the clicks the round button got,
+  // what the finger came down on, and the button's box against the point tapped)
+  await page.evaluate(() => {
+    const seen = { clicks: 0, down: null };
+    window.__lookTap = seen;
+    document.querySelector('.look-fab').addEventListener('click', () => { seen.clicks++; });
+    document.addEventListener('touchstart', (e) => { const t = e.target; seen.down = t instanceof Element ? (t.closest('button')?.className ?? t.tagName) : String(t); }, { capture: true, once: true });
+  });
+  const lookAt = await centreOf(page, '.look-fab');
+  await f.tap(lookAt);
   s0 = await state(page);
+  const lookTap = await page.evaluate(() => { const b = document.querySelector('.look-fab').getBoundingClientRect(); return { ...window.__lookTap, box: [b.left, b.top, b.width, b.height].map(Math.round) }; });
   await f.drag({ x: mid.x, y: 300 }, { x: mid.x + 70, y: 340 });
   s1 = await state(page);
   check('set to "Look", one finger looks around instead', s0.touchDrag === 'look' && dist(s0.cam, s1.cam) < 1e-3 && Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) > 0.02,
-    JSON.stringify({ mode: s0.touchDrag, moved: dist(s0.cam, s1.cam), turned: Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) }));
+    JSON.stringify({ mode: s0.touchDrag, moved: dist(s0.cam, s1.cam), turned: Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]), tapped: [Math.round(lookAt.x), Math.round(lookAt.y)], ...lookTap }));
   await f.tap(await centreOf(page, '.look-fab'));
   await page.close();
   await ctx.close();
