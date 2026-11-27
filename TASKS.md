@@ -105,6 +105,37 @@ need the OpenCode workspace's region set to Global.
     live physics); Claude runs the rest. `npm run check` passes.
 - **Don't touch:** the clock and its rates (`src/core/time.ts`), the top chip, the watch.
 
+### `task/plain-physics`: the live-physics lines in plain words
+
+- **Status:** open (start after task/comet-powers is reviewed: both touch `src/app/Mover.ts`). Medium.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the fix list's #4, "make it simple", lists the live-physics screens as still to redo. Their
+  lines speak an astronomer's shorthand: "Now round the Sun: a circle 1.21 AU out · 486 d." (the Move
+  panel, `Mover.ts` with `orbitWords` and `farWords` in `src/app/Powers.ts`), "New rocky world is new:
+  1.21 AU from the Sun, once round in 486 d." (the toast of Add, `App.add`), the card's "Its orbit" line
+  (`LivePhysics.ts`, the details). The chips at the top already say how far and how fast in plain words
+  (`plainDistance`, `plainSpeedWords` in `src/app/plainWords.ts`; `clockChipWords` in `Powers.ts`).
+- **What to do:** every line of live physics the card, its panels, the toasts and the watch show says a
+  distance as `plainDistance` does (km; millions or billions of km; light years far out: never AU) and a
+  time as `spanWords` does ("486 days", "11.9 years", "6.6 hours": never "d", "h", "yr" or "s"), with
+  "once round in ..." for a period. For example "Now round the Sun: a circle 181 million km out, once
+  round in 486 days." and "a slightly stretched circle, 365,709 to 382,840 km, once round in 26.2 days".
+  The rows under "More science" keep their units (AU and the rest are science there). Keep the words
+  short enough for a phone 390 px wide; keep the precision as it is (three figures).
+- **Done when:**
+  - The unit tests that pin these words (`tests/powers.test.ts` and others) pin the new words, each as
+    exactly as before (no check loosened, none deleted); a new test that no line of `orbitWords` and of
+    the Add toast contains "AU" or a bare unit letter.
+  - The browser checks in `scripts/live.mjs` and `scripts/whatif.mjs` that read these lines read the new
+    words, their patterns as strict as before. Run `LIVE_ONLY=place,throw,made,moon,watch` of
+    `scripts/live.mjs` (phone and desk) and `scripts/whatif.mjs`; Claude runs the whole set after.
+    `npm run check` passes.
+  - Pictures, upright at 390x844: the Move panel while a new world is put in place, and the card's
+    details of a moved moon.
+- **Don't touch:** the chips at the top and the Time panel (done), the made worlds' looks
+  (`src/render/PlanetLook.ts`, `src/render/PlanetPortrait.ts`), the comets' powers (task/comet-powers),
+  the science rows.
+
 ### `task/comet-powers`: God mode on comets: throw one, move it, take it away
 
 - **Status:** open. Large.
