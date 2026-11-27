@@ -104,6 +104,42 @@ need the OpenCode workspace's region set to Global.
     live physics); Claude runs the rest. `npm run check` passes.
 - **Don't touch:** the clock and its rates (`src/core/time.ts`), the top chip, the watch.
 
+### `task/name-it`: name a world you made
+
+- **Status:** open. Medium.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** God mode as a sandbox (`docs/notes/ideas.md`; the owner, 27 Nov 2026: "adding whatever
+  you want and creating infinite amount of different possibilities"). A made world is named by Add
+  ("New gas giant", "Earth 2", "Mars's new moon", "Sun 2") and the name cannot be changed. A world of your
+  own should be able to carry a name of your own.
+- **What to do:** read `HANDOFF.md` "Design" first (plain words, the `--sf-*` tokens, every target at
+  least 44 px) and "Make anything, step 1" (the placing panel: mass slider, New look, Add rings, Colour).
+  - While a made world is put in place (any made world: a moon, a copy, a sun, a world of a generated
+    look; `App.mover.placing`), the card's placing panel (`src/ui/Hud.ts`, `.placing`) offers its name in a
+    text field labelled "Name", at least 44 px high, filled with the name it has. The new name is taken
+    when the field is left or Enter is pressed (not at every key), and the field is let go of.
+  - A name is taken only if it is plain (`plainName` in `src/app/SceneWorld.ts`: letters, digits, spaces
+    and a few marks, at most `WORLD_LIMITS.name` characters; spaces at either end are trimmed first) and is
+    no other thing's name (`App.findByName` finds nothing else by it, in any letter case: no "Earth", no
+    "Sirius", no second "New gas giant"). Otherwise the old name stays and a short plain line under the
+    field says why ("That name is taken", "Letters, digits and spaces only, 40 at most").
+  - Keys typed in the field reach no shortcut of the app (Space is not "pause", W is not "forward").
+  - The new name is the world's everywhere: its label in the view, the card, search, its details, the
+    log's next lines, and a save and a link (`MadeRecord.name` keeps it already; a link's reader checks it
+    with `plainName`).
+- **Done when:**
+  - Unit tests for the rule that takes a name (plain, trimmed, at most 40, not another's name in any case).
+  - Browser checks in `scripts/live.mjs` (the `made` block, phone and desk): the field is offered, a thumb
+    high, with the name; "Big Blue" typed and Enter: the card's title, the label and search say Big Blue; a
+    save of the scene, opened again, brings back Big Blue; "earth" is refused with its line, and the name
+    stays; a Space typed in the field does not pause or start time. They fail on the code before the change.
+  - Pictures, upright at 390x844: the field with a name typed, and the label after.
+  - Run `LIVE_ONLY=made,place` of `scripts/live.mjs` (phone and desk) and `scripts/share.mjs`; Claude runs the
+    whole set after. `npm run check` passes.
+- **Don't touch:** `src/app/LivePhysics.ts` and `src/sim/` (the physics), the camera rig, the watch
+  (`src/app/Watch.ts`), the tab bar, the Time panel (task/time-panel works there). No catalogue name ever
+  changes: only made worlds are renamed.
+
 ### `task/make-anything`: God mode's sandbox, step 1: made worlds of every kind, each with a look of its own
 
 - **Status:** done 27 Nov 2026: run 45966214578 on Claude Sonnet 5.5 ($4.27; it ran out of its 80
