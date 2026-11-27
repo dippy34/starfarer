@@ -15,7 +15,7 @@ import type { TileDetail } from './TileDetail';
 import { BLOOM } from './shaders/bloom';
 import { BODY_FRAG, BODY_VERT, GLARE_FRAG, GLARE_VERT } from './shaders/body';
 import { EXO_FRAG } from './shaders/planet';
-import { generatedLook, lightRing, lookUniforms, madeLook, RING_SPAN, ringMaterial } from './PlanetLook';
+import { generatedLook, lightRing, lookUniforms, madeLook, RING_SPAN, ringColor, ringMaterial } from './PlanetLook';
 import type { PlanetType } from '../universe/Planets';
 import { STAR_FRAG } from './shaders/star';
 import { RING_FRAG, RING_VERT } from './shaders/rings';
@@ -571,15 +571,29 @@ export class BodiesLayer {
   private lookedRings = new Map<Body, Mesh>();
   private lookRingGeo: RingGeometry | null = null;
 
-  /** The type, seed and rings of the generated look a body wears (what it was made as), or null: it has a map, or a look of its own, as the catalogue's bodies do. */
-  lookOf(b: Body): { type: PlanetType; seed: number; rings: boolean } | null {
-    const as = b.meta.madeAs as { kind: string; seed?: number; rings?: boolean } | undefined;
-    return as && as.seed !== undefined ? { type: as.kind as PlanetType, seed: as.seed, rings: !!as.rings } : null;
+  /** The type, seed, rings and colour turn of the generated look a body wears (what it was made as), or null: it has a map, or a look of its own, as the catalogue's bodies do. */
+  lookOf(b: Body): { type: PlanetType; seed: number; rings: boolean; hue: number } | null {
+    const as = b.meta.madeAs as { kind: string; seed?: number; rings?: boolean; hue?: number } | undefined;
+    return as && as.seed !== undefined ? { type: as.kind as PlanetType, seed: as.seed, rings: !!as.rings, hue: as.hue ?? 0 } : null;
+  }
+
+  /**
+   * A made world's colours turned anew (its `madeAs.hue` changed: the Colour slider): its material's colours, and its
+   * ring's, set in place, as the slider moves (a new material at every step would be built and compiled again).
+   */
+  recolour(b: Body): void {
+    const mesh = this.meshes.get(b), wears = this.lookOf(b);
+    if (!mesh || !wears || !this.looked.has(b)) return;
+    const spec = madeLook(wears.type, wears.seed, b.radius, wears.rings, wears.hue), look = generatedLook(spec);
+    const u = (mesh.material as ShaderMaterial).uniforms;
+    for (const [k, v] of Object.entries(look.pal)) if (Array.isArray(v) && u[k]) (u[k].value as Vector3).set(v[0], v[1], v[2]);
+    const ring = this.lookedRings.get(b);
+    if (ring) (ring.material as ShaderMaterial).uniforms.uColor.value.set(...ringColor(spec, look));
   }
 
   /** The mesh of a world made with a generated look: the material of the made-up planets of other stars (src/render/ExoPlanetLayer.ts), from the same look (PlanetLook.ts), and its ring if it has one. */
-  private createLooked(b: Body, type: PlanetType, seed: number, rings: boolean): Mesh {
-    const spec = madeLook(type, seed, b.radius, rings), look = generatedLook(spec);
+  private createLooked(b: Body, type: PlanetType, seed: number, rings: boolean, hue: number): Mesh {
+    const spec = madeLook(type, seed, b.radius, rings, hue), look = generatedLook(spec);
     const mat = new ShaderMaterial({ name: 'generated-look', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: lookUniforms(spec, look, this.surfaceExposure) });
     const mesh = new Mesh(this.sphere(-180), mat);
     mesh.matrixAutoUpdate = false;
@@ -630,7 +644,7 @@ export class BodiesLayer {
 
   private createMesh(b: Body): Mesh {
     const wears = this.lookOf(b);
-    if (wears) return this.createLooked(b, wears.type, wears.seed, wears.rings);
+    if (wears) return this.createLooked(b, wears.type, wears.seed, wears.rings, wears.hue);
     const texKey = this.textureKey(b);
     const mapInfo = texKey ? this.manifest.maps[texKey] : undefined;
     const isStar = b.kind === 'star';

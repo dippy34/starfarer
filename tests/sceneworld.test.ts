@@ -261,29 +261,31 @@ describe('the changed universe in a link', () => {
     });
   }, 240_000);
 
-  it('a world of a generated look keeps its rings: in the bytes, in a link, made again; one without them reads without', async () => {
+  it('a world of a generated look keeps its rings and its colours\' turn: in the bytes, in a link, made again; one without them reads without', async () => {
     const a = await universe(), sun = a.sys.sun, look = { albedo: 0.3, color: [0.5, 0.5, 0.5] as [number, number, number] };
     const ringed = newWorld('giant', sun, [1.2e11, 4e10, 0], 0, MADE_FIRST_ID, 77, look);
     const plain = newWorld('icegiant', sun, [2.0e11, 4e10, 0], 0, MADE_FIRST_ID + 1, 78, look);
     for (const plan of [ringed, plain]) a.physics.make(plan.json, sun, plan.pos, plan.vel, JD, `${plan.json.name} is new.`);
-    (a.sys.byId.get(MADE_FIRST_ID)!.meta.madeAs as { rings?: boolean }).rings = true;
+    Object.assign(a.sys.byId.get(MADE_FIRST_ID)!.meta.madeAs as object, { rings: true, hue: 93 / 256 });
     const world = a.physics.world()!;
-    // (what App.sceneView does: the seed and the rings ride with the body, not in the simulation)
+    // (what App.sceneView does: the seed, the rings and the turn ride with the body, not in the simulation)
     for (const m of world.made) {
-      const as = a.sys.byId.get(m.id)!.meta.madeAs as { seed?: number; rings?: boolean };
+      const as = a.sys.byId.get(m.id)!.meta.madeAs as { seed?: number; rings?: boolean; hue?: number };
       m.seed = as.seed;
       if (as.rings) m.rings = true;
+      if (as.hue) m.hue = as.hue;
     }
-    const want = [['giant', 77, true], ['icegiant', 78, false]];
+    const want = [['giant', 77, true, 93 / 256], ['icegiant', 78, false, 0]];
     const sent = decodeWorld(encodeWorld(world));
-    expect(sent.made.map((m) => [m.kind, m.seed, !!m.rings])).toEqual(want);
+    expect(sent.made.map((m) => [m.kind, m.seed, !!m.rings, m.hue ?? 0])).toEqual(want);
     const link = encodeLink({ selected: null, at: null, camera: [1, 2, 3], turn: [0, 0, 0, 1], fov: 50, jd: world.jd0 + world.sim.time / DAY, rate: 1, paused: true, world: toBase64Url(encodeWorld(world)) });
     const read = decodeWorld(decodeLinkWorld(link));
-    expect(read.made.map((m) => [m.kind, m.seed, !!m.rings])).toEqual(want);
-    // made again, on another device: the ringed one with its rings, the other without
+    expect(read.made.map((m) => [m.kind, m.seed, !!m.rings, m.hue ?? 0])).toEqual(want);
+    // made again, on another device: the ringed one with its rings and its colours, the other as it was made
     const b = await universe();
     b.physics.adoptWorld(read, remake(b.sys));
-    expect([MADE_FIRST_ID, MADE_FIRST_ID + 1].map((id) => (b.sys.byId.get(id)!.meta.madeAs as { rings?: boolean }).rings ?? false)).toEqual([true, false]);
+    expect([MADE_FIRST_ID, MADE_FIRST_ID + 1].map((id) => { const as = b.sys.byId.get(id)!.meta.madeAs as { rings?: boolean; hue?: number }; return [as.rings ?? false, as.hue ?? 0]; }))
+      .toEqual([[true, 93 / 256], [false, 0]]);
   }, 240_000);
 
   it('a world of a generated look without its seed cannot be written; one with a seed beyond what a look has cannot be read', async () => {

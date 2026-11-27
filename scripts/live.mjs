@@ -992,7 +992,8 @@ for (const kind of kinds) {
 
   // ------------------------------------------------------------------ a made world of a generated look: no map, a seed, New look, kept in a save
   if (want('made')) {
-    const { ctx, page } = await open(kind, 'target=Sun&dist=473&el=40');
+    const { ctx, page, touch } = await open(kind, 'target=Sun&dist=473&el=40');
+    const hand = await handOf(page, touch);
     await quiet(page);
     await press(page, '#hud .card [data-power="add"]');
     await press(page, '#hud .card [data-act="add-giant"]');
@@ -1050,6 +1051,23 @@ for (const kind of kinds) {
     check(on('"Remove rings" takes the ring away'), !r2.rings && !r2.ring && r2.words === 'Add rings', JSON.stringify(r2));
     await press(page, '#hud .card [data-act="rings"]');
     await frames(page, 4);
+    // its colour: the Colour slider, dragged half way along, turns all its colours half round the colour wheel; the rest stays
+    const hueBox = await page.locator('#hud .card .placing .hue-slider').boundingBox();
+    const hueAt = (s) => ({ x: hueBox.x + 15 + s * (hueBox.width - 30), y: hueBox.y + hueBox.height / 2 });
+    const h0 = await looks();
+    const beforeHue = h0.at ? await disk(h0.at) : null;
+    await hand.press(hueAt(0));
+    for (let i = 1; i <= 6; i++) await hand.slide(hueAt((0.5 * i) / 6));
+    await hand.lift();
+    await frames(page, 4);
+    const h1 = await looks();
+    const afterHue = h1.at ? await disk(h1.at) : null;
+    const hueRead = await page.evaluate(() => { const row = document.querySelector('#hud .card .hue-row'); return { hue: window.app.selection.meta.madeAs.hue ?? 0, row: !row.hidden, h: row.getBoundingClientRect().height }; });
+    check(on('its Colour slider, a thumb high, dragged half way along turns its colours half round the colour wheel: other colours, the same world, seed and rings'),
+      hueRead.row && hueRead.h >= 44 && Math.abs(hueRead.hue - 0.5) < 0.05 && h1.c1 !== h0.c1 && h1.name === h0.name && h1.madeAs.seed === h0.madeAs.seed && h1.madeAs.rings === true
+        && h1.material === 'generated-look' && !!beforeHue && !!afterHue && Buffer.compare(beforeHue, afterHue) !== 0,
+      JSON.stringify({ ...hueRead, c1: [h0.c1, h1.c1] }));
+    await page.screenshot({ path: path.join(outDir, `live-${kind}-made-colour.png`) });
     await press(page, '#hud .card [data-act="place-done"]');
     await frames(page, 3);
     // a save of the scene, opened again: the same world, with the same type and seed, drawn the same way
@@ -1060,9 +1078,9 @@ for (const kind of kinds) {
     await page.evaluate(() => { const a = window.app, b = a.made[0]; a.select(b); a.placeNear(b, 6 * b.radius * a.rig.framing, 35, 12); });
     await frames(page, 6);
     const g2 = await looks();
-    check(on('a save of the scene, opened again, brings the world back with the same type and seed, drawn with the same generated look'),
-      g2.name === 'New gas giant' && g2.madeAs.kind === 'giant' && g2.madeAs.seed === g1.madeAs.seed && g2.material === 'generated-look' && g2.seed === g1.seed && g2.c1 === g1.c1 && !g2.map,
-      `${g2.name}: ${g2.madeAs.kind}, seed ${g2.madeAs.seed} (saved: ${g1.madeAs.seed})`);
+    check(on('a save of the scene, opened again, brings the world back with the same type, seed and colours, drawn with the same generated look'),
+      g2.name === 'New gas giant' && g2.madeAs.kind === 'giant' && g2.madeAs.seed === h1.madeAs.seed && g2.madeAs.hue === h1.madeAs.hue && g2.material === 'generated-look' && g2.seed === h1.seed && g2.c1 === h1.c1 && !g2.map,
+      `${g2.name}: ${g2.madeAs.kind}, seed ${g2.madeAs.seed}, colour turn ${g2.madeAs.hue} (saved: ${h1.madeAs.seed}, ${h1.madeAs.hue}); colour ${g2.c1} (saved: ${h1.c1})`);
     const r3 = await page.evaluate(() => { const a = window.app, m = a.made[0], ring = a.bodies.group.children.find((o) => o.name === `${m.name} rings`); return { rings: !!m.meta.madeAs.rings, ring: ring?.material.name ?? null, shown: !!ring?.visible }; });
     check(on('...and with its rings'), r3.rings && r3.ring === 'generated-ring' && r3.shown, JSON.stringify(r3));
     check(on('it is a made world like the others: Mass, Size, Move, Add and Remove'),

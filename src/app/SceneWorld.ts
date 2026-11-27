@@ -49,6 +49,8 @@ export interface MadeRecord {
   seed?: number;
   /** a world of a generated look with rings (none, or false: without); kept as the seed is */
   rings?: boolean;
+  /** a world of a generated look whose colours were turned (the Colour slider: a share of a turn, in HUE_STEPS steps; none: 0); kept as the seed is */
+  hue?: number;
 }
 
 export interface LiveWorld {
@@ -86,6 +88,8 @@ const bad = (why: string): never => { throw new WorldError(why); };
 const KINDS: readonly Kind[] = ['moon', 'earth', 'jupiter', 'sun', ...WORLD_KINDS];
 /** a look's seed is a whole number below this */
 export const SEED_MOST = 1_000_000;
+/** the turn of a made world's colours is kept in this many steps of a whole turn (a byte) */
+export const HUE_STEPS = 256;
 
 /**
  * A made world's name, as a link may give it: letters, digits, spaces and a few marks (apostrophes,
@@ -164,11 +168,14 @@ export function encodeWorld(w: LiveWorld): Uint8Array {
   for (const [id, moons] of w.carried) { o.uint(id); o.uint(moons.length); for (const m of moons) o.uint(m); }
   o.uint(w.made.length);
   for (const m of w.made) {
-    // (the byte after its home: 1 an icy moon; for a world of a generated look, 2 with rings: a link written before rings reads as ever)
-    o.uint(m.id - MADE_FIRST_ID); o.u8(KINDS.indexOf(m.kind)); o.text(m.name); o.uint(m.home); o.u8((m.icy ? 1 : 0) | (isWorldKind(m.kind) && m.rings ? 2 : 0));
-    if (isWorldKind(m.kind)) {
+    // (the byte after its home: 1 an icy moon; for a world of a generated look, 2 with rings, 4 with its colours turned, the
+    // turn a byte after its seed: a link written before either reads as ever)
+    const looked = isWorldKind(m.kind), steps = looked && m.hue ? Math.round(m.hue * HUE_STEPS) % HUE_STEPS : 0;
+    o.uint(m.id - MADE_FIRST_ID); o.u8(KINDS.indexOf(m.kind)); o.text(m.name); o.uint(m.home); o.u8((m.icy ? 1 : 0) | (looked && m.rings ? 2 : 0) | (steps ? 4 : 0));
+    if (looked) {
       if (m.seed === undefined) throw new Error('a world of a generated look has no seed');
       o.uint(m.seed);
+      if (steps) o.u8(steps);
     }
     o.f64(m.kg); o.f64(m.gm); o.f64(m.radius);
     if (m.kind === 'sun') { o.f64(m.teff); o.f64(m.absMag); }
@@ -325,13 +332,15 @@ function walk(r: Reader, dry: boolean, doubles?: Reader): LiveWorld {
     const kind = KINDS[kindAt], name = r.text(WORLD_LIMITS.name);
     if (!plainName(name)) bad('the name of a world made in it is not plain text');
     const home = r.uint(2 ** 31 - 1), icyAt = r.u8();
-    // (a world of a generated look is never an icy moon: 0, or 2 with rings; any other world 0, or 1 an icy moon)
-    if (isWorldKind(kind) ? icyAt !== 0 && icyAt !== 2 : icyAt > 1) bad('a world made in it could not be read');
-    const rings = (icyAt & 2) === 2;
+    // (a world of a generated look is never an icy moon: 2 with rings, 4 with its colours turned; any other world 0, or 1 an icy moon)
+    if (isWorldKind(kind) ? (icyAt & ~6) !== 0 : icyAt > 1) bad('a world made in it could not be read');
+    const rings = (icyAt & 2) === 2, turned = (icyAt & 4) === 4;
     const seed = isWorldKind(kind) ? r.uint(SEED_MOST - 1) : 0;
+    const steps = turned ? r.u8() : 0;
+    if (turned && steps === 0) bad('a world made in it could not be read');
     const kg = f(1, GM_MOST / 6.674e-11, 'the mass of a world made in it'), gm = f(0, GM_MOST, 'the mass of a world made in it'), radius = f(1, RADIUS_MOST, 'the size of a world made in it');
     const teff = kind === 'sun' ? f(100, 1e6, 'the colour of a sun made in it') : 0, absMag = kind === 'sun' ? f(-30, 40, 'the light of a sun made in it') : 0;
-    made.push({ id, kind, name, home, icy: (icyAt & 1) === 1, kg, gm, radius, teff, absMag, ...(isWorldKind(kind) ? { seed } : {}), ...(rings ? { rings: true } : {}) });
+    made.push({ id, kind, name, home, icy: (icyAt & 1) === 1, kg, gm, radius, teff, absMag, ...(isWorldKind(kind) ? { seed } : {}), ...(rings ? { rings: true } : {}), ...(steps ? { hue: steps / HUE_STEPS } : {}) });
   }
   const ng = r.uint(WORLD_LIMITS.gone), gone: number[] = [];
   for (let k = 0; k < ng; k++) gone.push(r.uint(2 ** 31 - 1));

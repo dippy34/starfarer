@@ -497,6 +497,9 @@ describe('worlds of a generated look', () => {
       // without rings unless it had them
       expect(json.madeAs!.rings).toBeUndefined();
       expect(madeAgain({ ...m, rings: true }, star, null, null, look).madeAs!.rings).toBe(true);
+      // and its colours as they were turned
+      expect(json.madeAs!.hue).toBeUndefined();
+      expect(madeAgain({ ...m, hue: 0.25 }, star, null, null, look).madeAs!.hue).toBe(0.25);
     }
   });
 });
