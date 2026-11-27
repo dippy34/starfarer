@@ -8,8 +8,9 @@ name: Deploy to GitHub Pages
 
 on:
   push:
+    # (the developers' site follows the branch every update lands on. main holds only what the owner
+    # approved, the play testers' version, put on Cloudflare at a release: HANDOFF.md, Hosting)
     branches:
-      - main
       - claude/friendly-hypatia-up418z
     # (a start note for the outside AI's run changes nothing on the site)
     paths-ignore:

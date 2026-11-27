@@ -1,8 +1,10 @@
 # Handoff: where the project stands
 
-Live: https://dippy34.github.io/starfarer/ (GitHub Pages serving the `gh-pages` branch) ·
-Deploy: automatic on every push to `main` (`.github/workflows/deploy-pages.yml`: `npm run check`,
-then `dist/` is published to `gh-pages`).
+Developers' site: https://dippy34.github.io/starfarer/ (GitHub Pages serving the `gh-pages` branch) ·
+Deploy: automatic on every push to the live branch, `claude/friendly-hypatia-up418z`
+(`.github/workflows/deploy-pages.yml`: `npm run check`, then `dist/` is published to `gh-pages`).
+Play testers' site: https://starfarer.pages.dev, changed only at a release, when `main` moves too
+("Hosting", below).
 
 Starfarer was imported from Space Explorer (dippy34/nextjs-boilerplate at 4f97371) without its God
 mode (`src/god/`: the universe editor, N-body sandbox and console), which is not included yet. The
@@ -117,8 +119,19 @@ Two copies of the app, so that play testers have one that does not change under 
   and `rm -rf dist`. Only changed files are uploaded (the first, 13,097 files, took 38 s). Never
   `--force` again: the project exists (wrangler 4.168 sends `pages project create` to Workers unless
   forced, which it was once). The account's other projects are the owner's own: leave them be.
+  The release then moves `main` to the released commit, `git push origin <sha>:main`, which is
+  always a fast-forward (below).
 - *Developers' site:* https://dippy34.github.io/starfarer, from this branch as before (every push
   that passed its suites; `deploy-pages.yml`). It is the newest work; testers are not given it.
+- *Branches* (the owner, 27 Nov 2026: "there's another branch that receives all the updates and
+  only when approved all the changes go to main"): every update lands on this branch,
+  `claude/friendly-hypatia-up418z`, and the developers' site follows it. `main` holds only what
+  the owner approved: it moves only on a release ("release" is the owner's approval), to the
+  released commit, so `main` is always exactly what the play testers have. Never a commit made on
+  `main` itself and never a force push: the branch's history runs through every release. A push
+  to `main` builds nothing (`deploy-pages.yml` follows this branch only, so an approved version
+  never replaces the newest on the developers' site). Until the first release after 27 Nov, `main`
+  still holds only the repository's first commit (the release of 936d146 came before this).
 
 Releases so far: 936d146 (the first play-test version, 26 Nov 2026).
 
