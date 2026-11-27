@@ -1,1 +1,41 @@
-# Started by Claude, 25 Nov 2026: first try (the owner asked for an offline version with everything downloaded).
+# Started by Claude, 27 Nov 2026: second try of task/offline, from its first try (run 45720347631),
+# applied as commit 97ed4c9 on the test branch claude/test-offline-base (npm run check's types and unit
+# tests pass there: 778 tests). The first real run on the owner's Claude API credits, with Claude
+# Sonnet 5.5. The review (26 Nov 2026) found the first try safe for people who never tap Download, and
+# named the fixes below before it can go live.
+model: anthropic/claude-sonnet-5-5
+base: 97ed4c9110bb9e616f2c11da2dce402501e72a2f
+
+The first try is already in this copy, and it works: someone who never taps Download gets no worker
+and no cache, the worker's scope is the app's own folder (/starfarer/ on the developers' site, / on
+the play testers' site), and the Earth-Moon check passed 10/10. Keep all of that. Fix these, with the
+smallest change that does it, and keep every check of scripts/offline.mjs passing:
+
+1. A failed file must not waste the download. In src/platform/offline.ts downloadOfflineCopy, the
+   six worker loops run on after one throws, and the catch deletes the staging cache while they
+   still write to it. Add a shared "failed" flag the loops check; retry each file up to 3 times
+   with a short wait before giving up; and wait for all loops to settle before anything else.
+   Then keep what was fetched: Download again carries on, fetching only the files the staging
+   cache lacks (each still checked by its SHA-256). On an iPhone, locking the screen fails the
+   fetches in flight, so stopping and carrying on is the normal case there.
+2. A stopped download's staging cache must not be lost track of. When the panel loads: a partial
+   copy of the current version is offered to carry on ("A download stopped at N MB of M: Download
+   carries on"), with Remove to free its space; every other starfarer-offline-v-* cache that is
+   not complete (no offline-copy.json), not the active one and not pinned by an open tab is
+   deleted.
+3. Two tabs downloading at once destroy each other's staging. Take a Web Locks lock
+   (navigator.locks.request) around the download; where Web Locks are missing, say in plain words
+   that another tab is downloading and do nothing.
+4. After an update the old copy is never pruned (prune runs only on "activate"). Run prune when
+   the worker starts and when a page loads, so the old ~941 MB copy goes once no tab pins it.
+5. Opening More fetches offline-manifest.json (about 1.5 MB) every time, before any opt-in. Read
+   the cached status first; fetch the manifest only when Download is tapped (or when a copy is
+   already kept, to offer an update).
+6. Plain words for errors: never show String(error). A quota error says "Not enough room on this
+   device for the offline copy"; a network failure says "The download stopped (no connection?).
+   Download again to carry on"; anything else "The offline copy could not be made".
+7. Ship a kill switch: public/sw-off.js, a worker that deletes every starfarer-offline cache and
+   unregisters itself, and a sentence in HANDOFF.md on how to put it in place of sw.js if sw.js
+   ever misbehaves.
+
+Do not change anything else. In REPORT.md, list each fix with the check that shows it.

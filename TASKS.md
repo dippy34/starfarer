@@ -348,7 +348,9 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/offline`: a copy of everything on the phone, for use with no internet
 
-- **Status:** open. Medium.
+- **Status:** second try running (27 Nov 2026), on Claude Sonnet 5.5 (the owner's Claude API
+  credits), from the first try (run 45720347631) with the review's seven fixes
+  (`.github/opencode/start/offline.txt`). Medium.
 - **Model:** `opencode-go/kimi-k3.1-pro`
 - **The problem:** the owner: "would it be possible to create an offline version that has everything
   downloaded". The app loads nothing from other sites: everything is on its own site, the app and
