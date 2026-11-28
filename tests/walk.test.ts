@@ -1,7 +1,7 @@
 import { Matrix3, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
-  EYE_STAND, G_NEWTON, GroundMarks, STEP_UP, airDrag, JUMP_SPEED, SLOPE_LIMIT, WALK_SPEED, WalkBody, cannotWalkReason, escapeSpeed, gravityAt, jumpSpeed, runSpeed,
+  EYE_STAND, FLOAT_EYE, G_NEWTON, GroundMarks, MAX_DIVE, STEP_UP, SWIM_SPEED, airDrag, JUMP_SPEED, SLOPE_LIMIT, WALK_SPEED, WalkBody, cannotWalkReason, escapeSpeed, gravityAt, jumpSpeed, runSpeed,
   type GroundFn, type WalkIntent,
 } from '../src/app/Walk';
 
@@ -301,7 +301,9 @@ describe('rocks', () => {
   });
 });
 
-describe('the water\'s edge', () => {
+describe('the water\'s edge, and swimming', () => {
+  // (the sea is swum in since 28 Nov 2026, the owner: "I should be able to actually swim around in the ocean"; the shoreline
+  // was a wall)
   const R = EARTH.r;
   const flat = sphere(R);
   // sea for x > 0 (a straight shoreline along y), dry land for x < 0
@@ -313,28 +315,72 @@ describe('the water\'s edge', () => {
     b.placeOn(new Vector3(x / R, 0, 1).normalize(), flat);
     return b;
   }
+  function swimmer(x: number, ground: GroundFn = flat): WalkBody {
+    const b = shoreWalker(-50);
+    b.floatOn(new Vector3(x / R, 0, 1).normalize(), ground);
+    return b;
+  }
   const xm = (b: WalkBody) => (b.pos.x / b.pos.length()) * R;
-  it('walking at the sea stops at the shoreline', () => {
+  it('walking at the sea goes into it: swimming, on its surface, floating with the eye just over the water', () => {
     const b = shoreWalker(-3);
-    let blocked = false;
-    for (let i = 0; i < 6 * 60; i++) { b.step(1 / 60, intent({ wish: new Vector3(1, 0, 0) }), flat); blocked ||= b.blocked; }
-    expect(blocked).toBe(true);
-    expect(xm(b)).toBeLessThan(0);
-    expect(xm(b)).toBeGreaterThan(-0.2);
+    let splashed = false;
+    for (let i = 0; i < 8 * 60; i++) { b.step(1 / 60, intent({ wish: new Vector3(1, 0, 0) }), flat); splashed ||= b.splashed; }
+    expect(splashed).toBe(true);
+    expect(b.swim).toBe(true);
+    expect(b.onGround).toBe(false);
+    expect(xm(b)).toBeGreaterThan(1);
+    expect(Math.abs(b.radius - R)).toBeLessThan(1e-6);
+    expect(b.depth).toBeCloseTo(-FLOAT_EYE, 9);
   });
-  it('walking along the beach at an angle slides along the water\'s edge', () => {
-    const b = shoreWalker(-1);
-    for (let i = 0; i < 6 * 60; i++) b.step(1 / 60, intent({ wish: new Vector3(1, 1, 0).normalize() }), flat);
-    expect(xm(b)).toBeLessThan(0);
-    expect((b.pos.y / b.pos.length()) * R).toBeGreaterThan(3);
+  it('a swimmer goes at a swimmer\'s pace, slower than walking', () => {
+    const b = swimmer(5);
+    for (let i = 0; i < 3 * 60; i++) b.step(1 / 60, intent({ wish: new Vector3(1, 0, 0) }), flat);
+    const x0 = xm(b);
+    for (let i = 0; i < 10 * 60; i++) b.step(1 / 60, intent({ wish: new Vector3(1, 0, 0) }), flat);
+    const v = (xm(b) - x0) / 10;
+    expect(v).toBeGreaterThan(0.97 * SWIM_SPEED);
+    expect(v).toBeLessThan(1.001 * SWIM_SPEED);
+    expect(SWIM_SPEED).toBeLessThan(WALK_SPEED);
   });
-  it('a jump towards the sea does not land in it', () => {
+  it('Dive goes down and Up comes up; left alone a swimmer comes back up to float; never deeper than MAX_DIVE', () => {
+    const b = swimmer(5);
+    for (let i = 0; i < 5 * 60; i++) b.step(1 / 60, intent({ dive: 1 }), flat);
+    const deep = b.depth;
+    expect(deep).toBeGreaterThan(4.5);
+    for (let i = 0; i < 3 * 60; i++) b.step(1 / 60, intent({ dive: -1 }), flat);
+    expect(b.depth).toBeLessThan(deep - 2);
+    for (let i = 0; i < 30 * 60; i++) b.step(1 / 60, intent(), flat);
+    expect(b.depth).toBeCloseTo(-FLOAT_EYE, 9);
+    for (let i = 0; i < 60 * 60; i++) b.step(1 / 60, intent({ dive: 1 }), flat);
+    expect(b.depth).toBe(MAX_DIVE);
+    expect(b.swim).toBe(true);
+    expect(Math.abs(b.radius - R)).toBeLessThan(1e-6);
+  });
+  it('a jump towards the sea lands in it, a little under the surface, swimming', () => {
     const b = shoreWalker(-0.3);
     b.vel.set(1.4, 0, 0);
     b.step(1 / 60, intent({ jump: true, wish: new Vector3(1, 0, 0) }), flat);
-    for (let i = 0; i < 3 * 60; i++) b.step(1 / 60, intent({ wish: new Vector3(1, 0, 0) }), flat);
+    let under = -1;
+    for (let i = 0; i < 3 * 60; i++) { b.step(1 / 60, intent({ wish: new Vector3(1, 0, 0) }), flat); if (b.swim) under = Math.max(under, b.depth); }
+    expect(b.swim).toBe(true);
+    expect(xm(b)).toBeGreaterThan(0);
+    expect(under).toBeGreaterThan(0);
+  });
+  it('swimming back to a gentle shore, the swimmer walks out onto it, standing', () => {
+    const b = swimmer(3);
+    for (let i = 0; i < 8 * 60; i++) b.step(1 / 60, intent({ wish: new Vector3(-1, 0, 0) }), flat);
+    expect(b.swim).toBe(false);
     expect(b.onGround).toBe(true);
-    expect(xm(b)).toBeLessThan(0);
+    expect(xm(b)).toBeLessThan(-1);
+  });
+  it('a cliff out of the sea is not climbed: the swimmer stops at it, still in the water', () => {
+    const cliff: GroundFn = (n) => (n.x > 0 ? R : R + 5);
+    const b = swimmer(3, cliff);
+    let blocked = false;
+    for (let i = 0; i < 8 * 60; i++) { b.step(1 / 60, intent({ wish: new Vector3(-1, 0, 0) }), cliff); blocked ||= b.blocked; }
+    expect(blocked).toBe(true);
+    expect(b.swim).toBe(true);
+    expect(xm(b)).toBeGreaterThan(0);
   });
   it('someone already standing in the water can walk out of it', () => {
     const b = shoreWalker(2);
