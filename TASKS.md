@@ -105,6 +105,53 @@ need the OpenCode workspace's region set to Global.
     live physics); Claude runs the rest. `npm run check` passes.
 - **Don't touch:** the clock and its rates (`src/core/time.ts`), the top chip, the watch.
 
+### `task/hole-of-your-own`: a black hole of your own
+
+- **Status:** open. Large.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the fix list's #9, step 2 (`docs/notes/ideas.md`, "God mode on more things"): "a black hole of
+  your own (Add round the Sun, 1 to 20 Suns)". Today Add round a star (`canAdd` in `src/app/WhatIf.ts`; the Add
+  panel and Create in `src/ui/Hud.ts`) makes copies of the Earth, Jupiter and the Sun and seven worlds of a
+  generated look; live physics "does not take black holes yet" (`powersFor.ts`, `HOLE`).
+- **How things work now:** a made world: `App.add` (a plan from `WhatIf.ts`, `LivePhysics.make`, placing with the
+  mass slider until Done, `Mover.place`); saves and links: `MadeRecord` in `src/app/SceneWorld.ts`. Black holes:
+  `BlackHole` (`src/universe/BlackHoles.ts`, the catalogue's, from RA, Dec and distance) drawn by
+  `BlackHoleLayer` (`src/render/BlackHoleLayer.ts`), which lenses whatever holes are in `app.blackHoles` (the
+  catalogue adds to that array while the app runs: `addBlackHole` in `App.ts`).
+- **What to do,** in this order, each step whole before the next (if time runs short, stop after a whole one
+  and say what is left):
+  1. *Made and pulling.* Add round a star offers "A black hole" (and so does Create), a row like the others,
+     its line "Heavier than the Sun, and no light: 1 to 20 Suns". It is put in place as a made world is
+     (between you and the star, on a circle, time waiting until Done) with its mass slider from 1 to 20 Suns
+     (10 to begin with). In live physics it is a body of that mass that gives no light: it pulls everything.
+     Its card: "Black hole, made by you", its mass in Suns, the size of its event horizon (the Schwarzschild
+     radius, 2GM/c², in km); Mass, Move and Remove work, Size and Add are off with a plain reason each.
+  2. *Seen.* It is drawn as the catalogue's holes are: its shadow and the sky bent round it, with no disk
+     and no jets (a dormant hole), wherever the simulation has it, every frame. Whatever a person would see
+     of it is the existing renderer's; do not write a new one. On a phone it must stay usable: if the
+     renderer's capture of the sky round it is heavy each frame there, say what it costs.
+  3. *What it swallows.* A world that comes within its Roche limit of the hole (where tides tear it apart:
+     d = R (2 M_hole / M_world)^(1/3), the rigid-body form; for the Earth and 10 Suns about 1.2 million km)
+     is torn apart and swallowed: it is gone, the hole gains its mass, and the log and a toast say so in
+     plain words ("Earth was torn apart and swallowed by the black hole"). Say in what live physics leaves
+     out that tearing apart is not drawn.
+  4. *Kept.* A save and a link keep it (a `MadeRecord` of a new kind; links written before read as ever).
+- **Done when:**
+  - Unit tests: the plan (mass range, place, circle), the Schwarzschild radius and the Roche limit (against
+    worked numbers), what it swallows in the simulation, the bytes of a save with a hole (and form 1 links
+    unchanged).
+  - Browser checks in `scripts/live.mjs`, a new block `hole` (phone and desk): Add (and Create) at the Sun offer
+    a black hole; made at 10 Suns it is simulated and its card says so; it is drawn (the renderer's view of it
+    is active); a planet thrown close is swallowed and said; Undo brings it back; a save brings the hole back.
+    They fail on the code before the change.
+  - Pictures, upright at 390x844: the Add panel with the black hole, the hole made near the Sun, a planet
+    being swallowed.
+  - Run `LIVE_ONLY=hole,made,create` of `scripts/live.mjs` (phone and desk) and `scripts/share.mjs`; Claude
+    runs the whole set after. `npm run check` passes.
+- **Don't touch:** the catalogue's black holes and their data, the camera rig, the made worlds' looks
+  (`PlanetLook.ts`, `PlanetPortrait.ts`), the comets' powers, the chips and the Time panel. Never make up
+  numbers: the hole's own are worked out from its mass.
+
 ### `task/plain-physics`: the live-physics lines in plain words
 
 - **Status:** done 28 Nov 2026: run 46084539168 on Claude Sonnet 5.5 ($1.66), reviewed by Claude. Medium.
