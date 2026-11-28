@@ -27,7 +27,8 @@ let st = await page.evaluate(() => {
   const a = window.app; const m = a.system.bodies.find((b) => b.name === 'Mars');
   return { anchor: a.rig.anchor?.name, dist: m.upos.sub(a.rig.upos).length() / m.radius };
 });
-check('goto Mars arrives and co-moves', st.anchor === 'Mars' && st.dist > 2.5 && st.dist < 5, JSON.stringify(st));
+// (close: from 2.2 of its radii in a wide view, the big look of 28 Nov 2026; it was 3.5)
+check('goto Mars arrives close and co-moves', st.anchor === 'Mars' && st.dist > 1.6 && st.dist < 3.1, JSON.stringify(st));
 await page.screenshot({ path: path.join(outDir, 'i1-goto-mars.png') });
 
 // 1b. The mouse on Mars: right-drag turns round it holding its surface, the wheel zooms at the pointer, left-drag looks

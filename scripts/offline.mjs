@@ -113,7 +113,7 @@ try {
   await mapReady('moon');
   const moon = await page.evaluate(() => {
     const a = window.app, m = a.findByName('Moon');
-    return { anchor: a.rig.anchor?.name, distance: m.upos.sub(a.rig.upos).length() / m.radius, expected: 3.5 * a.rig.framing };
+    return { anchor: a.rig.anchor?.name, distance: m.upos.sub(a.rig.upos).length() / m.radius, expected: 2.2 * a.rig.framing };
   });
   check('a flight to the Moon arrives at the rig\'s intended upright-phone framing while offline', moon.anchor === 'Moon' && Math.abs(moon.distance / moon.expected - 1) < 0.001, JSON.stringify(moon));
   check('no request fails in the offline Earth–Moon journey', failedRequests.length === 0, JSON.stringify(failedRequests.slice(0, 12)));
