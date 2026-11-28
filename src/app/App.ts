@@ -2467,7 +2467,8 @@ export class App {
    */
   floatOver(o: SpaceObject): void {
     const from = this.rig.upos.sub(o.upos, new Vector3());
-    const sun = o instanceof Body ? this.system.sunAt(o.pos) : null;
+    // (on its lit side: its sun, the Sun's for a world of ours, its star for a planet of another)
+    const sun = o instanceof Body ? this.system.sunAt(o.pos) : o instanceof ExoPlanet ? o.system.host : null;
     this.rig.flyTo(o, o.radius * (1 + FLOAT_HEIGHT), undefined, true, sun ? sunlitSide(from, sun.upos.sub(o.upos, new Vector3())) : undefined);
     this.floatTo = o;
     this.hud.toast(`Down to ${the(o.name)}'s clouds…`, 2);
