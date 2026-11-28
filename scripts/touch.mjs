@@ -244,7 +244,8 @@ const centreOf = async (page, sel) => {
   st = await state(page);
   const atMoon = await page.evaluate(() => ({ from: window.probe.from('Moon'), r: Math.asin(1 / window.probe.from('Moon').radii) / window.app.rig.pixelAngle }));
   // (close: it fills the upright screen's width, the big look of 28 Nov 2026; it took six tenths of it)
-  check('arrived: the Moon fills the upright screen\'s width, "Recentre" on its card', !st.pill && st.go === 'Recentre' && atMoon.r * 2 < W * 1.15 && atMoon.r * 2 > W * 0.85, `disc ${(atMoon.r * 2).toFixed(0)} px`);
+  // (and at a world with ground the card's button lands on it: "its own little go on to it", 28 Nov 2026; it recentred)
+  check('arrived: the Moon fills the upright screen\'s width, "Land" on its card', !st.pill && st.go === 'Land' && atMoon.r * 2 < W * 1.15 && atMoon.r * 2 > W * 0.85, `disc ${(atMoon.r * 2).toFixed(0)} px`);
 
   // all the way down by pinching, then look up: a level horizon
   for (let i = 0; i < 16; i++) await f.pinch(mid, 60, 330, { steps: 6 });

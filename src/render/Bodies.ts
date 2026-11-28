@@ -16,6 +16,7 @@ import { BLOOM } from './shaders/bloom';
 import { BODY_FRAG, BODY_VERT, GLARE_FRAG, GLARE_VERT } from './shaders/body';
 import { EXO_FRAG } from './shaders/planet';
 import { generatedLook, lightRing, lookUniforms, madeLook, RING_SPAN, ringColor, ringMaterial } from './PlanetLook';
+import { ExoGround, ROCKY_TYPES } from '../universe/ExoTerrain';
 import type { PlanetType } from '../universe/Planets';
 import { STAR_FRAG } from './shaders/star';
 import { RING_FRAG, RING_VERT } from './shaders/rings';
@@ -1112,6 +1113,7 @@ export class BodiesLayer {
     }
     this.views.delete(gone);
     this.exposures.delete(gone);
+    this.lookedGrounds.delete(gone);
     this.sunlit.delete(gone);
     this.sunLooks.delete(gone);
     this.looked.delete(gone);
@@ -1193,9 +1195,37 @@ export class BodiesLayer {
 
   /** Can the body have landing terrain? Solid, round (not lumpy) and without a thick atmosphere. */
   private terrainOk(b: Body): boolean {
-    if (b.kind === 'star' || b.isGasGiant || this.looked.has(b) || ['Venus', 'Titan'].includes(b.name) || b.radius < 150e3) return false;
+    if (b.kind === 'star' || b.isGasGiant || ['Venus', 'Titan'].includes(b.name) || b.radius < 150e3) return false;
+    // (a world the explorer made: ground of its own look, generated as a planet of another star's is, if its type is solid)
+    if (this.looked.has(b)) return this.lookedGround(b) !== null;
     const m = this.meshes.get(b);
     return !!m && ((m.material as ShaderMaterial).uniforms.uLumpy.value as number) === 0;
+  }
+
+  /** Whether `b` has ground to land and walk on (drawn as landing terrain when the eye comes down to it). */
+  canLand(b: Body): boolean {
+    return this.terrainOk(b);
+  }
+
+  /** a made world's ground, by what it was made as (made again when its look, or its size, changes) */
+  private lookedGrounds = new Map<Body, { key: string; ground: ExoGround | null }>();
+
+  /**
+   * The ground of a world the explorer made with a generated look (src/render/PlanetLook.ts): the heights a planet of another
+   * star of that look has (src/universe/ExoTerrain.ts, the shader's terrain function), its seas flat at their level. Null for a
+   * look with no solid ground (a gas or ice giant).
+   */
+  private lookedGround(b: Body): ExoGround | null {
+    const w = this.lookOf(b);
+    if (!w) return null;
+    const key = `${w.type}/${w.seed}/${b.radius}`;
+    const had = this.lookedGrounds.get(b);
+    if (had?.key === key) return had.ground;
+    const look = generatedLook(madeLook(w.type, w.seed, b.radius, w.rings, w.hue)), pal = look.pal;
+    const ground = ROCKY_TYPES.has(look.typeId)
+      ? new ExoGround(b, look.typeId, look.seed, Number(pal.uSeaLevel ?? 0), Number(pal.uCraters ?? 0), Number(pal.uHMid), Number(pal.uHSpan)) : null;
+    this.lookedGrounds.set(b, { key, ground });
+    return ground;
   }
 
   /** The nearest solid world that could have landing terrain, if one is close. */
@@ -1210,9 +1240,11 @@ export class BodiesLayer {
     if (!best) return null;
     const b = best.body;
     const material = this.meshes.get(b)!.material as ShaderMaterial;
+    const sunBF = (material.uniforms.uSunDir.value as Vector3).clone().applyMatrix3(new Matrix3().setFromMatrix4(b.orientation).transpose());
+    const made = this.looked.has(b) ? this.lookedGround(b) : null;
+    if (made) return { ground: made, material, upos: b.upos, rel: best.rel.clone(), orient: b.orientation, lonLeft: -180, sunBF, alt: bestAlt };
     this.terrainSource.craters.set(b, material.uniforms.uCraters.value as number);
     const key = this.textureKey(b);
-    const sunBF = (material.uniforms.uSunDir.value as Vector3).clone().applyMatrix3(new Matrix3().setFromMatrix4(b.orientation).transpose());
     return { ground: this.terrainSource.ground(b), material, upos: b.upos, rel: best.rel.clone(), orient: b.orientation, lonLeft: key ? this.manifest.maps[key]?.lonLeft ?? -180 : -180, sunBF, alt: bestAlt };
   }
 

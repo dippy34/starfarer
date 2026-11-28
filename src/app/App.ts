@@ -10,7 +10,8 @@ import { G, L_SUN, luminosity, M_SUN, R_EARTH } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { bigShare, BodiesLayer, makeSphere } from '../render/Bodies';
-import { generatedLook, madeLook } from '../render/PlanetLook';
+import { generatedLook, madeLook, TYPE_ID as PLANET_TYPE_ID } from '../render/PlanetLook';
+import { ROCKY_TYPES } from '../universe/ExoTerrain';
 import { PlanetPortrait } from '../render/PlanetPortrait';
 import { PlanetTerrain } from '../render/PlanetTerrain';
 import { RingSpot } from '../universe/RingSpot';
@@ -92,7 +93,7 @@ import { describe, distanceText, distanceTo, HOLES, moonWords, objectsOf, pictur
 import { Systems, wellStudied } from './Systems';
 import { VRSupport } from './VR';
 import { FreeFly } from './FreeFly';
-import { Walk } from './Walk';
+import { cannotWalkReason, Walk } from './Walk';
 import { PERF } from '../perf/Perf';
 
 /** a picture of a world being made, as the card takes it */
@@ -1029,7 +1030,8 @@ export class App {
   /** What a button of the interface, or the key that stands for it, does. */
   act(action: HudAction): void {
     switch (action) {
-      case 'go': if (this.selection) this.goTo(this.selection); break;
+      // (at a world with ground, the card's button lands on it: "its own little go on to it", the owner, 28 Nov 2026)
+      case 'go': if (this.selection) { if (this.landsHere(this.selection)) this.walk.start(this.selection); else this.goTo(this.selection); } break;
       case 'centre': if (this.selection) this.center(this.selection); break;
       // (on a phone the ship opens in the chase view: HANDOFF, "The ship's looks")
       case 'ship': this.game.setMode(this.game.active ? 'off' : this.input.touch ? 'chase' : 'cockpit'); break;
@@ -2422,6 +2424,17 @@ export class App {
     this.stay = true;
     this.free.stop();
     this.rig.touchDrag = 'orbit';
+  }
+
+  /**
+   * Whether the card's main button lands on `o`: the camera is at it (Go there brought it), it has ground to stand on (a world
+   * of the catalogue with landing terrain, one the explorer made of a solid look, a solid planet of another star), and nothing
+   * else has the controls (the ship, walking, a headset).
+   */
+  landsHere(o: SpaceObject): boolean {
+    if (o !== this.rig.target || this.rig.autopilot || this.walk.active || this.game.active || this.vr.active || cannotWalkReason(o)) return false;
+    if (o instanceof Body) return this.bodies.canLand(o);
+    return o instanceof ExoPlanet && ROCKY_TYPES.has(PLANET_TYPE_ID[o.spec.type]);
   }
 
   goTo(obj: SpaceObject): void {
@@ -4187,7 +4200,7 @@ export class App {
       // (the body the powers act on: a world of the Solar System itself, or the one standing for another star or its planet)
       const pb = this.powerBody(sel, false);
       selection = {
-        key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot,
+        key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot, land: this.landsHere(sel) ? 'Land' : null,
         powers: available, mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body && available.add.works ? canAdd(sel, this.made.length) : [],
       };
       // the powers over a world, when the one table says they work

@@ -431,7 +431,10 @@ export function cannotWalkReason(o: SpaceObject | null): string | null {
   if (!o) return 'Nothing to stand on here: fly to a planet or a moon first';
   if (o instanceof Body) {
     if (o.kind === 'star') return `${o.name} is a star: a ball of hot plasma, nothing to stand on`;
-    if (o.isGasGiant) return `${o.name} is a giant planet with no solid surface: its gases just get denser and hotter with depth`;
+    // (a world the explorer made is what it was made as: a black hole, or a giant of gas or ice, is nothing to stand on)
+    const made = (o.meta.madeAs as { kind?: string } | undefined)?.kind;
+    if (made === 'hole') return `${o.name} is a black hole: nothing to stand on, and nothing comes back out`;
+    if (o.isGasGiant || made === 'giant' || made === 'icegiant' || made === 'jupiter') return `${o.name} is a giant planet with no solid surface: its gases just get denser and hotter with depth`;
     if (o.name === 'Venus' || o.name === 'Titan') return `${o.name}'s thick atmosphere hides its ground: no landing terrain here yet`;
     return null;
   }
