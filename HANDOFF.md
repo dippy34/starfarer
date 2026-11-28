@@ -1624,6 +1624,18 @@ screen and one finger looks round; the chip says "Moving freely" and "Tap to sta
 with, else what it was on). Go there (`goTo`, from a card, a list or a double tap) stays on what it flies to. A watch and a
 hit no longer move the camera (`startWatch` frames nothing, `frameHit` only in the ship). Gone: the "Turning around it"
 button and More's "Fly freely" and "One finger looks around" switches, and the stick's Done.
+*Part 2, the big look (done):* "dramatically large, but the more accurate the better". (a) A far world is drawn at a least
+size, where it really is (`Bodies.bigScale`, `BIG_PX` 8 CSS px for Jupiter, the radius to the quarter power: Earth 4.4, the Moon
+3.2; only worlds of 180 km and more; at most `BIG_ROOM` 0.3 of the way to what it goes round). From inside a planet's reach
+only its family is enlarged (`homeOf`; the others come in as the eye leaves the reach). An enlarged world is shown by its own
+light (`view.own` = 1.6 over its lit ground, `Bodies.expose`, each world's own `uExposure` uniform now) and lets go of the
+eye's exposure (`bigShare`), its night side lit by `BIG_FILL` 6 % (`uFill` in BODY_FRAG and EXO_FRAG), its air shell not
+drawn; picking, labels and occlusion use the drawn size. "Real size" in More (`real-size`, remembered) turns it off;
+the exposure suite's scene `big-look` and the touch suite check it. Not yet: planets of other stars (`ExoPlanetLayer`).
+(b) Go there arrives close (`ARRIVE` in App.ts: a world 2.2 radii, ringed 3.2, a star 4, a black hole 10 horizon radii;
+galaxies 2, nebulae 1.9). (c) The far Sun: it held no exposure below 1.5 px and bloomed into a white blob on the owner's
+lowered resolution; it now holds it from 0.6 px as any lit disc (stars suite's far-Sun check pins the tight glare).
+Each of (a), (b), (c) is a commit of its own (`e6c8687`, `f311391`, `6adbb64`), revertable alone.
 **The way back (the owner asked for one):** before any of it, the app was commit `a69ed99`, and that
 build stays at https://b4b8c1a5.starfarer.pages.dev (a Cloudflare deployment of its own, kept). The
 enlarging has its own switch in More, and its commits are kept apart so that they can be reverted.
