@@ -1,0 +1,5 @@
+# Started by Claude, 28 Nov 2026: the fix list's #9, its last step: Mass on the real black holes (TASKS.md task/hole-mass).
+# Claude works on other parts at the same time: keep to what the task names.
+model: anthropic/claude-sonnet-5-5
+base: 17fbe82bbb8e3190c42e1fa0bcc2f282a2097758
+The card's layout has just changed (powers first, then Look at, Share and Info; the facts under Info): keep it.
