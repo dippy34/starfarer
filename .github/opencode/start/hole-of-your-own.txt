@@ -1,0 +1,5 @@
+# Started by Claude, 28 Nov 2026: the fix list's #9, step 2, a black hole of your own (made with Add or Create,
+# pulling everything, drawn by the black hole renderer, swallowing what comes too near, kept in saves). The copy
+# starts at the live branch plus the change still being tested (comets moved and thrown), so that the work builds on it.
+model: anthropic/claude-sonnet-5-5
+base: 214749d619d2f24cab5485c4e78ff523b50cb04d
