@@ -6,7 +6,7 @@ import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
 import { formatUtc, SimClock, utcToTdb, dateToJdUtc } from '../core/time';
 import { AU, DAY, formatDistance, PC, SUN_RADIUS } from '../core/units';
-import { G, L_SUN, luminosity, M_SUN } from '../sim/physics';
+import { G, L_SUN, luminosity, M_SUN, R_EARTH } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { bigShare, BodiesLayer, makeSphere } from '../render/Bodies';
@@ -68,7 +68,7 @@ import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, settleOn, TAU_STARS, type Frame } from './Exposure';
-import { canAdd, isCopyKind, isWorldKind, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, type MadeLook, madeMassAt, madeSize, madeSlider, madeWords, newHole, newMoon, newSeed, newTwin, newWorld, TWIN_OF, WORLD_BASE, type WorldKind } from './WhatIf';
+import { amountWords, type Choice, canAdd, isCopyKind, isWorldKind, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, type MadeLook, madeMassAt, madeSize, madeSlider, madeWords, massUnit, newHole, newMoon, newSeed, newTwin, newWorld, STAR_FROM, takeMass, takeRadius, TWIN_OF, typeFor, WORLD_BASE, WORLD_NAME, type WorldKind } from './WhatIf';
 import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
@@ -187,6 +187,18 @@ interface Start { jd: number; rate: RateState; present: boolean }
 interface Checkpoint { live: LiveCheckpoint; rate: RateState; present: boolean; begun: Start | null; what: string }
 /** A change under way: what kind, to which world (for an Add, the one added to), the state before it, how many changes there had been, the worlds as it found them (src/app/Watch.ts). */
 interface Pending { kind: ChangeKind; body: Body; before: Checkpoint; count: number; sample: Map<Body, Sampled> }
+
+/**
+ * A world being put in place (App.placement): `origin` what Add made it as (a planet turned star is still counted a planet: its mass
+ * is typed in Earths, and it turns back into a planet when its mass falls below 0.08 Suns), `picked` the explorer has chosen its type (until then
+ * the type follows its mass: WhatIf.typeFor), `look` what a planet is drawn with while it is a star (to turn back), `turned` a planet became a star
+ * here, `byHand` the radius (m) the explorer typed for it, if they did.
+ */
+interface Placement {
+  paused: boolean | null; base: number;
+  origin: Choice; picked: boolean; turned: boolean; byHand: number | null;
+  look: { kind: WorldKind; seed: number; rings?: boolean; hue?: number } | null;
+}
 
 export class App {
   /** a phone or a tablet (held and touched): it takes the headset's lighter shaders once the governor steps down */
@@ -347,7 +359,7 @@ export class App {
    * before it was made (null: the explorer has set the time since, which then stays as they set
    * it), and the mass it was made with (kg: its slider means exactly that near it).
    */
-  private placement: { paused: boolean | null; base: number } | null = null;
+  private placement: Placement | null = null;
   /** the studio that pictures a world being made, for its card, and its last picture (portraitOf) */
   private portrait: PlanetPortrait | null = null;
   private portraitShot: HudPortrait | null = null;
@@ -1026,16 +1038,8 @@ export class App {
       case 'home': if (this.rig.target) this.center(this.rig.target); else this.hud.openExplore(); break;
       case 'deselect': this.select(null); break;
       case 'add-moon': this.add('moon'); break;
-      case 'add-earth': this.add('earth'); break;
-      case 'add-jupiter': this.add('jupiter'); break;
-      case 'add-sun': this.add('sun'); break;
-      case 'add-terran': this.add('terran'); break;
-      case 'add-ocean': this.add('ocean'); break;
-      case 'add-desert': this.add('desert'); break;
-      case 'add-lava': this.add('lava'); break;
-      case 'add-ice': this.add('ice'); break;
-      case 'add-giant': this.add('giant'); break;
-      case 'add-icegiant': this.add('icegiant'); break;
+      case 'add-planet': this.add('planet'); break;
+      case 'add-star': this.add('star'); break;
       case 'add-hole': this.add('hole'); break;
       case 'create': this.create(); break;
       case 'new-look': this.newLook(); break;
@@ -1560,8 +1564,10 @@ export class App {
    * and Done ends its making, watched (in the ship, walking or in the headset it is left where it
    * starts). Null if that cannot be added there.
    */
-  add(kind: Kind, to: SpaceObject | null = this.selection): Body | null {
-    if (!(to instanceof Body) || !this.powersOf(to).add.works || !canAdd(to, this.made.length).includes(kind) || this.powerBody(to) !== to) return null;
+  add(choice: Choice, to: SpaceObject | null = this.selection): Body | null {
+    if (!(to instanceof Body) || !this.powersOf(to).add.works || !canAdd(to, this.made.length).includes(choice) || this.powerBody(to) !== to) return null;
+    // (a planet is made rocky, the Earth's mass, and is given the look its mass has until the explorer picks one; a star as a second sun)
+    const kind: Kind = choice === 'planet' ? 'terran' : choice === 'star' ? 'sun' : choice;
     const eye = this.rig.upos.sub(to.upos, new Vector3()).toArray(), id = MADE_FIRST_ID + this.madeEver++;
     const like = isCopyKind(kind) ? this.system.byId.get(TWIN_OF[kind])! : null;
     const sun = this.system.sunAt(to.pos);
@@ -1582,7 +1588,7 @@ export class App {
     this.select(made);
     this.tellNews(wasOn);
     if (this.game.flight.on || this.walk.active || this.vr.active) { this.endChange(); return made; }
-    this.placement = { paused: this.clock.paused, base: plan.json.madeAs?.kg ?? made.gm / G };
+    this.placement = { paused: this.clock.paused, base: plan.json.madeAs?.kg ?? made.gm / G, origin: choice, picked: false, turned: false, byHand: null, look: null };
     this.clock.paused = true;
     this.mover.place(made);
     // (where a finger can find it: unless it is in sight already, the camera eases out until what it was given to and
@@ -1708,13 +1714,135 @@ export class App {
   setMadeMass(s: number): void {
     const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'], p = this.placement;
     if (!b || !as || !p) return;
-    const kind = as.kind as Kind, kg = madeMassAt(kind, s, p.base);
-    if (kg === as.kg) return;
-    const size = madeSize(kind, kg, as.icy), k = size.radius / b.radius;
-    as.kg = kg;
+    this.takeMadeKg(b, madeMassAt(this.rangeKind(p, as.kind as Kind), s, p.base));
+  }
+
+  /** The kind whose range its mass slider and its number run over: a planet that has turned into a star keeps the planet's, so that it can turn back. */
+  private rangeKind(p: Placement, kind: Kind): Kind {
+    return p.origin === 'planet' && kind === 'sun' ? 'terran' : kind;
+  }
+
+  /**
+   * The Mass field of the world being put in place was left, or Enter pressed: `typed` is its mass from now, in Earths for a planet or a moon and in
+   * Suns for a star or a black hole (src/app/WhatIf.ts: takeMass). Null when it was taken; otherwise a plain line saying why not.
+   */
+  typeMadeMass(typed: string): string | null {
+    const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'], p = this.placement;
+    if (!b || !as || !p) return null;
+    const v = takeMass(typed, this.rangeKind(p, as.kind as Kind));
+    if ('why' in v) return v.why;
+    this.takeMadeKg(b, v.kg);
+    return null;
+  }
+
+  /**
+   * The world being put in place has `kg` of mass from now: its size follows (or the size the explorer typed stays), its look follows
+   * (a planet's type, until they pick one), a planet past 0.08 Suns is a star and a star's mass is a star's, and a star made as a planet
+   * that falls below it is a planet again.
+   */
+  private takeMadeKg(b: Body, kg: number): void {
+    const as = b.meta.madeAs as BodyJson['madeAs'], p = this.placement;
+    if (!as || !p || kg === as.kg) return;
+    const kind = as.kind as Kind;
+    if (p.origin === 'planet') {
+      if (isWorldKind(kind) && kg >= STAR_FROM) { this.turnPlaced(b, 'sun', kg); return; }
+      if (kind === 'sun' && kg < STAR_FROM) { this.turnPlaced(b, p.look?.kind ?? typeFor(kg), kg); return; }
+    }
+    // (until the explorer picks a type, it is the one its mass has)
+    if (p.origin === 'planet' && isWorldKind(kind) && !p.picked && typeFor(kg) !== kind) this.retype(b, typeFor(kg));
+    const now = b.meta.madeAs as NonNullable<BodyJson['madeAs']>;
+    now.kg = kg;
+    const radius = p.byHand ?? madeSize(now.kind as Kind, kg, now.icy).radius, k = radius / b.radius;
     this.physics.resize(b, G * kg, [k * b.radii[0], k * b.radii[1], k * b.radii[2]], this.clock.jdTdb);
-    if (kind === 'sun') this.shine(b, kg);
+    if (now.kind === 'sun') this.shine(b, kg);
     this.mover.recircle();
+  }
+
+  /** The type of a planet being put in place (src/render/PlanetLook.ts): its look, its albedo, and the name it was given if that was the standard one for its old type. */
+  private retype(b: Body, type: WorldKind): void {
+    const as = b.meta.madeAs as NonNullable<BodyJson['madeAs']>, was = as.kind;
+    if (!isWorldKind(was) || was === type) return;
+    as.kind = type;
+    const look = this.lookOf(type, as.seed ?? 0, as.hue ?? 0);
+    b.albedo = look.albedo;
+    b.color = look.color;
+    const m = /^New (.+?)( \d+)?$/.exec(b.name);
+    if (m && m[1] === WORLD_NAME[was]) {
+      let name = `New ${WORLD_NAME[type]}`, n = 1;
+      while (this.findByName(name)) name = `New ${WORLD_NAME[type]} ${++n}`;
+      b.rename(name);
+      if (this.pending?.kind === 'add') this.pending.before.what = `making ${name}`;
+    }
+    this.bodies.changed(b);
+  }
+
+  /**
+   * Type, on the card of a planet being put in place: it is drawn with that look from now (its size follows its mass by the rule for it), and
+   * the type no longer follows the mass.
+   */
+  setMadeType(type: string): void {
+    const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'], p = this.placement;
+    if (!b || !as || !p || !isWorldKind(type) || !isWorldKind(as.kind) || p.origin !== 'planet') return;
+    p.picked = true;
+    this.retype(b, type);
+    const radius = p.byHand ?? madeSize(type, as.kg, false).radius, k = radius / b.radius;
+    this.physics.resize(b, b.gm, [k * b.radii[0], k * b.radii[1], k * b.radii[2]], this.clock.jdTdb);
+    this.updateHud();
+  }
+
+  /**
+   * "Set size" on the card of a world being put in place: `typed` is its radius, in Earth radii (a thousandth to 30), and stays whatever its
+   * mass does from now; null puts back "Size from mass". Null when it was taken; otherwise a plain line saying why not.
+   */
+  setMadeSize(typed: string | null): string | null {
+    const b = this.mover.placing ? this.mover.body : null, as = b?.meta.madeAs as BodyJson['madeAs'], p = this.placement;
+    if (!b || !as || !p || as.kind === 'sun' || as.kind === 'hole') return null;
+    let radius: number;
+    if (typed === null) { p.byHand = null; radius = madeSize(as.kind as Kind, as.kg, as.icy).radius; } else {
+      const v = takeRadius(typed);
+      if ('why' in v) return v.why;
+      p.byHand = radius = v.radius;
+    }
+    const k = radius / b.radius;
+    this.physics.resize(b, b.gm, [k * b.radii[0], k * b.radii[1], k * b.radii[2]], this.clock.jdTdb);
+    this.updateHud();
+    return null;
+  }
+
+  /**
+   * The world being put in place is another kind of body now (a planet past 0.08 Suns is a star; a star that fell below it is a planet again), with
+   * `kg` of mass: made again where it is, moving as it moves, with its name, still one change with its making (Undo takes it away; the log says
+   * what it became).
+   */
+  private turnPlaced(b: Body, kind: 'sun' | WorldKind, kg: number): void {
+    const p = this.placement!, to = b.parent!, as = b.meta.madeAs as NonNullable<BodyJson['madeAs']>;
+    const id = MADE_FIRST_ID + this.madeEver++, pos = [b.pos.x - to.pos.x, b.pos.y - to.pos.y, b.pos.z - to.pos.z], vel = [b.vel.x - to.vel.x, b.vel.y - to.vel.y, b.vel.z - to.vel.z];
+    let json: BodyJson, told: string;
+    if (kind === 'sun') {
+      const like = this.system.byId.get(TWIN_OF.sun)!;
+      // (what it looked like is kept, to go back to)
+      p.look = { kind: as.kind as WorldKind, seed: as.seed ?? 0, ...(as.rings ? { rings: true } : {}), ...(as.hue ? { hue: as.hue } : {}) };
+      json = { ...newTwin(like, this.bodies.textureKey(like), to, [1, 0, 0], 0, id).json, name: b.name, madeAs: { kind: 'sun', kg, icy: false } };
+      p.turned = true;
+      told = `${capital(b.name)} grew heavy enough for hydrogen to fuse: it is a star now.`;
+    } else {
+      const look = p.look, seed = look?.seed ?? newSeed(Math.random);
+      json = { ...newWorld(kind, to, [1, 0, 0], 0, id, seed, this.lookOf(kind, seed, look?.hue ?? 0)).json, name: b.name,
+        madeAs: { kind, kg, icy: false, seed, ...(look?.rings ? { rings: true } : {}), ...(look?.hue ? { hue: look.hue } : {}) } };
+      p.turned = false;
+      told = `${capital(b.name)} is too light to be a star: it is a planet again.`;
+    }
+    const made = this.physics.exchange(b, json, to, pos, vel, this.clock.jdTdb, told);
+    const radius = p.byHand && kind !== 'sun' ? p.byHand : madeSize(kind, kg, false).radius, k = radius / made.radius;
+    this.physics.resize(made, G * kg, [k * made.radii[0], k * made.radii[1], k * made.radii[2]], this.clock.jdTdb);
+    if (kind === 'sun') this.shine(made, kg);
+    this.bodies.changed();
+    this.mover.replace(made);
+    if (this.pending) this.pending.body = made;
+    this.select(made);
+    this.mover.recircle();
+    this.tellNews(true);
+    this.updateHud();
   }
 
   /**
@@ -4085,12 +4213,17 @@ export class App {
         }
         // a world just made, being put in place: its own mass slider, and what it is at that mass
         const as = pb.meta.madeAs as BodyJson['madeAs'];
-        if (as && this.mover.placing && this.mover.body === pb) {
-          const kind = as.kind as Kind;
+        if (as && this.mover.placing && this.mover.body === pb && this.placement) {
+          const kind = as.kind as Kind, p = this.placement, rk = this.rangeKind(p, kind);
           const looked = as.seed !== undefined && isWorldKind(kind);
+          const words = madeWords(kind, as.kg, as.icy, p.byHand ?? undefined), u = massUnit(rk);
           selection.place = {
-            name: pb.name, slider: madeSlider(kind, as.kg), ...madeWords(kind, as.kg, as.icy), newLook: looked, rings: looked ? !!as.rings : null, hue: looked ? as.hue ?? 0 : null,
+            name: pb.name, slider: madeSlider(rk, as.kg), mass: words.mass,
+            what: p.turned && kind === 'sun' ? `${words.what}. It was a planet: heavy enough, hydrogen fuses in it` : words.what,
+            newLook: looked, rings: looked ? !!as.rings : null, hue: looked ? as.hue ?? 0 : null,
             portrait: looked ? this.portraitOf(pb) : null,
+            unit: u.name, amount: amountWords(as.kg / u.kg), type: looked && p.origin === 'planet' ? kind as WorldKind : null,
+            sizeByHand: p.byHand === null ? null : amountWords(p.byHand / R_EARTH), radius: amountWords(pb.radius / R_EARTH), canSize: kind !== 'sun' && kind !== 'hole',
           };
         }
       }

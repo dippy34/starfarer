@@ -90,6 +90,14 @@ export class Mover {
     this.kept.copy(b.vel);
   }
 
+  /** The world being put in place is another body now (a planet that became a star): it is still being put in place, as one change with its making. */
+  replace(b: Body): void {
+    if (!this.placing) return;
+    this.body = b;
+    this.holding = false;
+    this.kept.copy(b.vel);
+  }
+
   /** Moving is over (`done`: a world being put in place is where it is wanted: its making ends, watched). */
   stop(done = false): void {
     const placing = this.placing;
