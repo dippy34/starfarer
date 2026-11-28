@@ -227,7 +227,9 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     return null;
   });
   await page.waitForFunction(() => window.__star && window.__star.designations.length > 0, null, { timeout: 60000 }).catch(() => undefined);
-  await page.waitForTimeout(600);
+  // (the card is drawn by the app's frames: beside M87* a frame on a runner can take longer than a fixed wait, and the card
+  // still showed the hole once; it is read once it shows the star, or after 30 s)
+  await page.waitForFunction(() => !!window.__star && document.querySelector('.card h2')?.textContent === window.__star.name, null, { timeout: 30000 }).catch(() => undefined);
   const st = await page.evaluate(() => ({ name: window.__star?.name, card: document.querySelector('.card h2')?.textContent }));
   check('a star goes by its catalogue number on its card', !!st0 && st.card === st.name && !/^(unnamed star|star)$/i.test(st.card ?? ''), JSON.stringify({ ...st0, ...st }));
 }
