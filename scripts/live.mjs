@@ -2034,7 +2034,7 @@ for (const kind of kinds) {
 
   // ------------------------------------------------------------------ comets: God mode on a comet (src/render/SmallBodies.ts, src/app/powersFor.ts)
   if (want('comet')) {
-    const { ctx, page } = await open(kind, 'target=Earth&dist=6');
+    const { ctx, page, touch } = await open(kind, 'target=Earth&dist=6');
     const step = async (name, fn) => { try { await fn(); } catch (e) { check(on(name), false, String(e).split('\n')[0]); } };
     await quiet(page);
     // the brightest comet now, as the tour picks it (Halley is far out in 2026); another comet to see that the rest are left alone
@@ -2070,7 +2070,7 @@ for (const kind of kinds) {
         reasons[n] = await text(page, '#hud .card .power-reason');
       }
       check(on(`a comet's card offers Remove; Mass, Size and Add are off, each with its reason (${names.name})`),
-        p0.remove && !p0.mass && !p0.size && !p0.add && !s0.on && s0.mag < 90 && s0.tail && /measured mass/.test(reasons.mass) && reasons.size.length > 8 && reasons.add.length > 8,
+        p0.remove && p0.move && !p0.mass && !p0.size && !p0.add && !s0.on && s0.mag < 90 && s0.tail && /measured mass/.test(reasons.mass) && reasons.size.length > 8 && reasons.add.length > 8,
         JSON.stringify({ ...p0, reasons }));
     });
 
@@ -2106,6 +2106,84 @@ for (const kind of kinds) {
       const again = await state();
       check(on('Back to reality brings a comet taken away back, and Undo takes it away again'),
         gone.gone && !back.on && !back.gone && back.mag < 90 && back.drawn === back.mag && again.on && again.gone && again.mag > 90, JSON.stringify({ gone: gone.gone, back, again: again.gone }));
+    });
+
+    // moved and thrown: the simulation carries the comet, with no mass, from where its own orbit had it; its point, its distance and its tail follow it
+    await page.evaluate(() => window.app.backToReality());
+    await frames(page, 3);
+    const carry = () => page.evaluate(([key, other]) => {
+      const a = window.app, c = a.small.cometObjects.find((x) => x.key === key), o = a.small.cometObjects.find((x) => x.key === other), i = a.small.cometObjects.indexOf(c);
+      const V = a.system.sun.pos.constructor, stand = a.physics.carried.get(c), tmp = new V();
+      // (where its own orbit has it at this date: a second stand-in, never put in the simulation)
+      const ghost = new (stand ?? a.solar.standIn(c, a.clock.jdTdb)).constructor(c);
+      ghost.onPath(a.clock.jdTdb, a.system.sun);
+      const AU = 149597870700, att = a.small.comets.geometry.attributes.position.array, rel = c.upos.sub(a.system.sun.upos, tmp).clone();
+      return {
+        on: a.physics.on, carried: a.physics.carried.size, has: !!stand, simulated: !!stand && a.physics.simulated(stand), gm: stand?.gm ?? -1,
+        offPath: stand ? stand.pos.distanceTo(ghost.pos) : 0, followed: stand ? c.upos.sub(stand.upos, tmp).length() : -1,
+        point: Math.hypot(att[3 * i] * AU - rel.x, att[3 * i + 1] * AU - rel.y, att[3 * i + 2] * AU - rel.z),
+        mag: c.apparentMag, drawn: a.small.comets.geometry.attributes.aMag.array[i], tail: a.cometTails.drawn.some((x) => x.key === key), goes: !!c.carriedVelocity, other: o.apparentMag, away: a.physics.away.size,
+        onPathNow: c.upos.sub(ghost.upos, tmp).length(), at: stand ? stand.pos.toArray() : null,
+      };
+    }, [names.key, names.other]);
+    const hand = await handOf(page, touch);
+    const throwIt = async () => {
+      await page.evaluate((key) => { const a = window.app, c = a.small.cometObjects.find((x) => x.key === key); a.select(c); a.goTo(c); }, names.key);
+      await page.waitForFunction((n) => window.app.selection?.name === n && document.querySelector('#hud').dataset.sheet === 'card' && document.querySelector('#hud .card h2').textContent === n, names.name, { timeout: 20000 });
+      await frames(page, 3);
+      await press(page, '#hud .card [data-act="move"]');
+      await press(page, '#hud .card [data-act="move-throw"]');
+      await frames(page, 2);
+      const dot = await page.evaluate((key) => { const a = window.app, c = a.small.cometObjects.find((x) => x.key === key); return a.project(c.upos.sub(a.rig.upos, new (a.system.sun.pos.constructor)())); }, names.key);
+      if (!dot) throw new Error('the comet is not on the screen');
+      // (the slingshot: a finger on it pulled back, a little short of the mark of a circle)
+      await hand.press(dot);
+      for (let i = 1; i <= 6; i++) await hand.slide({ x: dot.x - (60 * i) / 6, y: dot.y - (60 * i) / 6 });
+      await frames(page, 2);
+      await hand.lift();
+      await frames(page, 3);
+      // time runs a day a second, the simulation going on from where it was thrown
+      await page.evaluate(() => { const a = window.app; a.clock.paused = false; a.clock.rate = 86400; });
+      await until(page, ([key]) => { const a = window.app, c = a.small.cometObjects.find((x) => x.key === key), s = a.physics.carried.get(c); return !!s && Math.abs(a.clock.jdTdb - a.physics.live.jd0) > 0.05; }, [names.key], 60);
+    };
+    await step(`Move on a comet's card, thrown with a slingshot: carried by the simulation with no mass, its point and its tail follow it (${names.name})`, async () => {
+      await throwIt();
+      const s = await carry();
+      if (kind === 'phone') {
+        await page.screenshot({ path: path.join(outDir, `live-${kind}-comet-thrown.png`) });
+        // (the same comet from far enough to see its tail, pointing away from the Sun from where it is now)
+        await page.evaluate((key) => { const a = window.app, c = a.small.cometObjects.find((x) => x.key === key); a.clock.paused = true; a.placeNear(c, 6e8, 40, 25); }, names.key);
+        await frames(page, 8);
+        await page.screenshot({ path: path.join(outDir, `live-${kind}-comet-thrown-tail.png`) });
+      }
+      check(on(`Move on a comet's card, thrown with a slingshot: carried by the simulation with no mass, its point and its tail follow it (${names.name})`),
+        s.on && s.has && s.simulated && s.gm === 0 && s.carried === 1 && s.offPath > 1e6 && s.followed < 1 && s.point < 1e6 && s.mag < 90 && Math.abs(s.drawn - s.mag) < 1e-4 && s.tail && s.goes && s.other < 90 && s.away === 0, JSON.stringify(s));
+    });
+    await step('Undo brings a thrown comet back to its recorded path, and the real Solar System again', async () => {
+      await page.evaluate(() => { window.app.clock.paused = true; });
+      await press(page, '#hud .live-mark .live-undo');
+      await frames(page, 8);
+      const s = await carry();
+      check(on('Undo brings a thrown comet back to its recorded path, and the real Solar System again'), !s.on && !s.has && s.carried === 0 && s.onPathNow < 5e7 && s.mag < 90 && !s.goes && s.tail, JSON.stringify(s));
+    });
+    await step('a save of the scene, opened again, brings back the thrown comet where it was and the other comet taken away', async () => {
+      await page.evaluate(() => window.app.backToReality());
+      await throwIt();
+      await page.evaluate((key) => { const a = window.app, o = a.small.cometObjects.find((x) => x.key === key); a.clock.paused = true; a.removeComet(o); }, names.other);
+      await frames(page, 3);
+      const before = await carry();
+      await page.evaluate(() => window.app.saveScene());
+      const id = await page.evaluate(() => JSON.parse(localStorage.getItem('starfarer-saves'))[0].id);
+      await page.evaluate(() => window.app.backToReality());
+      await frames(page, 3);
+      const real = await carry();
+      await page.evaluate((id) => window.app.openSave(id), id);
+      await until(page, ([key]) => { const a = window.app, c = a.small.cometObjects.find((x) => x.key === key); return a.physics.on && a.physics.carried.has(c); }, [names.key], 60);
+      await frames(page, 4);
+      const back = await carry();
+      const dist = Math.hypot(...back.at.map((x, k) => x - before.at[k]));
+      check(on('a save of the scene, opened again, brings back the thrown comet where it was and the other comet taken away'),
+        !real.has && real.other < 90 && back.on && back.has && back.simulated && back.gm === 0 && dist < 1 && back.other > 90 && back.away === 1 && back.mag < 90 && back.tail, JSON.stringify({ before: before.at, back: back.at, dist, real: real.has, other: back.other, away: back.away }));
     });
     await ctx.close();
   }

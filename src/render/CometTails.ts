@@ -253,6 +253,8 @@ export class CometTails {
 
   /** The comet's direction of motion (ICRF unit vector) at `jd`, from its orbital elements. */
   private motion(c: Comet, jd: number): Vector3 {
+    // (one the simulation carries goes the way the simulation has it go)
+    if (c.carriedVelocity) return c.carriedVelocity.clone().normalize();
     let el = this.elements.get(c);
     if (!el) {
       const r = c.row;

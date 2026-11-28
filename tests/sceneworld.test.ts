@@ -7,10 +7,13 @@ import { Foresight } from '../src/app/Foresight';
 import { LivePhysics } from '../src/app/LivePhysics';
 import { aheadWords, circularVelocity, whenWords } from '../src/app/Powers';
 import { decodeLink, encodeLink } from '../src/app/SceneLink';
+import { COMET_FIRST_ID } from '../src/app/CometBody';
 import { decodeWorld, encodeWorld, fromBase64Url, type LiveWorld, toBase64Url, WorldError } from '../src/app/SceneWorld';
 import { savedFragment, savedScenes, saveScene } from '../src/app/Saves';
 import { isCopyKind, isWorldKind, MADE_FIRST_ID, madeAgain, newMoon, newTwin, newWorld, TWIN_OF, WORLD_KINDS } from '../src/app/WhatIf';
+import type { CometRow } from '../src/astro/comet';
 import { SimClock } from '../src/core/time';
+import { Comet } from '../src/render/SmallBodies';
 import { NBody } from '../src/sim/NBody';
 import { liveDate } from '../src/sim/SystemSim';
 import { SolarSystem } from '../src/universe/SolarSystem';
@@ -28,6 +31,10 @@ async function universe(jd = JD) {
   sys.update(jd);
   const physics = new LivePhysics(sys, { left: () => undefined, dropped: () => undefined });
   const named = (name: string) => sys.bodies.find((b) => b.name === name)!;
+  // the comets of the catalogue (as the app has them: src/render/SmallBodies.ts), found by their numbers as a link names them
+  const rows = (JSON.parse(readFileSync(join(PUBLIC, 'data/solar/comets.json'), 'utf8')) as { comets: CometRow[] }).comets;
+  const comets = [...rows.filter((r) => r[0].includes('Halley')), ...rows.slice(0, 20).filter((r) => !r[0].includes('Halley'))].map((r) => new Comet(`comet:${r[11]}`, r[0], r));
+  physics.cometOf = (n) => comets.find((c) => c.row[11] === n);
   const clock = new SimClock(jd);
   /** time run on to `to` as the app's frames run it (a frame of `frame` seconds at a time), the simulation following */
   const run = (to: number, frame = 1 / 60) => {
@@ -38,7 +45,7 @@ async function universe(jd = JD) {
       physics.place(clock.jdTdb);
     }
   };
-  return { sys, physics, named, clock, run };
+  return { sys, physics, named, clock, run, comets };
 }
 type U = Awaited<ReturnType<typeof universe>>;
 
@@ -86,6 +93,12 @@ const MORE: Record<string, (u: U) => void> = {
     physics.setSize(named('Saturn'), 2 * named('Saturn').radius, JD);
     physics.setMass(named('Saturn'), 0.5 * named('Saturn').gm, JD);
     physics.remove(named('Venus'), JD);
+  },
+  // Halley thrown (carried by the simulation, with no mass) and another comet taken away
+  'a comet thrown, another taken away': ({ physics, comets }) => {
+    const [halley, other] = comets, stand = physics.standIn(halley, JD);
+    physics.move(stand, stand.pos.toArray(), stand.vel.clone().multiplyScalar(1.7).toArray(), JD);
+    physics.removeSmall(other, JD);
   },
   'Mars into the Earth, a month on': (u) => { SCENES['Mars sent at the Earth'](u); u.run(JD + 30, 1); },
 };
@@ -296,6 +309,66 @@ describe('the changed universe in a link', () => {
     expect(() => encodeWorld(world)).toThrow();
     world.made[0].seed = 1_000_000;
     expect(() => decodeWorld(encodeWorld(world))).toThrow(WorldError);
+  }, 240_000);
+
+  it('keeps the comets changed: one carried by the simulation (its place and motion) and one taken away; a world without a comet is written as ever', async () => {
+    const a = await universe();
+    SCENES['Earth 2 added'](a);
+    const plain = a.physics.world()!;
+    // (no comet changed: the first form, as the links written before; nothing of comets in it)
+    expect(plain.comets).toBeUndefined();
+    expect(encodeWorld(plain)[0]).toBe(1);
+    const b = await universe();
+    MORE['a comet thrown, another taken away'](b);
+    const [halley, other] = b.comets, world = b.physics.world()!;
+    expect(world.comets).toEqual({ carried: [halley.row[11]], away: [other.row[11]] });
+    // (its place and motion are the simulation's: the body of its number, no mass)
+    const i = world.sim.ids.indexOf(COMET_FIRST_ID + halley.row[11]);
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(world.sim.gm[i]).toBe(0);
+    expect(world.asBody[i]).toBe(0);
+    const raw = encodeWorld(world);
+    expect(raw[0]).toBe(2);
+    const back = decodeWorld(fromBase64Url(toBase64Url(raw))!);
+    expect(back.comets).toEqual(world.comets);
+    // opened elsewhere: the comet is carried where and as it was, the other is away
+    b.physics.rebase(back);
+    const c = await universe(liveDate(b.physics.live!));
+    c.physics.adoptWorld(back, remake(c.sys));
+    expect(bits(c.physics.live!.sim)).toEqual(bits(b.physics.live!.sim));
+    expect(c.physics.carried.has(c.comets[0])).toBe(true);
+    expect(c.physics.away.has(c.comets[1])).toBe(true);
+    expect(c.physics.simulated(c.physics.carried.get(c.comets[0])!)).toBe(true);
+    expect(c.physics.world()!.comets).toEqual(world.comets);
+    // (and it is where the simulation has it: not on its recorded path)
+    const stand = c.physics.carried.get(c.comets[0])!;
+    expect(stand.vel.length()).toBeGreaterThan(0);
+    c.physics.backToReality(c.clock);
+    expect(c.physics.carried.size + c.physics.away.size).toBe(0);
+  }, 240_000);
+
+  it('a comet in a link is checked against the catalogue: one that is not here, one both carried and away, one carried but not simulated, one simulated but not carried', async () => {
+    const a = await universe();
+    MORE['a comet thrown, another taken away'](a);
+    const good = a.physics.world()!, [halley, other] = a.comets;
+    const wrong: [string, (w: LiveWorld) => void][] = [
+      ['a comet that is not in the catalogue', (w) => { w.comets!.away.push(99_999); }],
+      ['a comet carried twice', (w) => { w.comets!.carried.push(halley.row[11]); }],
+      ['a comet carried and away', (w) => { w.comets!.away.push(halley.row[11]); }],
+      ['a comet away twice', (w) => { w.comets!.away.push(other.row[11]); }],
+      ['a comet carried that the simulation does not have', (w) => { w.comets!.carried.push(other.row[11]); w.comets!.away.length = 0; }],
+      ['a comet in the simulation that is not carried', (w) => { w.comets!.carried.length = 0; }],
+    ];
+    for (const [what, spoil] of wrong) {
+      const b = await universe(), w = structuredClone(good);
+      spoil(w);
+      expect(() => b.physics.adoptWorld(w, remake(b.sys)), what).toThrow(WorldError);
+      expect(b.physics.on, what).toBe(false);
+      expect(b.physics.carried.size + b.physics.away.size, what).toBe(0);
+    }
+    // a number past what a catalogue has cannot be read
+    const raw = encodeWorld({ ...structuredClone(good), comets: { carried: [halley.row[11]], away: [3_000_000] } });
+    expect(() => decodeWorld(raw)).toThrow(WorldError);
   }, 240_000);
 
   it('is checked against the catalogue: a link that names what is not here changes nothing', async () => {

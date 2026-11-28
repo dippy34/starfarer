@@ -2,6 +2,7 @@ import {
   AdditiveBlending, BufferAttribute, BufferGeometry, DynamicDrawUsage, Group, InterleavedBuffer, InterleavedBufferAttribute,
   Matrix3, Points, ShaderMaterial, Vector3,
 } from 'three';
+import type { CometRow } from '../astro/comet';
 import { OBLIQUITY_J2000 } from '../core/frames';
 import { AU } from '../core/units';
 import { UPos } from '../core/upos';
@@ -98,7 +99,6 @@ ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>
 }`;
 
-type CometRow = [string, string, number, number, number, number, number, number, number | null, number | null, number | null, number];
 
 /** A comet as a selectable object (position from the latest worker result). */
 export class Comet implements SpaceObject {
@@ -107,6 +107,11 @@ export class Comet implements SpaceObject {
   readonly radius: number;
   readonly parentObject = null;
   apparentMag = 99;
+  /**
+   * Its velocity from the Sun (m/s) while the simulation carries it (live physics: it was moved or
+   * thrown), so that its tail lags behind where it goes; null on its recorded path (its own orbit gives it).
+   */
+  carriedVelocity: Vector3 | null = null;
   constructor(readonly key: string, readonly name: string, readonly row: CometRow) {
     this.radius = row[10] ? (row[10] * 1e3) / 2 : 0;
   }
@@ -178,6 +183,7 @@ export class SmallBodiesLayer {
     this.group.add(this.asteroids);
 
     rows.forEach((r) => this.cometObjects.push(new Comet(`comet:${r[11]}`, r[0], r)));
+    this.cometIndex = new Map(this.cometObjects.map((c, i) => [c, i]));
     const cgeo = new BufferGeometry();
     cgeo.setAttribute('position', new BufferAttribute(new Float32Array(rows.length * 3), 3).setUsage(DynamicDrawUsage));
     cgeo.setAttribute('aMag', new BufferAttribute(new Float32Array(rows.length).fill(99), 1).setUsage(DynamicDrawUsage));
@@ -210,6 +216,7 @@ export class SmallBodiesLayer {
     const p = this.cometPos!, m = this.cometMag!;
     for (let i = 0; i < this.cometObjects.length; i++) {
       const c = this.cometObjects[i];
+      if (this.carried.has(c)) continue;
       c.upos.copy(sun.upos).addXYZ(p[i * 3] * AU, p[i * 3 + 1] * AU, p[i * 3 + 2] * AU);
       c.apparentMag = this.shown && !this.away.has(c) ? m[i] : 99;
     }
@@ -217,8 +224,53 @@ export class SmallBodiesLayer {
     const mag = this.comets!.geometry.attributes.aMag as BufferAttribute;
     mag.copyArray(m);
     for (let i = 0; i < this.cometObjects.length; i++) if (this.away.has(this.cometObjects[i])) mag.setX(i, 99);
+    // (a comet the simulation carries is where it has it, not where the worker's recorded path does)
+    this.writeCarried();
     mag.needsUpdate = true;
     this.comets!.geometry.attributes.position.needsUpdate = true;
+  }
+
+  /**
+   * The comets the simulation carries (live physics: moved or thrown) are where it has them, each
+   * frame: its point, its brightness (the catalogue's M1 and K1, from where it is now) and what its
+   * tail needs (the way it goes) follow the stand-in of no mass that stands for it. Those that were
+   * carried and are not now (Undo, Replay, Back to reality) go back to their recorded paths.
+   */
+  carry(carried: ReadonlyMap<SpaceObject, { upos: UPos; vel: Vector3 }>, cam: UPos, sun: { upos: UPos; vel: Vector3 }): void {
+    for (const c of this.carried) if (!carried.has(c)) { c.carriedVelocity = null; this.carried.delete(c); }
+    if (!carried.size && !this.carriedMag.size) return;
+    this.carriedMag.clear();
+    const tmp = new Vector3();
+    for (const [o, b] of carried) {
+      const c = o as Comet;
+      this.carried.add(c);
+      c.upos.copy(b.upos);
+      (c.carriedVelocity ??= new Vector3()).copy(b.vel).sub(sun.vel);
+      const m1 = c.row[8], k1 = c.row[9] ?? 10;
+      const r = c.upos.sub(sun.upos, tmp).length() / AU, delta = c.upos.sub(cam, tmp).length() / AU;
+      const mag = this.shown && !this.away.has(c) && m1 !== null ? m1 + 5 * Math.log10(Math.max(delta, 1e-9)) + k1 * Math.log10(Math.max(r, 1e-6)) : 99;
+      c.apparentMag = mag;
+      this.carriedMag.set(c, mag);
+    }
+    if (this.comets) this.writeCarried();
+  }
+  private carried = new Set<Comet>();
+  private carriedMag = new Map<Comet, number>();
+  private cometIndex = new Map<Comet, number>();
+
+  private writeCarried(): void {
+    if (!this.comets) return;
+    const g = this.comets.geometry, pos = g.attributes.position as BufferAttribute, mag = g.attributes.aMag as BufferAttribute;
+    const sun = this.system.sun.upos, tmp = new Vector3();
+    for (const c of this.carried) {
+      const i = this.cometIndex.get(c);
+      if (i === undefined) continue;
+      c.upos.sub(sun, tmp);
+      pos.setXYZ(i, tmp.x / AU, tmp.y / AU, tmp.z / AU);
+      mag.setX(i, this.carriedMag.get(c) ?? 99);
+    }
+    pos.needsUpdate = true;
+    mag.needsUpdate = true;
   }
 
   /** The comets taken away (live physics: LivePhysics.away) are not drawn, and cannot be picked. */
