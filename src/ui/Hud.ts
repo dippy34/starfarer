@@ -896,6 +896,7 @@ export class Hud {
   // ------------------------------------------------------------------ state
   update(s: HudState): void {
     this.state = s;
+    this.fitTabs();
     const el = this.el;
     el.classList.toggle('touch', this.coarse || s.touch);
     el.dataset.mode = s.mode;
@@ -1274,6 +1275,23 @@ export class Hud {
   }
 
   /** A destination's picture: a world's photograph, or a shape in its colour. */
+  /**
+   * On a phone on its side with little height (under about 320 px, less the safe areas), five tabs a thumb high do
+   * not fit the column beside the card: Create waits there (each card keeps its Add). Looked at again when the size
+   * of the view changes.
+   */
+  private fitTabs(): void {
+    const W = window.innerWidth, H = window.innerHeight;
+    if (W === this.tabsFor[0] && H === this.tabsFor[1]) return;
+    this.tabsFor = [W, H];
+    const create = this.$('.hud-tabs [data-tab="create"]'), tabs = this.$('.hud-tabs');
+    create.hidden = false;
+    const column = getComputedStyle(tabs).flexDirection === 'column';
+    create.hidden = column && tabs.getBoundingClientRect().height > this.$('.hud-dock').getBoundingClientRect().height + 0.5;
+  }
+  /** the size of the view the tabs were last fitted to */
+  private tabsFor: [number, number] = [0, 0];
+
   /** Create: the card of `key` (chosen now, or already) opens at Add, the list of what can be made. */
   openAdd(key: string): void {
     this.closeSheet();
