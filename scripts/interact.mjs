@@ -40,6 +40,13 @@ await page.screenshot({ path: path.join(outDir, 'i1-goto-mars.png') });
   });
   const frames = async (n) => { const f = await page.evaluate(() => window.app.frameCount); await page.waitForFunction((x) => window.app.frameCount >= x, f + n, { timeout: 60000 }); };
   const angle = (u, v) => Math.acos(Math.min(1, (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (Math.hypot(...u) * Math.hypot(...v))));
+  // (from further out than the arrival, 2.2 of its radii: within 1.2 radii of its surface Mars's landing ground comes in
+  // (PlanetTerrain.reach) and the height a zoom changes is then the height over the ground under the eye, not over its sphere,
+  // so a zoom in onto it and out again ends where the ground under the eye has it, a few km off. Out here, twice the wheel
+  // out, the wheel's in and out undo each other exactly)
+  await page.mouse.move(640, 360);
+  for (let i = 0; i < 2; i++) { await page.mouse.wheel(0, 300); await frames(2); }
+  await frames(10);
   const held = await page.evaluate(() => {
     const a = window.app, t = a.rig.target; const cam = a.rig.upos.sub(t.upos); const dir = a.rig.ray(600, 380);
     const b = cam.dot(dir); return cam.addScaledVector(dir, -b - Math.sqrt(b * b - (cam.lengthSq() - t.radius * t.radius))).toArray();
@@ -70,8 +77,11 @@ await page.screenshot({ path: path.join(outDir, 'i1-goto-mars.png') });
   await page.evaluate(() => { const a = window.app; a.center(a.rig.target); });
 }
 
-// 2. Time acceleration: one day per second for ~2 s; the camera must stay with Mars
-const before = await page.evaluate(() => ({ jd: window.app.clock.jdTdb }));
+// 2. Time acceleration: one day per second for ~2 s; the camera must stay with Mars, as far from it as it was
+const before = await page.evaluate(() => {
+  const a = window.app; const m = a.system.bodies.find((b) => b.name === 'Mars');
+  return { jd: a.clock.jdTdb, dist: m.upos.sub(a.rig.upos).length() / m.radius };
+});
 await page.evaluate(() => { window.app.clock.paused = false; window.app.clock.rate = 86400; });
 // (two days at a day a second: two seconds here. A frame is at most a second of the clock's, so on a runner at a frame a
 // second two seconds of wall time were one frame, "Δ=1.00 d": the wait is for the two days, not for two seconds)
@@ -81,7 +91,7 @@ st = await page.evaluate(() => {
   return { jd: a.clock.jdTdb, dist: m.upos.sub(a.rig.upos).length() / m.radius };
 });
 check('time acceleration advances the clock', st.jd - before.jd > 1, `Δ=${(st.jd - before.jd).toFixed(2)} d`);
-check('camera co-moves with Mars under acceleration', st.dist > 2.5 && st.dist < 5, `dist=${st.dist.toFixed(2)} R`);
+check('camera co-moves with Mars under acceleration', Math.abs(st.dist / before.dist - 1) < 1e-3, `dist=${st.dist.toFixed(4)} R, was ${before.dist.toFixed(4)} R`);
 
 // 2b. Zoomed out beyond the reach of Mars's own pull, Mars still what the camera turns round: the camera keeps riding with
 // it. (It rode with the Sun out there: zoomed out to see a planet and the moons round it, time running fast, the owner saw
