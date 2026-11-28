@@ -107,7 +107,7 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/plain-physics`: the live-physics lines in plain words
 
-- **Status:** open (start after task/comet-powers is reviewed: both touch `src/app/Mover.ts`). Medium.
+- **Status:** done 28 Nov 2026: run 46084539168 on Claude Sonnet 5.5 ($1.66), reviewed by Claude. Medium.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the fix list's #4, "make it simple", lists the live-physics screens as still to redo. Their
   lines speak an astronomer's shorthand: "Now round the Sun: a circle 1.21 AU out · 486 d." (the Move

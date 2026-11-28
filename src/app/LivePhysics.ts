@@ -4,7 +4,7 @@ import { LEFT_OUT, NBody, type NBodyBodies, type NBodySnapshot, type SimEvent } 
 import { apply, capture, type Live, liveDate, release, riders, type SimSystem } from '../sim/SystemSim';
 import type { Body, SpaceObject } from '../universe/Body';
 import type { BodyJson, Family } from '../universe/SolarSystem';
-import { dayWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
+import { dayWords, farWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
 import { type LiveWorld, type MadeRecord, WORLD_LIMITS, WorldError } from './SceneWorld';
 import { type Kind, MADE_FIRST_ID } from './WhatIf';
 
@@ -866,7 +866,7 @@ const isWorld = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind 
  */
 export const weighty = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind === 'dwarf' || (b.kind === 'moon' && b.gm >= MOON_GM) || b.meta.made === true;
 
-/** How near two bodies passed, in words. */
+/** How near two bodies passed, in words (kilometres, millions of them, light years: never AU). */
 function passWords(m: number): string {
-  return m >= 0.01 * AU ? `${Number((m / AU).toPrecision(2))} AU` : `${Math.round(m / 1e3).toLocaleString('en-US')} km`;
+  return farWords(m);
 }

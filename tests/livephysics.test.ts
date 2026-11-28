@@ -366,7 +366,7 @@ describe('live physics', () => {
     const rows = physics.rows(named('Moon'));
     expect(rows[0]).toEqual(['Live physics', 'simulated since 16 September 2026']);
     expect(rows[1]).toEqual(['Goes round', 'Earth']);
-    expect(rows[2]).toEqual(['Its orbit', expect.stringMatching(/^a slightly stretched circle, 3[56]\d,\d\d\d to 4[01]\d,\d\d\d km · 2[6-8](\.\d+)? d$/)]);
+    expect(rows[2]).toEqual(['Its orbit', expect.stringMatching(/^a slightly stretched circle, 3[56]\d,\d\d\d to 4[01]\d,\d\d\d km, once round in 2[6-8](\.\d+)? days$/)]);
     expect(rows[3]).toEqual(['How stretched', expect.stringMatching(/^0\.0[3-7]\d? \(0 is a circle, 1 and more an open path\)$/)]);
     expect(physics.rows(named('Carme'))).toEqual([['Live physics', 'not simulated: it keeps its real path round Jupiter (its mass is not known)']]);
     expect(physics.rows(named('Phobos'))).toEqual([['Live physics', 'not simulated: it keeps its real path round Mars (it is too light to matter until it or Mars is changed)']]);

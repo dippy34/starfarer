@@ -1,7 +1,7 @@
 import { isOpen } from '../astro/kepler';
 import { jdToCalendar, tdbToUtc } from '../core/time';
-import { AU, formatDistance } from '../core/units';
-import { bindingEnergy, fmtDuration, G, L_SUN, M_EARTH, M_JUPITER, M_SUN, mainSequence } from '../sim/physics';
+import { bindingEnergy, G, L_SUN, M_EARTH, M_JUPITER, M_SUN, mainSequence } from '../sim/physics';
+import { plainDistance } from './plainWords';
 
 /**
  * The powers: what the explorer can do to a world (src/app/LivePhysics.ts does it; the card of
@@ -174,29 +174,38 @@ export function orbitOf(r: ArrayLike<number>, v: ArrayLike<number>, mu: number):
   return { bound: true, e, peri, apo: 2 * a - peri, period: 2 * Math.PI * Math.sqrt((a * a * a) / mu) };
 }
 
-/** A distance within the system in words: kilometres near a world, astronomical units between worlds. */
+/** A distance within the system in words anyone reads, as the chips at the top say it (plainDistance): kilometres, millions or billions of them, light years far out; never AU. */
 export function farWords(m: number): string {
-  return m >= 0.01 * AU ? `${Number((m / AU).toPrecision(3))} AU` : formatDistance(m);
+  return plainDistance(m);
 }
 
 /**
  * An orbit in words: its shape, how near and how far, and how long once round ("a slightly
- * stretched circle, 365,709 to 382,840 km · 26.21 d"); a circle where its two ends come out the
- * same ("a circle 369,335 km out · 25.7 d"); on an open path, how near it passes. How stretched it
- * is, as a number, is for the details (`stretchWords`).
+ * stretched circle, 365,709 to 382,840 km, once round in 26.2 days"); a circle where its two ends
+ * come out the same ("a circle 369,335 km out, once round in 25.7 days"); on an open path, how near
+ * it passes. Distances as `farWords` says them, the time as `periodWords` does: no AU, no "d" or "h".
+ * How stretched it is, as a number, is for the details (`stretchWords`).
  */
 export function orbitWords(o: Orbit): string {
   if (!o.bound) return `an open path: it passes at ${farWords(o.peri)}, then leaves`;
-  const near = farWords(o.peri), far = farWords(o.apo), round = fmtDuration(o.period);
-  if (near === far) return `a circle ${near} out · ${round}`;
+  const near = farWords(o.peri), far = farWords(o.apo), round = `once round in ${periodWords(o.period)}`;
+  if (near === far) return `a circle ${near} out, ${round}`;
   // (a circle too where the details already say 0, `stretchWords`: a world left on a circle is pulled a little
   // off it as soon as time runs, and two ends a kilometre apart at the Moon's twice-distance made the card
   // read "a circle" or "nearly a circle, 738,670 to 738,671 km" by which side of a rounding they fell on)
-  if (o.e < CIRCLE_E) return `a circle ${farWords((o.peri + o.apo) / 2)} out · ${round}`;
+  if (o.e < CIRCLE_E) return `a circle ${farWords((o.peri + o.apo) / 2)} out, ${round}`;
   const shape = o.e < 0.02 ? 'nearly a circle' : o.e < 0.2 ? 'a slightly stretched circle' : o.e < 0.6 ? 'an oval' : 'a long oval';
   // (the unit once, where both ends have the same: "365,709 to 382,840 km")
   const unit = (w: string) => w.replace(/^[\d.,]+ /, '');
-  return `${shape}, ${unit(near) === unit(far) ? `${near.slice(0, near.length - unit(near).length - 1)} to ${far}` : `${near} to ${far}`} · ${round}`;
+  return `${shape}, ${unit(near) === unit(far) ? `${near.slice(0, near.length - unit(near).length - 1)} to ${far}` : `${near} to ${far}`}, ${round}`;
+}
+
+/**
+ * What the toast says of a world just made: "New rocky world is new: 181 million km from the Sun, once round in 486 days."
+ * `where`: how far, already in words (`farWords`) with what from; `periodS`: once round (s).
+ */
+export function addedWords(name: string, where: string, periodS: number): string {
+  return `${name} is new: ${where}, once round in ${periodWords(periodS)}.`;
 }
 
 /** Below this stretch an orbit is a circle in words, and its stretch reads 0. */
@@ -711,6 +720,21 @@ export function spanWords(seconds: number): string {
   if (s >= DAY) return count(s / DAY, 'day');
   if (s >= 3600) return count(s / 3600, 'hour');
   if (s >= 60) return count(s / 60, 'minute');
+  return count(s, 'second');
+}
+
+/**
+ * How long once round takes, in words, in the unit an orbit is best told in: seconds under two minutes,
+ * minutes under two hours, hours under two days, days under two years, then years ("486 days", "26.2 days",
+ * "6.6 hours", "11.9 years"). The figures are `spanWords`'s (three at most); `spanWords` itself moves to the
+ * next unit at one (a year of 365 days, "1 year"), which would read 486 days as "1.3 years".
+ */
+export function periodWords(seconds: number): string {
+  const s = Math.abs(seconds), DAY = 86_400, YEAR = 365.25 * DAY;
+  if (s >= 2 * YEAR) return count(s / YEAR, 'year');
+  if (s >= 2 * DAY) return count(s / DAY, 'day');
+  if (s >= 2 * 3600) return count(s / 3600, 'hour');
+  if (s >= 120) return count(s / 60, 'minute');
   return count(s, 'second');
 }
 

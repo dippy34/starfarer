@@ -973,6 +973,11 @@ temperature, and size as well as mass.
   (`plainSpeedWords`; in the ship its own `plainSpeed`). The clock says how fast time runs in the Time
   sheet's words, short ("3 hours a second", "◀ 2 days a second": `clockChipWords` through
   `App.rateText`, which the ship's and the headset's panels and the live mark's "only ..." use too).
+- *The live-physics lines in plain words* (28 Nov 2026; the cheap team's task/plain-physics on Claude
+  Sonnet, reviewed here): the Move panel, the details' "Its orbit", the toasts of Add and of a near pass
+  say distances as the chips do (`farWords` is `plainDistance` now: never AU) and a period in words
+  (`periodWords`: hours under two days, days under two years, then years; "once round in 486 days",
+  not "· 486 d"). `addedWords` is the toast of Add. The science rows keep their units.
 - *Create, in the tab bar* (27 Nov 2026, evening; the sandbox's "one Create button from anywhere"):
   a fifth tab between Explore and Time (`data-tab="create"`, the Add icon). It is no sheet of its own:
   `App.create` chooses what can take something new, the world the camera is at or the first of the
