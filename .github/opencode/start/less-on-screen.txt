@@ -1,0 +1,7 @@
+# Started by Claude, 28 Nov 2026: the owner's big round, part 3: less on the screen, a tap or two away (the ship's round
+# button into More, live physics a small pill with its sheet, one Watch button, the card's facts behind Info, a one-line
+# clock). Claude works on landing, swimming and the drawing at the same time: keep to src/ui and the lines of App.ts
+# that feed them.
+model: anthropic/claude-sonnet-5-5
+base: 542ba155942299afa7cddedb72d0684f00f15bc4
+The card's main button reads Land at a world with ground (HudState selection.land, the go button's label): keep it.
