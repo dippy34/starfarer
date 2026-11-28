@@ -105,6 +105,51 @@ need the OpenCode workspace's region set to Global.
     live physics); Claude runs the rest. `npm run check` passes.
 - **Don't touch:** the clock and its rates (`src/core/time.ts`), the top chip, the watch.
 
+### `task/make-any-number`: make anything, with any numbers
+
+- **Status:** open. Large.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the owner, 28 Nov 2026, after playing: "What's the point of making a planet like Earth or like
+  Jupiter? It would be so much easier if you just added make a planet and you could put however many Earths it
+  is" and "you're adding a slider between how big it can be"; "I still feel confined". Today Add round a star
+  (`canAdd` in `src/app/WhatIf.ts`; the Add panel in `src/ui/Hud.ts`, reached from a card or from Create) lists
+  copies of the Earth, Jupiter and the Sun, seven worlds of a generated look and a black hole, each with a mass
+  slider held to a narrow range (`MADE_MASS`).
+- **What to do:** (the owner approved this; read `HANDOFF.md` "Make anything", "A black hole of your own", "The
+  big round" first)
+  1. *Four choices.* Add round a star offers just: "A planet", "A star", "A black hole" (and round a planet or a
+     dwarf planet: "A moon"), each a thumb high with a plain line. The rows "A planet like Earth", "A planet like
+     Jupiter" and the seven worlds as rows of their own go.
+  2. *Any number.* While it is put in place, its mass is a number to type, beside the slider: in Earths for a
+     planet or a moon, in Suns for a star or a black hole; any from a millionth of an Earth (a planet, a moon)
+     to 10,000 Earths, from 0.08 to 150 Suns for a star, from 1 Sun to 10 billion for a black hole. The slider
+     runs over the whole range on a log scale, for quick changes; the number field takes exact ones (16 px
+     text so an iPhone does not zoom; taken on Enter or when left; a plain line under it says why a number
+     cannot be taken). Its words say what it is at that mass, by the rules there are (`madeSize`, Chen &
+     Kipping 2017): a planet past 13 Jupiters' mass is a brown dwarf, and past about 0.08 Suns a star: it
+     becomes one by itself, shines as a star of the main sequence (`mainSequence`), and says so.
+  3. *Its kind is a look, not a preset.* A planet or a moon has a "Type" choice (rocky, ocean, desert, lava,
+     icy, gas giant, ice giant: the generated looks of `PlanetLook.ts`), with New look, rings, Colour, Name and
+     the card's picture as today; the type first chosen follows its mass (rocky up to about 2 Earths, an ice
+     giant to about 50, a gas giant beyond) until the explorer picks one.
+  4. *Size.* It follows the mass by the published rules, as now; "Set size" lets the explorer type its radius
+     instead (in Earth radii; any from a thousandth to 30), and "Size from mass" puts the rule back.
+  5. *Kept.* Saves and links keep all of it; links and saves written before (the kinds `earth`, `jupiter`,
+     `sun` and the seven worlds) read and are made as ever.
+- **Done when:**
+  - Unit tests: the ranges and the log slider; a typed number (parsed, out of range refused with its line); a
+    planet past 13 Jupiters a brown dwarf and past 0.08 Suns a star, with their words and size; the type
+    following mass until picked; a size set by hand; the bytes of a save of each, and old records unchanged.
+  - Browser checks in `scripts/live.mjs` (the `made`, `create`, `place` and `hole` blocks, phone and desk):
+    the four choices; 1,000 Earths typed: its words and size; 30,000 Earths: it is a star and shines; a size
+    set by hand; a save brings it back. Checks that pinned the old rows pin the new ones exactly (changed on
+    purpose; none loosened). They fail on the code before the change.
+  - Pictures, upright at 390x844: the Add panel, the placing panel with the number field, a planet turned star.
+  - Run `LIVE_ONLY=made,create,place,hole` of `scripts/live.mjs` (phone and desk), `scripts/whatif.mjs` and
+    `scripts/share.mjs`; Claude runs the whole set after. `npm run check` passes.
+- **Don't touch:** the camera rig and the top chips, the round buttons, the card's layout outside its Add and
+  placing panels, and `src/render` (Claude is reworking those at the same time); the comets' powers.
+
 ### `task/hole-of-your-own`: a black hole of your own
 
 - **Status:** done 28 Nov 2026: run 46098223277 on Claude Sonnet 5.5 ($3.68), reviewed by Claude. Large.
