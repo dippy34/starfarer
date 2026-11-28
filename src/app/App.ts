@@ -13,6 +13,7 @@ import { bigShare, BodiesLayer, makeSphere } from '../render/Bodies';
 import { generatedLook, madeLook, TYPE_ID as PLANET_TYPE_ID } from '../render/PlanetLook';
 import { ROCKY_TYPES } from '../universe/ExoTerrain';
 import { PlanetPortrait } from '../render/PlanetPortrait';
+import { Underwater } from '../render/Underwater';
 import { PlanetTerrain } from '../render/PlanetTerrain';
 import { RingSpot } from '../universe/RingSpot';
 import { Landmark, LANDMARKS } from '../universe/Landmarks';
@@ -268,6 +269,8 @@ export class App {
   game!: Game;
   /** walking on the ground (src/app/Walk.ts) */
   walk!: Walk;
+  /** the sea round the eye, swimming under it (src/render/Underwater.ts) */
+  underwater!: Underwater;
   /** free flight by touch: a stick and buttons over the view (src/app/FreeFly.ts) */
   free!: FreeFly;
   /**
@@ -534,6 +537,8 @@ export class App {
     app.game = new Game(app);
     app.game.flight.setAtmospheres(atmoData);
     app.walk = new Walk(app); // walking hook
+    app.underwater = new Underwater();
+    renderer.scene.add(app.underwater.mesh);
     app.free = new FreeFly(app);
     app.awe = new Awe(app);
     setUploadRenderer(renderer.gl);
@@ -4068,6 +4073,7 @@ export class App {
     psf.uPointLight.value = this.vr.active ? 1.41 : 0.79;
     this.bodies.surfaceExposure.value = xSurf;
     this.bodies.expose();
+    this.underwater.update(this.walk.underwater(), this.renderer.camera, xSurf, now / 1000);
     this.bodies.lightExposure.value = xLight;
     for (const c of this.catalogs) c.update(this.camPc, mLim, this.fieldMinDistPc);
     HITCH.lap('catalogs');

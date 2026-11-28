@@ -424,7 +424,9 @@ export class Rocks {
   private skyLight(u: Record<string, { value: unknown }>, up: Vector3, sunT: Vector3, sky: Vector3): void {
     sunT.set(1, 1, 1);
     sky.set(0, 0, 0);
-    if (u.uAtmoColor && !u.uAtmo?.value) { sky.setScalar(0.08); return; }   // generated planets
+    // generated looks (planets of other stars, and the worlds the explorer makes, whose air is a haze of the look, not the
+    // body shader's model of it: they have no uRp and no scattering coefficients)
+    if (u.uAtmoColor || !u.uRp) { sky.setScalar(0.08); return; }
     if (!u.uAtmo || (u.uAtmo.value as number) < 0.5) return;
     const mu = (u.uSunDir.value as Vector3).dot(up);
     const Rp = u.uRp.value as number;

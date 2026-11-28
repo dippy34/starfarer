@@ -193,7 +193,8 @@ async function desktopSite(page, id, landmark, world, gExpect) {
 async function seaCheck(page) {
   const frames = framesOn(page);
   let st;
-  // the sea's edge on Earth (Nazaré, Portugal): walking west stops at the shoreline; no walking on the sea
+  // the sea's edge on Earth (Nazaré, Portugal): walking west goes into the sea and swims, swimming back walks out onto the beach,
+  // and B over the open sea comes down into it, swimming
   await page.evaluate(() => {
     const a = window.app, e = a.findByName('Earth');
     a.select(e);
@@ -256,19 +257,31 @@ async function seaCheck(page) {
     await page.keyboard.down('KeyW');
     const toSea = await sample(page, 40);
     await page.keyboard.up('KeyW');
-    st = await page.evaluate(() => { const a = window.app, w = a.walk; return { sea: a.terrain.isSea(w.body.pos.clone().normalize()), state: w.state }; });
+    const wet = () => page.evaluate(() => { const a = window.app, w = a.walk, d = w.debug(); return { sea: a.terrain.isSea(w.body.pos.clone().normalize()), state: w.state, swim: d.swim, onGround: d.onGround, eyeH: d.eyeH, said: w.said }; });
+    st = await wet();
     const p0 = toSea[0].pos, p1 = toSea[toSea.length - 1].pos;
     const moved = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
-    check('w7: walking into the Atlantic stops at the shoreline', toSea.some((s) => s.blocked) && !st.sea && st.state === 'walk' && moved > 0.5, JSON.stringify({ ...st, moved: +moved.toFixed(2) }));
-    await page.screenshot({ timeout: 400000, path: path.join(outDir, 'w7-shoreline.png') });
+    // (the sea is swum in since 28 Nov 2026, the owner: "I should be able to actually swim around in the ocean"; the
+    // shoreline was a wall, and the open sea refused)
+    check('w7: walking into the Atlantic you swim: in the sea, floating, the eye just over the water', st.sea && st.swim && st.state === 'walk' && st.eyeH > 0.15 && st.eyeH < 0.5 && moved > 2,
+      JSON.stringify({ ...st, moved: +moved.toFixed(2) }));
+    await page.screenshot({ timeout: 400000, path: path.join(outDir, 'w7-swimming.png') });
+    // back to the shore: out of the water onto the beach, standing
+    await page.keyboard.down('KeyS');
+    await page.waitForFunction(() => !window.app.walk.body.swim, null, { timeout: 300000 }).catch(() => undefined);
+    await page.keyboard.up('KeyS');
+    await frames(6);
+    st = await wet();
+    check('w7: swimming back to the shore you walk out onto the beach, standing', !st.sea && !st.swim && st.onGround && st.state === 'walk' && Math.abs(st.eyeH - 1.7) < 0.2, JSON.stringify(st));
     await page.keyboard.press('KeyB');
-    // hover 30 m over the sea a little offshore and ask to walk
+    // hover 30 m over the sea a little offshore and ask to walk: down into the water, swimming
     await placeWest(60, 30);
     await frames(4);
     await page.keyboard.press('KeyB');
-    await frames(2);
-    st = await page.evaluate(() => ({ state: window.app.walk.state, said: window.app.walk.said, sea: window.app.terrain.isSea(window.app.terrain.below(window.app.rig.upos).dir) }));
-    check('w7: no walking on the open sea, with the reason', st.sea && st.state === 'off' && /open water/.test(st.said), JSON.stringify(st));
+    await page.waitForFunction(() => window.app.walk.state === 'walk' || window.app.walk.state === 'off', null, { timeout: 300000 }).catch(() => undefined);
+    await frames(4);
+    st = await wet();
+    check('w7: B over the open sea comes down into the water, swimming', st.state === 'walk' && st.swim && st.sea, JSON.stringify(st));
   }
 }
 
