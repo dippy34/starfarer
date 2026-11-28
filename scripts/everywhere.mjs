@@ -27,6 +27,8 @@ const POWERS = {
   transiting: ['Mass', 'Size', 'Move', 'Remove'],
   exoplanet: ['Mass', 'Move', 'Remove'],
   host: ['Mass', 'Move', 'Remove'],
+  // a comet can be taken away (God mode on a comet, step 1: HANDOFF); moving one is not built yet
+  comet: ['Remove'],
   none: [],
 };
 
@@ -36,7 +38,7 @@ const PLACES = [
   { part: 'solar', label: 'Sun', query: 'Sun', rows: ['Sun'], powers: POWERS.sun },
   { part: 'solar', label: 'Jupiter', query: 'Jupiter', rows: ['Jupiter'], powers: POWERS.planet },
   { part: 'solar', label: 'Ceres', query: 'Ceres', rows: ['Ceres'], powers: POWERS.dwarf },
-  { part: 'solar', label: 'Halley', query: 'Halley', rows: ['1P/Halley'], fallback: '1P/Halley', powers: POWERS.none },
+  { part: 'solar', label: 'Halley', query: 'Halley', rows: ['1P/Halley'], fallback: '1P/Halley', powers: POWERS.comet },
   { part: 'stars', label: 'Sirius', query: 'Sirius', rows: ['Sirius'], powers: POWERS.none },
   { part: 'stars', label: 'Betelgeuse', query: 'Betelgeuse', rows: ['Betelgeuse'], powers: POWERS.none },
   // Alpha Centauri is the system name people type; today's catalogue calls its two stars Rigil

@@ -233,10 +233,10 @@ try {
   check('the kill switch sw-off.js leaves no worker and no offline cache', killed.regs === 0 && killed.caches.length === 0, JSON.stringify(killed));
 
   // Two tabs: while another tab holds the download lock, Download starts nothing.
+  // (the other tab is a page of the same site holding the download's lock, as a tab downloading holds it: a second copy of
+  // the app there drew on the same runner's processor as this one, and this page's taps waited over 30 s for its thread)
   const other = await context.newPage();
-  await other.goto(`${base}?menu=0&gaia=0&procedural=0`, { waitUntil: 'load' });
-  // (the other tab started before this one reloads, as a person would have it: not two copies starting at once on one runner)
-  await ready(other);
+  await other.goto(new URL('sw-off.js', base).href, { waitUntil: 'load' });
   await other.evaluate(() => { navigator.locks.request('starfarer-offline-download', () => new Promise(() => undefined)); });
   await page.reload({ waitUntil: 'load', timeout: 180000 });
   await ready();
