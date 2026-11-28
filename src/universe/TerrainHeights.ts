@@ -1,6 +1,5 @@
 import type { Vector3 } from 'three';
 import { ExoGround } from './ExoTerrain';
-import type { ExoPlanet } from './Planets';
 import { type Ground, TerrainSource } from './Terrain';
 import type { HeightFn } from './TerrainTiles';
 
@@ -19,14 +18,14 @@ export type HeightSpec =
       /** sharper global elevation pyramid (universe/Elevation.ts), if the body has one */
       elevation: { base: string; bodyKey: string } | null;
     }
-  | { kind: 'exo'; name: string; radius: number; type: number; seed: number; seaLevel: number; craters: number; lite: boolean };
+  | { kind: 'exo'; name: string; radius: number; type: number; seed: number; seaLevel: number; craters: number; hMid: number; hSpan: number; lite: boolean };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /** Plain-data description of `g`'s heights, or null if it is not a kind the worker knows. */
 export function heightSpec(g: Ground, source: TerrainSource | null): HeightSpec | null {
   if (g instanceof ExoGround) {
     const e = g as any;
-    return { kind: 'exo', name: g.name, radius: g.radius, type: e.type, seed: e.seed, seaLevel: e.seaLevel, craters: e.craters, lite: g.lite };
+    return { kind: 'exo', name: g.name, radius: g.radius, type: e.type, seed: e.seed, seaLevel: e.seaLevel, craters: e.craters, hMid: e.hMid, hSpan: e.hSpan, lite: g.lite };
   }
   if (!source) return null;
   const s = source as any;
@@ -63,7 +62,7 @@ export function heightFromSpec(
   elevSample?: (n: Vector3, spacing: number) => { h: number; mpp: number } | null,
 ): HeightFn {
   if (spec.kind === 'exo') {
-    const g = new ExoGround({ name: spec.name, radius: spec.radius } as ExoPlanet, spec.type, spec.seed, spec.seaLevel, spec.craters);
+    const g = new ExoGround({ name: spec.name, radius: spec.radius }, spec.type, spec.seed, spec.seaLevel, spec.craters, spec.hMid, spec.hSpan);
     g.lite = spec.lite;
     return (n: Vector3, sp: number) => g.height(n, sp);
   }

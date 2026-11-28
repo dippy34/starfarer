@@ -103,6 +103,8 @@ export interface HudState {
   reversed: boolean;
   selection: {
     key: string; name: string; detail: string; rows: [string, string][]; picture: Picture; here: boolean;
+    /** at it, and it has ground to stand on: the card's main button lands on it ('Land'); null: it recentres */
+    land?: string | null;
     /** a few facts in plain words, as a first read (src/app/plainWords.ts); `rows` and `worked`, every fact as measured, are under More science */
     plain: [string, string][];
     /** what follows from those facts by the textbook, each with its working (src/app/Worked.ts) */
@@ -1199,7 +1201,7 @@ export class Hud {
     setText(warmth, sel.warmth);
     warmth.classList.toggle('live', !!s.live);
     warmth.hidden = this.warmthFolded;
-    setText(card.querySelector('[data-act="go"] span')!, sel.here ? 'Recentre' : 'Go there');
+    setText(card.querySelector('[data-act="go"] span')!, sel.here ? (sel.land ?? 'Recentre') : 'Go there');
     // every power is present: one that cannot work is dimmed, and a tap explains why
     const powers = card.querySelector<HTMLElement>('.card-powers')!;
     powers.hidden = false;
