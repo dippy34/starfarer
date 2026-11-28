@@ -21,12 +21,14 @@ export const FULL = ['start', 'touch', 'interact', 'verify', 'exposure', 'stars'
  * The suites that run in parts at once on GitHub's runners (one job each): the parts together are
  * the whole suite. walk's modes (argument 4), flight's FLIGHT_ONLY and everywhere's places (argument 4)
  * are the suites' own; `all` of walk is touch + desktop + vr. Only the longest suites are split:
- * the account runs about 20 jobs at once for all helpers, and a full set is then 23.
+ * the account runs about 20 jobs at once for all helpers, and a full set is then 24.
  */
 export const PARTS = {
   walk: [{ part: 'touch', args: 'touch' }, { part: 'desktop', args: 'desktop' }, { part: 'vr', args: 'vr' }],
   flight: [{ part: 'desk', env: { FLIGHT_ONLY: 'desk' } }, { part: 'phone', env: { FLIGHT_ONLY: 'phone' } }],
   everywhere: [{ part: 'solar', args: 'solar' }, { part: 'stars', args: 'stars' }, { part: 'planets', args: 'planets' }, { part: 'deep', args: 'deep' }],
+  // (live: a phone's half and a desk's, each some 45 minutes: whole, it came to 110 of a job's 120 on busy runners, 28 Nov 2026)
+  live: [{ part: 'phone', env: { LIVE_KINDS: 'phone' } }, { part: 'desk', env: { LIVE_KINDS: 'desk' } }],
 };
 
 /** One job per suite, or per part of a split suite: { name, suite, args, env } (env: KEY=value words). */
