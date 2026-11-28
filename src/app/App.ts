@@ -105,6 +105,11 @@ type HudPortrait = NonNullable<NonNullable<NonNullable<HudState['selection']>['p
  * pixels wide (shown brighter, a face is shown hotter: orange, yellow, white. StarLook: faceLight).
  */
 const starCap = (small: number, cssRadius: number) => small + (FACE_KEY - small) * smoothstep(12, 60, cssRadius);
+/**
+ * Where Go there arrives (in the radii of what it arrives at, in a wide view: App.goTo), close (the big look, 28 Nov 2026:
+ * it was 3.5 for a world, 8 for a star, 30 for a black hole).
+ */
+const ARRIVE = { world: 2.2, ringed: 3.2, star: 4, hole: 10 };
 /** a name a hair under the ground's horizon (radians: a tenth of a degree) still stands, as the limb's let off by a little */
 const HORIZON_LEEWAY = 0.1 * (Math.PI / 180);
 /** below this height over the ground (m) names are hidden by the ground's real horizon, bearing by bearing */
@@ -2297,10 +2302,13 @@ export class App {
     if (obj instanceof Body) this.bodies.prefetch(obj);
     // in the ship nothing outruns light: the ship's autopilot flies there
     if (this.game.flight.on) { this.game.flight.autopilotTo(obj); return; }
-    // arrival distances are those of a wide view; an upright one stands back to frame the same
+    // arrival distances are those of a wide view; an upright one stands back to frame the same.
+    // (Close: the thing arrived at fills the view, the owner's big look of 28 Nov 2026. A world from 2.2 of its radii fills
+    // the height of a wide view, the width of an upright one; a ringed one stands back to 3.2, its rings in view; a star from
+    // 4; a black hole from 10 times its horizon's radius, its shadow and the disk bent round it filling the view.)
     const fit = this.rig.framing;
     if (obj instanceof BlackHole) {
-      this.rig.flyTo(obj, obj.radius * 30 * fit, undefined, true, obj.approachDir(this.rig.upos.sub(obj.upos, new Vector3())));
+      this.rig.flyTo(obj, obj.radius * ARRIVE.hole * fit, undefined, true, obj.approachDir(this.rig.upos.sub(obj.upos, new Vector3())));
       return;
     }
     if (obj instanceof MilkyWay) {
@@ -2309,7 +2317,7 @@ export class App {
       return;
     }
     if (obj instanceof DeepSkyObject) {
-      this.rig.flyTo(obj, obj.radius * (obj.data.kind === 'open' ? 1.6 : 2.6) * fit);
+      this.rig.flyTo(obj, obj.radius * (obj.data.kind === 'open' ? 1.3 : 1.9) * fit);
       return;
     }
     if (obj instanceof Galaxy) {
@@ -2320,13 +2328,15 @@ export class App {
         this.hud.toast(`Flying into ${obj.name}`);
         return;
       }
-      this.rig.flyTo(obj, obj.radius * 2.4 * fit, undefined, true, obj.viewDir(from));
+      this.rig.flyTo(obj, obj.radius * 2 * fit, undefined, true, obj.viewDir(from));
       this.hud.toast(`Going to ${obj.name} (go again to fly into it)`);
       return;
     }
     let d: number;
-    if (obj instanceof Body) d = obj.kind === 'star' ? obj.radius * 8 : Math.max(obj.radius * 3.5, 2e3);
-    else if (obj instanceof ExoPlanet) d = obj.radius * 3.5;
+    if (obj instanceof Body) {
+      const hole = (obj.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole';
+      d = obj.kind === 'star' ? obj.radius * ARRIVE.star : hole ? obj.radius * ARRIVE.hole : Math.max(obj.radius * (this.bodies.ringOuter(obj) > 0 ? ARRIVE.ringed : ARRIVE.world), 2e3);
+    } else if (obj instanceof ExoPlanet) d = obj.radius * (obj.spec.rings ? ARRIVE.ringed : ARRIVE.world);
     else if (obj instanceof Spacecraft) d = Math.max(obj.radius * 5, 10);
     else if (obj instanceof TrafficShip) d = obj.radius * 6;
     else if (obj instanceof Station) {
@@ -2335,7 +2345,7 @@ export class App {
       this.hud.toast(`Going to ${obj.name}: fly in slowly to dock`);
       return;
     }
-    else if (obj instanceof CatalogStar) d = Math.max(obj.radius * 4.5, 2e7);
+    else if (obj instanceof CatalogStar) d = Math.max(obj.radius * 3, 2e7);
     else if (obj instanceof Comet) d = Math.max(obj.radius, 2000) * 40;   // close enough to see the nucleus
     else if (obj instanceof RingSpot) {
       this.rig.flyTo(obj, 60, undefined, true, obj.approachDir());
