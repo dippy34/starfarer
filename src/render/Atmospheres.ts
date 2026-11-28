@@ -234,7 +234,8 @@ export class AtmospheresLayer {
     const tmp = new Vector3();
     for (const s of this.shells.values()) s.mesh.visible = false;
     for (const [b, v] of views) {
-      if (!v.resolved || v.pixelRadius < 2.5) continue;
+      // (a world drawn larger than it is, far off, is drawn without its air: a shell a pixel thick, of its real size, would lie inside the disc)
+      if (!v.resolved || v.pixelRadius < 2.5 || v.scale > 1) continue;
       // (air is seen by the sunlight it scatters: without a sun there is nothing of it to draw)
       const sunRel = v.sun ? views.get(v.sun)?.rel : undefined;
       if (!v.sun || !sunRel) continue;

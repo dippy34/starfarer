@@ -87,6 +87,7 @@ uniform vec3 uSunDir;       // world unit vector planet -> star
 uniform vec3 uSunColor;     // luminance-normalised star colour
 uniform float uSunIrr;      // irradiance from the star (Sun at 1 AU = PI)
 uniform float uExposure;
+uniform float uFill;        // a share of the starlight from all round: a far world drawn larger than it is (the big look) shows its night side dimly
 uniform float uTime;
 uniform mat3 uBodyToWorld;
 uniform float uLite;        // 1 in VR: fewer noise octaves, no domain warp
@@ -744,6 +745,7 @@ void main() {
   // thermal glow (night side mostly)
   // (scaled to the starlight so it shows at the exposure the lit planet sets)
   radiance += emitColor * emit * luminance(sunL) * (0.012 + 0.2 * smoothstep(0.2, -0.2, mu0));
+  radiance += albedo * sunL * uFill;
   gl_FragColor = vec4(min(radiance * uExposure, vec3(6.0e4)), 1.0);
 ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>
