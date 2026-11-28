@@ -1636,6 +1636,18 @@ the exposure suite's scene `big-look` and the touch suite check it. Not yet: pla
 galaxies 2, nebulae 1.9). (c) The far Sun: it held no exposure below 1.5 px and bloomed into a white blob on the owner's
 lowered resolution; it now holds it from 0.6 px as any lit disc (stars suite's far-Sun check pins the tight glare).
 Each of (a), (b), (c) is a commit of its own (`e6c8687`, `f311391`, `6adbb64`), revertable alone.
+*Part 3, land on any world (first steps done):* at a world with ground the card's main button says Land (`App.landsHere`,
+`HudState.selection.land`; it said Recentre) and lands (`Walk.start(target)`: the approach, then down). Made worlds of a solid
+look have ground (`Bodies.lookedGround`: an `ExoGround` of their look; `terrainOk` let none in) and, rocky or ocean, air as the
+Earth's (`atmosphereFor`'s default). Seas are swum in (`WalkBody.swim`, `swimStep`, `floatOn`, `enterWater`; `FLOAT_EYE`,
+`SWIM_SPEED`... in Walk.ts): walking in, falling in or landing on them; C/Ctrl or the pad's Dive go down, Space or Up come up,
+down to 40 m; a gentle shore is walked out onto. Under the water `src/render/Underwater.ts` draws the sea round the eye over the
+frame (Snell's window overhead, light shafts, dark below and at night; no sea floor: the open sea is too deep to see the bottom).
+At a world of gas the button says Float (`floatsHere`, `floatOver`, `floatArrived`): down to 0.04 of its radius over the clouds,
+looking at the horizon, moving freely; `keepAboveClouds` keeps the camera over them. Not yet: a sea floor and waves, clouds to
+fly through on a giant (its map is blurry that close), the looks of lava and ice ground up close, gas planets of other stars'
+floor. Seven challenges were added to the missions for these (`Missions.ts`: swim, dive, madeground, tostar, bighole, crash,
+freesaturn).
 **The way back (the owner asked for one):** before any of it, the app was commit `a69ed99`, and that
 build stays at https://b4b8c1a5.starfarer.pages.dev (a Cloudflare deployment of its own, kept). The
 enlarging has its own switch in More, and its commits are kept apart so that they can be reverted.
