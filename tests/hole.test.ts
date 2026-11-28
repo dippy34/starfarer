@@ -37,11 +37,11 @@ describe('a black hole of your own', () => {
     expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
   });
 
-  it('is made from one Sun to twenty, begins at ten, and its slider finds ten again', () => {
-    expect(MADE_MASS.hole).toEqual([M_SUN, 20 * M_SUN]);
+  it('is made from one Sun to ten billion, begins at ten, and its slider finds ten again', () => {
+    expect(MADE_MASS.hole).toEqual([M_SUN, 1e10 * M_SUN]);
     expect(HOLE_BASE).toBe(10 * M_SUN);
     expect(madeMassAt('hole', 0, HOLE_BASE)).toBe(M_SUN);
-    expect(madeMassAt('hole', 1, HOLE_BASE) / (20 * M_SUN)).toBeCloseTo(1, 12);
+    expect(madeMassAt('hole', 1, HOLE_BASE) / (1e10 * M_SUN)).toBeCloseTo(1, 12);
     const s = madeSlider('hole', HOLE_BASE);
     expect(s).toBeGreaterThanOrEqual(0);
     expect(s).toBeLessThanOrEqual(1);

@@ -380,7 +380,7 @@ for (const kind of kinds) {
       await page.evaluate(() => { const a = window.app; a.select(a.findByName('Sun')); });
       await page.waitForFunction(() => document.querySelector('#hud .card h2')?.textContent === 'Sun', null, { timeout: 20000 });
       await press(page, '#hud .card [data-power="add"]');
-      await press(page, '#hud .card [data-act="add-earth"]');
+      await press(page, '#hud .card [data-act="add-planet"]');
       await page.waitForFunction(() => window.app.selection?.name === 'Earth 2', null, { timeout: 20000 });
       await press(page, '#hud .card [data-act="place-done"]');
     } else {

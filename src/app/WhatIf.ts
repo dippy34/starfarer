@@ -4,7 +4,7 @@ import { C, G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER,
 import type { Body } from '../universe/Body';
 import type { BodyJson } from '../universe/SolarSystem';
 import type { MadeRecord } from './SceneWorld';
-import { circularVelocity, M_MOON, massWords, starMassWords } from './Powers';
+import { circularVelocity, massWords, starMassWords } from './Powers';
 
 /**
  * What if: what the explorer adds to the worlds (the card's Add, src/ui/Hud.ts). A planet or a
@@ -41,7 +41,10 @@ export const WORLD_KINDS = ['terran', 'ocean', 'desert', 'lava', 'ice', 'giant',
 export type WorldKind = (typeof WORLD_KINDS)[number];
 export const isWorldKind = (k: string): k is WorldKind => (WORLD_KINDS as readonly string[]).includes(k);
 
-/** what can be made: a moon, a copy of the Earth, of Jupiter, of the Sun, a world of a generated look, or a black hole */
+/** what Add offers: a planet, a star, a black hole round a star; a moon round a planet or a dwarf planet (what a planet is, from its mass, is its look: `typeFor`) */
+export type Choice = 'planet' | 'star' | 'hole' | 'moon';
+
+/** what can be made, as it is kept: a moon, a copy of the Earth, of Jupiter, of the Sun, a world of a generated look, or a black hole */
 export type Kind = 'moon' | 'earth' | 'jupiter' | 'sun' | WorldKind | 'hole';
 /** a copy: of the Earth, of Jupiter, of the Sun */
 export type CopyKind = 'earth' | 'jupiter' | 'sun';
@@ -98,9 +101,9 @@ export interface Plan {
  * Earth, one like Jupiter, another sun, or a made world of a generated look. Nothing once `made` bodies have been made already and
  * there is room for no more.
  */
-export function canAdd(b: Body, made: number): Kind[] {
+export function canAdd(b: Body, made: number): Choice[] {
   if (!b.valid || !(b.gm > 0) || made >= MADE_MOST) return [];
-  if (b.kind === 'star') return ['earth', 'jupiter', 'sun', ...WORLD_KINDS, 'hole'];
+  if (b.kind === 'star') return ['planet', 'star', 'hole'];
   return b.kind === 'planet' || b.kind === 'dwarf' ? ['moon'] : [];
 }
 
@@ -231,9 +234,11 @@ export const EARTH_DENSITY = 5514;
 /** from this mass (kg) a giant planet is about Jupiter's size: its insides are squeezed so hard that more mass makes it no larger */
 export const GIANT_FROM = 0.3 * M_JUPITER;
 /** from here (kg) deuterium fuses in a giant's core: a brown dwarf, still about Jupiter's size */
-const BROWN_DWARF_FROM = 13 * M_JUPITER;
+export const BROWN_DWARF_FROM = 13 * M_JUPITER;
 /** from here (kg) hydrogen fuses: a star of the main sequence (src/sim/physics.ts, mainSequence) */
 export const STAR_FROM = 0.08 * M_SUN;
+/** the lightest planet or moon made: a millionth of an Earth; the heaviest on its slider: 10,000 Earths; the heaviest star: 150 Suns; the heaviest black hole: ten billion Suns */
+export const PLANET_LOW = 1e-6 * M_EARTH, PLANET_HIGH = 1e4 * M_EARTH, STAR_HIGH = 150 * M_SUN, HOLE_HIGH = 1e10 * M_SUN;
 
 /**
  * The masses each kind can be made with (kg): from a small moon to two suns across the four. A
@@ -242,21 +247,22 @@ export const STAR_FROM = 0.08 * M_SUN;
  * there to where a star begins; a sun from there to two Suns.
  */
 export const MADE_MASS: Record<Kind, readonly [number, number]> = {
-  moon: [1e-6 * M_MOON, 10 * M_MOON],
-  earth: [0.05 * M_EARTH, ROCKY_MOST],
-  jupiter: [ROCKY_MOST, STAR_FROM],
-  sun: [STAR_FROM, 2 * M_SUN],
-  // made worlds of a generated look: rock, ocean, desert and lava worlds as the Earth's, an icy one from a thousandth of
-  // the Earth's mass (about a seventh of the Moon's) to 5, an ice giant from 5 to 50 Earths, a gas giant from 10 Earths to 13 Jupiters
-  terran: [0.05 * M_EARTH, ROCKY_MOST],
-  ocean: [0.05 * M_EARTH, ROCKY_MOST],
-  desert: [0.05 * M_EARTH, ROCKY_MOST],
-  lava: [0.05 * M_EARTH, ROCKY_MOST],
-  ice: [0.001 * M_EARTH, 5 * M_EARTH],
-  icegiant: [5 * M_EARTH, 50 * M_EARTH],
-  giant: [ROCKY_MOST, BROWN_DWARF_FROM],
-  // a black hole of your own: from one Sun to twenty (the lightest holes found are a few Suns; the heaviest made by one star about twenty)
-  hole: [M_SUN, 20 * M_SUN],
+  // a moon and a planet of any look (and the copies of the Earth and Jupiter that links and saves written before still hold): from a
+  // millionth of an Earth to 10,000 Earths on the slider (the number field takes up to the heaviest star: see `takeMass`)
+  moon: [PLANET_LOW, PLANET_HIGH],
+  earth: [PLANET_LOW, PLANET_HIGH],
+  jupiter: [PLANET_LOW, PLANET_HIGH],
+  terran: [PLANET_LOW, PLANET_HIGH],
+  ocean: [PLANET_LOW, PLANET_HIGH],
+  desert: [PLANET_LOW, PLANET_HIGH],
+  lava: [PLANET_LOW, PLANET_HIGH],
+  ice: [PLANET_LOW, PLANET_HIGH],
+  icegiant: [PLANET_LOW, PLANET_HIGH],
+  giant: [PLANET_LOW, PLANET_HIGH],
+  // a star: from where hydrogen fuses (0.08 Suns) to the heaviest stars found (150 Suns, Crowther et al. 2010)
+  sun: [STAR_FROM, STAR_HIGH],
+  // a black hole: from one Sun (the lightest found are a few) to ten billion (the heaviest measured are some tens of billions)
+  hole: [M_SUN, HOLE_HIGH],
 };
 
 /** a black hole is made with ten Suns, as Add makes it; the slider moves it from there */
@@ -334,18 +340,22 @@ const BETWEEN = Math.log(R_JUPITER / ROCK_TOP) / Math.log(GIANT_FROM / ROCKY_MOS
  * - a sun: a star of the main sequence of that mass: its radius, temperature and light.
  */
 export function madeSize(kind: Kind, kg: number, icy: boolean): Sized {
+  // (past what a look's own rule covers, a planet's size follows its mass alone: `bigWorld`)
   switch (kind) {
     case 'moon': return { radius: radiusFromDensity(kg, icy ? ICE : ROCK), rule: icy ? 'ice' : 'rock' };
     // (a copy of the Earth keeps the Earth's density, as a copy; a rocky world of your own follows the published relation)
     case 'earth': return { radius: R_EARTH * Math.cbrt(kg / M_EARTH), rule: 'earth' };
-    case 'terran': case 'ocean': case 'desert': case 'lava': return { radius: R_EARTH * Math.pow(kg / M_EARTH, TERRAN_SLOPE), rule: 'terran' };
-    case 'ice': return { radius: radiusFromDensity(kg, ICE), rule: 'ice' };
+    case 'terran': case 'ocean': case 'desert': case 'lava':
+      return kg > ROCKY_MOST ? bigWorld(kg) : { radius: R_EARTH * Math.pow(kg / M_EARTH, TERRAN_SLOPE), rule: 'terran' };
+    case 'ice':
+      if (kg > ICY_MOST) return kg > ROCKY_MOST ? bigWorld(kg) : { radius: R_EARTH * Math.pow(kg / M_EARTH, TERRAN_SLOPE), rule: 'terran' };
+      return { radius: radiusFromDensity(kg, ICE), rule: 'ice' };
     case 'icegiant':
       if (kg <= NEPTUNIAN_FROM) return { radius: R_EARTH * Math.pow(kg / M_EARTH, TERRAN_SLOPE), rule: 'terran' };
+      if (kg > ICEGIANT_MOST) return bigWorld(kg);
       return { radius: NEPTUNIAN_BASE * Math.pow(kg / NEPTUNIAN_FROM, NEPTUNIAN_SLOPE), rule: 'neptunian' };
     case 'giant':
-      if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: 'giant' };
-      return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
+      return kg < ROCKY_MOST ? { radius: R_EARTH * Math.pow(kg / M_EARTH, TERRAN_SLOPE), rule: 'terran' } : bigWorld(kg);
     case 'jupiter':
       if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: kg >= BROWN_DWARF_FROM ? 'brown dwarf' : 'giant' };
       return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
@@ -356,6 +366,76 @@ export function madeSize(kind: Kind, kg: number, icy: boolean): Sized {
     // a black hole: its event horizon, the Schwarzschild radius
     case 'hole': return { radius: schwarzschild(kg), rule: 'horizon' };
   }
+}
+
+/** an icy world is a ball of ice and rock up to this mass (kg; 5 Earths), and an ice giant is of rock, ice and gas up to this (50 Earths) */
+const ICY_MOST = 5 * M_EARTH, ICEGIANT_MOST = 50 * M_EARTH;
+
+/**
+ * A world heavier than its look's own rule covers: its size follows its mass alone, from the rock of 10 Earths (2.15 R⊕) to Jupiter's size
+ * at 0.3 Jupiters, where it stays whatever the mass (a giant planet, then a brown dwarf from 13 Jupiters: its insides are squeezed so hard that
+ * more mass makes it no larger).
+ */
+function bigWorld(kg: number): Sized {
+  if (kg >= GIANT_FROM) return { radius: R_JUPITER, rule: kg >= BROWN_DWARF_FROM ? 'brown dwarf' : 'giant' };
+  return { radius: ROCK_TOP * Math.pow(kg / ROCKY_MOST, BETWEEN), rule: 'between' };
+}
+
+/**
+ * What a planet of `kg` is, as its look, until the explorer picks one: rocky up to 2 Earths, an ice giant to 50 (Uranus and Neptune are 14.5
+ * and 17), a gas giant beyond.
+ */
+export function typeFor(kg: number): WorldKind {
+  return kg <= 2 * M_EARTH ? 'terran' : kg <= 50 * M_EARTH ? 'icegiant' : 'giant';
+}
+
+/** a planet is of a look (the kinds of `WORLD_KINDS`; the copies of the Earth and Jupiter that old saves hold are planets too) */
+export const isPlanetKind = (k: string): boolean => isWorldKind(k) || k === 'earth' || k === 'jupiter';
+
+/** the unit a made body's mass is typed in: Earths for a planet or a moon, Suns for a star or a black hole */
+export const massUnit = (kind: string): { name: 'Earths' | 'Suns'; kg: number } => (kind === 'sun' || kind === 'hole' ? { name: 'Suns', kg: M_SUN } : { name: 'Earths', kg: M_EARTH });
+
+/** a number as the field shows it: four figures at most, thousands set apart ("1,000", "0.000001", "10,000,000,000") */
+export function amountWords(x: number): string {
+  return Number(x.toPrecision(4)).toLocaleString('en-US', { maximumFractionDigits: 12 });
+}
+
+/**
+ * The mass a person typed for something of `kind`: in Earths for a planet or a moon, in Suns for a star or a black hole (commas, spaces and the
+ * unit's name after it are allowed). The mass (kg), or a plain line saying why not. A planet is taken up to the heaviest star: past 0.08 Suns it
+ * is one (the slider ends at 10,000 Earths, for quick changes).
+ */
+export function takeMass(text: string, kind: string): { kg: number } | { why: string } {
+  const u = massUnit(kind), [lo, hi] = typedRange(kind);
+  const cleaned = text.trim().replace(/,/g, '').replace(/\s*(earths?|suns?)$/i, '').trim();
+  if (!/^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(cleaned)) return { why: `Type a number of ${u.name}` };
+  const x = Number(cleaned), kg = x * u.kg;
+  if (!(x > 0) || !Number.isFinite(x) || kg < lo * (1 - 1e-12) || kg > hi * (1 + 1e-12)) return { why: rangeWords(kind) };
+  return { kg };
+}
+
+/** what can be typed for a mass (kg): the slider's range, except that a planet goes up to the heaviest star */
+export function typedRange(kind: string): readonly [number, number] {
+  return isPlanetKind(kind) ? [PLANET_LOW, STAR_HIGH] : MADE_MASS[kind as Kind];
+}
+
+/** the range a mass may be typed in, in plain words */
+export function rangeWords(kind: string): string {
+  if (kind === 'sun') return 'A star is from 0.08 to 150 Suns';
+  if (kind === 'hole') return 'A black hole is from 1 Sun to 10 billion Suns';
+  return `From a millionth of an Earth to ${amountWords(STAR_HIGH / M_EARTH)} Earths (past 10,000 it is a brown dwarf or a star)`;
+}
+
+/** the size of a made world as an explorer may set it by hand, in Earth radii: from a thousandth to 30 */
+export const SIZE_BY_HAND: readonly [number, number] = [1e-3, 30];
+
+/** The radius (m) a person typed in Earth radii for a world made, or a plain line saying why not. */
+export function takeRadius(text: string): { radius: number } | { why: string } {
+  const cleaned = text.trim().replace(/,/g, '').replace(/\s*(earth radii|earth radius|radii|radius)$/i, '').trim();
+  if (!/^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(cleaned)) return { why: 'Type a size in Earth radii' };
+  const x = Number(cleaned);
+  if (!(x >= SIZE_BY_HAND[0]) || x > SIZE_BY_HAND[1]) return { why: 'From a thousandth of an Earth radius to 30' };
+  return { radius: x * R_EARTH };
 }
 
 /**
@@ -390,9 +470,16 @@ const km = (m: number) => `${Math.round(m / 1e3).toLocaleString('en-US')} km`;
 export const horizonRadiusWords = (radius: number) => `${Number((radius / 1e3).toPrecision(3)).toLocaleString('en-US')} km`;
 
 /** What a body made as `kind` with `kg` of mass is, in words: its mass, and what it is and how big. */
-export function madeWords(kind: Kind, kg: number, icy: boolean): { mass: string; what: string } {
+export function madeWords(kind: Kind, kg: number, icy: boolean, byHand?: number): { mass: string; what: string } {
   const s = madeSize(kind, kg, icy), mass = kind === 'sun' ? starMassWords(kg) : massWords(kg);
+  // (a size the explorer set by hand: said as it is, in the Earth's size, and as theirs)
+  if (byHand !== undefined && (isWorldKind(kind) || kind === 'moon') && !(s.rule === 'brown dwarf' && isWorldKind(kind))) {
+    const name = kind === 'moon' ? 'A moon' : (/^[aeiou]/.test(WORLD_NAME[kind as WorldKind]) ? 'An ' : 'A ') + WORLD_NAME[kind as WorldKind];
+    return { mass, what: `${name}, ${times(byHand / R_EARTH)} times the Earth's size, set by you` };
+  }
   if (isWorldKind(kind)) {
+    // (past 13 Jupiters of mass deuterium fuses in it: whatever its look, it is a brown dwarf)
+    if (s.rule === 'brown dwarf') return { mass, what: "A brown dwarf, Jupiter's size" };
     const a = WORLD_NAME[kind], name = (/^[aeiou]/.test(a) ? 'An ' : 'A ') + a;
     const size = s.rule === 'ice' ? `${km(s.radius)} in radius` : s.rule === 'giant' ? "Jupiter's size"
       : Math.abs(s.radius / R_EARTH - 1) < 0.005 ? "the Earth's size" : `${times(s.radius / R_EARTH)} times the Earth's size`;

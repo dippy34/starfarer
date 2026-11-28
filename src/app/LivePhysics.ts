@@ -340,6 +340,20 @@ export class LivePhysics {
     return b;
   }
 
+  /**
+   * A body the explorer made, being put in place, is made again as another (a planet that has become a star, a star a planet): the old one is
+   * taken out as if it had never been made, the new one (`json`, `pos`, `vel`: as for `make`) takes its place. One change with its making.
+   */
+  exchange(old: Body, json: BodyJson, about: Body, pos: ArrayLike<number>, vel: ArrayLike<number>, jd: number, told: string): Body {
+    const live = this.start(jd);
+    if (live.sim.indexOf(old.id) >= 0) live.sim.remove(old.id);
+    const at = this.made.indexOf(old);
+    if (at >= 0) this.made.splice(at, 1);
+    this.real.delete(old);
+    this.drop(old, false);
+    return this.make(json, about, pos, vel, jd, told);
+  }
+
   /** Take a body away: everything else carries on without it. */
   remove(b: Body, jd: number): void {
     const live = this.start(jd);

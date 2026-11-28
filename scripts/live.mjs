@@ -14,7 +14,7 @@
 //   - the Moon dragged with a finger to twice its distance: time waits while it is held, it goes
 //     where the finger goes in the plane of its orbit, and left on a circle there its month is
 //     the one Kepler's law gives
-//   - a second Jupiter made for the Sun: on the circle promised, between the Sun and the eye, a
+//   - a planet made for the Sun, given Jupiter's mass in Earths: on the circle promised, between the Sun and the eye, a
 //     body like any other (found by name, listed, with a mass to change), and a quarter of its
 //     year later a quarter of the way round; a second sun, which shines and lights what is nearer
 //     it; taken away again, and nothing of either left after "Back to reality"
@@ -51,6 +51,13 @@ const START = '2026-10-01T20:00:00Z';
 const frames = (page, n) => page.evaluate((n) => new Promise((done) => { const f0 = window.app.frameCount; const t = setInterval(() => { if (window.app.frameCount >= f0 + n) { clearInterval(t); done(); } }, 30); }), n);
 // (what is on the selection's card under its bar is a tap on the bar away: openCard)
 const press = async (page, sel) => { if (/\.card \[data-(power|act="(move|remove|share|centre)")/.test(sel)) await openCard(page); const b = page.locator(sel).first(); await b.scrollIntoViewIfNeeded(); const force = (await b.getAttribute('aria-disabled')) === 'true'; await b.tap({ force }).catch(() => b.click({ force })); };
+/** Add something round a star through the card's four choices: a planet (typed `earths` of mass, and `type` picked), a star, a black hole (src/app/WhatIf.ts). */
+const addPlanet = async (page, earths = 1, type = null) => {
+  await press(page, '#hud .card [data-act="add-planet"]');
+  await page.waitForFunction(() => window.app.mover.placing, null, { timeout: 20000 });
+  if (earths !== 1) await page.evaluate((x) => window.app.typeMadeMass(String(x)), earths);
+  if (type) await page.evaluate((t) => window.app.setMadeType(t), type);
+};
 const text = (page, sel) => page.evaluate((sel) => document.querySelector(sel)?.textContent ?? '', sel);
 const shown = (page, sel) => page.evaluate((sel) => { const el = document.querySelector(sel); return !!el && !el.hidden && !el.closest('[hidden]') && el.getBoundingClientRect().height > 0; }, sel);
 const toast = (page) => text(page, '#hud .hud-toast');
@@ -870,11 +877,16 @@ for (const kind of kinds) {
     await frames(page, 2);
     const offers = await page.evaluate(() => [...document.querySelectorAll('#hud .card [data-panel="add"] .row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => r.querySelector('b').textContent));
     // (the first three rows as they were, then the made worlds of a generated look: each a thumb high)
-    check(on('what can be added to a star: a planet like Earth, one like Jupiter, a second sun, the seven worlds of a generated look, and a black hole'),
-      offers.join() === 'A planet like Earth,A planet like Jupiter,A second sun,A rocky world,An ocean world,A desert world,A lava world,An icy world,A gas giant,An ice giant,A black hole', offers.join(', '));
+    check(on('what can be added to a star: a planet, a star and a black hole (any mass, typed)'),
+      offers.join() === 'A planet,A star,A black hole', offers.join(', '));
     await page.screenshot({ path: path.join(outDir, `live-${kind}-add.png`) });
     const eye = await page.evaluate(() => { const a = window.app; return a.rig.upos.sub(a.system.sun.upos, new (a.system.sun.pos.constructor)()).toArray(); });
-    await press(page, '#hud .card [data-act="add-jupiter"]');
+    // (A planet, of any mass (28 Nov 2026: no copies of the Earth or Jupiter any more): made rocky, of the Earth's mass, on a circle
+    // round the Sun, and that is said; then its mass typed, 317.8 Earths, Jupiter's, and Gas giant chosen for its type)
+    await press(page, '#hud .card [data-act="add-planet"]');
+    await page.waitForFunction(() => window.app.mover.placing, null, { timeout: 20000 });
+    const first = await page.evaluate(() => { const a = window.app, m = a.selection; return { name: m.name, earths: m.gm / a.findByName('Earth').gm, toast: document.querySelector('#hud .hud-toast').textContent }; });
+    await page.evaluate(() => { window.app.typeMadeMass('317.8'); window.app.setMadeType('giant'); });
     await frames(page, 4);
     const made = await page.evaluate((eye) => {
       const a = window.app, m = a.selection, sun = a.system.sun, real = a.findByName('Jupiter'), earth = a.findByName('Earth');
@@ -883,18 +895,20 @@ for (const kind of kinds) {
       const o = a.physics.orbit(m);
       return {
         name: m.name, card: document.querySelector('#hud .card h2').textContent, kind: m.kind, on: a.physics.on, simulated: a.physics.simulated(m), made: a.made.length, parent: m.parent?.name,
-        gm: m.gm / real.gm, radius: m.radius / real.radius, far: r.length() / Math.hypot(...eye), au: r.length() / 1.495978707e11, side: r.clone().normalize().dot(E) / Math.hypot(...eye),
+        gm: m.gm / real.gm, radiusKm: m.radius / 1e3, far: r.length() / Math.hypot(...eye), au: r.length() / 1.495978707e11, side: r.clone().normalize().dot(E) / Math.hypot(...eye),
         tilt: Math.abs(r.clone().normalize().dot(north)), speed: v.length() / Math.sqrt((sun.gm + m.gm) / r.length()), way: r.clone().cross(v).normalize().dot(north), e: o.e, period: o.period,
         toast: document.querySelector('#hud .hud-toast').textContent, powers: [...document.querySelectorAll('#hud .card .card-powers .power')].filter((b) => !b.hidden).map((b) => b.textContent).join(),
         drawn: a.bodies.views.has(m), jd: a.clock.jdTdb, dir: r.clone().normalize().toArray(), pole: r.clone().cross(v).normalize().toArray(),
       };
     }, eye);
-    check(on('a tap makes a second Jupiter: a planet of the system with Jupiter\'s mass and size, simulated, selected, and physics is live'),
-      made.name === 'Jupiter 2' && made.card === 'Jupiter 2' && made.kind === 'planet' && made.on && made.simulated && made.made === 1 && made.parent === 'Sun' && made.gm === 1 && made.radius === 1 && made.drawn && /Live physics is on/.test(made.toast),
-      `${made.name}, ${made.gm} of Jupiter's mass, round ${made.parent}`);
-    check(on('it is on the orbit promised: a circle round the Sun in the plane of the planets, the way they go, 0.55 of the way to the eye, and that is said'),
-      Math.abs(made.far - 0.55) < 1e-6 && made.side > 0.7 && made.tilt < 0.03 && Math.abs(made.speed - 1) < 1e-6 && made.way > 0.999 && made.e < 1e-6 && new RegExp(`Jupiter 2 is new: ${Number((made.au * 149.5978707).toPrecision(3)).toLocaleString('en-US')} million km from the Sun, once round in [\\d.]+ (days|years)\\.`).test(made.toast),
-      `${made.au.toFixed(3)} AU out (${made.far.toFixed(6)} of the eye's distance), ${(Math.asin(made.tilt) * 57.3).toFixed(2)} deg from the Earth's plane, ${made.speed.toFixed(6)} of the circular speed; "${made.toast.split('\n').pop()}"`);
+    // (Jupiter is 317.83 Earths: 317.8 is 0.9999 of it; a gas giant from 0.3 Jupiters on is Jupiter's size, its mean radius, 69,911 km)
+    check(on('a tap on A planet makes a rocky one of the Earth\'s mass; its mass typed, 317.8 Earths, and Gas giant chosen: a gas giant of Jupiter\'s mass and size, simulated, selected, and physics is live'),
+      first.name === 'New rocky world' && Math.abs(first.earths - 1) < 1e-3 && made.name === 'New gas giant' && made.card === 'New gas giant' && made.kind === 'planet' && made.on && made.simulated && made.made === 1 && made.parent === 'Sun'
+        && Math.abs(made.gm - 1) < 2e-4 && Math.abs(made.radiusKm - 69911) < 1 && made.drawn && /Live physics is on/.test(first.toast),
+      `${first.name} (${first.earths.toFixed(4)} Earths), then ${made.name}, ${made.gm} of Jupiter's mass, ${made.radiusKm.toFixed(0)} km in radius, round ${made.parent}`);
+    check(on('it is on the orbit promised: a circle round the Sun in the plane of the planets, the way they go, 0.55 of the way to the eye, and that is said as it is made'),
+      Math.abs(made.far - 0.55) < 1e-6 && made.side > 0.7 && made.tilt < 0.03 && Math.abs(made.speed - 1) < 1e-6 && made.way > 0.999 && made.e < 1e-6 && new RegExp(`New rocky world is new: ${Number((made.au * 149.5978707).toPrecision(3)).toLocaleString('en-US')} million km from the Sun, once round in [\\d.]+ (days|years)\\.`).test(first.toast),
+      `${made.au.toFixed(3)} AU out (${made.far.toFixed(6)} of the eye's distance), ${(Math.asin(made.tilt) * 57.3).toFixed(2)} deg from the Earth's plane, ${made.speed.toFixed(6)} of the circular speed; "${first.toast.split('\n').pop()}"`);
     check(on('it can be changed like any world: its card has Mass, Size, Move, Add and Remove'), made.powers === 'Mass,Size,Move,Add,Remove', made.powers);
     await press(page, '#hud .card [data-power="mass"]');
     await frames(page, 2);
@@ -910,9 +924,9 @@ for (const kind of kinds) {
     await press(page, '#hud .explore [data-cat="solar"]');
     await frames(page, 2);
     const listed = await page.evaluate(() => [...document.querySelectorAll('#hud .explore .list .row b')].map((b) => b.textContent));
-    await find(page, 'Jupiter 2');
+    await find(page, 'New gas giant');
     await press(page, '#hud .hud-flight [data-act="stop"]');
-    check(on('it is listed with the Solar System and found by name'), listed.includes('Jupiter 2') && listed.includes('Jupiter') && (await text(page, '#hud .card h2')) === 'Jupiter 2', listed.slice(-3).join(', '));
+    check(on('it is listed with the Solar System and found by name'), listed.includes('New gas giant') && listed.includes('Jupiter') && (await text(page, '#hud .card h2')) === 'New gas giant', listed.slice(-3).join(', '));
 
     // A quarter of its year later, a quarter of the way round: looked at in the frame in which the date passes a
     // quarter of its year (not after time has been stopped with the Time sheet's button, which on a loaded machine
@@ -922,7 +936,7 @@ for (const kind of kinds) {
     const went = await (await page.waitForFunction((made) => {
       const a = window.app;
       if (a.clock.jdTdb < made.jd + made.period / 86400 / 4) return null;
-      const m = a.findByName('Jupiter 2'), sun = a.system.sun, r = m.pos.clone().sub(sun.pos), d = r.clone().normalize();
+      const m = a.findByName('New gas giant'), sun = a.system.sun, r = m.pos.clone().sub(sun.pos), d = r.clone().normalize();
       const [x, y, z] = made.dir, [px, py, pz] = made.pole;
       const cos = d.x * x + d.y * y + d.z * z, sin = px * (y * d.z - z * d.y) + py * (z * d.x - x * d.z) + pz * (x * d.y - y * d.x);
       // (Kepler's angle for the time gone by, and the one measured, with as many whole turns as bring it nearest)
@@ -939,7 +953,7 @@ for (const kind of kinds) {
     await find(page, 'Sun');
     await press(page, '#hud .hud-flight [data-act="stop"]');
     await press(page, '#hud .card [data-power="add"]');
-    await press(page, '#hud .card [data-act="add-sun"]');
+    await press(page, '#hud .card [data-act="add-star"]');
     await frames(page, 6);
     const two = await page.evaluate(() => {
       const a = window.app, sun = a.system.sun, twin = a.selection;
@@ -967,12 +981,12 @@ for (const kind of kinds) {
     await page.screenshot({ path: path.join(outDir, `live-${kind}-two-suns.png`) });
 
     // taken away again, and back to reality
-    await find(page, 'Jupiter 2');
+    await find(page, 'New gas giant');
     await press(page, '#hud .hud-flight [data-act="stop"]');
     await press(page, '#hud .card [data-act="remove"]');
     await frames(page, 3);
-    const gone = await page.evaluate(() => { const a = window.app, m = a.made[0]; return { gone: a.system.isGone(m), drawn: a.bodies.views.has(m), found: a.searchItems('Jupiter 2').length, toast: document.querySelector('#hud .hud-toast').textContent }; });
-    check(on('what was made is removed like any world'), gone.gone && !gone.drawn && gone.found === 0 && /Jupiter 2 is gone\./.test(gone.toast), `"${gone.toast.split('\n')[0]}"`);
+    const gone = await page.evaluate(() => { const a = window.app, m = a.made[0]; return { gone: a.system.isGone(m), drawn: a.bodies.views.has(m), found: a.searchItems('New gas giant').length, toast: document.querySelector('#hud .hud-toast').textContent }; });
+    check(on('what was made is removed like any world'), gone.gone && !gone.drawn && gone.found === 0 && /New gas giant is gone\./.test(gone.toast), `"${gone.toast.split('\n')[0]}"`);
     await press(page, '#hud .live-back');
     await frames(page, 3);
     const real = await page.evaluate(async () => {
@@ -996,7 +1010,7 @@ for (const kind of kinds) {
     const hand = await handOf(page, touch);
     await quiet(page);
     await press(page, '#hud .card [data-power="add"]');
-    await press(page, '#hud .card [data-act="add-giant"]');
+    await addPlanet(page, 317.8, 'giant');
     await page.waitForFunction(() => window.app.selection?.name === 'New gas giant', null, { timeout: 20000 });
     await until(page, () => !window.app.glide, null, 60);
     // (setup, not a power: the eye near it, so that it is drawn as a disk)
@@ -1117,7 +1131,7 @@ for (const kind of kinds) {
     await find(page, 'Sun');
     await press(page, '#hud .hud-flight [data-act="stop"]');
     await press(page, '#hud .card [data-power="add"]');
-    await press(page, '#hud .card [data-act="add-ocean"]');
+    await addPlanet(page, 1, 'ocean');
     await page.waitForFunction(() => window.app.selection?.meta?.made && window.app.selection.name !== 'New gas giant', null, { timeout: 20000 });
     await until(page, () => !window.app.glide, null, 60);
     const own = await page.evaluate(() => window.app.selection.name);
@@ -1798,7 +1812,7 @@ for (const kind of kinds) {
     const hand = await handOf(page, touch);
     const clock0 = await page.evaluate(() => ({ paused: window.app.clock.paused, rate: window.app.clock.rate }));
     await press(page, '#hud .card [data-power="add"]');
-    await press(page, '#hud .card [data-act="add-earth"]');
+    await addPlanet(page, 1, 'terran');
     await until(page, () => !window.app.glide, null, 60);
     await frames(page, 2);
     const placing = () => page.evaluate(() => {
@@ -1812,23 +1826,32 @@ for (const kind of kinds) {
     });
     const p0 = await placing();
     const inRect = (p, r) => !!p && p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom;
-    check(on('a planet like Earth is made and waits to be put in place: time waits; the card has its mass, Done and a slider, and says how; the new world is in sight, clear of the card'),
-      p0.name === 'Earth 2' && p0.placing && p0.paused && inRect(p0.at, p0.free) && p0.panel && p0.read === '1 Earth' && p0.what === "Rock, the Earth's size" && p0.done >= 44 && p0.slider >= 44 && !p0.seg
+    check(on('a planet is made and waits to be put in place: time waits; the card has its mass, Done and a slider, and says how; the new world is in sight, clear of the card'),
+      p0.name === 'New rocky world' && p0.placing && p0.paused && inRect(p0.at, p0.free) && p0.panel && p0.read === '1 Earth' && p0.what === "A rocky world, the Earth's size" && p0.done >= 44 && p0.slider >= 44 && !p0.seg
         && p0.hint === 'Drag it where you want it, or flick it to throw it. Time waits until Done.',
       `at (${p0.at?.x.toFixed(0)}, ${p0.at?.y.toFixed(0)}) in ${p0.free.left.toFixed(0)}-${p0.free.right.toFixed(0)} x ${p0.free.top.toFixed(0)}-${p0.free.bottom.toFixed(0)}; "${p0.read}", "${p0.what}"`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-placing.png`) });
-    // its mass: the knob to 5 Earths
+    // its mass: the knob to 5 Earths (the slider runs from a millionth of an Earth to 10,000, ten powers of ten: a pixel
+    // of it is some 7 %), then typed exactly, 5
     const box = await page.locator('#hud .card .placing .slider').boundingBox();
     const knob = (s) => ({ x: box.x + 15 + s * (box.width - 30), y: box.y + box.height / 2 });
-    const from = knob(Number(await page.locator('#hud .card .placing .slider').inputValue())), to = knob(Math.log(5 / 0.05) / Math.log(10 / 0.05));
+    const from = knob(Number(await page.locator('#hud .card .placing .slider').inputValue())), to = knob(Math.log(5 / 1e-6) / Math.log(1e4 / 1e-6));
     await hand.press(from);
     for (let i = 1; i <= 6; i++) await hand.slide({ x: from.x + ((to.x - from.x) * i) / 6, y: from.y });
     await hand.lift();
     await frames(page, 2);
+    const slid = await placing();
+    const field = page.locator('#hud .card .placing .mass-field');
+    await field.scrollIntoViewIfNeeded();
+    await field.fill('5');
+    await field.press('Enter');
+    await frames(page, 3);
     const p1 = await placing();
-    check(on('its mass set to 5 Earths, it is a rock of the Earth\'s density, 1.71 times the Earth\'s size, still on its circle, and the card says so'),
-      /^(4\.9|5|5\.1) Earths$/.test(p1.read) && /^Rock, 1\.7\d times the Earth's size$/.test(p1.what) && Math.abs(p1.earths - 5) < 0.15 && Math.abs(p1.ratio - Math.cbrt(p1.earths)) < 1e-4 && p1.e < 1e-6 && p1.paused && p1.placing,
-      `"${p1.read}", "${p1.what}"; ${p1.earths.toFixed(3)} Earths, ${p1.ratio.toFixed(4)} of its radius`);
+    // (a rocky world's size: the published relation, R = M^0.279 in the Earth's: 5 Earths, 1.57 times its size)
+    check(on('its mass slid to about 5 Earths, then typed, 5: a rocky world 1.57 times the Earth\'s size, still on its circle, and the card says so'),
+      Math.abs(slid.earths / 5 - 1) < 0.1 && Math.abs(slid.ratio - slid.earths ** 0.279) < 1e-4 && p1.read === '5 Earths' && p1.what === "A rocky world, 1.57 times the Earth's size" && Math.abs(p1.earths - 5) < 1e-6
+        && Math.abs(p1.ratio - 5 ** 0.279) < 1e-4 && p1.e < 1e-6 && slid.e < 1e-6 && p1.paused && p1.placing,
+      `slid to ${slid.earths.toFixed(3)} Earths, ${slid.ratio.toFixed(4)} of its radius; typed: "${p1.read}", "${p1.what}"; ${p1.earths.toFixed(6)} Earths, ${p1.ratio.toFixed(4)} of its radius`);
     // dragged out to 1.3 times as far from the Sun, the finger resting before it lifts
     const out = await page.evaluate(() => {
       const a = window.app, m = a.selection, sun = a.system.sun, V = m.pos.constructor, r = m.pos.clone().sub(sun.pos);
@@ -1854,15 +1877,15 @@ for (const kind of kinds) {
     await listen(page);
     await press(page, '#hud .live-mark .live-undo');
     await frames(page, 2);
-    const p4 = await page.evaluate(() => { const a = window.app; return { on: a.physics.on, made: a.made.length, found: a.searchItems('Earth 2').length, jd: a.clock.jdTdb }; });
+    const p4 = await page.evaluate(() => { const a = window.app; return { on: a.physics.on, made: a.made.length, found: a.searchItems('New rocky world').length, jd: a.clock.jdTdb }; });
     const said = await heard(page);
     check(on('one Undo takes the new world away, its mass and its place with it: the real Solar System, at the date it was made, and says so'),
-      !p4.on && p4.made === 0 && p4.found === 0 && p4.jd === p0.jd && said.includes('Undone: making Earth 2. The real Solar System again'), `"${said.join('" then "')}"`);
+      !p4.on && p4.made === 0 && p4.found === 0 && p4.jd === p0.jd && said.includes('Undone: making New rocky world. The real Solar System again'), `"${said.join('" then "')}"`);
     // a second sun, made as light as a star can be: a red dwarf, its size, warmth and light the main sequence's
     await find(page, 'Sun');
     await press(page, '#hud .hud-flight [data-act="stop"]');
     await press(page, '#hud .card [data-power="add"]');
-    await press(page, '#hud .card [data-act="add-sun"]');
+    await press(page, '#hud .card [data-act="add-star"]');
     await until(page, () => !window.app.glide, null, 60);
     const sbox = await page.locator('#hud .card .placing .slider').boundingBox();
     const sfrom = { x: sbox.x + 15 + Number(await page.locator('#hud .card .placing .slider').inputValue()) * (sbox.width - 30), y: sbox.y + sbox.height / 2 };
@@ -2028,10 +2051,10 @@ for (const kind of kinds) {
       atMoon.tabs.map((t) => t.tab).join() === 'search,explore,create,time,more' && atMoon.tabs.every((t) => t.w >= 44 && t.h >= 44 && t.in)
         && atMoon.card === 'Earth' && atMoon.selected === 'Earth' && atMoon.add && atMoon.offers.includes('A moon'), JSON.stringify({ ...atMoon, tabs: atMoon.tabs.map((t) => `${t.tab} ${t.w.toFixed(0)}x${t.h.toFixed(0)}`) }));
     const atSun = await created('target=Sun&dist=473&el=40');
-    check(on('at the Sun, Create opens its card at Add: worlds of every kind and a second sun'),
-      atSun.card === 'Sun' && atSun.add && atSun.offers.includes('A rocky world') && atSun.offers.includes('A gas giant') && atSun.offers.includes('A second sun'), JSON.stringify(atSun));
+    check(on('at the Sun, Create opens its card at Add: a planet, a star and a black hole, of any mass'),
+      atSun.card === 'Sun' && atSun.add && atSun.offers.join() === 'A planet,A star,A black hole', JSON.stringify(atSun));
     const far = await created('target=Sirius&dist=10');
-    check(on('far from the Solar System (at Sirius), Create opens the Sun\'s card at Add'), far.card === 'Sun' && far.selected === 'Sun' && far.add && far.offers.includes('A rocky world'), JSON.stringify(far));
+    check(on('far from the Solar System (at Sirius), Create opens the Sun\'s card at Add'), far.card === 'Sun' && far.selected === 'Sun' && far.add && far.offers.includes('A planet'), JSON.stringify(far));
   }
 
   // ------------------------------------------------------------------ a black hole of your own (src/app/WhatIf.ts newHole, src/app/LivePhysics.ts swallow)
@@ -2059,8 +2082,8 @@ for (const kind of kinds) {
     await page.locator('#hud .card [data-act="add-hole"]').scrollIntoViewIfNeeded();
     await frames(page, 2);
     if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-hole-add.png`) });
-    check(on('Add at the Sun offers "A black hole": a row a thumb high, "Heavier than the Sun, and no light: 1 to 20 Suns"'),
-      !!row && row.h >= 44 && row.name === 'A black hole' && row.line === 'Heavier than the Sun, and no light: 1 to 20 Suns', JSON.stringify(row));
+    check(on('Add at the Sun offers "A black hole": a row a thumb high, "Heavier than the Sun, and no light: 1 Sun to 10 billion"'),
+      !!row && row.h >= 44 && row.name === 'A black hole' && row.line === 'Heavier than the Sun, and no light: 1 Sun to 10 billion', JSON.stringify(row));
     // (and Create, from the tab bar, opens the Sun's card at Add with it)
     {
       const c = await open(kind, 'target=Sun&dist=473&el=40');
@@ -2083,11 +2106,11 @@ for (const kind of kinds) {
         JSON.stringify({ ...h, ...card }));
       // its mass slider goes from 1 to 20 Suns, its event horizon following
       const lo = await page.evaluate(() => { window.app.setMadeMass(0); const b = window.app.selection; return [b.gm / 6.6743e-11 / 1.98847e30, b.radius / 1e3]; });
-      const hi = await page.evaluate(() => { window.app.setMadeMass(1); const b = window.app.selection; return [b.gm / 6.6743e-11 / 1.98847e30, b.radius / 1e3]; });
-      await page.evaluate(() => { const a = window.app, b = a.selection; a.setMadeMass(Math.log(10) / Math.log(20)); });
+      const hi = await page.evaluate(() => { window.app.setMadeMass(0.5); const b = window.app.selection; return [b.gm / 6.6743e-11 / 1.98847e30, b.radius / 1e3]; });
+      await page.evaluate(() => { const a = window.app, b = a.selection; a.setMadeMass(Math.log(10) / Math.log(1e10)); });
       const mid = await holeNow();
-      check(on('its mass slider runs from 1 to 20 Suns, the event horizon following (2.95 km to 59.1 km), and 10 Suns again in the middle of the logarithm'),
-        Math.abs(lo[0] - 1) < 1e-9 && Math.abs(hi[0] - 20) < 1e-9 && Math.abs(lo[1] - 2.953) < 0.01 && Math.abs(hi[1] - 59.06) < 0.02 && Math.abs(mid.suns - 10) < 1e-9, JSON.stringify({ lo, hi, mid: mid.suns }));
+      check(on('its mass slider runs from 1 Sun (2.95 km), half way along the logarithm 100,000 Suns (295,000 km; its top, 10 billion, would swallow the Earth: the unit tests hold it), and 10 Suns again a tenth of the way'),
+        Math.abs(lo[0] - 1) < 1e-9 && Math.abs(hi[0] / 1e5 - 1) < 1e-9 && Math.abs(lo[1] - 2.953) < 0.01 && Math.abs(hi[1] / 2.953e5 - 1) < 0.001 && Math.abs(mid.suns - 10) < 1e-9, JSON.stringify({ lo, hi, mid: mid.suns }));
       const reasons = await page.evaluate(() => { const a = window.app, t = a.powersOf(a.selection); return Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v.works ? true : v.reason])); });
       check(on('Mass, Move and Remove work on it; Size and Add are off, each with a plain reason'),
         reasons.mass === true && reasons.move === true && reasons.remove === true && typeof reasons.size === 'string' && reasons.size.length > 8 && typeof reasons.add === 'string' && reasons.add.length > 8, JSON.stringify(reasons));
@@ -2322,6 +2345,95 @@ for (const kind of kinds) {
       const dist = Math.hypot(...back.at.map((x, k) => x - before.at[k]));
       check(on('a save of the scene, opened again, brings back the thrown comet where it was and the other comet taken away'),
         !real.has && real.other < 90 && back.on && back.has && back.simulated && back.gm === 0 && dist < 1 && back.other > 90 && back.away === 1 && back.mag < 90 && back.tail, JSON.stringify({ before: before.at, back: back.at, dist, real: real.has, other: back.other, away: back.away }));
+    });
+    await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ make anything, with any numbers (src/app/WhatIf.ts takeMass, App.add, App.typeMadeMass)
+  if (want('any') || want('made') || want('create') || want('place') || want('hole')) {
+    const step = async (name, fn) => { try { await fn(); } catch (e) { check(on(name), false, String(e).split('\n')[0]); } };
+    const { ctx, page, touch } = await open(kind, 'target=Sun&dist=473&el=40');
+    await quiet(page);
+    const typeMass = async (text) => {
+      const f = page.locator('#hud .card .placing .mass-field');
+      await f.scrollIntoViewIfNeeded();
+      await f.fill(text);
+      await f.press('Enter');
+      await frames(page, 3);
+    };
+    const placing = () => page.evaluate(() => {
+      const a = window.app, b = a.mover.placing ? a.mover.body : null, q = (s) => document.querySelector(s);
+      return b && {
+        name: b.name, kind: b.meta.madeAs.kind, kg: b.meta.madeAs.kg, earths: b.gm / 6.6743e-11 / 5.9722e24, radiusEarths: b.radius / 6.371e6, star: b.kind === 'star', teff: b.teff,
+        field: q('#hud .card .mass-field').value, unit: q('#hud .card .mass-unit').textContent, says: q('#hud .card .mass-says').hidden ? '' : q('#hud .card .mass-says').textContent,
+        what: q('#hud .card .placing .power-read small').textContent, type: q('#hud .card .type-select').value, typeShown: !q('#hud .card .type-row').hidden,
+        fieldH: q('#hud .card .mass-field').getBoundingClientRect().height, fieldPx: getComputedStyle(q('#hud .card .mass-field')).fontSize, simulated: a.physics.simulated(b), light: b.kind === 'star' && b.absMag < 30,
+      };
+    });
+    await press(page, '#hud .card [data-power="add"]');
+    await frames(page, 2);
+    const rows = await page.evaluate(() => [...document.querySelectorAll('#hud .card [data-panel="add"] .row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => [r.querySelector('b').textContent, r.querySelector('small').textContent]));
+    check(on('Add round a star offers four choices, each a thumb high with a plain line: A planet, A star, A black hole'),
+      rows.map((r) => r[0]).join() === 'A planet,A star,A black hole' && rows.every((r) => r[1].length > 10), JSON.stringify(rows));
+    if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-any-add.png`) });
+    await step('a planet is made rocky at the Earth\'s mass, with its mass as a number beside the slider (16 px text, a thumb high)', async () => {
+      await press(page, '#hud .card [data-act="add-planet"]');
+      await frames(page, 4);
+      const p = await placing();
+      check(on('a planet is made rocky, one Earth, simulated; its mass is a number in Earths, in a field of 16 px text a thumb high, with a Type choice'),
+        p && p.kind === 'terran' && Math.abs(p.earths - 1) < 1e-9 && p.simulated && p.field === '1' && p.unit === 'Earths' && p.fieldH >= 44 && p.fieldPx === '16px' && p.typeShown && p.type === 'terran', JSON.stringify(p));
+    });
+    await step('1,000 Earths typed: its words and size', async () => {
+      await typeMass('1,000');
+      const p = await placing();
+      check(on('1,000 Earths typed: a gas giant of Jupiter\'s size, 3.1 Jupiters, its type followed its mass'),
+        p && Math.abs(p.earths / 1000 - 1) < 1e-9 && p.kind === 'giant' && p.type === 'giant' && /^A gas giant, Jupiter's size$/.test(p.what) && Math.abs(p.radiusEarths - 10.973) < 0.05 && p.field === '1,000', JSON.stringify(p));
+      if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-any-place.png`) });
+    });
+    await step('a number out of range is refused with its line, and the mass stays', async () => {
+      await typeMass('abc');
+      const a = await placing();
+      await typeMass('100000000');
+      const b = await placing();
+      check(on('"abc" and 100 million Earths are refused, each with a plain line, and the mass stays 1,000 Earths'),
+        a.says.length > 5 && b.says.length > 5 && Math.abs(b.earths / 1000 - 1) < 1e-9, `${a.says} / ${b.says}`);
+    });
+    await step('a size set by hand', async () => {
+      await page.locator('#hud .card .size-hand').scrollIntoViewIfNeeded();
+      await press(page, '#hud .card .size-hand');
+      const f = page.locator('#hud .card .size-field');
+      await f.fill('4');
+      await f.press('Enter');
+      await frames(page, 3);
+      const p = await placing();
+      check(on('Set size: 4 Earth radii typed, the radius is that and its words say it is set by you'), Math.abs(p.radiusEarths - 4) < 1e-6 && /set by you/.test(p.what), `${p.radiusEarths} / ${p.what}`);
+      await press(page, '#hud .card .size-hand');
+      await frames(page, 3);
+      const q = await placing();
+      check(on('Size from mass puts the rule back: Jupiter\'s size'), Math.abs(q.radiusEarths - 10.973) < 0.05, `${q.radiusEarths}`);
+    });
+    await step('30,000 Earths: it is a star and shines', async () => {
+      await typeMass('30000');
+      const p = await placing();
+      check(on('30,000 Earths typed: it becomes a star by itself, shines as a star of the main sequence, and says so'),
+        p && p.kind === 'sun' && p.star && p.simulated && p.light && p.teff > 2000 && /^A star, /.test(p.what) && /hydrogen fuses/.test(p.what) && p.unit === 'Earths', JSON.stringify(p));
+      if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-any-star.png`) });
+      await typeMass('1000');
+      const q = await placing();
+      check(on('typed back to 1,000 Earths it is a planet again, a gas giant'), q && q.kind === 'giant' && !q.star && Math.abs(q.earths / 1000 - 1) < 1e-9, JSON.stringify(q));
+    });
+    await step('a save brings it back', async () => {
+      await press(page, '#hud .card [data-act="place-done"]');
+      await frames(page, 4);
+      await page.evaluate(() => window.app.saveScene());
+      const id = await page.evaluate(() => JSON.parse(localStorage.getItem('starfarer-saves'))[0].id);
+      const before = await page.evaluate(() => { const b = window.app.made.at(-1); return { kg: b.meta.madeAs.kg, r: b.radius, kind: b.meta.madeAs.kind, seed: b.meta.madeAs.seed }; });
+      await page.evaluate(() => window.app.backToReality());
+      await frames(page, 3);
+      await page.evaluate((id) => window.app.openSave(id), id);
+      await until(page, () => window.app.made.length === 1, null, 60);
+      const after = await page.evaluate(() => { const b = window.app.made.at(-1); return { kg: b.meta.madeAs.kg, r: b.radius, kind: b.meta.madeAs.kind, seed: b.meta.madeAs.seed }; });
+      check(on('a save of the scene, opened again, brings back the planet with its mass, size, type and seed'), JSON.stringify(before) === JSON.stringify(after), JSON.stringify({ before, after }));
     });
     await ctx.close();
   }
