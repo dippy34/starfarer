@@ -9,8 +9,8 @@ const DEAD = 0.08;
 
 /**
  * Free flight by touch: the explorer's own flight (the keys W A S D R F: speed in proportion to the
- * height above whatever is nearest, ten times with Shift) without a keyboard. A switch in More
- * ("Fly freely") brings a stick under the left thumb, Up and Down under the right, and Done; while it
+ * height above whatever is nearest, ten times with Shift) without a keyboard. Moving freely (the chip
+ * at the top, App.toggleStay) brings a stick under the left thumb, Up and Down under the right; while it
  * is on one finger dragged on the view looks around (as the "One finger looks around" switch does,
  * which it puts back as it was when it is turned off) and everything else is as it was: tap to select,
  * double-tap to fly there, a pinch to zoom, two fingers to look or to twist. Not in the ship nor on
@@ -74,7 +74,7 @@ export class FreeFly {
     app.rig.touchDrag = 'look';
     if (this.padEl) this.padEl.hidden = false;
     this.layout();
-    app.hud.toast('Fly freely: the stick moves you (all the way: ten times faster), drag to look, Up and Down, Done to stop', 4);
+    app.hud.toast('Moving freely: the stick flies you (all the way: ten times faster), drag to look. Tap the chip at the top to stay on something', 4);
     return true;
   }
 
@@ -93,7 +93,8 @@ export class FreeFly {
   update(dt: number): void {
     if (!this.on) return;
     const app = this.app, rig = app.rig;
-    if (app.game.active || app.walk.active || app.vr.active) { this.stop(); return; }
+    // (the ship and walking bring their own controls: the camera stays with them, and the chip says so)
+    if (app.game.active || app.walk.active || app.vr.active) { this.stop(); app.stay = true; return; }
     this.layoutTimer -= dt;
     if (this.layoutTimer <= 0) { this.layoutTimer = 0.2; this.layout(); }
     const m = Math.hypot(this.stick.x, this.stick.y);
@@ -110,7 +111,7 @@ export class FreeFly {
   }
 
   /**
-   * The stick under the left thumb and Up, Down and Done under the right, over the tab bar (upright)
+   * The stick under the left thumb and Up and Down under the right, over the tab bar (upright)
    * or beside it (on its side, where the tabs stand at the left). Measured, as the ship's controls are:
    * what the interface has at the foot of the screen decides where these stand.
    */
@@ -134,7 +135,6 @@ export class FreeFly {
       + '<div class="free-buttons" data-cover>'
       + `<button class="free-up" type="button" aria-label="Fly up">${arrow('M12 19V5M6 11l6-6 6 6')}</button>`
       + `<button class="free-down" type="button" aria-label="Fly down">${arrow('M12 5v14M6 13l6 6 6-6')}</button>`
-      + '<button class="free-done" type="button" data-act="free">Done</button>'
       + '</div>';
     root.appendChild(pad);
     this.padEl = pad;

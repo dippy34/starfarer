@@ -250,6 +250,14 @@ export class App {
   walk!: Walk;
   /** free flight by touch: a stick and buttons over the view (src/app/FreeFly.ts) */
   free!: FreeFly;
+  /**
+   * The camera toggle (the chip at the top-left; the owner, 28 Nov 2026: "instead of having the game guess when you
+   * want the camera to stay on the thing, a toggle: stay on it or move freely"). Staying, the camera rides with what it
+   * is on (`rig.target`, the chip's name), one finger turning round it; moving freely, it is left where it is in space,
+   * the stick flies it (on a touch screen) and one finger looks round. Only the toggle and Go there change it: a change,
+   * a watch or a hit never moves the camera.
+   */
+  stay = true;
   /** other galaxies (SIMBAD) */
   galaxies!: GalaxiesLayer;
   /** nebulae and star clusters (SIMBAD) */
@@ -675,9 +683,15 @@ export class App {
     this.rig.setAnchor(this.anchorFor(obj));
   }
 
-  /** What the camera rides with when it is at `obj`: what moves (a body, a comet, a planet of another star, a spacecraft, a hole's companion), else nothing. */
+  /**
+   * What the camera rides with when it is at `obj`: what moves (a body, a comet, a planet of another star, a spacecraft, a
+   * hole's companion, a station or a ship of the game), or for a place on a world or its rings that world; else nothing
+   * (a star, a galaxy, a black hole of the catalogue stay where they are).
+   */
   private anchorFor(obj: SpaceObject): SpaceObject | null {
-    return obj instanceof Body || obj instanceof Comet || obj instanceof ExoPlanet || obj instanceof Spacecraft || this.isCompanion(obj) ? obj : null;
+    if (obj instanceof RingSpot) return obj.planet;
+    if (obj instanceof Landmark) return obj.world;
+    return obj instanceof Body || obj instanceof Comet || obj instanceof ExoPlanet || obj instanceof Spacecraft || obj instanceof Station || obj instanceof TrafficShip || this.isCompanion(obj) ? obj : null;
   }
 
   // ------------------------------------------------------------------ links to a scene (src/app/SceneLink.ts)
@@ -1049,7 +1063,7 @@ export class App {
       case 'ship-go': this.shipThere(); break;
       case 'sunrise': this.skipToSunrise(); break;
       case 'walk': this.walk.start(); break;
-      case 'free': this.free.toggle(); break;
+      case 'free': case 'stay': this.toggleStay(); break;
       case 'menu': if (this.openMenu) { this.hud.closeSheet(); this.openMenu(); } break;
       case 'labels': this.labels.enabled = !this.labels.enabled; this.hud.toast(`Names ${this.labels.enabled ? 'on' : 'off'}`); break;
       case 'orbits': this.orbits.enabled = !this.orbits.enabled; this.hud.toast(`Orbits ${this.orbits.enabled ? 'on' : 'off'}`); break;
@@ -1846,8 +1860,8 @@ export class App {
     // (the chip and the mark are drawn first, and an open panel of the card makes room on an upright
     // screen: the frame is fitted to what they leave clear)
     this.updateHud();
+    // (the camera stays as the toggle has it: a watch only runs time; the owner, 28 Nov 2026)
     this.framed = null;
-    if (f.centre) this.frameOn(f.centre, f.radius);
   }
 
   /**
@@ -1920,6 +1934,8 @@ export class App {
    * coming together. Not in the ship, on foot or in the headset.
    */
   private frameHit(a: Body, b: Body): void {
+    // (the camera stays as the toggle has it: time slows for a hit, the camera is not moved; the owner, 28 Nov 2026)
+    if (!this.game.active) return;
     if (this.game.flight.on || this.walk.active || this.vr.active) return;
     const [big, small] = a.gm >= b.gm ? [a, b] : [b, a];
     const free = this.hud.freeArea(), rel = new Vector3();
@@ -1946,7 +1962,7 @@ export class App {
     // watch or a hit is fitted again to what is left, round the world they became if it was round the one that is gone)
     const f = this.frameAsked, now = this.hud.freeArea();
     const less = Math.abs(now.top - was.top) + Math.abs(now.bottom - was.bottom) + Math.abs(now.left - was.left) + Math.abs(now.right - was.right) > 1;
-    if (f && less && (this.watch.watching || this.slow.phase !== 'idle')) this.frameOn(f.centre.valid ? f.centre : h.into, f.radius);
+    if (this.game.active && f && less && (this.watch.watching || this.slow.phase !== 'idle')) this.frameOn(f.centre.valid ? f.centre : h.into, f.radius);
     const rate = Math.min(Math.abs(this.clock.rate), this.slow.cap);
     if (this.clock.paused || ((this.clock.jdTdb - h.jd) * DAY) / rate <= 1) this.flash.start(h.into);
     this.slow.hit();
@@ -2234,7 +2250,42 @@ export class App {
 
   private trailWarm: ReturnType<TrailsLayer['warmupObject']> | null = null;
 
+  /**
+   * The chip at the top: Stay on it, or Move freely. Moving freely the camera lets go of what it rode with (it stays
+   * where it is in space) and the stick comes up on a touch screen; staying, it rides with the thing chosen if there
+   * is one it can ride with, else with what it was on, and turns to it.
+   */
+  toggleStay(): void {
+    // (the ship and walking bring their own controls)
+    if (this.game.active || this.walk.active || this.vr.active) {
+      if (!this.vr.active) this.hud.toast(this.walk.active ? 'On foot: B to fly first' : 'In the ship: it has its own controls (leave it first)');
+      return;
+    }
+    if (this.stay) {
+      this.stay = false;
+      this.rig.setAnchor(null);
+      this.glide = null;
+      if (this.input.touch) this.free.start();
+      else this.hud.toast('Moving freely: W A S D to fly, R and F up and down, drag to look. Tap the chip at the top to stay on something', 4);
+      return;
+    }
+    const sel = this.selection, on = sel && this.anchorFor(sel) ? sel : this.rig.target;
+    this.stayOn();
+    if (on && on !== this.rig.target) this.center(on);
+    if (on) this.hud.toast(`Staying on ${the(on.name)}`, 2);
+  }
+
+  /** Stay on (the toggle's own state): the stick goes, one finger turns round again. Go there comes here first. */
+  private stayOn(): void {
+    if (this.stay) return;
+    this.stay = true;
+    this.free.stop();
+    this.rig.touchDrag = 'orbit';
+  }
+
   goTo(obj: SpaceObject): void {
+    // (Go there, from a card, a list or a double tap, is the one thing besides the chip that changes what the camera stays on)
+    this.stayOn();
     // (a flight asked for takes the camera from a watch's frame)
     this.glide = null;
     if (obj instanceof Body) this.bodies.prefetch(obj);
@@ -2582,7 +2633,31 @@ export class App {
     this.meterView.quat.copy(this.view.quat);
   }
 
+  /** The world whose reach (sphere of influence) the camera is in, the smallest of them: none in open space. */
+  private reachOf(): Body | null {
+    let best: Body | null = null, bestSoi = Infinity;
+    const rel = new Vector3();
+    for (const b of this.system.bodies) {
+      if (!b.valid || this.system.isGone(b)) continue;
+      const soi = b.soiRadius();
+      if (soi < bestSoi && b.upos.sub(this.rig.upos, rel).length() < soi) { best = b; bestSoi = soi; }
+    }
+    return best;
+  }
+
   private chooseAnchor(): void {
+    // (the toggle decides, and nothing else: staying, what the camera is on; moving freely, nothing. The ship keeps its own way)
+    if (!this.game.active) {
+      let t = this.rig.target;
+      // (staying, with nothing to stay on, as when a flight is stopped half way: the world whose reach the camera is in, which
+      // the chip then names; nothing in open space)
+      if (this.stay && !t && !this.rig.autopilot) {
+        const near = this.reachOf();
+        if (near) this.rig.target = t = near;
+      }
+      this.rig.setAnchor(this.stay && t ? this.anchorFor(t) : null);
+      return;
+    }
     // (a watch's frame, or a new world's while it is put in place, rides with what it is framed round)
     const framed = this.framed;
     if (framed?.valid && (this.watch.state !== 'idle' || this.glide || this.mover.placing)) { this.rig.setAnchor(shownOf(framed)); return; }
@@ -4012,6 +4087,12 @@ export class App {
     const flight = this.game.flight;
     const speed = flight.on ? plainSpeed(flight.readout.properSpeed) : plainSpeedWords(rig.speed);
     if (rig.speed > 0) placeDetail = t ? `${placeDetail} · ${speed}` : speed;
+    // (moving freely the chip says so, and what a tap on it will stay on: what is chosen if the camera can ride with it, else what it was on)
+    if (!this.stay && !this.game.active) {
+      const sel = this.selection, on = sel && this.anchorFor(sel) ? sel : t;
+      place = 'Moving freely';
+      placeDetail = on ? `Tap to stay on ${the(on.name)}` : (rig.speed > 0 ? speed : 'Tap to stay on something');
+    }
     // (on foot the chip says where you stand, not where you last flew to)
     if (this.walk.walking) {
       const w = this.walk.worldName();
@@ -4045,6 +4126,7 @@ export class App {
       minor: this.orbits.showMinor,
       look: rig.touchDrag === 'look',
       free: this.free.active,
+      stay: this.stay || this.game.active,
       pilotControls: this.game.pilotControls,
       mode: this.walk.active ? 'walk' : this.game.active ? 'ship' : 'explore',
       touch: this.input.touch,

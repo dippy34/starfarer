@@ -1613,6 +1613,15 @@ glow toned down; (2) make anything with any numbers (Planet, Moon, Star, Black h
 Earths or Suns; it becomes a brown dwarf or a star by itself; no "like Earth/Jupiter"); (3) land on any
 world and it is that world (its own ground; an ocean world's water to swim in, dive under, look up);
 (4) more game (flying with the joystick as a main way to move; a few challenges).
+*Part 1a, the camera's toggle (done):* the chip at the top-left is it (`App.stay`, `toggleStay`, act `stay`; `free`
+is the same). Staying, `chooseAnchor` (outside the ship, which keeps its old way) makes the camera ride with what it is on
+(`rig.target` through `anchorFor`: a place on a world or its rings rides with that world; stars, galaxies and catalogue
+holes stay put), and with nothing to stay on (a flight stopped half way) it takes the world whose reach it is in
+(`reachOf`), which the chip then names. Moving freely, it rides with nothing, the stick (`FreeFly`) comes up on a touch
+screen and one finger looks round; the chip says "Moving freely" and "Tap to stay on X" (what is chosen if it can be ridden
+with, else what it was on). Go there (`goTo`, from a card, a list or a double tap) stays on what it flies to. A watch and a
+hit no longer move the camera (`startWatch` frames nothing, `frameHit` only in the ship). Gone: the "Turning around it"
+button and More's "Fly freely" and "One finger looks around" switches, and the stick's Done.
 **The way back (the owner asked for one):** before any of it, the app was commit `a69ed99`, and that
 build stays at https://b4b8c1a5.starfarer.pages.dev (a Cloudflare deployment of its own, kept). The
 enlarging has its own switch in More, and its commits are kept apart so that they can be reverted.

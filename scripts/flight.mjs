@@ -864,9 +864,9 @@ await simpleFlightControls();
   const at = (sel) => phone.evaluate((q) => { const b = document.querySelector(q).getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, sel);
   if (await phone.evaluate(() => !document.querySelector('.hud-coach').hidden)) await f.tap(await at('.hud-coach [data-coach]'));
   const shown = (q) => phone.evaluate((sel) => { const e = document.querySelector(sel); return !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden'; }, q);
-  // the drag button says what one finger does now
-  st = await phone.evaluate(() => document.querySelector('.look-fab span').textContent);
-  check('the one-finger button says what dragging does now', st === 'Turning around it', st);
+  // the chip at the top says what the camera stays on (the camera's toggle: no button for what one finger does any more)
+  st = await phone.evaluate(() => ({ name: document.querySelector('#hud .chip.place b').textContent, pressed: document.querySelector('#hud .chip.place').getAttribute('aria-pressed'), look: !!document.querySelector('.look-fab') }));
+  check('the chip at the top says what the camera stays on, and is its toggle', st.name === 'Earth' && st.pressed === 'true' && !st.look, JSON.stringify(st));
   // More: How to move at the top, the missions with their count, the start menu
   await f.tap(await at('.hud-tabs [data-tab="more"]'));
   await f.frames(2);
