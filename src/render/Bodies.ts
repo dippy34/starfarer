@@ -56,13 +56,13 @@ interface TextureManifest {
  * and it is drawn so out in space (from the ground or in a world's orbit the other planets are the points they are).
  * "Real size" in More turns it off (BodiesLayer.bigLook).
  */
-const BIG_PX = 8;
-const BIG_ROOM = 0.3;
+export const BIG_PX = 8;
+export const BIG_ROOM = 0.3;
 /** worlds smaller than this (m, in radius) are drawn their real size: only round worlds are drawn larger (not the swarms of small moons and asteroids) */
-const BIG_LEAST_RADIUS = 180e3;
+export const BIG_LEAST_RADIUS = 180e3;
 /** the night side of a world drawn larger than it is: lit by this share of its sunlight from all round, dim, not a black hole in the sky */
-const BIG_FILL = 0.06;
-const JUPITER_RADIUS = 71492e3;
+export const BIG_FILL = 0.06;
+export const JUPITER_RADIUS = 71492e3;
 /** how much a world drawn `scale` times its size has left the eye's exposure to its own (App.updateExposure) */
 export const bigShare = (scale: number): number => smoothstep(1, 1.5, scale);
 
@@ -1392,7 +1392,7 @@ function familyOf(b: Body): Body {
   return f;
 }
 
-function smoothstep(a: number, b: number, x: number): number {
+export function smoothstep(a: number, b: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 }

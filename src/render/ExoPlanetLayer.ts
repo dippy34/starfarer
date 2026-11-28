@@ -17,8 +17,9 @@ import { ExoGround, ROCKY_TYPES } from '../universe/ExoTerrain';
 import { generatedLook, lightRing, type LookSpec, lookUniforms, ringMaterial } from './PlanetLook';
 import { earthLikeAtmosphere, type AtmosphereSpec, type ExoAtmosphere } from './Atmospheres';
 import { TerrainPatch, type TerrainCandidate } from './TerrainPatch';
+import { BIG_FILL, BIG_LEAST_RADIUS, BIG_PX, BIG_ROOM, bigShare, JUPITER_RADIUS, smoothstep } from './Bodies';
 
-interface PlanetDraw { mesh: Mesh; ring: Mesh | null; orbit: Line; orient: Matrix4; ground: ExoGround | null; air: AtmosphereSpec | null; albedo: number }
+interface PlanetDraw { mesh: Mesh; ring: Mesh | null; orbit: Line; orient: Matrix4; ground: ExoGround | null; air: AtmosphereSpec | null; albedo: number; exposure: { value: number } }
 
 /** texels per cube face of a baked height field (EXO_BAKE_FRAG) */
 const BAKE_SIZE = 512;
@@ -34,7 +35,13 @@ interface Bake { rt: WebGLCubeRenderTarget; mat: ShaderMaterial; faces: number; 
 
 const G = 6.674e-11;
 
-export interface ExoView { planet: ExoPlanet; rel: Vector3; dist: number; pixelRadius: number; radiance: number }
+export interface ExoView {
+  planet: ExoPlanet; rel: Vector3; dist: number; pixelRadius: number; radiance: number;
+  /** how many times its size it is drawn (the big look, as BodiesLayer's: 1, as it is) */
+  scale: number;
+  /** drawn larger than it is, the most exposure it is shown with (App.updateExposure; Infinity: none of its own) */
+  own: number;
+}
 
 /**
  * Draws the planets of the planetary systems near the explorer: a procedurally textured sphere once
@@ -43,6 +50,10 @@ export interface ExoView { planet: ExoPlanet; rel: Vector3; dist: number; pixelR
 export class ExoPlanetLayer {
   readonly group = new Group();
   views: ExoView[] = [];
+  /** the big look on (far planets drawn at a least size, as BodiesLayer.bigLook: the app sets both from Real size) */
+  bigLook = true;
+  /** render pixels to a CSS pixel (set by the app each frame) */
+  pixelRatio = 1;
   showOrbits = true;
   private draws = new Map<ExoPlanet, PlanetDraw>();
   private sphere = new SphereGeometry(1, 128, 64);
@@ -77,7 +88,10 @@ export class ExoPlanetLayer {
     if (d) return d;
     const spec: LookSpec = { key: p.key, name: p.name, type: p.spec.type, teqK: p.spec.teqK, seed: p.spec.seed, radius: p.radius, rings: p.spec.rings };
     const look = generatedLook(spec), pal = look.pal, albedo = look.albedo;
-    const u = lookUniforms(spec, look, this.exposure);
+    // (its own exposure: the surfaces', or, drawn larger than it is, no more than its own: expose)
+    const exposure = { value: this.exposure.value };
+    const u = lookUniforms(spec, look, exposure);
+    u.uFill = { value: 0 };
     const mesh = new Mesh(this.sphere, new ShaderMaterial({ name: 'exoplanet', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: u }));
     mesh.matrixAutoUpdate = false;
     mesh.frustumCulled = false;
@@ -114,7 +128,7 @@ export class ExoPlanetLayer {
       // the shell draws the limb glow: keep only a little of the surface shader's own haze
       u.uAtmo.value = Number(u.uAtmo.value) * 0.3;
     }
-    d = { mesh, ring, orbit, orient: new Matrix4(), ground, air, albedo };
+    d = { mesh, ring, orbit, orient: new Matrix4(), ground, air, albedo, exposure };
     this.draws.set(p, d);
     return d;
   }
@@ -140,7 +154,8 @@ export class ExoPlanetLayer {
     const out: ExoAtmosphere[] = [];
     for (const v of this.views) {
       const d = this.draws.get(v.planet);
-      if (!d?.air || !d.mesh.visible || v.pixelRadius < 2.5) continue;
+      // (drawn larger than it is, far off, its air is a hair's breadth: none, as BodiesLayer's)
+      if (!d?.air || !d.mesh.visible || v.pixelRadius < 2.5 || v.scale > 1) continue;
       const u = (d.mesh.material as ShaderMaterial).uniforms;
       out.push({ key: v.planet, name: v.planet.name, radius: v.planet.radius, spec: d.air, rel: v.rel, orient: d.orient,
         sunDir: u.uSunDir.value as Vector3, sunIrr: u.uSunIrr.value as number, sunColor: u.uSunColor.value as Vector3 });
@@ -254,11 +269,43 @@ export class ExoPlanetLayer {
     }
   }
 
+  /**
+   * Each planet's exposure this frame, once the app has the surfaces' (`x`) and each view's `own`: the surfaces', and no more than
+   * its own while it is drawn larger than it is (as BodiesLayer.expose).
+   */
+  expose(x: number): void {
+    for (const v of this.views) {
+      const d = this.draws.get(v.planet);
+      if (d) d.exposure.value = v.scale > 1 ? Math.min(x, v.own) : x;
+    }
+  }
+
+  /**
+   * How many times its size a planet is drawn (the big look, as BodiesLayer.bigScale): at least BIG_PX in radius for a
+   * Jupiter, as the quarter power of its radius for smaller ones, reaching at most BIG_ROOM of the way to its star
+   * (`toStar`, m); from within a planet's Hill sphere (`home`) the others only as the eye leaves it. 1: as it is.
+   */
+  private bigScale(p: ExoPlanet, pixelRadius: number, toStar: number, home: { planet: ExoPlanet; out: number } | null): number {
+    if (!this.bigLook || p.radius < BIG_LEAST_RADIUS) return 1;
+    let least = BIG_PX * Math.pow(p.radius / JUPITER_RADIUS, 0.25) * this.pixelRatio;
+    if (home && home.planet !== p) least *= home.out;
+    if (pixelRadius >= least) return 1;
+    return Math.max(1, Math.min(least / Math.max(pixelRadius, 1e-12), (BIG_ROOM * toStar) / p.radius));
+  }
+
   update(cam: UPos, pixelAngle: number, systems: PlanetarySystem[], jd: number, time: number): void {
     this.views = [];
     const active = new Set<ExoPlanet>();
     let ns = 0;
     const rel = new Vector3(), starRel = new Vector3(), toStar = new Vector3(), tmp = new Vector3();
+    // (the planet whose Hill sphere the eye is in, if any: its neighbours are drawn as they are until the eye leaves it)
+    let home: { planet: ExoPlanet; out: number } | null = null;
+    if (this.bigLook) {
+      seek: for (const sys of systems) for (const p of sys.planets) {
+        const d = p.upos.sub(cam, rel).length();
+        if (d < p.hill) { home = { planet: p, out: smoothstep(0.3, 1, d / p.hill) }; break seek; }
+      }
+    }
     for (const sys of systems) {
       sys.update(jd);
       const host = sys.host;
@@ -283,8 +330,9 @@ export class ExoPlanetLayer {
         // the eye adapts to the disk as it is drawn (like Solar System bodies: 1.5 x the mean albedo,
         // dark worlds kept darker than mid-grey)
         const radiance = (Math.min(1, 1.5 * Math.max(d.albedo, 0.15)) * E) / Math.PI;
-        this.views.push({ planet: p, rel: rel.clone(), dist, pixelRadius: pr, radiance });
-        const resolved = pr > 0.8;
+        const k = this.bigScale(p, pr, ds, home);
+        this.views.push({ planet: p, rel: rel.clone(), dist, pixelRadius: pr, radiance, scale: k, own: Infinity });
+        const resolved = pr * k > 0.8;
         d.mesh.visible = resolved;
         if (resolved) {
           // spin: tidally locked planets keep one face to the star
@@ -293,7 +341,7 @@ export class ExoPlanetLayer {
           const q = new Quaternion().setFromAxisAngle(sys.n, spin);
           const basis = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), sys.n);
           q.multiply(basis);
-          d.mesh.matrix.compose(rel, q, new Vector3(p.radius, p.radius, p.radius));
+          d.mesh.matrix.compose(rel, q, new Vector3(p.radius * k, p.radius * k, p.radius * k));
           d.orient.makeRotationFromQuaternion(q);
           d.mesh.matrixWorldNeedsUpdate = true;
           const u = (d.mesh.material as ShaderMaterial).uniforms;
@@ -302,6 +350,8 @@ export class ExoPlanetLayer {
           u.uSunIrr.value = E;
           u.uTime.value = time;
           u.uCamAlt.value = dist - p.radius;
+          // (drawn larger than it is, far off: its night side dimly lit, as BodiesLayer's BIG_FILL)
+          u.uFill.value = BIG_FILL * bigShare(k);
           (u.uBodyToWorld.value as Matrix3).setFromMatrix4(d.mesh.matrix.clone().makeRotationFromQuaternion(q));
         } else if (ns < 64) {
           // reflected light as a point: albedo * E * (R / d)^2 * phase
@@ -315,10 +365,10 @@ export class ExoPlanetLayer {
           d.ring.visible = resolved;
           if (resolved) {
             const qr = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), sys.n);
-            d.ring.matrix.compose(rel, qr, new Vector3(p.radius, p.radius, p.radius));
+            d.ring.matrix.compose(rel, qr, new Vector3(p.radius * k, p.radius * k, p.radius * k));
             d.ring.matrixWorldNeedsUpdate = true;
             const qi = qr.clone().invert();
-            lightRing(d.ring, (E / Math.PI) * this.exposure.value, tmp.copy(toStar).divideScalar(ds).applyQuaternion(qi), rel.clone().negate().divideScalar(p.radius).applyQuaternion(qi));
+            lightRing(d.ring, (E / Math.PI) * d.exposure.value, tmp.copy(toStar).divideScalar(ds).applyQuaternion(qi), rel.clone().negate().divideScalar(p.radius * k).applyQuaternion(qi));
           }
         }
         // orbit line relative to the camera: on its rail, or in live physics the orbit it is on now
