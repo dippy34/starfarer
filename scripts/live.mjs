@@ -2304,7 +2304,13 @@ for (const kind of kinds) {
     };
     const infoOpen = async (page) => { await openCard(page); if (!(await shown(page, '#hud .card .facts .plain'))) await press(page, '#hud .card [data-info]'); await frames(page, 2); };
     const facts = async (page, name) => { await infoOpen(page); await frames(page, 2); return holeState(page, name); };
-    const undoNow = async (page) => { await liveWay(page, 'undo', (sel) => press(page, sel)); await frames(page, 3); };
+    // (Undo: on a phone the pill at the top, which is Undo for a minute after a hole's mass is changed; at a desk Ctrl+Z, its
+    // keys: on a runner at a frame a second the shadows measured between Real mass and Undo outlasted the pill's minute, 28 Nov 2026)
+    const undoNow = async (page, touch) => {
+      if (touch) await liveWay(page, 'undo', (sel) => press(page, sel));
+      else await page.keyboard.press('Control+z');
+      await frames(page, 3);
+    };
     /** the app's own wait for a change to end: a run of keys ends by its pause */
     const settle = (page) => page.waitForTimeout(900).then(() => frames(page, 3));
 
@@ -2353,7 +2359,7 @@ for (const kind of kinds) {
         check(on(`${hole.name}: the slider dragged to about double: its mass and horizon follow (${s.factor.toFixed(3)} times), live physics is not started, and Undo is offered`),
           s.factor > 1.7 && s.factor < 2.3 && Math.abs(s.radius / real.radius / s.factor - 1) < 1e-9 && !live && (await undoOffered(page)), JSON.stringify({ s, live }));
         await settle(page);
-        await undoNow(page);
+        await undoNow(page, touch);
         const back = await holeState(page, hole.name);
         check(on(`${hole.name}: Undo puts the first change back exactly`), back.factor === 1 && back.radius === real.radius && back.suns === real.suns, JSON.stringify(back));
       });
@@ -2418,7 +2424,7 @@ for (const kind of kinds) {
         const wide = await shadowWide(page, hole.name);
         check(on(`${hole.name}: Real mass puts it back exactly (mass, horizon, disk) and the shadow is as wide as at first`),
           r.factor === 1 && r.radius === real.radius && r.inner === real.inner && r.outer === real.outer && Math.abs(wide.wide / shadow1.wide - 1) < 0.1, JSON.stringify({ r, wide: wide.wide, first: shadow1.wide }));
-        await undoNow(page);
+        await undoNow(page, touch);
         const u = await holeState(page, hole.name);
         check(on(`${hole.name}: Undo takes Real mass back: four times again`), Math.abs(u.factor / x4.factor - 1) < 1e-9 && u.radius === x4.radius, JSON.stringify(u));
       });
