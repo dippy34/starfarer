@@ -303,8 +303,10 @@ const centreOf = async (page, sel) => {
   const freed = await page.evaluate(() => ({ stay: window.app.stay, anchor: window.app.rig.anchor?.name ?? null, chip: document.querySelector('#hud .chip.place b').textContent, pressed: document.querySelector('#hud .chip.place').getAttribute('aria-pressed'), pad: !document.querySelector('.free-pad').hidden }));
   await f.drag({ x: mid.x, y: 300 }, { x: mid.x + 70, y: 340 });
   s1 = await state(page);
-  check('the chip at the top tapped, the camera moves freely (it rides with nothing, the chip says so, the stick is up) and one finger looks around instead',
-    !freed.stay && freed.anchor === null && freed.chip === 'Moving freely' && freed.pressed === 'false' && freed.pad
+  // (it goes along with the Moon it is by, as anything let go there would: the Moon is not left to run off along its way round
+  // the Sun. It turns round nothing)
+  check('the chip at the top tapped, the camera moves freely (turning round nothing, going along with the Moon it is by; the chip says so, the stick is up) and one finger looks around instead',
+    !freed.stay && freed.anchor === 'Moon' && freed.chip === 'Moving freely' && freed.pressed === 'false' && freed.pad
       && s0.touchDrag === 'look' && dist(s0.cam, s1.cam) < 1e-3 && Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) > 0.02,
     JSON.stringify({ ...freed, mode: s0.touchDrag, moved: dist(s0.cam, s1.cam), turned: Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]), tapped: [Math.round(chipAt.x), Math.round(chipAt.y)] }));
   await f.tap(await centreOf(page, '#hud .chip.place'));
@@ -402,8 +404,21 @@ const centreOf = async (page, sel) => {
   st = await state(page);
   check('choosing a place closes the sheet and flies there', st.sheet === 'card' && st.selection === 'Mars' && st.flying && st.pill, JSON.stringify([st.sheet, st.selection, st.flying]));
   await tapOn('.hud-flight [data-act="stop"]');
+  await f.frames(2);
   st = await state(page);
-  check('Stop ends the flight, in open space', !st.flying && st.target === null && !st.pill && /space|Near/.test(st.place), st.place);
+  // (Stop ends the flight where it is. Staying, the camera stays on the world whose reach it is in, the chip naming it
+  // (App.reachOf: a sun's reach is a hundred of its radii); in open space on nothing)
+  const reach = await page.evaluate(() => {
+    const a = window.app;
+    let best = null, most = Infinity;
+    for (const b of a.system.bodies) {
+      const r = b.kind === 'star' ? b.radius * 100 : b.soiRadius();
+      if (b.valid && r < most && b.upos.sub(a.rig.upos).length() < r) { best = b.name; most = r; }
+    }
+    return best;
+  });
+  check('Stop ends the flight where it is: on the world whose reach it is in, the chip naming it, or in open space on nothing',
+    !st.flying && !st.pill && st.target === reach && (reach ? st.place === reach : /space/.test(st.place)), JSON.stringify({ place: st.place, target: st.target, reach }));
 
   // search
   await tapOn('.hud-tabs [data-tab="search"]');
@@ -914,7 +929,8 @@ for (const landscape of [false, true]) {
     const hits = got.mine.flatMap((m) => got.theirs.filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
     const among = got.mine.flatMap((m, i) => got.mine.slice(i + 1).filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
     const off = got.mine.filter((m) => m.l < 0 || m.t < 0 || m.r > got.W + 0.5 || m.b > got.H + 0.5).map((m) => `${m.what} off screen`);
-    if (hits.length || among.length || off.length || got.mine.length !== 4) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, n: got.mine.length, hits, among, off });
+    // (the stick, Up and Down: no Done since 28 Nov 2026, the chip at the top is the way back)
+    if (hits.length || among.length || off.length || got.mine.length !== 3) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, n: got.mine.length, hits, among, off });
     if (w === 360 && h === 640) await page.screenshot({ path: path.join(outDir, 'touch-16-free-small.png'), timeout: 300000 });
     if (w === 844 && h === 280) await page.screenshot({ path: path.join(outDir, 'touch-17-free-side-bars.png'), timeout: 300000 });
   }

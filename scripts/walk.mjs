@@ -197,6 +197,8 @@ async function seaCheck(page) {
   await page.evaluate(() => {
     const a = window.app, e = a.findByName('Earth');
     a.select(e);
+    // (the camera stays on what it is on, the toggle's rule since 28 Nov 2026: here, the Earth)
+    a.rig.target = e;
     const la = (39.6015 * Math.PI) / 180, lo = (-9.0735 * Math.PI) / 180;
     const nBF = e.upos.sub(a.rig.upos).set(Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la));
     const up = nBF.clone().transformDirection(e.orientation);

@@ -1617,7 +1617,9 @@ world and it is that world (its own ground; an ocean world's water to swim in, d
 is the same). Staying, `chooseAnchor` (outside the ship, which keeps its old way) makes the camera ride with what it is on
 (`rig.target` through `anchorFor`: a place on a world or its rings rides with that world; stars, galaxies and catalogue
 holes stay put), and with nothing to stay on (a flight stopped half way) it takes the world whose reach it is in
-(`reachOf`), which the chip then names. Moving freely, it rides with nothing, the stick (`FreeFly`) comes up on a touch
+(`reachOf`; a sun's reach is 100 of its radii, between the planets is open space), which the chip then names. Moving
+freely, it turns round nothing but goes along with the world whose reach it is in (as anything let go there would: left
+behind, the Earth ran off at 30 km/s and a double tap's zoom came short), the stick (`FreeFly`) comes up on a touch
 screen and one finger looks round; the chip says "Moving freely" and "Tap to stay on X" (what is chosen if it can be ridden
 with, else what it was on). Go there (`goTo`, from a card, a list or a double tap) stays on what it flies to. A watch and a
 hit no longer move the camera (`startWatch` frames nothing, `frameHit` only in the ship). Gone: the "Turning around it"
