@@ -481,6 +481,8 @@ void main() {
   vec3 albedo;
   float emit = 0.0;
   vec3 emitColor = vec3(1.0, 0.35, 0.08);
+  // a lava world's crust cracked at the walker's scale, glowing (up close, on the landing terrain)
+  float groundGlow = 0.0;
   float spec = 0.0;
   float cloud = 0.0;
   float shadow = 1.0;
@@ -638,6 +640,20 @@ void main() {
       // hotter (yellower) in the middle of wide seams and lakes, dull red at the edges
       emitColor = mix(vec3(0.9, 0.16, 0.03), vec3(1.0, 0.5, 0.14), clamp(cracks * 1.2 + lake * 0.8, 0.0, 1.0));
       msel = vec4(2.0, 0.0, 3.0, 6.0);           // lava fields: dark rocky ground
+#ifdef TERRAIN
+      if (uTerrain > 0.5 && !lite) {
+        // Up close the crust is cracked at the walker's scale, seams some metres apart and finer ones between, molten and
+        // glowing in them (more so where the planet-wide seams and lakes are live): on the ground a lava world is a dark
+        // crust over fire, not a field of stones. Fixed to the ground's material anchor, fading in as the pixels resolve it.
+        vec2 gx = uMatO.xy + vec2(dot(vGround, uTanE), dot(vGround, uTanN));
+        float near = smoothstep(3.0, 0.4, length(fwidth(vPosView)));
+        float s1 = edgeDist(vec3(gx / 9.0, uSeed * 0.37), false), s2 = edgeDist(vec3(gx / 2.3, uSeed * 0.71 + 5.0), false);
+        float melt = 0.45 + 0.55 * max(live, lake);
+        groundGlow = (smoothstep(0.07, 0.0, s1) + 0.45 * smoothstep(0.045, 0.0, s2)) * near * melt;
+        albedo *= 1.0 - 0.8 * min(groundGlow, 1.0);
+        emitColor = mix(vec3(0.95, 0.2, 0.04), vec3(1.0, 0.62, 0.2), smoothstep(0.02, 0.0, s1));
+      }
+#endif
     } else if (uType == 5) {
       // ice: bright plains, darker older terrain, long crossing ridges and cracks (lineae, along
       // arcs of great circles), finer fractures
@@ -753,6 +769,8 @@ void main() {
   // thermal glow (night side mostly)
   // (scaled to the starlight so it shows at the exposure the lit planet sets)
   radiance += emitColor * emit * luminance(sunL) * (0.012 + 0.2 * smoothstep(0.2, -0.2, mu0));
+  // (the molten seams up close give light of their own, day and night)
+  radiance += emitColor * groundGlow * luminance(sunL) * 0.6;
   radiance += albedo * sunL * uFill;
   gl_FragColor = vec4(min(radiance * uExposure, vec3(6.0e4)), 1.0);
 ${OUTPUT_FRAGMENT}

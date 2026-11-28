@@ -537,7 +537,8 @@ export class Rocks {
   /** Rock colour: `out` is the colour without a map, or a tint of the map's grey; `sat`: saturation kept, brightness. */
   private rockColour(c: NonNullable<TerrainPatch['current']>, out: Color, sat: { x: number; y: number }): void {
     const u = c.material.uniforms;
-    if (u.uC3) { const v = u.uC3.value as Vector3; out.setRGB(v.x * 0.8, v.y * 0.8, v.z * 0.8); sat.x = 1; sat.y = 1; return; }
+    // (a generated look: its third colour; on a lava world, black basalt, darker than the crust round it: they showed pale)
+    if (u.uC3) { const v = u.uC3.value as Vector3, k = u.uType?.value === 0 ? 0.3 : 0.8; out.setRGB(v.x * k, v.y * k, v.z * k); sat.x = 1; sat.y = 1; return; }
     const mode = (u.uMatMode?.value as number) ?? 0;
     const a = (u.uAlbedoScale?.value as number) ?? 0.12;
     // Earth: grey-brown rock whatever grows around it; Mars: dark basalt under a little dust;
