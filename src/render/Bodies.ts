@@ -696,7 +696,7 @@ export class BodiesLayer {
         uColor: { value: new Vector3(...b.color) },
         uAlbedoScale: { value: 1 },
         uAirless: { value: b.isAirless ? 1 : 0 },
-        uBands: { value: !texKey && (b.isGasGiant || b.name === 'Venus') ? 1 : 0 },
+        uBands: { value: !texKey && (b.isGasGiant || b.name === 'Venus') ? 1 : 0 }, uGiant: { value: b.isGasGiant ? 1 : 0 },
         uRelief: { value: null }, uHasRelief: { value: 0 }, uWater: { value: 0 },
         uAtmo: { value: 0 }, uRp: { value: b.radii[0] }, uBetaR: { value: new Vector3() }, uHR: { value: 8000 },
         uBetaMe: { value: new Vector3() }, uHM: { value: 1200 },
