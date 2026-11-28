@@ -1601,6 +1601,22 @@ keep B for later, C not needed with A).
   give the column under the ship's velocity line the reserved job slot. Fewer refinements, none removed; it does not help a
   teleport. **C** (call a contact a crash only when the column has no job pending) is not needed while A is in.
 
+## The big round (28 Nov 2026, the owner's plan, approved)
+
+The owner, after playing: too much on the screen, the camera following "half the time", the Sun a white
+blob from afar, planets and black holes too small, presets instead of free numbers, no real landing.
+Approved, in this order: (1) one camera toggle, Stay on it or Move freely (the top-left chip; Go there
+locks on; nothing else moves it; Move freely brings the joystick), less on the screen (categories, a
+few more taps), things dramatically large but "the more accurate the better" (Go there parks close
+enough to fill the view; far things drawn at a visible size; a switch back to real size), the Sun's
+glow toned down; (2) make anything with any numbers (Planet, Moon, Star, Black hole; mass typed in
+Earths or Suns; it becomes a brown dwarf or a star by itself; no "like Earth/Jupiter"); (3) land on any
+world and it is that world (its own ground; an ocean world's water to swim in, dive under, look up);
+(4) more game (flying with the joystick as a main way to move; a few challenges).
+**The way back (the owner asked for one):** before any of it, the app was commit `a69ed99`, and that
+build stays at https://b4b8c1a5.starfarer.pages.dev (a Cloudflare deployment of its own, kept). The
+enlarging has its own switch in More, and its commits are kept apart so that they can be reverted.
+
 ## Next
 
 0. (28 Nov 2026; the owner's fix list is the order) Waiting on the owner: the "release" (the owner's word
