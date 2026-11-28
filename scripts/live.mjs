@@ -94,11 +94,13 @@ async function find(page, name, detail = null) {
 /** Ask for a rate of time with the Time sheet's buttons: `label` is what the sheet then says under the clock ("1 hour a second"; the chip at the top is one line and may say only "fast"). */
 async function rate(page, label) {
   if (!(await shown(page, '#hud .sheet.time.on'))) await press(page, '#hud .hud-tabs [data-tab="time"]');
-  for (let i = 0; i < 16 && (await text(page, '#hud .time-rate')) !== label; i++) {
+  // (the rate asked for: where live physics cannot keep up the sheet goes on "... asked, 3 hours a second in fact")
+  const asked = async () => (await text(page, '#hud .time-rate')).split(' asked, ')[0];
+  for (let i = 0; i < 16 && (await asked()) !== label; i++) {
     await press(page, '#hud .transport [data-act="faster"]');
     await frames(page, 2);
   }
-  const got = await text(page, '#hud .time-rate');
+  const got = await asked();
   await press(page, '#hud .sheet.time [data-close]');
   return got;
 }
@@ -1391,7 +1393,7 @@ for (const kind of kinds) {
       return { ...window.atThrow, watch: a.watch.state, chip: document.querySelector('#hud .watch-text').textContent, paused: a.clock.paused, rate: a.clock.rate, arrow: !document.querySelector('#hud .aim').hasAttribute('hidden') };
     });
     check(on('let go, the Moon goes round the Earth in a circle from where it was, time is as it was and the throw is offered to watch'),
-      thrown.e < 1e-6 && thrown.parent === 'Earth' && Math.abs(thrown.r - 1) < 1e-6 && thrown.watch === 'offered' && thrown.chip === 'See what it does' && thrown.paused === clock0.paused && thrown.rate === clock0.rate && !thrown.arrow,
+      thrown.e < 1e-6 && thrown.parent === 'Earth' && Math.abs(thrown.r - 1) < 1e-6 && thrown.watch === 'offered' && thrown.chip === 'Watch what it does' && thrown.paused === clock0.paused && thrown.rate === clock0.rate && !thrown.arrow,
       `e ${thrown.e?.toExponential(1)} round ${thrown.parent}, ${thrown.r?.toFixed(7)} of its distance; "${thrown.chip}", ${thrown.watch}, paused ${thrown.paused} (before: ${clock0.paused}), the arrow ${thrown.arrow ? "still drawn" : "gone"}`);
     await watchIt(page);
     const thrownWatched = await watching(page);
@@ -1894,7 +1896,7 @@ for (const kind of kinds) {
       const a = window.app, pair = a.slow?.pair;
       return { placing: a.mover.placing, panel: !document.querySelector('#hud .card [data-panel="move"]').hidden, slowed: pair && `${a.slow.phase} for ${pair.map((b) => b.name).join(' and ')}, ${(pair[0].pos.distanceTo(pair[1].pos) / 1e3).toFixed(0)} km apart` };
     });
-    check(on('Done: time is as it was before the world was made, and the chip offers to watch what follows'), p3.state === 'offered' && p3.paused === clock0.paused && p3.clock === clock0.rate && p3.chip && p3.start && p3.text === 'See what it does' && !left.placing && !left.panel, `"${p3.text}", ${p3.state}, paused ${p3.paused} (before: ${clock0.paused})${left.slowed ? `; slowed ${left.slowed}` : ''}`);
+    check(on('Done: time is as it was before the world was made, and the chip offers to watch what follows'), p3.state === 'offered' && p3.paused === clock0.paused && p3.clock === clock0.rate && p3.chip && p3.start && p3.text === 'Watch what it does' && !left.placing && !left.panel, `"${p3.text}", ${p3.state}, paused ${p3.paused} (before: ${clock0.paused})${left.slowed ? `; slowed ${left.slowed}` : ''}`);
     await watchIt(page);
     const p3w = await watching(page);
     check(on('tap Watch: time runs, and what follows is watched'), p3w.state === 'watching' && !p3w.paused && p3w.clock === p3w.rate && /^Watching: [\d.]+ (days|hours) a second$/.test(p3w.text), `"${p3w.text}"`);
@@ -2015,8 +2017,15 @@ for (const kind of kinds) {
       await press(page, '#hud .card [data-act="move"]');
       await frames(page, 3);
       if (!view) throw new Error('no view of TRAPPIST-1 e with room to move it');
-      await hand.press(view.from);
-      for (let i = 1; i <= 10; i++) await hand.slide({ x: view.from.x + ((view.to.x - view.from.x) * i) / 10, y: view.from.y + ((view.to.y - view.from.y) * i) / 10 });
+      // (where the planet and the place a third further out are drawn now, from where the eye was put: the panel opened since,
+      // and Undo through the pill's sheet, can have moved the view's centre, as on a desk, 28 Nov 2026)
+      const now = await page.evaluate(() => {
+        const a = window.app, e = a.findByName('TRAPPIST-1 e'), star = e.system.host, V = e.rel.constructor;
+        return { from: a.project(e.upos.sub(a.rig.upos, new V())), to: a.project(star.upos.sub(a.rig.upos, new V()).add(e.rel.clone().multiplyScalar(4 / 3))) };
+      });
+      const { from, to } = now.from && now.to ? now : view;
+      await hand.press(from);
+      for (let i = 1; i <= 10; i++) await hand.slide({ x: from.x + ((to.x - from.x) * i) / 10, y: from.y + ((to.y - from.y) * i) / 10 });
       await frames(page, 3);
       const held = await exo();
       await hand.lift();
