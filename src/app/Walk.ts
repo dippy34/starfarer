@@ -506,6 +506,15 @@ function approach(v: Vector3, target: Vector3, maxDelta: number): void {
 
 const GAS_TYPES = new Set<PlanetType>(['subneptune', 'icegiant', 'giant', 'hotgiant']);
 
+/** A world of gas with no ground (a giant of the catalogue or one made, a gas planet of another star): floated over, not landed on. */
+export function isGasWorld(o: SpaceObject | null): boolean {
+  if (o instanceof Body) {
+    const made = (o.meta.madeAs as { kind?: string } | undefined)?.kind;
+    return o.kind !== 'star' && made !== 'hole' && (o.isGasGiant || made === 'giant' || made === 'icegiant' || made === 'jupiter');
+  }
+  return o instanceof ExoPlanet && GAS_TYPES.has(o.spec.type);
+}
+
 /** Gravitational parameter of a world (m³/s²); estimated from its size for a body without a measured mass. */
 export function worldGM(owner: object): number {
   if (owner instanceof Body) {
