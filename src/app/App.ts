@@ -2414,7 +2414,15 @@ export class App {
     for (const o of objs) o.visible = true;
     // (into the HDR target the scene is drawn to: programs differ per output target)
     HITCH.markWarm(false);
-    void this.renderer.withSceneTarget(() => this.renderer.gl.compileAsync(this.renderer.scene, this.renderer.camera)).catch(() => undefined).finally(() => { HITCH.markWarm(); this.shadersReady(); });
+    void this.renderer.withSceneTarget(() => this.renderer.gl.compileAsync(this.renderer.scene, this.renderer.camera)).catch(() => undefined).finally(() => {
+      // (and each drawn once, where an iPhone builds its pipeline: Renderer.primeDraw; a failure costs only the hitch it saves)
+      const again = objs.map((o) => o.visible);
+      for (const o of objs) o.visible = true;
+      try { this.renderer.primeDraw(objs); } catch (e) { console.warn('warm-up draw', e); }
+      objs.forEach((o, i) => { o.visible = again[i]; });
+      HITCH.markWarm();
+      this.shadersReady();
+    });
     this.galaxy.compile(this.renderer.gl);
     this.holes.compile(this.renderer.gl);
     objs.forEach((o, i) => { o.visible = was[i]; });
