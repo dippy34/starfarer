@@ -5,7 +5,6 @@
  * Earth, the Sun, their own weight, the speed of light. Nothing is rounded into something else;
  * where the science says a value is estimated or uncertain, the plain line says so too.
  */
-import { Vector3 } from 'three';
 import { C_LIGHT, LY, SUN_ABS_MAG, SUN_RADIUS } from '../core/units';
 import { BlackHole } from '../universe/BlackHoles';
 import { Body, type SpaceObject } from '../universe/Body';
@@ -67,7 +66,8 @@ export function plainLine(app: App, o: SpaceObject): string {
   const away = `${plainDistance(distanceTo(app, o))} away`;
   if (o instanceof CatalogStar) return `${starColour(o.teff)} star · ${away}${o.distanceUncertain ? ' (distance uncertain)' : ''}`;
   // (real or made up, said first: the owner could not tell a real planet of another star from the app's own)
-  if (o instanceof ExoPlanet) return `${o.system.real ? 'Real planet' : 'Made-up planet'} of ${o.system.host.name} · ${plainDistance(o.system.host.upos.sub(app.rig.upos, new Vector3()).length())} away`;
+  // (how far the planet itself is: at it, over its clouds, its star's distance read as the planet's, 28 Nov 2026)
+  if (o instanceof ExoPlanet) return `${o.system.real ? 'Real planet' : 'Made-up planet'} of ${o.system.host.name} · ${away}`;
   if (o instanceof Body) {
     const made = o.meta.made ? ', made by you' : '';
     if ((o.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') return `Black hole${made} · ${away}`;
