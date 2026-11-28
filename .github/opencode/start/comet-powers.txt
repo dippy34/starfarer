@@ -1,5 +1,16 @@
-# Started by Claude, 27 Nov 2026: the fix list's #9, step 1, God mode on comets (take one away, move
-# it, throw it, keep it in saves). The copy starts at the live branch plus the change still being
-# tested (phones: looks first), so that the work builds on it.
+# Second try, started by Claude, 28 Nov 2026: step 1 (Remove on a comet) is in, reviewed and put live with its
+# checks; now steps 2 (move it, throw it) and 3 (kept in saves and links). The copy starts at the live branch plus
+# the changes still being tested (Create in the tab bar, the live-physics lines in plain words).
+Step 1 is in as you left it (thank you: clean, and its checks were good). Do steps 2 and 3 of the task now.
+- Your report's design is the one to take: a Body stand-in of no mass for a comet once it is moved or thrown, started
+  from keplerState (the worker's own function) at that date, as SimBody is for the planets of other stars; its point,
+  its card's distance and its tail follow the simulation from then on; the other comets stay on their recorded paths.
+- Keep LivePhysics.away as it is; a comet carried by the simulation is a third state beside "on its path" and "away",
+  and Undo, Replay and Back to reality bring it back to its path.
+- When Move works on a comet, its reason ("Moving a comet is not built yet") goes, and scripts/everywhere.mjs, whose
+  POWERS.comet is ['Remove'] now, expects Move and Remove for Halley.
+- The words of live physics are plain now (src/app/Powers.ts: farWords is plainDistance, periodWords): use them.
+- Step 3: a save and a link keep the comets taken away and the ones carried (place and motion) as an optional part
+  that links written before do not have; tests for the bytes in tests/sceneworld*.test.ts as the made worlds have.
 model: anthropic/claude-sonnet-5-5
-base: 28a055423ec70e31fd0f4778a14488d8f075abf6
+base: fe726098f1edf0d33b4cd14177afda1ef4058a12
