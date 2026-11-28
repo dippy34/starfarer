@@ -1587,14 +1587,15 @@ keep B for later, C not needed with A).
 
 ## Next
 
-0. (27 Nov 2026, after the night's work; the owner's fix list is the order) Waiting on the owner: the
-   "release" (the owner's word for: copy the developers' site to the testers'). Answered on 27 Nov:
-   the iPhone 13's benchmark (`docs/notes/phone-speed.md`), the developers' site on Cloudflare (yes,
-   done), no feedback button (testers report to the owner). Ready to build: God mode on comets, then a black hole of
-   your own (#9, `docs/notes/ideas.md`), and the sandbox's next steps (one Create button from
-   anywhere; size set by hand). The top chips in plain words (#4) are the rest of "make it simple".
-   Investigate first: the offline suite's two-tab step failed in 3 of 8 runs since the Time panel and in
-   none before it (docs/notes/testing.md, "offline").
+0. (28 Nov 2026; the owner's fix list is the order) Waiting on the owner: the "release" (the owner's word
+   for: copy the developers' site to the testers'). On the developers' site since 27 Nov: the phones' looks
+   first, a picture of a world while it is made, the chips and the live-physics lines in plain words,
+   Create in the tab bar, Remove on a comet (and, once its checks pass, Move and Throw on a comet, kept
+   in saves and links). Being built by the cheap team: a black hole of your own (TASKS.md
+   task/hole-of-your-own; #9 step 2). Then: Mass on the catalogue's black holes (#9 step 3); the
+   sandbox's next steps (size set by hand, an empty universe: `docs/notes/ideas.md`); the half-second
+   freeze the first time the ship is boarded on an iPhone (`docs/notes/phone-speed.md`). The offline
+   suite's two-tab flake: its other tab no longer runs the app (docs/notes/testing.md, "offline").
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
    black hole steps).
 2. Terrain: stream sharper elevation tiles everywhere (the full LOLA/MOLA/ETOPO resolution; today
