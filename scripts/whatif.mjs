@@ -10,7 +10,7 @@
 // camera and runs time on, and this measures where the moon starts against the eye and times a quarter of its
 // period by the clock; scripts/live.mjs watches changes.)
 // Usage: node scripts/whatif.mjs [baseUrl] [outDir]
-import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
+import { collectErrors, launchBrowser, liveWay, openCard, undoOffered } from './lib/browser.mjs';
 import { phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,7 +41,8 @@ const card = (page) => page.evaluate(() => {
   };
 });
 const details = async (page) => {
-  if (await page.evaluate(() => document.querySelector('#hud .card .facts').hidden)) await page.locator('#hud .card [data-details]').tap().catch(() => page.locator('#hud .card [data-details]').click());
+  // (the facts are behind Info, on the card opened)
+  if (await page.evaluate(() => document.querySelector('#hud .card .facts').hidden)) { await openCard(page); await page.locator('#hud .card [data-info]').tap().catch(() => page.locator('#hud .card [data-info]').click()); }
   await page.waitForSelector('#hud .card .facts:not([hidden])');
   // (the facts as measured and their working are under More science, a tap below the plain lines)
   if (await page.evaluate(() => document.querySelector('#hud .card .science')?.hidden)) await page.locator('#hud .card [data-science]').tap().catch(() => page.locator('#hud .card [data-science]').click());
@@ -153,7 +154,7 @@ for (const kind of ['phone', 'desk']) {
     `selection ${after.selection}, "${after.toast}"`);
 
   // --- back to reality: nothing of it is left
-  await press(page, '#hud .live-back');
+  await liveWay(page, 'back', (sel) => press(page, sel));
   await frames(page, 6);
   const real = await page.evaluate(() => ({ bodies: window.app.system.bodies.length, moons: window.app.findByName('Earth').children.length, made: window.app.made.length, live: window.app.physics.on }));
   check(on('back to reality, nothing of it is left'), real.bodies === before.bodies && real.moons === before.moons && real.made === 0 && !real.live, `${real.bodies} bodies, ${real.moons} moon of the Earth's`);

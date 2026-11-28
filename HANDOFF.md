@@ -1624,6 +1624,17 @@ screen and one finger looks round; the chip says "Moving freely" and "Tap to sta
 with, else what it was on). Go there (`goTo`, from a card, a list or a double tap) stays on what it flies to. A watch and a
 hit no longer move the camera (`startWatch` frames nothing, `frameHit` only in the ship). Gone: the "Turning around it"
 button and More's "Fly freely" and "One finger looks around" switches, and the stick's Done.
+*Part 1b, less on the screen (done; the cheap team's task/less-on-screen on Claude Sonnet, $3.89, reviewed here):* the ship's
+round button is gone: "Fly my ship" ("Fly my ship there" with a far world chosen) is More's first row (`.ship-row`, act
+`ship-go`). Live physics is a pill under the chips (`.live-mark`: a dot, "Live", "since 1 Oct" from `Powers.sinceWords`; no
+wider than the place chip, `--pill-max`, measured while shown) that opens its own sheet (`data-sheet="live"`: since when, Undo
+and Back to reality a thumb high with a plain line each, the log, what is left out); just after the way back the pill is Undo
+("real again"). After a change, one button "Watch what it does" with its cross. The card opened shows its powers, then Look at,
+Share and Info; the facts in plain words (and More science) unfold under Info (`Hud.info`; `details` is the card opened). The
+clock chip is one line (`Powers.clockLine`: the date only at real time, else the date and the speed in words, "fast"/"slow"
+where they would not fit in 30 characters). Tests: `scripts/lib/browser.mjs` `liveWay` presses Undo/Back to reality through
+the pill's sheet; touch.mjs section 16 checks the pill, the watch button, the sheet, the clock chip, More's ship row and that
+nothing overlaps on 11 screen sizes.
 *Part 2, the big look (done):* "dramatically large, but the more accurate the better". (a) A far world is drawn at a least
 size, where it really is (`Bodies.bigScale`, `BIG_PX` 8 CSS px for Jupiter, the radius to the quarter power: Earth 4.4, the Moon
 3.2; only worlds of 180 km and more; at most `BIG_ROOM` 0.3 of the way to what it goes round). From inside a planet's reach

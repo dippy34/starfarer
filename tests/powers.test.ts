@@ -3,8 +3,9 @@ import {
   addedWords, affected, aheadWords, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
   FRAME_MARGIN, farWords, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, starMassWords,
   orbitWords, powerWords, radiusWords, sameDensity, SIZE_DECADES, sizeFactor, sizeSlider, sizeTimesWords, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
-  WATCH_SLOWEST, watchPlan, watchRate, clockSpeedWords, clockChipWords,
+  WATCH_SLOWEST, watchPlan, watchRate, clockSpeedWords, clockChipWords, clockLine, sinceWords,
 } from '../src/app/Powers';
+import { dateToJdUtc, utcToTdb } from '../src/core/time';
 import { G, L_SUN, M_EARTH, M_JUPITER, M_SUN, R_EARTH } from '../src/sim/physics';
 
 const AU = 149_597_870_700, GM_SUN = 1.32712440018e20, DAY = 86_400;
@@ -459,6 +460,46 @@ describe('saying things', () => {
     expect(spanWords(DAY)).toBe('1 day');
     expect(spanWords(150 * 365.25 * DAY)).toBe('150 years');
     expect(spanWords(90)).toBe('1.5 minutes');
+  });
+});
+
+describe('the clock chip\'s line after the date', () => {
+  it('says "paused" whatever the speed, and nothing at real time', () => {
+    expect(clockLine('1 Oct 2026', 'real time', true)).toBe('paused');
+    expect(clockLine('1 Oct 2026', '◀ 1 day a second', true)).toBe('paused');
+    expect(clockLine('1 Oct 2026', 'real time', false)).toBe('');
+  });
+
+  it('keeps the speed in words when it fits, and "fast" (or "slow" under real time) when it does not', () => {
+    expect(clockLine('1 Oct 2026', '1 day a second', false)).toBe('1 day a second');
+    expect(clockLine('1 Oct 2026', '10 minutes a second', false)).toBe('fast');
+    expect(clockLine('1 Oct 2026', '◀ 10 minutes a second', false)).toBe('◀ fast');
+    expect(clockLine('1 Oct 2026', '◀ real time', false)).toBe('◀ real time');
+    // (the date and the speed with their three characters of gap: 10 + 3 + 19 = 32 characters, which fits 32 and not 31)
+    expect(clockLine('1 Oct 2026', '0.5 times real time', false, 32)).toBe('0.5 times real time');
+    expect(clockLine('1 Oct 2026', '0.5 times real time', false)).toBe('slow');
+    expect(clockLine('1 Oct 2026', '0.5 times real time', false, 31)).toBe('slow');
+    expect(clockLine('1 Oct 2026', '◀ 0.5 times real time', false, 10)).toBe('◀ slow');
+  });
+
+  it('a line with the date fits the clock chip\'s room, or is one of the short words', () => {
+    for (const r of [10, 60, 600, 3600, 86_400, 365.25 * 86_400, -86_400]) {
+      const line = clockLine('28 Nov 2026', clockChipWords(r), false);
+      if (line === '' || line === 'fast' || line === '◀ fast') continue;
+      expect(`28 Nov 2026 · ${line}`.length).toBeLessThanOrEqual(30);
+    }
+  });
+});
+
+describe('when live physics began, in words', () => {
+  const now = Date.UTC(2026, 10, 28, 12);
+  const at = (y: number, m: number, d: number) => utcToTdb(dateToJdUtc(new Date(Date.UTC(y, m, d, 12))));
+
+  it('is nothing when it began today, "since" the day otherwise, with the year only when it is not this year\'s', () => {
+    expect(sinceWords(at(2026, 10, 28), now)).toBe('');
+    expect(sinceWords(at(2026, 9, 1), now)).toBe('since 1 Oct');
+    expect(sinceWords(at(2031, 2, 4), now)).toBe('since 4 Mar 2031');
+    expect(sinceWords(at(2026, 10, 27), now)).toBe('since 27 Nov');
   });
 });
 

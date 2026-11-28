@@ -122,9 +122,9 @@ const centreOf = async (page, sel) => {
   check('the page is exactly the screen (nothing to scroll)', lay.scroll[0] <= lay.scroll[2] && lay.scroll[1] <= lay.scroll[3], JSON.stringify(lay.scroll));
   check('the chips are at the top, inside the screen, side by side', lay.place.l >= 0 && lay.clock.r <= W && lay.place.r < lay.clock.l && lay.place.t < 30, JSON.stringify([lay.place, lay.clock]));
   check('the tab bar is at the bottom, the card just above it', lay.tabs.b <= H && lay.tabs.b > H - 20 && lay.card.b <= lay.tabs.t && lay.card.b > lay.tabs.t - 20, JSON.stringify([lay.tabs, lay.card]));
-  const fabs = await page.evaluate(() => ({ look: !!document.querySelector('.look-fab'), ship: document.querySelector('.ship-fab span')?.textContent ?? '', chip: document.querySelector('#hud .chip.place').getAttribute('aria-pressed') }));
-  const bar = { h: Math.round(lay.tabs.b - lay.tabs.t), look: fabs.look, ship: fabs.ship, chip: fabs.chip };
-  check('the tab bar is slim, the round buttons use plain words, and no button says what one finger does: the chip at the top is the camera\'s toggle, staying on what it is at to begin with', bar.h <= 52 && !bar.look && !bar.ship.includes('Drag:') && bar.chip === 'true', JSON.stringify(bar));
+  const fabs = await page.evaluate(() => ({ look: !!document.querySelector('.look-fab'), ship: !!document.querySelector('.ship-fab'), round: [...document.querySelectorAll('#hud .fab')].filter((b) => b.getBoundingClientRect().width > 0).length, chip: document.querySelector('#hud .chip.place').getAttribute('aria-pressed') }));
+  const bar = { h: Math.round(lay.tabs.b - lay.tabs.t), look: fabs.look, ship: fabs.ship, round: fabs.round, chip: fabs.chip };
+  check('the tab bar is slim, there is no round button over the view (the ship is in More), and no button says what one finger does: the chip at the top is the camera\'s toggle, staying on what it is at to begin with', bar.h <= 52 && !bar.look && !bar.ship && bar.round === 0 && bar.chip === 'true', JSON.stringify(bar));
   check('upright, the view opens up (70 degrees) and the Earth fits across with room to spare', Math.abs(lay.fov - 70) < 0.5 && lay.radiusPx * 2 < W * 0.75 && lay.radiusPx * 2 > W * 0.45, `fov ${lay.fov.toFixed(1)}, disc ${(lay.radiusPx * 2).toFixed(0)} px of ${W}`);
   check('the Earth is clear of the chips and the card', lay.earth.y - lay.radiusPx > lay.place.b && lay.earth.y + lay.radiusPx < lay.card.t, JSON.stringify({ earth: lay.earth, r: lay.radiusPx, card: lay.card.t }));
   // (the room kept for the card is the card's opened to its buttons, 225 px over the tab bar, CARD_ROOM in src/ui/Hud.ts:
@@ -327,8 +327,9 @@ const centreOf = async (page, sel) => {
   const tapOn = async (sel) => { await f.tap(await centreOf(page, sel)); await f.frames(1); };
 
   // the card: folded, a slim bar (its name, a line in plain words, Go there) that leaves the view to space; one tap
-  // on it opens the rest, on a phone upright and on its side and at a desktop's size: Look at, Share, the powers,
-  // a few facts in plain words, and the science (the facts as measured) one more tap away under More science
+  // on it opens the card, on a phone upright and on its side and at a desktop's size: the powers, and a row of Look at, Share and
+  // Info (the card opened is at most 45 % of an upright screen); under Info, one tap more, a few facts in plain words, and the
+  // science (the facts as measured) one more tap away under More science
   await page.evaluate(() => window.app.select(window.app.findByName('Earth')));
   await f.frames(3);
   const cardLook = () => page.evaluate(() => {
@@ -337,7 +338,10 @@ const centreOf = async (page, sel) => {
     return {
       W: innerWidth, H: innerHeight, h: Math.round(r.height), name: card.querySelector('h2').textContent, line: card.querySelector('.card-title p').textContent,
       go: seen('[data-act="go"]') && card.querySelector('[data-act="go"]').getBoundingClientRect().height >= 44, more: seen('[data-details]'),
-      look: seen('[data-act="centre"]'), share: seen('[data-act="share"]'), mass: seen('[data-power="mass"]'), facts: seen('.facts .plain li'),
+      look: seen('[data-act="centre"]'), share: seen('[data-act="share"]'), info: seen('[data-info]'), mass: seen('[data-power="mass"]'), facts: seen('.facts .plain li'),
+      // (powers first: their row stands above the row of Look at, Share and Info)
+      powersFirst: !!card.querySelector('[data-power="mass"]') && card.querySelector('[data-power="mass"]').getBoundingClientRect().top < card.querySelector('[data-act="centre"]').getBoundingClientRect().top,
+      infoOpen: card.querySelector('[data-info]').getAttribute('aria-expanded'),
       plain: [...card.querySelectorAll('.facts .plain li span')].map((e) => e.textContent), science: seen('.facts dl div'), toggle: seen('[data-science]'),
     };
   });
@@ -351,14 +355,20 @@ const centreOf = async (page, sel) => {
       bar.name === 'Earth' && /^Planet · [\d,.]+ (km|million km) away$/.test(bar.line) && bar.go && bar.more && bar.h <= Math.min(80, 0.09 * Math.max(bar.H, 844)) && !bar.look && !bar.share && !bar.mass && !bar.facts,
       JSON.stringify(bar));
     await tapOn('.card [data-details]');
+    const opened = await cardLook();
+    check(`${how}: one tap on it opens the card: the powers, then Look at, Share and Info, all on the screen; the facts wait behind Info${how === 'upright' ? ', and the card is at most 45 % of the screen' : ''}`,
+      opened.look && opened.share && opened.info && opened.mass && opened.powersFirst && opened.infoOpen === 'false' && !opened.facts && !opened.science && !opened.toggle && (how !== 'upright' || opened.h <= 0.45 * opened.H),
+      JSON.stringify({ ...opened, share: undefined, ratio: Number((opened.h / opened.H).toFixed(3)) }));
+    if (how === 'upright') await page.screenshot({ path: path.join(outDir, 'touch-6-card-opened.png'), timeout: 300000 });
+    await tapOn('.card [data-info]');
     const open = await cardLook();
     // (More science is at the foot of the facts: where they are taller than the room, as on a phone on its side, the list scrolls to it)
     // (the facts' own list scrolled, not the page: scrollIntoView would move the interface's boxes too)
     const toggle = await page.evaluate(() => { const t = document.querySelector('.card [data-science]'), f = document.querySelector('.card .facts'); if (t && f) f.scrollTop = f.scrollHeight; return !!t; });
     await f.frames(1);
     const reach = await cardLook();
-    check(`${how}: one tap on it opens the rest: Look at, Share, the powers and the facts in plain words, all on the screen; the science still folded, More science at the foot of the facts`,
-      open.look && open.share && open.mass && open.facts && !open.science && open.plain.includes('How far') && open.plain.includes('Size') && toggle && reach.toggle && !reach.science,
+    check(`${how}: Info unfolds the facts in plain words under them, Look at, Share and the powers still on the screen; the science still folded, More science at the foot of the facts`,
+      open.look && open.share && open.mass && open.infoOpen === 'true' && open.facts && !open.science && open.plain.includes('How far') && open.plain.includes('Size') && toggle && reach.toggle && !reach.science,
       JSON.stringify({ ...open, toggle: reach.toggle }));
     if (reach.toggle) await tapOn('.card [data-science]');
     await page.evaluate(() => { const f = document.querySelector('.card .facts'), d = f?.querySelector('dl div'); if (f && d) f.scrollTop += d.getBoundingClientRect().top - f.getBoundingClientRect().top - 8; });
@@ -371,8 +381,9 @@ const centreOf = async (page, sel) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await f.frames(3);
   await tapOn('.card [data-details]');
+  await tapOn('.card [data-info]');
   let facts = await page.evaluate(() => [...document.querySelectorAll('.card .facts dt')].map((d) => d.textContent));
-  check('Details unfolds the facts of what is selected', facts.includes('Radius') && facts.includes('Distance') && facts.length > 5, facts.join(', '));
+  check('Info unfolds the facts of what is selected', facts.includes('Radius') && facts.includes('Distance') && facts.length > 5, facts.join(', '));
   await page.screenshot({ path: path.join(outDir, 'touch-6-details.png'), timeout: 300000 });
   // another body's facts open at their top, not where the last one's were scrolled to (playtest D2:
   // the Moon's opened scrolled down, its Distance out of sight). (The science unfolded: the plain lines alone do not scroll.)
@@ -382,6 +393,7 @@ const centreOf = async (page, sel) => {
     await page.evaluate(() => window.app.select(window.app.findByName('Moon')));
     await f.frames(2);
     await tapOn('.card [data-details]');
+    await tapOn('.card [data-info]');
     const top = await page.evaluate(() => ({ name: document.querySelector('.card h2').textContent, scroll: document.querySelector('.card .facts').scrollTop }));
     check("another body's facts open at their top", down > 50 && top.name === 'Moon' && top.scroll === 0, JSON.stringify({ down, ...top }));
   }
@@ -509,14 +521,20 @@ const centreOf = async (page, sel) => {
 
   // settings
   await tapOn('.hud-tabs [data-tab="more"]');
-  await tapOn('.more [data-act="labels"]');
-  await tapOn('.more [data-act="orbits"]');
+  // (the sheet's first row is the ship now: the switches are a little further down, and the list scrolls to them)
+  const tapInMore = async (sel) => {
+    await page.evaluate((sel) => document.querySelector(sel).scrollIntoView({ block: 'center' }), sel);
+    await f.frames(1);
+    await tapOn(sel);
+  };
+  await tapInMore('.more [data-act="labels"]');
+  await tapInMore('.more [data-act="orbits"]');
   st = await state(page);
   const sw = await page.evaluate(() => [...document.querySelectorAll('.more .switch')].map((b) => `${b.dataset.act}:${b.getAttribute('aria-checked')}`).join(' '));
   check('the switches turn names and orbits off, and show it', !st.labels && !st.orbits && /labels:false/.test(sw) && /orbits:false/.test(sw), sw);
   await page.screenshot({ path: path.join(outDir, 'touch-10-more.png'), timeout: 300000 });
-  await tapOn('.more [data-act="labels"]');
-  await tapOn('.more [data-act="orbits"]');
+  await tapInMore('.more [data-act="labels"]');
+  await tapInMore('.more [data-act="orbits"]');
   // (Real size: far worlds drawn their size, not larger: src/render/Bodies.ts, the big look)
   const realSize = async () => {
     await page.evaluate(() => document.querySelector('.more [data-act="real-size"]').scrollIntoView({ block: 'center' }));
@@ -564,11 +582,11 @@ const centreOf = async (page, sel) => {
   await f.frames(2);
   const lay = await page.evaluate(() => {
     const box = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
-    return { tabs: box('.hud-tabs'), card: box('.sheet.card'), pill: box('.hud-flight'), place: box('.chip.place'), fab: box('.ship-fab'), fov: window.app.rig.fovY, w: window.innerWidth, h: window.innerHeight };
+    return { tabs: box('.hud-tabs'), card: box('.sheet.card'), pill: box('.hud-flight'), place: box('.chip.place'), fov: window.app.rig.fovY, w: window.innerWidth, h: window.innerHeight };
   });
   const apart = (a, b) => a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t;
   check('sideways: the tab bar stands at the left edge, the card beside it', lay.tabs.l < 20 && lay.tabs.r < 100 && lay.card.l >= lay.tabs.r && lay.card.b <= lay.h && lay.card.r < lay.w * 0.6, JSON.stringify([lay.tabs, lay.card]));
-  check('sideways: nothing overlaps (chips, tabs, card, flight, round button)', apart(lay.tabs, lay.place) && apart(lay.card, lay.place) && apart(lay.pill, lay.card) && apart(lay.pill, lay.place) && apart(lay.fab, lay.card), JSON.stringify(lay));
+  check('sideways: nothing overlaps (chips, tabs, card, flight)', apart(lay.tabs, lay.place) && apart(lay.card, lay.place) && apart(lay.pill, lay.card) && apart(lay.pill, lay.place), JSON.stringify(lay));
   check('sideways: the usual field of view', lay.fov === 50);
   const small = (await page.evaluate(() => window.probe.controls())).filter((c) => c.w < 43.5 || c.h < 43.5);
   check('sideways: every control is big enough for a finger', small.length === 0, JSON.stringify(small));
@@ -936,6 +954,176 @@ for (const landscape of [false, true]) {
     if (w === 844 && h === 280) await page.screenshot({ path: path.join(outDir, 'touch-17-free-side-bars.png'), timeout: 300000 });
   }
   check('free flight\'s stick and buttons, on every phone size (upright, on its side, bars or not), lie on nothing of the interface or of each other, and are all on the screen', bad.length === 0, JSON.stringify(bad).slice(0, 700));
+  await ctx.close();
+}
+
+// ---------------------------------------------------------------- 16. less on the screen (the owner, 28 Nov 2026)
+// No round ship button (the ship is the first row of More); live physics is a small pill that opens its sheet (Undo, Back to
+// reality, the log); a change offers one button, "Watch what it does"; the card opened is its powers and a row of Look at, Share
+// and Info, at most 45 % of an upright screen, its facts behind Info; the clock chip is one line. And on every phone size, upright
+// and on its side, and at a desktop's size, none of it lies on another.
+{
+  const ctx = await phoneContext(browser);
+  const page = await open(ctx, '?menu=0&time=2026-10-01T20:00:00Z&paused=1');
+  await ready(page);
+  const f = await fingers(page);
+  const tapOn = async (sel) => { await f.tap(await centreOf(page, sel)); await f.frames(1); };
+  if (await page.evaluate(() => !document.querySelector('.hud-coach').hidden)) await tapOn('.hud-coach [data-coach]');
+  await page.evaluate(() => { const a = window.app; a.select(a.findByName('Earth')); });
+  await f.frames(4);
+  const seen = (e) => !!e && !e.hidden && e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0 && getComputedStyle(e).display !== 'none';
+
+  // the clock chip: one line, the date alone at real time; the date and the speed in words when time runs otherwise
+  const jdStart = await page.evaluate(() => window.app.clock.jdTdb);
+  await page.evaluate(() => { window.app.clock.setUtcNow(); window.app.clock.paused = false; window.app.clock.rate = 1; });
+  await f.frames(3);
+  const chipOf = () => page.evaluate(() => {
+    const c = document.querySelector('#hud .chip.clock'), b = c.querySelector('b').getBoundingClientRect(), sm = c.querySelector('small'), s = sm.getBoundingClientRect();
+    return { date: c.querySelector('b').textContent, speed: sm.textContent, speedShown: s.width > 0, oneLine: s.width === 0 || Math.abs((b.top + b.bottom) / 2 - (s.top + s.bottom) / 2) < 6, h: c.getBoundingClientRect().height };
+  });
+  const real = await chipOf();
+  check('the clock chip at real time reads only the date, on one line', /^\d{1,2} [A-Z][a-z]{2} \d{4}$/.test(real.date) && real.speed === '' && !real.speedShown && real.oneLine, JSON.stringify(real));
+  await page.evaluate(() => { window.app.clock.rate = 86400; });
+  await f.frames(3);
+  const day = await chipOf();
+  await page.evaluate(() => { window.app.clock.rate = 1000 * 365.25 * 86400; });
+  await f.frames(3);
+  const years = await chipOf();
+  // (a thousand years a second has carried the date far off: the page's own date again, and an hour a second backwards)
+  await page.evaluate((jd) => { window.app.clock.jdTdb = jd; window.app.clock.rate = -3600; }, jdStart);
+  await f.frames(3);
+  const back = await chipOf();
+  check('when time runs otherwise the chip says the date and the speed in words on one line ("1 day a second"; "fast" where it would not fit; backwards marked), and a tap on it opens Time',
+    day.speed === '1 day a second' && day.speedShown && day.oneLine && years.speed === 'fast' && years.oneLine && back.speed === '◀ 1 hour a second' && back.oneLine && day.h <= 50,
+    JSON.stringify({ day, years: years.speed, back: back.speed }));
+  await tapOn('.chip.clock');
+  check('...Time opens as it did', (await state(page)).sheet === 'time');
+  await tapOn('.sheet.time [data-close]');
+  await page.evaluate((jd) => { window.app.clock.jdTdb = jd; window.app.clock.rate = 1; window.app.clock.paused = true; }, jdStart);
+  await f.frames(2);
+
+  // live physics: a small pill; the change offers one button to watch it
+  const none = await page.evaluate(() => !!document.querySelector('#hud .live-mark') && document.querySelector('#hud .live-mark').hidden);
+  await page.evaluate(() => { const a = window.app; a.massHeld(true); a.setMass(0.4); a.massHeld(false); });
+  await page.waitForFunction(() => window.app.physics.on && window.app.watch.state === 'offered', null, { timeout: 120000 });
+  await f.frames(3);
+  const pill = await page.evaluate(() => {
+    const m = document.querySelector('#hud .live-mark'), r = m.getBoundingClientRect(), p = document.querySelector('#hud .chip.place').getBoundingClientRect(), what = m.querySelector('.live-what');
+    return { h: r.height, w: r.width, place: p.width, buttons: [...m.querySelectorAll('button')].filter((b) => !b.hidden).length, words: `${what.querySelector('b').textContent} ${what.querySelector('small').textContent}`.trim(), top: r.top, placeBottom: p.bottom, undoInPill: !!m.querySelector('.live-undo, .live-back') };
+  });
+  check('live physics is a small pill under the chips: at most 44 px high, no wider than the place chip, "Live" and since when, one button, and no Undo or Back to reality on it',
+    none && pill.h <= 44.5 && pill.h >= 44 && pill.w <= pill.place + 0.5 && pill.buttons === 1 && /^Live( since \d+ [A-Z][a-z]{2}( \d{4})?)?$/.test(pill.words) && !pill.undoInPill && pill.top >= pill.placeBottom, JSON.stringify(pill));
+  const offer = await page.evaluate(() => {
+    const w = document.querySelector('#hud .hud-watch'), start = w.querySelector('.watch-start'), close = w.querySelector('.watch-close'), vis = (e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none';
+    return { chip: vis(w), startText: start.textContent.trim(), start: vis(start), startH: start.getBoundingClientRect().height, close: vis(close), closeH: close.getBoundingClientRect().height, text: vis(w.querySelector('.watch-text')), stop: vis(w.querySelector('.watch-stop')) };
+  });
+  check('after a change the watch chip is one button, "Watch what it does", with its cross beside it (each a thumb high), and no sentence',
+    offer.chip && offer.startText === 'Watch what it does' && offer.start && offer.startH >= 44 && offer.close && offer.closeH >= 44 && !offer.text && !offer.stop, JSON.stringify(offer));
+  await page.screenshot({ path: path.join(outDir, 'touch-18-watch-offered.png'), timeout: 300000 });
+  await tapOn('.hud-watch .watch-start');
+  await page.waitForFunction(() => window.app.watch.state === 'watching', null, { timeout: 120000 });
+  await f.frames(2);
+  const watching = await page.evaluate(() => { const w = document.querySelector('#hud .hud-watch'), vis = (e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none'; return { text: w.querySelector('.watch-text').textContent, textShown: vis(w.querySelector('.watch-text')), stop: vis(w.querySelector('.watch-stop')), start: vis(w.querySelector('.watch-start')) }; });
+  check('Watch runs the watch: "Watching: ...", with Stop, and the offer gone', /^Watching: [\d.,]+ \w+ a second$/.test(watching.text) && watching.textShown && watching.stop && !watching.start, JSON.stringify(watching));
+  await tapOn('.hud-watch .watch-stop');
+  await f.frames(2);
+  await page.screenshot({ path: path.join(outDir, 'touch-19-live-pill.png'), timeout: 300000 });
+
+  // the pill opens its sheet: when it began, Undo and Back to reality (each a thumb high, with a plain line), the log
+  await tapOn('.live-mark .live-what');
+  await f.frames(3);
+  await page.waitForTimeout(400);
+  const sheet = await page.evaluate(() => {
+    const sh = document.querySelector('#hud .sheet.live'), on = sh.classList.contains('on'), box = (s) => { const r = sh.querySelector(s).getBoundingClientRect(); return { h: r.height, ok: r.top >= 0 && r.bottom <= innerHeight }; };
+    return { on, about: sh.querySelector('.live-about').textContent, undo: box('.live-undo'), back: box('.live-back'), lines: [...sh.querySelectorAll('.live-way small')].map((e) => e.textContent), log: !!sh.querySelector('.live-log'), left: !!sh.querySelector('.live-left'), card: document.querySelector('#hud .sheet.card').classList.contains('on') };
+  });
+  check('a tap on the pill opens a small sheet: since when, Undo and Back to reality each a thumb high with a plain line, and the log; the card gives way',
+    sheet.on && /^Since 1 October 2026/.test(sheet.about) && sheet.undo.h >= 44 && sheet.back.h >= 44 && sheet.undo.ok && sheet.back.ok && sheet.lines.length === 2 && sheet.lines.every((l) => l.length > 10) && sheet.log && sheet.left && !sheet.card, JSON.stringify(sheet));
+  await page.screenshot({ path: path.join(outDir, 'touch-20-live-sheet.png'), timeout: 300000 });
+  await tapOn('.sheet.live .live-undo');
+  await page.waitForFunction(() => !window.app.physics.on, null, { timeout: 120000 });
+  await f.frames(3);
+  const undone = await page.evaluate(() => ({ on: window.app.physics.on, mass: window.app.findByName('Earth').gm / window.app.physics.realGm(window.app.findByName('Earth')), shut: !document.querySelector('#hud .sheet.live.on'), pillGone: document.querySelector('#hud .live-mark').hidden }));
+  check('Undo in the sheet takes the change back: the real Earth, the sheet shut, and (nothing left to undo) the pill gone', !undone.on && undone.mass === 1 && undone.shut && undone.pillGone, JSON.stringify(undone));
+  await page.evaluate(() => { const a = window.app; a.massHeld(true); a.setMass(0.4); a.massHeld(false); });
+  await page.waitForFunction(() => window.app.physics.on, null, { timeout: 120000 });
+  await f.frames(3);
+  await tapOn('.live-mark .live-what');
+  await f.frames(3);
+  await page.waitForTimeout(400);
+  await tapOn('.sheet.live .live-back');
+  await page.waitForFunction(() => !window.app.physics.on, null, { timeout: 120000 });
+  await f.frames(3);
+  const reality = await page.evaluate(() => ({ on: window.app.physics.on, mass: window.app.findByName('Earth').gm / window.app.physics.realGm(window.app.findByName('Earth')), shut: !document.querySelector('#hud .sheet.live.on') }));
+  check('...and Back to reality puts the real Solar System back, the sheet shut', !reality.on && reality.mass === 1 && reality.shut, JSON.stringify(reality));
+
+  // every phone size, upright and on its side, and a desktop's: nothing of it overlaps, and all of it is on the screen; upright the card opened is at most 45 %
+  await page.evaluate(() => { const a = window.app; a.massHeld(true); a.setMass(0.4); a.massHeld(false); });
+  await page.waitForFunction(() => window.app.physics.on && window.app.watch.state === 'offered', null, { timeout: 120000 });
+  const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0], [1280, 720, 0]];
+  const bad = [];
+  for (const [w, h, inset] of sizes) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.evaluate((inset) => { const r = document.documentElement.style; r.setProperty('--safe-l', `${inset}px`); r.setProperty('--safe-r', `${inset}px`); }, inset);
+    await f.frames(3);
+    await page.waitForTimeout(400);
+    // (the card opened, the Earth chosen: what it is when the most is on the screen at once)
+    await page.evaluate(() => { const c = document.querySelector('#hud .card'); if (c.classList.contains('open')) c.querySelector('[data-details]').click(); });
+    await f.frames(2);
+    await page.evaluate(() => { const c = document.querySelector('#hud .card'); if (!c.classList.contains('open')) c.querySelector('[data-details]').click(); });
+    await f.frames(3);
+    const got = await page.evaluate(() => {
+      const shown = (e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none';
+      const parts = [...document.querySelectorAll('#hud .chip.place, #hud .chip.clock, #hud .live-mark, #hud .hud-watch, #hud .hud-slot > .on, #hud .hud-tabs, #hud .fab')].filter(shown).map((e) => { const b = e.getBoundingClientRect(); return { what: e.className.split(' ').slice(0, 2).join('.'), l: b.left, r: b.right, t: b.top, b: b.bottom }; });
+      const card = document.querySelector('#hud .sheet.card').getBoundingClientRect(), open = document.querySelector('#hud .sheet.card').classList.contains('open');
+      return { parts, W: innerWidth, H: innerHeight, cardH: card.height, open, scroll: document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight };
+    });
+    const meet = (a, b) => a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
+    const hits = got.parts.flatMap((m, i) => got.parts.slice(i + 1).filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`));
+    const off = got.parts.filter((m) => m.l < -0.5 || m.t < -0.5 || m.r > got.W + 0.5 || m.b > got.H + 0.5).map((m) => `${m.what} off screen`);
+    const tall = got.W < got.H && got.cardH > 0.45 * got.H;
+    if (hits.length || off.length || tall || !got.open || !got.scroll) bad.push({ size: `${w}x${h}${inset ? ` inset ${inset}` : ''}`, hits, off, tall, cardH: Math.round(got.cardH), open: got.open, scroll: got.scroll });
+    if (w === 390 && h === 844) await page.screenshot({ path: path.join(outDir, 'touch-21-card-live-390.png'), timeout: 300000 });
+    if (w === 844 && h === 390) await page.screenshot({ path: path.join(outDir, 'touch-22-card-live-side.png'), timeout: 300000 });
+    if (w === 1280) await page.screenshot({ path: path.join(outDir, 'touch-23-card-live-desk.png'), timeout: 300000 });
+  }
+  check('on every phone size (upright, on its side, bars or not) and a desktop\'s, the chips, the live pill, the watch chip, the card opened (upright at most 45 % of the screen) and the tab bar lie on nothing of each other, and are all on the screen', bad.length === 0, JSON.stringify(bad).slice(0, 700));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { const r = document.documentElement.style; r.removeProperty('--safe-l'); r.removeProperty('--safe-r'); });
+  await f.frames(3);
+  await ctx.close();
+}
+
+// ... the ship is the first row of More: "Fly my ship" boards it (and, with a far world chosen, flies there)
+{
+  const ctx = await phoneContext(browser);
+  const page = await open(ctx, '?menu=0&time=2026-10-01T20:00:00Z&paused=1');
+  await ready(page);
+  const f = await fingers(page);
+  const tapOn = async (sel) => { await f.tap(await centreOf(page, sel)); await f.frames(1); };
+  if (await page.evaluate(() => !document.querySelector('.hud-coach').hidden)) await tapOn('.hud-coach [data-coach]');
+  await tapOn('.hud-tabs [data-tab="more"]');
+  await f.frames(3);
+  await page.waitForTimeout(400);
+  const row = await page.evaluate(() => {
+    const first = document.querySelector('#hud .more .list > :first-child'), r = first.getBoundingClientRect();
+    return { first: first.classList.contains('ship-row'), text: first.querySelector('b').textContent, act: first.dataset.act, h: r.height, round: document.querySelectorAll('#hud .ship-fab').length };
+  });
+  check('More\'s first row is "Fly my ship", a thumb high, and there is no round ship button', row.first && row.text === 'Fly my ship' && row.act === 'ship-go' && row.h >= 44 && row.round === 0, JSON.stringify(row));
+  await page.screenshot({ path: path.join(outDir, 'touch-24-more-ship.png'), timeout: 300000 });
+  await tapOn('.hud-tabs [data-tab="more"]');
+  await page.evaluate(() => window.app.select(window.app.findByName('Mars')));
+  await f.frames(3);
+  await tapOn('.hud-tabs [data-tab="more"]');
+  await f.frames(2);
+  const there = await page.evaluate(() => document.querySelector('#hud .more .ship-row b').textContent);
+  check('with a far world chosen the row says "Fly my ship there"', there === 'Fly my ship there', there);
+  await tapOn('.more .ship-row');
+  await page.waitForFunction(() => window.app.game.active, null, { timeout: 120000 });
+  await f.frames(3);
+  const boarded = await page.evaluate(() => ({ active: window.app.game.active, sheet: document.querySelector('#hud').dataset.sheet, mode: document.querySelector('#hud').dataset.mode, ship: !!window.app.game.flight.on }));
+  check('the row boards the ship, and the sheet is put away', boarded.active && boarded.sheet !== 'more' && boarded.mode === 'ship', JSON.stringify(boarded));
+  await page.evaluate(() => window.app.game.setMode('off'));
   await ctx.close();
 }
 

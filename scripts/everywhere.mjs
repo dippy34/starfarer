@@ -3,7 +3,7 @@
 // tap every other for its reason, use Move and Mass with Undo where offered, and open a shared link.
 // Usage: node scripts/everywhere.mjs [baseUrl] [outDir] [solar|stars|planets|deep|all]
 //   EVERYWHERE_ONLY=Earth,Gl 9848 b runs just those places while developing; the four parts together are the suite.
-import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
+import { collectErrors, launchBrowser, liveWay, openCard, undoOffered } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -293,8 +293,8 @@ const sameBody = (a, b) => !!a && !!b && a.gm === b.gm && a.radius === b.radius 
   && ['pos', 'vel'].every((k) => a[k].every((x, i) => x === b[k][i]));
 
 async function backToReal(page) {
-  if (await shown(page, '#hud .live-back')) {
-    await press(page, '#hud .live-back');
+  if (await page.evaluate(() => window.app.physics.on && !document.querySelector('#hud .live-mark').hidden)) {
+    await liveWay(page, 'back', (sel) => press(page, sel));
     await frames(page, 3);
   }
 }
@@ -317,8 +317,8 @@ async function massAndUndo(page, touch) {
     changed = await bodyState(page);
     const factor = changed.gm / before.gm;
     changedOk = changed.on && factor > 1.5 && factor < 2.5;
-    undoShown = await shown(page, '#hud .live-mark .live-undo');
-    if (undoShown) { await press(page, '#hud .live-mark .live-undo'); await frames(page, 3); }
+    undoShown = await undoOffered(page);
+    if (undoShown) { await liveWay(page, 'undo', (sel) => press(page, sel)); await frames(page, 3); }
     detail = `mass ×${factor.toFixed(3)}, physics on ${changed.on}`;
   } catch (e) { detail = String(e).split('\n')[0]; }
   const restored = await bodyState(page);
@@ -347,8 +347,8 @@ async function moveAndUndo(page, touch) {
     const moved = Math.hypot(...changed.pos.map((x, i) => x - before.pos[i]));
     const holding = await page.evaluate(() => window.app.mover.holding);
     changedOk = changed.on && moved > 0 && !holding;
-    undoShown = await shown(page, '#hud .live-mark .live-undo');
-    if (undoShown) { await press(page, '#hud .live-mark .live-undo'); await frames(page, 3); }
+    undoShown = await undoOffered(page);
+    if (undoShown) { await liveWay(page, 'undo', (sel) => press(page, sel)); await frames(page, 3); }
     detail = `moved ${moved.toExponential(3)} m, physics on ${changed.on}, still held ${holding}`;
   } catch (e) { detail = String(e).split('\n')[0]; }
   const restored = await bodyState(page);
