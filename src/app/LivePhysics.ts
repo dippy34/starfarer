@@ -1,5 +1,6 @@
 import type { SimClock } from '../core/time';
 import { AU, DAY } from '../core/units';
+import { G } from '../sim/physics';
 import { LEFT_OUT, NBody, type NBodyBodies, type NBodySnapshot, type SimEvent } from '../sim/NBody';
 import { apply, capture, type Live, liveDate, release, riders, type SimSystem } from '../sim/SystemSim';
 import type { Comet } from '../render/SmallBodies';
@@ -8,7 +9,7 @@ import type { BodyJson, Family } from '../universe/SolarSystem';
 import { COMET_FIRST_ID, CometBody } from './CometBody';
 import { dayWords, farWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
 import { COMET_NUMBER_MOST, type LiveWorld, type MadeRecord, WORLD_LIMITS, WorldError } from './SceneWorld';
-import { type Kind, MADE_FIRST_ID } from './WhatIf';
+import { type Kind, MADE_FIRST_ID, rocheLimit, schwarzschild } from './WhatIf';
 
 /**
  * Live physics: the Solar System under its own gravity, from the moment the explorer changes
@@ -52,6 +53,7 @@ const ALSO_LEFT_OUT: readonly string[] = [
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
   'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up. Its size follows the mass you give it by a rule, said in its details: rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence. A star made lighter than the Sun is drawn as if all its light were visible light: a red dwarf would look fainter.',
   'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
+  'A black hole you add is dormant: it has the mass you give it, no disk of gas and no jets, and what is drawn of it is its shadow and the sky bent round it. A world that comes within its Roche limit (R (2 M_hole / M_world)^⅓: where its tides would tear the world apart, worked for a ball of even density) is swallowed: gone, and the hole has its mass. The tearing apart is not drawn, and no light is given off by what falls in: there is no gas, no heating and no glow. A hole is not given a spin, a charge, or the loss of energy to gravitational waves.',
   'When two worlds are about to meet, time slows to show it, and a flash marks where they meet: the flash is drawn, its brightness is not worked out. The card says the energy of the hit (half the product of their masses over their sum, times their speed squared) against what holds the lighter together, worked out as for a ball of even density (3GM²/5R: a real world is denser at its centre and held more tightly, the Earth by about a tenth), and whether a rule of thumb has them break apart. Breaking apart is not simulated.',
   'The path drawn ahead of a world you hold or aim is the simulation run on, every pull counted, as time would run while the change is watched: for three of its turns or a hundred years at most, and only until it hits something, leaves for good or goes round something else.',
 ];
@@ -418,6 +420,7 @@ export class LivePhysics {
     if (this.slowFor > PRESSED_AFTER && this.stage < RAILS_SECONDS.length - 1) { this.stage++; this.slowFor = 0; }
     clock.jdTdb = liveDate(live);
     this.hear(live);
+    this.swallow(live);
   }
 
   /**
@@ -789,6 +792,7 @@ export class LivePhysics {
   private settle(live: Live): void {
     live.sim.advance(0);
     this.hear(live);
+    this.swallow(live);
     this.system.update(liveDate(live));
     this.place(liveDate(live));
   }
@@ -894,6 +898,48 @@ export class LivePhysics {
     if (moved.length > 3) this.tell(when(moved[3]), `${moved.length - 3} more worlds have changed what they go round.`);
   }
 
+  /**
+   * What a black hole of the explorer's swallows: a world that has come within its Roche limit (src/app/WhatIf.ts: rocheLimit,
+   * the rigid body's: where its tides tear the world apart) is gone, and the hole has its mass, and the size that goes with it
+   * (the Schwarzschild radius). What rode on the world with it (small moons of its own, on rails) is gone with it; the log and the
+   * news say so in plain words. The tearing apart itself is not drawn (said in what live physics leaves out).
+   */
+  private swallow(live: Live): void {
+    const system = this.system, sim = live.sim;
+    const holes = this.made.filter((b) => isHole(b) && !system.isGone(b) && sim.indexOf(b.id) >= 0);
+    if (!holes.length) return;
+    sim.read();
+    const jd = liveDate(live);
+    for (const hole of holes) {
+      for (let i = 0; i < sim.ids.length; i++) {
+        const h = sim.indexOf(hole.id), b = system.byId.get(sim.ids[i]);
+        if (h < 0 || !b || b === hole || isHole(b) || system.isGone(b) || !isWorld(b) || !(sim.gm[i] > 0)) continue;
+        const d = Math.hypot(sim.pos[3 * i] - sim.pos[3 * h], sim.pos[3 * i + 1] - sim.pos[3 * h + 1], sim.pos[3 * i + 2] - sim.pos[3 * h + 2]);
+        if (d >= rocheLimit(sim.radius[i], sim.gm[i] / G, sim.gm[h] / G)) continue;
+        this.swallowed(live, hole, b, jd);
+        // (the bodies of the simulation are numbered afresh: look again from the start)
+        i = -1;
+      }
+    }
+  }
+
+  /** `b` is torn apart and swallowed by `hole`: gone, and the hole is heavier by its mass. */
+  private swallowed(live: Live, hole: Body, b: Body, jd: number): void {
+    const system = this.system, sim = live.sim;
+    sim.settle();
+    const lost = riders(live, system, b);
+    const gm = sim.gm[sim.indexOf(hole.id)] + sim.gm[sim.indexOf(b.id)], radius = schwarzschild(gm / G);
+    sim.remove(b.id);
+    for (const r of lost) this.depart(r, null);
+    this.depart(b, hole);
+    this.keep(hole);
+    hole.systemGm += gm - hole.gm;
+    hole.gm = gm;
+    this.reshape(hole, [radius, radius, radius]);
+    sim.setMass(hole.id, gm, radius);
+    this.tell(jd, `${capital(the(b.name))} was torn apart and swallowed by ${hole.name === 'Black hole' ? 'the black hole' : hole.name}.${lost.length ? ` ${lost.length} small moon${lost.length > 1 ? 's' : ''} went with it.` : ''}`);
+  }
+
   /** A comet the simulation carried has hit something (or another comet): it is gone, hidden as one taken away is, until Undo or the return to reality. */
   private cometHit(e: Extract<SimEvent, { kind: 'collision' }>, jd: number): void {
     const c = [...this.carried.values()].find((b) => b.id === e.absorbed);
@@ -957,6 +1003,8 @@ export function goesRound(m: Body, b: Body): boolean {
 /** The bodies of a simulation told leaving (1) or gone for good (2), each told so once. */
 const TOLD_FREE = new WeakMap<Live, Map<Body, number>>();
 
+/** a black hole the explorer made */
+const isHole = (b: Body) => (b.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole';
 /** a body worth telling of by name: a star, a planet or a dwarf planet, or a moon whose mass is known */
 const isWorld = (b: Body) => b.kind === 'star' || b.kind === 'planet' || b.kind === 'dwarf' || (b.kind === 'moon' && b.gm > 0);
 /**

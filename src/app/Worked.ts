@@ -54,8 +54,8 @@ function ofBody(b: Body, catalogue: Catalogued | null): Worked[] {
   // world's from the mass it was made with, while it has about the size that gave it: Size changes it by 2 % at least)
   const as = b.meta.madeAs as { kind: Kind; kg: number; icy: boolean } | undefined;
   if (as) {
-    const kg = as.kind === 'sun' ? mass : as.kg;
-    if (as.kind === 'sun' || Math.abs(madeSize(as.kind, kg, as.icy).radius / b.radius - 1) < 0.005) out.push(madeWorking(as.kind, kg, as.icy));
+    const kg = as.kind === 'sun' || as.kind === 'hole' ? mass : as.kg;
+    if (as.kind === 'sun' || as.kind === 'hole' || Math.abs(madeSize(as.kind, kg, as.icy).radius / b.radius - 1) < 0.005) out.push(madeWorking(as.kind, kg, as.icy));
   }
   if (b.kind === 'star') {
     if (sized && b.teff) {

@@ -98,8 +98,8 @@ export const COMET_NUMBER_MOST = 2_000_000;
 export class WorldError extends Error {}
 const bad = (why: string): never => { throw new WorldError(why); };
 
-/** (the first four are the first format's: a link written before the worlds of a generated look is read as ever) */
-const KINDS: readonly Kind[] = ['moon', 'earth', 'jupiter', 'sun', ...WORLD_KINDS];
+/** (the first four are the first format's, the worlds of a generated look follow, and a black hole of your own is last: a link written before any of them is read as ever) */
+const KINDS: readonly Kind[] = ['moon', 'earth', 'jupiter', 'sun', ...WORLD_KINDS, 'hole'];
 /** a look's seed is a whole number below this */
 export const SEED_MOST = 1_000_000;
 /** the turn of a made world's colours is kept in this many steps of a whole turn (a byte) */

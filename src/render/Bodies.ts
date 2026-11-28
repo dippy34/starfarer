@@ -920,6 +920,12 @@ export class BodiesLayer {
       view.apparentMag = irr > 0 ? -26.74 - 2.5 * Math.log10(irr / Math.PI) : 99;
       view.resolved = view.pixelRadius > 0.6;
       this.views.set(b, view);
+      // (a black hole of your own gives no light and is no ball: BlackHoleLayer draws its shadow and the sky bent round it)
+      if ((b.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') {
+        const m = this.meshes.get(b);
+        if (m) m.visible = false;
+        continue;
+      }
 
       // Point sprite (fades out as the disk becomes resolved)
       const fade = 1 - smoothstep(0.6, 1.8, view.pixelRadius);

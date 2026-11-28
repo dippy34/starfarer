@@ -107,7 +107,7 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/hole-of-your-own`: a black hole of your own
 
-- **Status:** open. Large.
+- **Status:** done 28 Nov 2026: run 46098223277 on Claude Sonnet 5.5 ($3.68), reviewed by Claude. Large.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the fix list's #9, step 2 (`docs/notes/ideas.md`, "God mode on more things"): "a black hole of
   your own (Add round the Sun, 1 to 20 Suns)". Today Add round a star (`canAdd` in `src/app/WhatIf.ts`; the Add

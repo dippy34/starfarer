@@ -1,6 +1,6 @@
 import { OBLIQUITY_J2000 } from '../core/frames';
 import { AU, SUN_ABS_MAG } from '../core/units';
-import { G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER, R_SUN, radiusFromDensity } from '../sim/physics';
+import { C, G, M_EARTH, M_JUPITER, M_SUN, mainSequence, num, R_EARTH, R_JUPITER, R_SUN, radiusFromDensity } from '../sim/physics';
 import type { Body } from '../universe/Body';
 import type { BodyJson } from '../universe/SolarSystem';
 import type { MadeRecord } from './SceneWorld';
@@ -41,8 +41,8 @@ export const WORLD_KINDS = ['terran', 'ocean', 'desert', 'lava', 'ice', 'giant',
 export type WorldKind = (typeof WORLD_KINDS)[number];
 export const isWorldKind = (k: string): k is WorldKind => (WORLD_KINDS as readonly string[]).includes(k);
 
-/** what can be made: a moon, a copy of the Earth, of Jupiter, of the Sun, or a world of a generated look */
-export type Kind = 'moon' | 'earth' | 'jupiter' | 'sun' | WorldKind;
+/** what can be made: a moon, a copy of the Earth, of Jupiter, of the Sun, a world of a generated look, or a black hole */
+export type Kind = 'moon' | 'earth' | 'jupiter' | 'sun' | WorldKind | 'hole';
 /** a copy: of the Earth, of Jupiter, of the Sun */
 export type CopyKind = 'earth' | 'jupiter' | 'sun';
 export const isCopyKind = (k: string): k is CopyKind => k === 'earth' || k === 'jupiter' || k === 'sun';
@@ -100,7 +100,7 @@ export interface Plan {
  */
 export function canAdd(b: Body, made: number): Kind[] {
   if (!b.valid || !(b.gm > 0) || made >= MADE_MOST) return [];
-  if (b.kind === 'star') return ['earth', 'jupiter', 'sun', ...WORLD_KINDS];
+  if (b.kind === 'star') return ['earth', 'jupiter', 'sun', ...WORLD_KINDS, 'hole'];
   return b.kind === 'planet' || b.kind === 'dwarf' ? ['moon'] : [];
 }
 
@@ -185,6 +185,25 @@ export function newWorld(kind: WorldKind, star: Body, eye: ArrayLike<number>, co
 }
 
 /**
+ * A black hole of your own for the star `star`: ten Suns (HOLE_BASE) to begin with, its size the event horizon (madeSize), no
+ * light (its albedo and colour are black: a hole shines by nothing), on a circle round the star in the plane the planets move in,
+ * the way they go, between the star and the eye where there is room (as a second sun is, at the nearest `zones.nearestSun`).
+ * `count`: how many holes have been made before; `id`: its number.
+ */
+export function newHole(star: Body, eye: ArrayLike<number>, count: number, id: number, zones: Zones = SUN_ZONES): Plan {
+  const kg = HOLE_BASE, gm = G * kg, radius = madeSize('hole', kg, false).radius;
+  const orbit = Math.min(zones.farthest, Math.max(zones.nearestSun, TOWARDS_EYE * Math.hypot(eye[0], eye[1], eye[2])));
+  return {
+    ...circle(orbit, star.gm + gm, PLANETS_POLE, eye),
+    json: {
+      id, name: `Black hole${count > 0 ? ` ${count + 1}` : ''}`, type: 'planet', parent: star.id, made: true,
+      radii: [radius / 1e3, radius / 1e3, radius / 1e3], gm: gm / 1e9, albedo: 0, color: [0, 0, 0],
+      ephem: { kind: 'placed' }, madeAs: { kind: 'hole', kg, icy: false },
+    },
+  };
+}
+
+/**
  * A circle of radius `orbit` (m) about what a body is given to, the two together having `mu` (G
  * times their masses, m³/s²), in the plane whose normal is `normal`, turning the way a right
  * hand's fingers curl about it: the body starts on the side the eye is on, as nearly as the plane
@@ -236,7 +255,26 @@ export const MADE_MASS: Record<Kind, readonly [number, number]> = {
   ice: [0.001 * M_EARTH, 5 * M_EARTH],
   icegiant: [5 * M_EARTH, 50 * M_EARTH],
   giant: [ROCKY_MOST, BROWN_DWARF_FROM],
+  // a black hole of your own: from one Sun to twenty (the lightest holes found are a few Suns; the heaviest made by one star about twenty)
+  hole: [M_SUN, 20 * M_SUN],
 };
+
+/** a black hole is made with ten Suns, as Add makes it; the slider moves it from there */
+export const HOLE_BASE = 10 * M_SUN;
+
+/** The Schwarzschild radius, the size of a black hole's event horizon (m): r = 2GM / c² (the Sun's is 2.95 km; ten Suns' 29.5 km). */
+export function schwarzschild(kg: number): number {
+  return (2 * G * kg) / (C * C);
+}
+
+/**
+ * How near a black hole of `holeKg` a world of radius `radius` (m) and mass `worldKg` can come before the hole's tides tear it
+ * apart (m, from the hole's centre): the Roche limit of a rigid body, d = R (2 M_hole / M_world)^⅓ (the Earth and ten Suns:
+ * about 1.2 million km). A real world has some give, which moves it by a fraction; the rigid form is the simple one.
+ */
+export function rocheLimit(radius: number, worldKg: number, holeKg: number): number {
+  return radius * Math.cbrt((2 * holeKg) / worldKg);
+}
 
 /**
  * What a made world of a generated look has when it is first made (kg): the Earth's mass for the
@@ -253,7 +291,7 @@ export const WORLD_NAME: Record<WorldKind, string> = {
 };
 
 /** How a made body's size follows from its mass (madeSize). */
-export type SizeRule = 'rock' | 'ice' | 'earth' | 'terran' | 'neptunian' | 'between' | 'giant' | 'brown dwarf' | 'star';
+export type SizeRule = 'rock' | 'ice' | 'earth' | 'terran' | 'neptunian' | 'between' | 'giant' | 'brown dwarf' | 'star' | 'horizon';
 
 /**
  * The published mass-radius relation the worlds of your own follow (Chen & Kipping 2017, "Probabilistic
@@ -315,6 +353,8 @@ export function madeSize(kind: Kind, kg: number, icy: boolean): Sized {
       const ms = mainSequence(kg / M_SUN);
       return { radius: ms.radius.value, rule: 'star', teff: ms.teff.value, lum: ms.lum.value };
     }
+    // a black hole: its event horizon, the Schwarzschild radius
+    case 'hole': return { radius: schwarzschild(kg), rule: 'horizon' };
   }
 }
 
@@ -346,6 +386,8 @@ export function madeMassAt(kind: Kind, s: number, base: number): number {
 /** A ratio as a person says it: "1.71", "3.18", "0.13". */
 const times = (x: number) => String(Number(x.toPrecision(x < 1 ? 2 : 3)));
 const km = (m: number) => `${Math.round(m / 1e3).toLocaleString('en-US')} km`;
+/** The size of a black hole's event horizon as its card says it: "29.5 km in radius". */
+export const horizonRadiusWords = (radius: number) => `${Number((radius / 1e3).toPrecision(3)).toLocaleString('en-US')} km`;
 
 /** What a body made as `kind` with `kg` of mass is, in words: its mass, and what it is and how big. */
 export function madeWords(kind: Kind, kg: number, icy: boolean): { mass: string; what: string } {
@@ -357,6 +399,7 @@ export function madeWords(kind: Kind, kg: number, icy: boolean): { mass: string;
     return { mass, what: `${name}, ${size}` };
   }
   switch (s.rule) {
+    case 'horizon': return { mass, what: `A black hole, its event horizon ${horizonRadiusWords(s.radius)} in radius` };
     case 'rock': return { mass, what: `Rock, ${km(s.radius)} in radius` };
     case 'ice': return { mass, what: `Ice and rock, ${km(s.radius)} in radius` };
     case 'earth': case 'terran': return { mass, what: Math.abs(s.radius / R_EARTH - 1) < 0.005 ? "Rock, the Earth's size" : `Rock, ${times(s.radius / R_EARTH)} times the Earth's size` };
@@ -388,6 +431,10 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
       return { label, text, math: `R ≈ R♃ = ${km(R_JUPITER)}: ${s.rule === 'giant' ? 'a giant planet' : 'a brown dwarf'} is about Jupiter's size whatever its mass, its insides squeezed so hard that more mass makes it no larger` };
     case 'star':
       return { label, text, math: `${mainSequence(kg / M_SUN).radius.math}: a star of the main sequence (its temperature and light follow from its mass too)` };
+    case 'horizon': {
+      const t = horizonRadiusWords(s.radius);
+      return { label: 'Its event horizon (made by you)', text: t, math: `r = 2GM / c² = 2·6.6743×10⁻¹¹·${num(kg)} kg / (299,792,458 m/s)² = ${t}: the size inside which not even light escapes (the Schwarzschild radius)` };
+    }
   }
 }
 
@@ -399,6 +446,7 @@ export function madeWorking(kind: Kind, kg: number, icy: boolean): { label: stri
  * as it was made are set by whoever makes it (LivePhysics.adoptWorld): this is its look and name.
  */
 export function madeAgain(m: MadeRecord, home: Body, like: Body | null, texture: string | null, look: MadeLook | null = null): BodyJson {
+  if (m.kind === 'hole') return { ...newHole(home, [1, 0, 0], 0, m.id).json, name: m.name, madeAs: { kind: 'hole', kg: m.kg, icy: false } };
   if (isWorldKind(m.kind) && look) {
     const plan = newWorld(m.kind, home, [1, 0, 0], 0, m.id, m.seed ?? 0, look);
     return { ...plan.json, name: m.name, madeAs: { kind: m.kind, kg: m.kg, icy: false, seed: m.seed ?? 0, ...(m.rings ? { rings: true } : {}), ...(m.hue ? { hue: m.hue } : {}) } };

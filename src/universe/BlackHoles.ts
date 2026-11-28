@@ -11,7 +11,7 @@ const C = 299_792_458;
 const DAY = 86_400;
 
 interface CompanionData { spType: string; teff: number; massSun: number; radiusM: number; periodDays: number; sepM: number; incDeg: number }
-interface BlackHoleData {
+export interface BlackHoleData {
   name: string; aliases: string[]; kind: 'stellar' | 'supermassive'; raDeg: number; decDeg: number; distPc: number;
   massSun: number; companion?: CompanionData; diskOuterM?: number; ref: string;
 }
@@ -25,16 +25,17 @@ export class BlackHole implements SpaceObject {
   readonly key: string;
   readonly name: string;
   readonly upos: UPos;
-  readonly radius: number;
+  /** (set again only for a hole the explorer made, whose mass grows: `setMassSun`) */
+  radius: number;
   readonly parentObject = null;
-  readonly massSun: number;
+  massSun: number;
   readonly supermassive: boolean;
   /** unit normal of the accretion disk / binary orbit plane (world frame) */
   readonly diskNormal: Vector3;
   /** accretion disk outer radius (m); 0 = no disk (dormant) */
   readonly diskOuter: number;
   /** accretion disk inner edge (m): the innermost stable circular orbit of a non-spinning hole, 3 rs */
-  readonly diskInner: number;
+  diskInner: number;
   /** peak disk temperature (K) */
   readonly diskTmax: number;
   /** accretion state shown */
@@ -104,6 +105,21 @@ export class BlackHole implements SpaceObject {
       // the BH and its companion orbit their barycentre; the BH is kept at the catalogue position
       this.sepCompanion = c.sepM;
     }
+  }
+
+  /**
+   * A hole the explorer made (src/app/WhatIf.ts): of `massSun` Suns, dormant (no disk, no jets, no companion), drawn by the
+   * layer that draws the catalogue's holes (its place is the simulation's: the app sets `upos` each frame).
+   */
+  static made(index: number, name: string, massSun: number): BlackHole {
+    return new BlackHole(index, { name, aliases: [], kind: 'stellar', raDeg: 0, decDeg: 0, distPc: 1, massSun, ref: 'made by you' });
+  }
+
+  /** A hole the explorer made has `massSun` Suns now and an event horizon of `radius` m (the app's own, from the body that has it in the simulation). */
+  follow(massSun: number, radius: number): void {
+    this.massSun = massSun;
+    this.radius = radius;
+    this.diskInner = radius * 3;
   }
 
   /** Place the companion on its circular orbit for Julian date `jd`. */

@@ -95,6 +95,8 @@ interface Miniature { target: WebGLRenderTarget; show: Mesh }
  */
 export class BlackHoleLayer {
   readonly group = new Group();
+  /** the holes the explorer has made (src/app/App.ts: syncMadeHoles): drawn as the catalogue's are, wherever the simulation has them */
+  readonly made: BlackHole[] = [];
   views: BlackHoleView[] = [];
   /** the holes too far off to bend the sky to speak of, whose disks still show as points of light */
   far: BlackHoleView[] = [];
@@ -349,7 +351,7 @@ export class BlackHoleLayer {
     if (this.lastCam) this.lastCam.copy(cam); else this.lastCam = cam.clone();
     const cands: BlackHoleView[] = [], far: BlackHoleView[] = [];
     const rel = new Vector3();
-    for (const bh of this.holes) {
+    for (const bh of this.made.length ? [...this.holes, ...this.made] : this.holes) {
       bh.upos.sub(cam, rel);
       const dist = rel.length();
       const rs = bh.radius;

@@ -33,6 +33,7 @@ export const ICON = {
   rocky: svg('<circle cx="12" cy="12" r="7"/><path d="M8.2 9.2c1.6-.4 2.4.8 3.6.6M12.4 15.6c1.3-.9 2.6-.2 3.6-1"/>'),
   giant: svg('<circle cx="12" cy="12" r="8.5"/><path d="M4.4 9h15.2M3.6 12.8h16.8M5.6 16.4h12.8"/>'),
   sun: svg('<circle cx="12" cy="12" r="4.4"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>'),
+  hole: svg('<circle cx="12" cy="12" r="3.4" fill="currentColor"/><ellipse cx="12" cy="12" rx="9" ry="3.2"/><path d="M5.5 7.2a8 8 0 0 1 13 0M5.5 16.8a8 8 0 0 0 13 0"/>'),
   unmake: svg('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.6 3"/><path d="m9.3 9.3 5.4 5.4M14.7 9.3l-5.4 5.4"/>'),
   // the powers over a world, and live physics (src/app/LivePhysics.ts): a weight, arrows every way, a pulse, the way back
   mass: svg('<path d="M8.3 9h7.4l3 10.5H5.3z"/><circle cx="12" cy="6.2" r="2.6"/>'),

@@ -70,7 +70,7 @@ physics does not take black holes yet" (`src/app/powersFor.ts`). A plan, smalles
    date, as a body of no mass (it is pulled, it pulls nothing). Then Move, Throw and Remove work on it
    as on a moon, and its tail follows the Sun from where it is. Mass only where one was measured (a
    handful, from spacecraft); none is made up.
-2. *A black hole of your own.* Add round the Sun offers "A black hole" (from 1 to 20 Suns' mass):
+2. *A black hole of your own.* (*Done 28 Nov:* HANDOFF "A black hole of your own".) Add round the Sun offers "A black hole" (from 1 to 20 Suns' mass):
    it pulls everything in live physics, and it is drawn with the black hole renderer (its shadow,
    and the bent sky round it). The renderer (`src/render/BlackHoleLayer.ts`) takes the catalogue's
    holes when the app starts; it would take made ones too.

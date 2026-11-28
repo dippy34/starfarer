@@ -15,6 +15,7 @@ import type { App } from './App';
 import { describe, distanceText, distanceTo, moonWords } from './destinations';
 import { the } from './Powers';
 import { wellStudied } from './Systems';
+import { G, M_SUN } from '../sim/physics';
 
 const EARTH_RADIUS = 6_371e3;
 const G_EARTH = 9.80665;
@@ -69,6 +70,7 @@ export function plainLine(app: App, o: SpaceObject): string {
   if (o instanceof ExoPlanet) return `${o.system.real ? 'Real planet' : 'Made-up planet'} of ${o.system.host.name} · ${plainDistance(o.system.host.upos.sub(app.rig.upos, new Vector3()).length())} away`;
   if (o instanceof Body) {
     const made = o.meta.made ? ', made by you' : '';
+    if ((o.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') return `Black hole${made} · ${away}`;
     if (o.kind === 'star') return `${o.name === 'Sun' ? 'Our star' : 'Star'}${made} · ${away}`;
     if (o.kind === 'moon') return `${capital(o.parent && o.parent.kind !== 'star' ? `${o.parent.name}'s moon` : moonWords(o))}${made} · ${away}`;
     const kind: Record<string, string> = { planet: 'Planet', dwarf: 'Dwarf planet', asteroid: 'Asteroid', tno: 'Icy world beyond Neptune', comet: 'Comet' };
@@ -110,6 +112,11 @@ export function plainFacts(app: App, o: SpaceObject): [string, string][] {
   }
   if (o instanceof BlackHole) {
     rows.push(['Mass', blackHoleMass(o.massSun)]);
+    return rows;
+  }
+  // (a black hole of your own: its mass in Suns, the size of its event horizon, and nothing of a ball's surface)
+  if (o instanceof Body && (o.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') {
+    rows.push(['Mass', blackHoleMass(o.gm / G / M_SUN)], ['Event horizon', `${Number((o.radius / 1e3).toPrecision(3)).toLocaleString('en-US')} km in radius`]);
     return rows;
   }
   if (o instanceof Body && o.radius > 0) {

@@ -55,7 +55,7 @@ describe('what can be added to a world', () => {
     const { named } = await setup();
     expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
     expect(canAdd(named('Pluto'), 0)).toEqual(['moon']);
-    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS]);
+    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS, 'hole']);
     expect(canAdd(named('Moon'), 0)).toEqual([]);   // a moon of a moon: not yet
     expect(canAdd(named('Earth'), MADE_MOST)).toEqual([]);
     expect(canAdd(named('Sun'), MADE_MOST)).toEqual([]);
@@ -473,7 +473,7 @@ describe('worlds of a generated look', () => {
 
   it('can be added to a star, and to nothing else but a planet or dwarf planet to a moon', async () => {
     const { named } = await setup();
-    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS]);
+    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS, 'hole']);
     expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
   });
 

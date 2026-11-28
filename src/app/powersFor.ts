@@ -51,6 +51,8 @@ const CRAFT = 'Spacecraft follow their own paths, not the live simulation';
 const PLACE = 'A place is a viewpoint, not an object that can be changed';
 const DEEP_MASS = 'No measured mass for galaxies and nebulae in our data';
 const UNKNOWN = 'This kind cannot join the live simulation yet';
+const HOLE_SIZE = 'Its size is its event horizon: set by its mass';
+const HOLE_ADD = 'Nothing is added to a black hole';
 
 /**
  * Where an object is, as far as its powers go: for a star, its planetary system (null: it has
@@ -76,6 +78,8 @@ export function powersFor(obj: SpaceObject, made = 0, where: PowerPlace = {}): P
     if (where.live && where.live !== 'solar') return none(where.undo ? UNDO_ELSEWHERE : ONE_AT_A_TIME);
     if (!obj.valid) return none(INVALID);
     const weighed = obj.gm > 0;
+    // (a black hole of your own: pulled and pulling like any world; its size is set by its mass, and nothing is added to it)
+    if ((obj.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') return table(WORKS, no(HOLE_SIZE), WORKS, no(HOLE_ADD), WORKS);
     const size = obj.kind !== 'star' && weighed && obj.radius > 0 && !obj.radiusEstimated;
     const addReason = made >= MADE_MOST ? ADD_FULL : !weighed ? NO_MASS : ADD_KIND;
     return table(

@@ -988,6 +988,22 @@ temperature, and size as well as mass.
   its side with little height (the flight suite's 844 x 280 with bars), five tabs a thumb high do not
   fit the column beside the card: `Hud.fitTabs` hides Create there (measured when the view's size
   changes; each card keeps its Add).
+- *A black hole of your own* (28 Nov 2026; the cheap team's task/hole-of-your-own on Claude Sonnet,
+  reviewed here; the fix list's #9 step 2): Add round a star, so Create too, offers "A black hole", 1
+  to 20 Suns (`MADE_MASS.hole`, 10 to begin with: `HOLE_BASE`), made by `newHole` (`WhatIf.ts`) as a
+  second sun is placed. In live physics it is a body of that mass with no light, its size its event
+  horizon (`schwarzschild`, 2GM/c²; the size rule `horizon`). `App.syncMadeHoles` keeps one dormant
+  `BlackHole` (`BlackHole.made`: no disk, no jets) in `BlackHoleLayer.made` for each, put where the
+  simulation has it every frame (`follow` for its mass and horizon), so the existing renderer draws its
+  shadow and the bent sky; `BodiesLayer` draws nothing of its body. `LivePhysics.swallow`, after every
+  step and change: a simulated world within its Roche limit (`rocheLimit`, the rigid body's, R (2
+  M_hole / M_world)^⅓; the Earth and ten Suns about 1.2 million km) is torn apart and swallowed (gone,
+  with what rode on it; the hole takes its mass and the horizon that goes with it, kept as a changed
+  mass for Undo and saves), said in the log and a toast. Its card: Mass (1 to 20 Suns), Move, Remove;
+  Size and Add off with reasons. Saves and links: `hole` is the last of `KINDS` in `SceneWorld.ts`, so
+  links written before read as ever. Cost on a phone: only while the eye is within the region it bends
+  (some 100,000 km for 30 km of horizon), the same as the catalogue's holes there. Browser checks:
+  `LIVE_ONLY=hole` of `scripts/live.mjs`.
 - *God mode on a comet, step 1: take it away* (27 Nov 2026, evening; the cheap team's task/comet-powers
   on Claude Sonnet, reviewed here): a comet's card offers Remove (Mass, Size, Move and Add off, each
   with a reason: `comet` in `powersFor.ts`). `App.removeComet` starts live physics as any change does

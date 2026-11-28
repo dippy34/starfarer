@@ -48,6 +48,8 @@ export type HudAction =
   | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
   // a made world of a generated look (src/app/WhatIf.ts: WORLD_KINDS), and another look for the one being put in place
   | 'add-terran' | 'add-ocean' | 'add-desert' | 'add-lava' | 'add-ice' | 'add-giant' | 'add-icegiant' | 'new-look' | 'rings'
+  // a black hole of your own (1 to 20 Suns)
+  | 'add-hole'
   // Create (the tab bar): what can be made, on what is here (src/app/App.ts create)
   | 'create'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
@@ -366,6 +368,7 @@ const TEMPLATE = `
           <button class="row" type="button" data-act="add-sun">${ICON.sun}<span class="row-text"><b>A second sun</b><small>A star like the Sun: they go round each other</small></span></button>
           <p class="power-hint add-worlds-head" hidden>Or a world of your own, with a look of its own:</p>
 ${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" type="button" data-act="add-${kind}" hidden>${icon}<span class="row-text"><b>${name}</b><small>${line}</small></span></button>`).join('\n')}
+          <button class="row" type="button" data-act="add-hole" hidden>${ICON.hole}<span class="row-text"><b>A black hole</b><small>Heavier than the Sun, and no light: 1 to 20 Suns</small></span></button>
           <p class="power-hint">It starts between you and this world, with time waiting: put it where you want it, give it the mass you want, then Done. After that it is moved, made heavier and removed like any other.</p>
         </div>
         <div class="facts" hidden>
@@ -1149,8 +1152,8 @@ export class Hud {
     const addPanel = card.querySelector<HTMLElement>('[data-panel="add"]')!;
     addPanel.hidden = this.power !== 'add';
     if (this.power === 'add') {
-      for (const kind of ['moon', 'earth', 'jupiter', 'sun', ...WORLD_ROWS.map((r) => r[0])] as const) addPanel.querySelector<HTMLElement>(`[data-act="add-${kind}"]`)!.hidden = !sel.add.includes(kind);
-      addPanel.querySelector<HTMLElement>('.add-worlds-head')!.hidden = !WORLD_ROWS.some((r) => sel.add.includes(r[0]));
+      for (const kind of ['moon', 'earth', 'jupiter', 'sun', ...WORLD_ROWS.map((r) => r[0]), 'hole'] as const) addPanel.querySelector<HTMLElement>(`[data-act="add-${kind}"]`)!.hidden = !sel.add.includes(kind);
+      addPanel.querySelector<HTMLElement>('.add-worlds-head')!.hidden = !WORLD_ROWS.some((r) => sel.add.includes(r[0])) && !sel.add.includes('hole');
     }
     const movePanel = card.querySelector<HTMLElement>('[data-panel="move"]')!;
     movePanel.hidden = !moving;

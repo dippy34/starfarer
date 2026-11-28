@@ -334,7 +334,7 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo, comet, create); the rest are left out */
+/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo, comet, create, hole); the rest are left out */
 const only = process.env.LIVE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 /** on a phone and at a desk, or one of them (LIVE_KINDS=desk) */
@@ -870,8 +870,8 @@ for (const kind of kinds) {
     await frames(page, 2);
     const offers = await page.evaluate(() => [...document.querySelectorAll('#hud .card [data-panel="add"] .row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => r.querySelector('b').textContent));
     // (the first three rows as they were, then the made worlds of a generated look: each a thumb high)
-    check(on('what can be added to a star: a planet like Earth, one like Jupiter, a second sun, and the seven worlds of a generated look'),
-      offers.join() === 'A planet like Earth,A planet like Jupiter,A second sun,A rocky world,An ocean world,A desert world,A lava world,An icy world,A gas giant,An ice giant', offers.join(', '));
+    check(on('what can be added to a star: a planet like Earth, one like Jupiter, a second sun, the seven worlds of a generated look, and a black hole'),
+      offers.join() === 'A planet like Earth,A planet like Jupiter,A second sun,A rocky world,An ocean world,A desert world,A lava world,An icy world,A gas giant,An ice giant,A black hole', offers.join(', '));
     await page.screenshot({ path: path.join(outDir, `live-${kind}-add.png`) });
     const eye = await page.evaluate(() => { const a = window.app; return a.rig.upos.sub(a.system.sun.upos, new (a.system.sun.pos.constructor)()).toArray(); });
     await press(page, '#hud .card [data-act="add-jupiter"]');
@@ -2030,6 +2030,142 @@ for (const kind of kinds) {
       atSun.card === 'Sun' && atSun.add && atSun.offers.includes('A rocky world') && atSun.offers.includes('A gas giant') && atSun.offers.includes('A second sun'), JSON.stringify(atSun));
     const far = await created('target=Sirius&dist=10');
     check(on('far from the Solar System (at Sirius), Create opens the Sun\'s card at Add'), far.card === 'Sun' && far.selected === 'Sun' && far.add && far.offers.includes('A rocky world'), JSON.stringify(far));
+  }
+
+  // ------------------------------------------------------------------ a black hole of your own (src/app/WhatIf.ts newHole, src/app/LivePhysics.ts swallow)
+  if (want('hole')) {
+    const step = async (name, fn) => { try { await fn(); } catch (e) { check(on(name), false, String(e).split('\n')[0]); } };
+    const { ctx, page, touch } = await open(kind, 'target=Sun&dist=473&el=40');
+    await quiet(page);
+    /** the hole made, as the app has it: in the simulation, its mass in Suns, its horizon (km), whether the layer has it and whether the renderer's view of it is active */
+    const holeNow = () => page.evaluate(() => {
+      const a = window.app, b = a.made.find((m) => m.meta.madeAs?.kind === 'hole');
+      if (!b) return null;
+      const mine = a.holes.made.find((h) => h.key === `bh:${b.id}`), view = a.holes.views.find((v) => v.bh === mine) ?? a.holes.far.find((v) => v.bh === mine);
+      const earth = a.findByName('Earth');
+      return {
+        name: b.name, simulated: a.physics.simulated(b), gone: a.system.isGone(b), suns: b.gm / 6.6743e-11 / 1.98847e30, horizonKm: b.radius / 1e3, layerKm: mine ? mine.radius / 1e3 : null,
+        layerSuns: mine ? mine.massSun : null, active: !!view, shadowPx: view?.shadowPx ?? 0, meshShown: !!a.bodies.meshes.get(b)?.visible, sprite: a.bodies.views.get(b) ? 1 : 0, layerAt: mine ? mine.upos.sub(b.upos, new b.pos.constructor()).length() : -1,
+        earthGone: a.system.isGone(earth), id: b.id,
+      };
+    });
+    // Add at the Sun offers it, a thumb high, in plain words
+    await press(page, '#hud .card [data-power="add"]');
+    await frames(page, 2);
+    const row = await page.evaluate(() => { const r = document.querySelector('#hud .card [data-act="add-hole"]'); return r && !r.hidden ? { h: r.getBoundingClientRect().height, name: r.querySelector('b').textContent, line: r.querySelector('small').textContent } : null; });
+    // (the Add panel scrolled to its last row, the black hole)
+    await page.locator('#hud .card [data-act="add-hole"]').scrollIntoViewIfNeeded();
+    await frames(page, 2);
+    if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-hole-add.png`) });
+    check(on('Add at the Sun offers "A black hole": a row a thumb high, "Heavier than the Sun, and no light: 1 to 20 Suns"'),
+      !!row && row.h >= 44 && row.name === 'A black hole' && row.line === 'Heavier than the Sun, and no light: 1 to 20 Suns', JSON.stringify(row));
+    // (and Create, from the tab bar, opens the Sun's card at Add with it)
+    {
+      const c = await open(kind, 'target=Sun&dist=473&el=40');
+      await press(c.page, '#hud .hud-tabs [data-tab="create"]');
+      await c.page.waitForFunction(() => document.querySelector('#hud').dataset.sheet === 'card' && !document.querySelector('#hud .card [data-panel="add"]').hidden, null, { timeout: 60000 }).catch(() => undefined);
+      await frames(c.page, 2);
+      const offers = await c.page.evaluate(() => [...document.querySelectorAll('#hud .card [data-panel="add"] .row')].filter((r) => !r.hidden && r.getBoundingClientRect().height >= 44).map((r) => r.querySelector('b').textContent));
+      check(on('Create at the Sun offers "A black hole" too'), offers.includes('A black hole'), JSON.stringify(offers));
+      await c.ctx.close();
+    }
+    await step('made at ten Suns', async () => {
+      await press(page, '#hud .card [data-act="add-hole"]');
+      await page.waitForFunction(() => window.app.selection?.name === 'Black hole', null, { timeout: 20000 });
+      await until(page, () => !window.app.glide, null, 60);
+      await frames(page, 6);
+      const h = await holeNow();
+      const card = await page.evaluate(() => ({ title: document.querySelector('#hud .card h2').textContent, line: document.querySelector('#hud .card .card-title p').textContent, place: document.querySelector('#hud .card .placing .power-read b')?.textContent, what: document.querySelector('#hud .card .placing .power-read small')?.textContent, slider: Number(document.querySelector('#hud .card .placing .slider').value) }));
+      check(on('made at ten Suns (the slider\'s start) it is a body of the simulation, its card says "Black hole, made by you", its mass in Suns and the size of its event horizon (2GM/c²: 29.5 km)'),
+        !!h && h.simulated && !h.gone && Math.abs(h.suns - 10) < 1e-9 && Math.abs(h.horizonKm - 29.53) < 0.01 && /^Black hole, made by you/.test(card.line) && card.title === 'Black hole' && card.place === '10 Suns' && /29\.5 km in radius/.test(card.what),
+        JSON.stringify({ ...h, ...card }));
+      // its mass slider goes from 1 to 20 Suns, its event horizon following
+      const lo = await page.evaluate(() => { window.app.setMadeMass(0); const b = window.app.selection; return [b.gm / 6.6743e-11 / 1.98847e30, b.radius / 1e3]; });
+      const hi = await page.evaluate(() => { window.app.setMadeMass(1); const b = window.app.selection; return [b.gm / 6.6743e-11 / 1.98847e30, b.radius / 1e3]; });
+      await page.evaluate(() => { const a = window.app, b = a.selection; a.setMadeMass(Math.log(10) / Math.log(20)); });
+      const mid = await holeNow();
+      check(on('its mass slider runs from 1 to 20 Suns, the event horizon following (2.95 km to 59.1 km), and 10 Suns again in the middle of the logarithm'),
+        Math.abs(lo[0] - 1) < 1e-9 && Math.abs(hi[0] - 20) < 1e-9 && Math.abs(lo[1] - 2.953) < 0.01 && Math.abs(hi[1] - 59.06) < 0.02 && Math.abs(mid.suns - 10) < 1e-9, JSON.stringify({ lo, hi, mid: mid.suns }));
+      const reasons = await page.evaluate(() => { const a = window.app, t = a.powersOf(a.selection); return Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v.works ? true : v.reason])); });
+      check(on('Mass, Move and Remove work on it; Size and Add are off, each with a plain reason'),
+        reasons.mass === true && reasons.move === true && reasons.remove === true && typeof reasons.size === 'string' && reasons.size.length > 8 && typeof reasons.add === 'string' && reasons.add.length > 8, JSON.stringify(reasons));
+    });
+    await step('drawn', async () => {
+      // (setup, not a power: the eye two thousand km from it, so that its shadow is a few dozen pixels across)
+      await page.evaluate(() => { const a = window.app, b = a.made.find((m) => m.meta.madeAs?.kind === 'hole'); a.placeNear(b, 2.5e6, 35, 12); });
+      await frames(page, 12);
+      const h = await holeNow();
+      check(on('it is drawn as the catalogue\'s holes are: the renderer\'s view of it is active, its shadow some pixels across, at the body\'s place, with the body itself not drawn as a ball'),
+        !!h && h.active && h.shadowPx > 8 && h.layerAt < 1 && h.layerKm === h.horizonKm && !h.meshShown, JSON.stringify(h));
+      await page.screenshot({ path: path.join(outDir, `live-${kind}-hole-made.png`) });
+    });
+    await step('done and swallowing', async () => {
+      await press(page, '#hud .card [data-act="place-done"]');
+      await frames(page, 3);
+      await page.evaluate(() => { window.app.clock.paused = true; });
+      await listen(page);
+      // the Earth put twice the Roche limit from the hole (1.2 million km: R (2 M_hole / M_earth)^(1/3)), at rest against it: not swallowed
+      const put = (times) => page.evaluate((times) => {
+        const a = window.app, hole = a.made.find((m) => m.meta.madeAs?.kind === 'hole'), earth = a.findByName('Earth');
+        const roche = earth.radius * Math.cbrt((2 * hole.gm) / earth.gm);
+        const away = earth.pos.clone().sub(hole.pos).normalize();
+        a.beginChange('move', earth, false, 'moving Earth');
+        // (with a little sideways speed: a body at rest against the hole would be on a path straight into it, which has no orbit to draw)
+        const side = new away.constructor(0, 0, 1).cross(away).normalize().multiplyScalar(2000);
+        a.physics.move(earth, hole.pos.clone().addScaledVector(away, times * roche).toArray(), hole.vel.clone().add(side).toArray(), a.clock.jdTdb);
+        a.tellNews();
+        a.endChange(false);
+        return roche;
+      }, times);
+      const roche = await put(2);
+      await frames(page, 4);
+      const away = await holeNow();
+      if (kind === 'phone') {
+        // (the Earth as it comes: a disk in the view, the hole far off, not yet near enough to tear it)
+        await page.evaluate(() => { const a = window.app, e = a.findByName('Earth'); a.placeNear(e, 4 * e.radius * a.rig.framing, 35, 12); });
+        await frames(page, 10);
+        await page.screenshot({ path: path.join(outDir, `live-${kind}-hole-approach.png`) });
+        // (and the eye by the hole, its shadow and the sky bent round it, for the moment the Earth is torn apart)
+        await page.evaluate(() => { const a = window.app, b = a.made.find((m) => m.meta.madeAs?.kind === 'hole'); a.placeNear(b, 2.5e6, 35, 12); });
+        await frames(page, 10);
+      }
+      await put(0.5);
+      await frames(page, 6);
+      const near = await holeNow();
+      const said = await heard(page);
+      const toastNow = await toast(page);
+      if (kind === 'phone') await page.screenshot({ path: path.join(outDir, `live-${kind}-hole-swallowed.png`) });
+      check(on('the Earth put twice its Roche limit (1.2 million km) from the hole is left alone; put within it, it is torn apart and swallowed: gone, the hole gains its mass, and a toast and the log say so'),
+        Math.abs(roche / 1e9 - 1.2) < 0.1 && !away.earthGone && near.earthGone && near.suns > away.suns && near.horizonKm > away.horizonKm
+          && said.concat(toastNow).some((t) => /Earth was torn apart and swallowed by the black hole/.test(t)) && near.layerKm === near.horizonKm,
+        JSON.stringify({ roche, away: away.earthGone, near: [near.earthGone, near.suns, near.horizonKm], said: said.slice(-3) }));
+      const log = await page.evaluate(() => window.app.physics.log.map((e) => e.text).filter((t) => /swallowed/.test(t)));
+      check(on('...and the log of live physics has it'), log.some((t) => /^Earth was torn apart and swallowed by the black hole\./.test(t)), JSON.stringify(log));
+    });
+    await step('Undo brings it back', async () => {
+      await press(page, '#hud .live-mark .live-undo');
+      await frames(page, 8);
+      const h = await holeNow();
+      check(on('Undo brings the Earth back and the hole to ten Suns'), !!h && !h.earthGone && Math.abs(h.suns - 10) < 1e-9 && Math.abs(h.horizonKm - 29.53) < 0.01 && h.layerKm === h.horizonKm, JSON.stringify(h));
+    });
+    await step('a save brings the hole back', async () => {
+      await page.evaluate(() => { window.app.clock.paused = true; });
+      await page.evaluate(() => window.app.saveScene());
+      const id = await page.evaluate(() => JSON.parse(localStorage.getItem('starfarer-saves'))[0].id);
+      const before = await holeNow();
+      await page.evaluate(() => window.app.backToReality());
+      await frames(page, 4);
+      const real = await holeNow();
+      const layerReal = await page.evaluate(() => window.app.holes.made.length);
+      await page.evaluate((id) => window.app.openSave(id), id);
+      await until(page, () => window.app.made.some((m) => m.meta.madeAs?.kind === 'hole'), null, 60);
+      await frames(page, 6);
+      const back = await holeNow();
+      check(on('a save of the scene, opened again, brings the hole back (its mass and its place in the simulation), drawn by the renderer'),
+        !real && layerReal === 0 && !!back && back.simulated && Math.abs(back.suns - before.suns) < 1e-9 && Math.abs(back.horizonKm - before.horizonKm) < 1e-9 && back.layerKm === back.horizonKm && back.name === 'Black hole' && !back.earthGone,
+        JSON.stringify({ before: before.suns, back }));
+    });
+    await ctx.close();
   }
 
   // ------------------------------------------------------------------ comets: God mode on a comet (src/render/SmallBodies.ts, src/app/powersFor.ts)

@@ -6,7 +6,7 @@ import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
 import { formatUtc, SimClock, utcToTdb, dateToJdUtc } from '../core/time';
 import { AU, DAY, formatDistance, PC, SUN_RADIUS } from '../core/units';
-import { G, L_SUN, luminosity } from '../sim/physics';
+import { G, L_SUN, luminosity, M_SUN } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { BodiesLayer, makeSphere } from '../render/Bodies';
@@ -68,7 +68,7 @@ import { orbitDrift, sunHeight, sunriseIn } from './Daylight';
 import { TrafficShip } from '../game/Traffic';
 import { Station } from '../game/Station';
 import { adapt, diskLimit, diskMiddle, diskSeen, hidden, meterFrame, middleLimit, released, seen, settleOn, TAU_STARS, type Frame } from './Exposure';
-import { canAdd, isCopyKind, isWorldKind, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, type MadeLook, madeMassAt, madeSize, madeSlider, madeWords, newMoon, newSeed, newTwin, newWorld, TWIN_OF, WORLD_BASE, type WorldKind } from './WhatIf';
+import { canAdd, isCopyKind, isWorldKind, type Kind, MADE_FIRST_ID, MADE_MASS, madeAbsMag, madeAgain, type MadeLook, madeMassAt, madeSize, madeSlider, madeWords, newHole, newMoon, newSeed, newTwin, newWorld, TWIN_OF, WORLD_BASE, type WorldKind } from './WhatIf';
 import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
@@ -1014,6 +1014,7 @@ export class App {
       case 'add-ice': this.add('ice'); break;
       case 'add-giant': this.add('giant'); break;
       case 'add-icegiant': this.add('icegiant'); break;
+      case 'add-hole': this.add('hole'); break;
       case 'create': this.create(); break;
       case 'new-look': this.newLook(); break;
       case 'rings': this.toggleRings(); break;
@@ -1538,7 +1539,9 @@ export class App {
     const like = isCopyKind(kind) ? this.system.byId.get(TWIN_OF[kind])! : null;
     const sun = this.system.sunAt(to.pos);
     const seed = newSeed(Math.random);
-    const plan = like
+    const plan = kind === 'hole'
+      ? newHole(to, eye, this.made.filter((m) => (m.meta.madeAs as BodyJson['madeAs'])?.kind === 'hole').length, id)
+      : like
       ? newTwin(like, this.bodies.textureKey(like), to, eye, this.made.filter((m) => m.twinOf === like).length, id)
       : isWorldKind(kind)
         ? newWorld(kind, to, eye, this.made.filter((m) => (m.meta.madeAs as BodyJson['madeAs'])?.kind === kind).length, id, seed, this.lookOf(kind, seed))
@@ -1685,6 +1688,22 @@ export class App {
     this.physics.resize(b, G * kg, [k * b.radii[0], k * b.radii[1], k * b.radii[2]], this.clock.jdTdb);
     if (kind === 'sun') this.shine(b, kg);
     this.mover.recircle();
+  }
+
+  /**
+   * The black holes the explorer made, drawn by the layer that draws the catalogue's (src/render/BlackHoleLayer.ts): each hole
+   * that is in the simulation has one dormant `BlackHole` there (no disk, no jets), put where the simulation has it each frame, of
+   * the mass and event horizon it has now; one that is gone (taken away, swallowed, undone, back to reality) has none.
+   */
+  private syncMadeHoles(): void {
+    const made = this.holes.made, live = this.made.filter((b) => madeHole(b) && !this.system.isGone(b));
+    for (let i = made.length - 1; i >= 0; i--) if (!live.some((b) => `bh:${b.id}` === made[i].key)) made.splice(i, 1);
+    for (const b of live) {
+      let h = made.find((x) => x.key === `bh:${b.id}`);
+      if (!h) made.push(h = BlackHole.made(b.id, b.name, b.gm / G / M_SUN));
+      h.upos.copy(b.upos);
+      if (h.radius !== b.radius) h.follow(b.gm / G / M_SUN, b.radius);
+    }
   }
 
   /** A sun the explorer made shines as a star of the main sequence of `kg` would (src/app/WhatIf.ts: madeSize): its colour and its light. */
@@ -2061,15 +2080,16 @@ export class App {
   setMass(slider: number): void {
     const b = this.powerBody();
     if (!b || !this.powersOf(this.selection!).mass.works) return;
-    const real = this.physics.realGm(b), sun = madeSun(b);
-    // (a sun the explorer made is a star of the main sequence: of the masses it could be made with)
-    const gm = sun ? G * Math.max(MADE_MASS.sun[0], Math.min(MADE_MASS.sun[1], (massFactor(slider) * real) / G)) : massFactor(slider) * real;
+    const real = this.physics.realGm(b), sun = madeSun(b), hole = madeHole(b);
+    // (a sun the explorer made is a star of the main sequence: of the masses it could be made with; a black hole of its own: from 1 to 20 Suns)
+    const gm = sun ? G * Math.max(MADE_MASS.sun[0], Math.min(MADE_MASS.sun[1], (massFactor(slider) * real) / G))
+      : hole ? G * Math.max(MADE_MASS.hole[0], Math.min(MADE_MASS.hole[1], (massFactor(slider) * real) / G)) : massFactor(slider) * real;
     // (put back where it stood, with nothing changed yet: nothing to simulate)
     if (!(real > 0) || gm === b.gm) return;
     this.beginChange('mass', b, false, `changing ${the(b.name)}'s mass`);
     const wasOn = this.physics.on;
     // its size follows: a made sun's as the main sequence has it, a world's at the same density if that is asked
-    const R = sun ? madeSize('sun', gm / G, false).radius : this.sizeFollows && this.sizeable(b) ? sameDensity(this.physics.realRadius(b), gm / real) : b.radius;
+    const R = sun ? madeSize('sun', gm / G, false).radius : hole ? madeSize('hole', gm / G, false).radius : this.sizeFollows && this.sizeable(b) ? sameDensity(this.physics.realRadius(b), gm / real) : b.radius;
     this.physics.setMass(b, gm, this.clock.jdTdb, R === b.radius ? undefined : this.radiiOf(b, R));
     if (sun) this.shine(b, gm / G);
     this.tellNews(wasOn);
@@ -3421,7 +3441,7 @@ export class App {
 
   private keepOutsideHorizons(): void {
     const rel = new Vector3();
-    for (const h of this.blackHoles) {
+    for (const h of [...this.blackHoles, ...this.holes.made]) {
       this.rig.upos.sub(h.upos, rel);
       const d = rel.length();
       const min = h.radius * 1.15;
@@ -3752,6 +3772,7 @@ export class App {
     this.craft.update(this.rig.upos, pixelAngle, jd, this.system.sun, this.system.byId.get(399)!);
     HITCH.lap('craft');
     PERF.lap('craft');
+    this.syncMadeHoles();
     this.holes.vr = this.vr.active;
     // (a far hole's disk is a point in the frame from where its light is that of the faintest star shown)
     this.holes.update(this.rig.upos, pixelAngle, now / 1000, magToIrradiance(this.starMagLimit));
@@ -3943,7 +3964,7 @@ export class App {
           const factor = pb.gm / real, sun = madeSun(pb), mark = this.massMark(pb);
           selection.mass = {
             slider: massSlider(factor), words: `${(pb.kind === 'star' ? starMassWords : massWords)(massOf(pb.gm))}${mark.words}`, times: timesWords(factor),
-            says: mark.says || (sun ? 'Its size, colour and light follow' : pb.kind === 'star' ? 'Only its pull changes, not its size or look' : this.sizeFollows ? 'Its size follows: the same density' : 'Only its pull changes, not its size'),
+            says: mark.says || (madeHole(pb) ? 'Its event horizon follows' : sun ? 'Its size, colour and light follow' : pb.kind === 'star' ? 'Only its pull changes, not its size or look' : this.sizeFollows ? 'Its size follows: the same density' : 'Only its pull changes, not its size'),
             theory: massTheory(massOf(pb.gm), pb.kind === 'star') ?? '',
           };
           // its size, as a factor on its real radius
@@ -4098,6 +4119,11 @@ function planetOf(o: SpaceObject | null): Body | null {
   let b: Body = o;
   while (b.parent instanceof Body && b.parent.kind !== 'star') b = b.parent;
   return b;
+}
+
+/** A black hole the explorer made: its size is its event horizon, which follows its mass. */
+function madeHole(b: Body): boolean {
+  return (b.meta.madeAs as BodyJson['madeAs'])?.kind === 'hole';
 }
 
 /** A sun the explorer made: a star of the main sequence of its mass, its size, colour and light following it (src/app/WhatIf.ts: madeSize). */

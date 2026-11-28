@@ -120,6 +120,14 @@ export class Body implements SpaceObject {
     const typeNames: Record<BodyType, string> = {
       star: 'Star', planet: 'Planet', dwarf: 'Dwarf planet', moon: 'Moon', asteroid: 'Asteroid', tno: 'Trans-Neptunian object', comet: 'Comet',
     };
+    // (a black hole the explorer made: its mass in Suns and the size of its event horizon, the Schwarzschild radius 2GM/c²)
+    if ((this.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') {
+      rows.push(['Type', 'Black hole (made by you)']);
+      if (this.parent) rows.push(['Orbits', this.parent.name]);
+      rows.push(['Mass', `${(this.gm / 6.6743e-11 / 1.98847e30).toPrecision(3)} Suns`]);
+      rows.push(['Event horizon', `${(this.radius / 1e3).toPrecision(3)} km radius`]);
+      return rows;
+    }
     rows.push(['Type', typeNames[this.kind] + (this.meta.orbitClass ? ` (${this.meta.orbitClass})` : '') + (this.meta.made ? ' (made by you)' : '')]);
     if (this.parent && this.kind !== 'planet' && this.kind !== 'dwarf' && this.kind !== 'asteroid' && this.kind !== 'tno')
       rows.push(['Orbits', this.parent.name]);
