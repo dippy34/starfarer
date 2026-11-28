@@ -83,8 +83,13 @@ export function atmosphereFor(b: Body, data: AtmosphereData): AtmosphereSpec | n
       return { betaR: rayleigh(1, d.temperatureK, 'H2'), HR: H, betaMs: [0, 0, 0], betaMe: [0, 0, 0], HM: H,
         g: [0.7, 0.7, 0.7], top: 9 * H, groundMix: 0.12, surfaceTransmittance: false };
     }
-    default:
+    default: {
+      // a world the explorer made rocky or of oceans (src/app/WhatIf.ts): air as the Earth's (a bar at 15 C), its scale height
+      // from its gravity (at least 2 m/s²: a speck of a world keeps an air of sensible height); seen from its ground, a blue sky
+      const made = (b.meta.madeAs as { kind?: string } | undefined)?.kind;
+      if ((made === 'terran' || made === 'ocean') && b.gm > 0) return earthLikeAtmosphere(1, 288, Math.max(2, b.gm / (b.radius * b.radius)));
       return null;
+    }
   }
 }
 

@@ -8,6 +8,7 @@ import { Body, type SpaceObject } from '../universe/Body';
 import { Landmark } from '../universe/Landmarks';
 import { ExoPlanet, type PlanetType } from '../universe/Planets';
 import type { App } from './App';
+import type { UnderwaterView } from '../render/Underwater';
 
 /**
  * Walking on the surface of a solid world: a first-person character controller in the world's
@@ -40,6 +41,14 @@ export const BODY_RADIUS = 0.25;
 export const LOPE_G = 5;
 /** offered within this height of the ground (m); higher up, walking first flies down to land */
 export const WALK_REACH = 100;
+/**
+ * Swimming (the owner, 28 Nov 2026: "if it's an ocean planet, I should be able to actually swim around in the ocean, look
+ * up, see everything"): floating, the eye this far over the water (m); a swimmer's pace (m/s; the fast one a strong crawl),
+ * how fast they dive and come up (m/s), how fast they come up of themselves, left alone (air in the lungs), and how deep
+ * they can go (m: a free diver's few tens of metres; no sea floor is drawn under the open sea, it is too deep to see).
+ */
+export const FLOAT_EYE = 0.32;
+export const SWIM_SPEED = 0.9, SWIM_FAST = 1.8, SWIM_ACCEL = 1.5, DIVE_SPEED = 1.2, RISE_SPEED = 1.4, BUOYANCY = 0.5, MAX_DIVE = 40;
 
 /** Surface gravity (m/s²) at distance r (m) from the centre of a world of gravitational parameter gm (m³/s²). */
 export function gravityAt(gm: number, r: number): number {
@@ -82,6 +91,8 @@ export interface WalkIntent {
   crouch: boolean;
   /** a jump was asked for (kept for a short moment so a press just before landing counts) */
   jump: boolean;
+  /** swimming: down (1), up (-1), or neither (0: the swimmer comes up of themselves) */
+  dive?: number;
 }
 
 /** Ground radius (m from the world's centre) below a body-fixed unit direction. */
@@ -127,8 +138,69 @@ export class WalkBody {
   /** the last step was stopped or deflected by a wall (a boulder, a ledge) */
   blocked = false;
   private terrainFn: GroundFn | null = null;
-  /** open water at a body-fixed unit direction (oceans, lakes): not walked into; null on dry worlds */
+  /** open water at a body-fixed unit direction (oceans, lakes): swum in; null on dry worlds */
   water: ((n: Vector3) => boolean) | null = null;
+  /** in open water, swimming: `pos` is then on the water's surface, and the eye `depth` under it (negative: over it, floating) */
+  swim = false;
+  depth = -FLOAT_EYE;
+  private depthVel = 0;
+  /** went into the water this step (from the shore, or falling in) */
+  splashed = false;
+
+  /** In the water at unit direction `n` (on its surface, `r` from the centre), `depth` under it, with velocity `vel` (kept along it, slowed). */
+  private enterWater(n: Vector3, r: number, depth: number, vel: Vector3): void {
+    this.swim = true;
+    this.onGround = false;
+    this.splashed = true;
+    this.depth = depth;
+    this.depthVel = 0;
+    this.airTime = 0;
+    this.pos.copy(n).multiplyScalar(r);
+    this.vel.copy(vel).addScaledVector(n, -vel.dot(n)).multiplyScalar(0.5);
+  }
+
+  /**
+   * A step swimming: along the water's surface at a swimmer's pace, down and up as asked (left alone, up to float), out of
+   * the water where a shore rises gently from it (onto a beach; a cliff stops the swimmer).
+   */
+  private swimStep(dt: number, intent: WalkIntent, ground: GroundFn): void {
+    const r = this.pos.length();
+    const up = _up.copy(this.pos).divideScalar(r);
+    const want = _a.copy(intent.wish).addScaledVector(up, -intent.wish.dot(up));
+    if (want.lengthSq() > 1) want.normalize();
+    want.multiplyScalar(intent.run ? SWIM_FAST : SWIM_SPEED);
+    const vt = _vt.copy(this.vel).addScaledVector(up, -this.vel.dot(up));
+    approach(vt, want, SWIM_ACCEL * dt);
+    const dive = intent.dive ?? 0;
+    const vWant = dive > 0 ? DIVE_SPEED : dive < 0 ? -RISE_SPEED : this.depth > -FLOAT_EYE + 1e-3 ? -BUOYANCY : 0;
+    this.depthVel += Math.max(-3 * dt, Math.min(3 * dt, vWant - this.depthVel));
+    this.depth += this.depthVel * dt;
+    if (this.depth < -FLOAT_EYE) { this.depth = -FLOAT_EYE; this.depthVel = Math.max(0, this.depthVel); }
+    if (this.depth > MAX_DIVE) { this.depth = MAX_DIVE; this.depthVel = Math.min(0, this.depthVel); }
+    if (vt.lengthSq() * dt * dt < 1e-14) { this.vel.copy(vt); return; }
+    const nUp = _n.copy(this.pos).addScaledVector(vt, dt).normalize().clone();
+    if (this.water && !this.water(nUp)) {
+      const gR = ground(nUp);
+      if (gR - r < STEP_UP + 0.6 && this.depth < 1.5) {
+        // a shore that rises gently out of the water: walked out onto it
+        this.swim = false;
+        this.onGround = true;
+        this.landed = true;
+        this.impact = 0;
+        this.depth = -FLOAT_EYE;
+        this.depthVel = 0;
+        this.pos.copy(nUp).multiplyScalar(gR);
+        this.vel.copy(vt).addScaledVector(nUp, -vt.dot(nUp));
+        return;
+      }
+      // a cliff out of the sea: not climbed
+      this.blocked = true;
+      this.vel.set(0, 0, 0);
+      return;
+    }
+    this.pos.copy(nUp).multiplyScalar(ground(nUp));
+    this.vel.copy(vt).addScaledVector(nUp, -vt.dot(nUp));
+  }
 
   /** Horizontal unit direction from the feet towards the water nearby (body-fixed tangent). */
   private shoreNormal(fallback: Vector3): Vector3 {
@@ -194,6 +266,16 @@ export class WalkBody {
     this.vel.set(0, 0, 0);
     this.onGround = true;
     this.airTime = 0;
+    this.swim = false;
+    this.depth = -FLOAT_EYE;
+    this.depthVel = 0;
+  }
+
+  /** Put in the water at unit direction `n`, floating on its surface, at rest. */
+  floatOn(n: Vector3, ground: GroundFn): void {
+    const u = _n.copy(n).normalize();
+    this.enterWater(u.clone(), ground(u), -FLOAT_EYE, new Vector3());
+    this.splashed = false;
   }
 
   get radius(): number {
@@ -260,9 +342,11 @@ export class WalkBody {
     this.landed = false;
     this.jumped = false;
     this.blocked = false;
+    this.splashed = false;
     this.terrainFn = terrain;
     const ground = this.surfaceFn(terrain);
     if (dt <= 0) return;
+    if (this.swim) { this.swimStep(dt, intent, ground); return; }
     const r = this.pos.length();
     const up = _up.copy(this.pos).divideScalar(r);
     const g = gravityAt(this.gm, r);
@@ -311,8 +395,12 @@ export class WalkBody {
       let nR = ground(nUp);
       const wallAt = (u: Vector3, rr: number) => this.rockWall(u.clone().multiplyScalar(rr), terrain);
       const tooHigh = (rr: number, dd: number) => rr - gR > STEP_UP + dd * Math.tan(SLOPE_LIMIT);
-      // the shoreline: no walking from land into open water (once in it, you may walk out)
+      // the shoreline: walked into, the water is swum in (it was a wall: "fly to dry land to walk")
       const dry = !this.water || !this.water(up);
+      if (dry && this.water && this.water(nUp) && !wallAt(nUp, Math.min(nR, r))) {
+        this.enterWater(nUp, nR, -FLOAT_EYE, vt);
+        return;
+      }
       const wet = (u: Vector3) => dry && !!this.water && this.water(u);
       let rockHit = wallAt(nUp, Math.min(nR, r));
       let shore = wet(nUp);
@@ -374,9 +462,12 @@ export class WalkBody {
     this.apex = Math.max(this.apex, r - this.takeoffR);
     const nUp = _n.copy(this.pos).divideScalar(r);
     let gR = ground(nUp);
-    // crossing the shoreline from land, even in the air: the water's edge is a wall
-    const intoWater = !!this.water && this.water(nUp) && !this.water(prevUp);
-    if ((r <= gR && gR - r > STEP_UP) || this.rockWall(this.pos, this.terrainFn ?? ground) || intoWater) {
+    // coming down on the water (a jump off the shore, or landing on the sea): into it, a little under, slowed
+    if (this.water && this.water(nUp) && r <= gR) {
+      this.enterWater(nUp, gR, Math.min(1.2, 0.2 + 0.25 * Math.max(0, -this.vel.dot(nUp))), this.vel);
+      return;
+    }
+    if ((r <= gR && gR - r > STEP_UP) || this.rockWall(this.pos, this.terrainFn ?? ground)) {
       // flew into the side of something (a boulder): back out sideways, keep falling
       this.blocked = true;
       this.pos.copy(prevUp).multiplyScalar(r);
@@ -515,6 +606,23 @@ export class Walk {
   private bobPhase = 0;
   private jumpBuffer = 0;
   private crouchToggle = false;
+  /** the touch pad's Dive (1) or Up (-1) held while swimming, or neither (0) */
+  private padDive = 0;
+  /** the swell's phase (s), for a floating head's rise and fall */
+  private swellPhase = 0;
+  /** the eye's height over the feet as last placed (m; swimming, over the water's surface: below 0, under it) */
+  private lift = EYE_STAND;
+
+  /**
+   * Under the water, swimming: how deep the eye is, the water's up and its sun (world axes), for the view of the sea round
+   * it (src/render/Underwater.ts). Null when the eye is not under water.
+   */
+  underwater(): UnderwaterView | null {
+    if (this.state !== 'walk' || !this.body.swim || this.lift > -0.02) return null;
+    const u = this.app.terrain.current?.material.uniforms;
+    const sun = u?.uSunDir?.value as Vector3 | undefined, irr = (u?.uSunIrr?.value as number | undefined) ?? 0;
+    return { depth: -this.lift, up: this.body.pos.clone().normalize().applyMatrix3(this.R).normalize(), sun: sun && irr > 0 ? sun.clone() : null, sunIrr: irr };
+  }
   private lastGround = 0;
   /** seconds the drawn terrain under the walker has been missing */
   private lostFrame = 0;
@@ -565,7 +673,7 @@ export class Walk {
     pad.className = 'walk-pad touch-only';
     pad.hidden = true;
     pad.innerHTML = '<div class="walk-stick" role="slider" aria-label="Walk: push the way to go"><i></i></div>'
-      + '<div class="walk-buttons"><button class="walk-jump" type="button">Jump</button><button class="walk-fly" type="button">Fly</button></div>';
+      + '<div class="walk-buttons"><button class="walk-dive" type="button" hidden>Dive</button><button class="walk-jump" type="button">Jump</button><button class="walk-fly" type="button">Fly</button></div>';
     root.appendChild(pad);
     this.padEl = pad;
     const stick = pad.querySelector<HTMLElement>('.walk-stick')!, knob = stick.querySelector<HTMLElement>('i')!;
@@ -589,7 +697,15 @@ export class Walk {
     stick.addEventListener('pointermove', (e) => { if (e.pointerId === id) at(e); });
     stick.addEventListener('pointerup', end);
     stick.addEventListener('pointercancel', end);
-    pad.querySelector('.walk-jump')!.addEventListener('click', () => this.jump());
+    pad.querySelector('.walk-jump')!.addEventListener('click', () => { if (!this.body.swim) this.jump(); });
+    // swimming, Jump is Up: held, the swimmer comes up; Dive held goes down
+    const hold = (sel: string, way: number) => {
+      const btn = pad.querySelector<HTMLElement>(sel)!;
+      btn.addEventListener('pointerdown', () => { if (this.body.swim) this.padDive = way; });
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, () => { if (this.padDive === way) this.padDive = 0; });
+    };
+    hold('.walk-dive', 1);
+    hold('.walk-jump', -1);
     pad.querySelector('.walk-fly')!.addEventListener('click', () => this.exit());
   }
 
@@ -597,7 +713,7 @@ export class Walk {
   canStartHere(): boolean {
     if (this.active) return false;
     const app = this.app, below = app.terrain.below(app.rig.upos), owner = app.terrain.owner as SpaceObject | null;
-    return !!below && !!owner && !cannotWalkReason(owner) && !this.isWater(below.dir);
+    return !!below && !!owner && !cannotWalkReason(owner);
   }
 
   /** walking or about to (flying down to land) */
@@ -635,7 +751,6 @@ export class Walk {
     if (!target && below && owner) {
       const why = cannotWalkReason(owner);
       if (why) { this.say(why); return false; }
-      if (this.isWater(below.dir)) { this.say(waterReason(owner)); return false; }
       this.bindWorld(owner);
       app.rig.cancelGoto();
       const h = below.dist - below.ground;
@@ -765,18 +880,16 @@ export class Walk {
   private beginWalk(): void {
     const app = this.app;
     this.descendTo = null;
-    if (this.isWater(this.camBF())) {
-      // came down over water after all (the ground under the descent changed): stay in the air
-      this.say(waterReason(this.world));
-      this.exit(true);
-      return;
-    }
     this.updateFrame();
     const n = this.camBF();
-    this.body.placeOn(n, this.ground);
+    // (come down on the sea: floating in it, swimming)
+    const wet = this.isWater(n);
+    if (wet) this.body.floatOn(n, this.ground);
+    else this.body.placeOn(n, this.ground);
     this.visR = this.body.radius;
     this.dip = this.dipVel = 0;
-    this.eye = EYE_STAND;
+    this.eye = wet ? FLOAT_EYE : EYE_STAND;
+    if (wet) this.say(`Swimming in the sea of ${this.world?.name ?? 'this world'}: ${this.app.input.touch ? 'Dive and Up go down and up' : 'C dives, Space comes up'}`);
     this.jumpBuffer = 0;
     this.crouchToggle = false;
     // heading: where the view looked, along the ground
@@ -825,7 +938,8 @@ export class Walk {
     }
     switch (e.code) {
       case 'Space': if (!e.repeat) this.jump(); e.preventDefault(); return true;
-      case 'KeyC': if (!e.repeat) this.crouchToggle = !this.crouchToggle; return true;
+      // (swimming, C held dives: no crouching in the water)
+      case 'KeyC': if (!e.repeat && !this.body.swim) this.crouchToggle = !this.crouchToggle; return true;
       case 'KeyQ': case 'KeyE': case 'KeyR': case 'KeyF': return true;
       // flying somewhere else, or into the ship: stop walking first
       case 'KeyG': case 'KeyJ': case 'KeyV': this.exit(true); return false;
@@ -885,7 +999,7 @@ export class Walk {
         this.bindWorld(owner);
         // a place: glide down onto it, not straight down from the viewpoint the travel arrived at
         const to = target instanceof Landmark && target.world === owner ? target.up().applyMatrix3(this.R.clone().transpose()).normalize() : below.dir;
-        if (this.isWater(to)) { this.say(waterReason(owner)); this.exit(true); return false; }
+        // (over the sea the descent ends floating in it: beginWalk)
         this.beginDescend(below.dist - below.ground);
         if (target instanceof Landmark && target.world === owner) this.descendTo = to;
         return false;
@@ -1027,20 +1141,26 @@ export class Walk {
     const t = app.terrain as { isSea?: (n: Vector3) => boolean };
     b.water = t.isSea && app.terrain.owner === this.world ? (nn) => t.isSea!(nn) : null;
     const n = Math.max(1, Math.ceil(dt / (1 / 90)));
-    let landed = false, impact = 0, jumped = false;
+    let landed = false, impact = 0, jumped = false, splashed = false;
+    // (swimming: C, Ctrl or Dive held go down; Space or Up held come up)
+    const dive = (keys.has('KeyC') || crouch || this.padDive > 0 ? 1 : 0) - ((keys.has('Space') && !vrOn) || this.padDive < 0 || (vrOn && this.jumpBuffer > 0) ? 1 : 0);
+    if (b.swim) this.crouchToggle = false;
     for (let i = 0; i < n; i++) {
       const wantJump = this.jumpBuffer > 0 && b.onGround;
-      b.step(dt / n, { wish, run, crouch, jump: wantJump }, this.ground);
+      b.step(dt / n, { wish, run, crouch, jump: wantJump, dive }, this.ground);
       if (b.jumped) { jumped = true; this.jumpBuffer = 0; }
       if (b.landed) { landed = true; impact = Math.max(impact, b.impact); }
+      if (b.splashed) splashed = true;
     }
+    if (b.swim) this.jumpBuffer = 0;
+    if (splashed) this.app.game.audio.step(0.4, airCarry(this.world));
     b.sanitize(up, this.ground);
     if (jumped && vrOn) this.app.vr.pulse(0.3, 15);
     if (landed && vrOn && impact > 0.6) this.app.vr.pulse(Math.min(0.6, impact * 0.25), 25);
 
     // eye: crouch, landing dip (desktop), footstep bob (desktop, optional)
-    const eyeWant = crouch ? EYE_CROUCH : EYE_STAND;
-    this.eye += (eyeWant - this.eye) * (1 - Math.exp(-dt * 10));
+    const eyeWant = b.swim ? -b.depth : crouch ? EYE_CROUCH : EYE_STAND;
+    this.eye += (eyeWant - this.eye) * (1 - Math.exp(-dt * (b.swim ? 6 : 10)));
     if (landed && !vrOn) this.dipVel -= Math.min(2.5, impact * 0.5);
     // spring back (critically damped)
     const w = 14;
@@ -1049,6 +1169,8 @@ export class Walk {
     this.dip = Math.max(-0.45, Math.min(0.1, this.dip));
     const gs = b.groundSpeed;
     let bob = 0;
+    // (floating: the swell lifts and lowers the head, a little)
+    if (b.swim && b.depth < 0.2) { this.swellPhase += dt; bob = 0.05 * Math.sin(this.swellPhase * 1.3) + 0.025 * Math.sin(this.swellPhase * 2.9 + 1); }
     if (b.onGround && gs > 0.2) {
       this.bobPhase += dt * gs * 2.2;
       if (!vrOn && this.settings.bob) bob = Math.sin(this.bobPhase * Math.PI) ** 2 * -0.035 * Math.min(1, gs / 1.4);
@@ -1130,6 +1252,7 @@ export class Walk {
     } else {
       lift = this.eye + eyeExtra;
     }
+    this.lift = lift;
     app.rig.upos.copy(this.centre).addVec(feet).addVec(upW, lift);
     const m = new Matrix4().makeBasis(rW, upW, fW.clone().negate());
     app.rig.quat.setFromRotationMatrix(m);
@@ -1140,14 +1263,25 @@ export class Walk {
   private updateHud(): void {
     const b = this.body;
     const g = b.gravity;
-    const motion = !b.onGround ? `in the air ${b.airTime.toFixed(1)} s` : b.slope > SLOPE_LIMIT ? 'too steep: sliding' : `${b.groundSpeed.toFixed(1)} m/s`;
-    this.status = `Walking on ${this.worldName()} · gravity ${g.toFixed(2)} m/s² · ${motion}`;
+    const motion = b.swim ? (b.depth > 0.05 ? `${b.depth.toFixed(1)} m under the water` : 'floating') + ` · ${b.groundSpeed.toFixed(1)} m/s`
+      : !b.onGround ? `in the air ${b.airTime.toFixed(1)} s` : b.slope > SLOPE_LIMIT ? 'too steep: sliding' : `${b.groundSpeed.toFixed(1)} m/s`;
+    const doing = b.swim ? `Swimming in the sea of ${this.worldName()}` : `Walking on ${this.worldName()}`;
+    this.status = `${doing} · gravity ${g.toFixed(2)} m/s² · ${motion}`;
     if (!this.hudEl) return;
     const vr = this.app.vr.active;
     this.hudEl.style.display = this.state === 'walk' && !vr && !this.app.photoMode ? 'block' : 'none';
-    if (this.padEl) this.padEl.hidden = !(this.state === 'walk' && !vr && !this.app.photoMode);
-    const how = this.app.input.touch ? 'the stick walks (all the way: run) · drag to look · Jump · Fly to take off' : 'W A S D move · mouse look · Shift run · Space jump · C/Ctrl crouch · B fly';
-    this.hudEl.innerHTML = `<b>Walking on ${escapeHtml(this.worldName())}</b>, gravity ${g.toFixed(2)} m/s² (${(g / 9.80665).toFixed(2)} g) · ${motion}`
+    if (this.padEl) {
+      this.padEl.hidden = !(this.state === 'walk' && !vr && !this.app.photoMode);
+      // (swimming: Dive and Up; on land: Jump)
+      this.padEl.querySelector<HTMLElement>('.walk-dive')!.hidden = !b.swim;
+      const jump = this.padEl.querySelector<HTMLElement>('.walk-jump')!;
+      if (jump.textContent !== (b.swim ? 'Up' : 'Jump')) jump.textContent = b.swim ? 'Up' : 'Jump';
+      if (!b.swim) this.padDive = 0;
+    }
+    const how = b.swim
+      ? (this.app.input.touch ? 'the stick swims (all the way: fast) · drag to look · Dive · Up · Fly to take off' : 'W A S D swim · mouse look · Shift fast · C/Ctrl dive · Space up · B fly')
+      : this.app.input.touch ? 'the stick walks (all the way: run) · drag to look · Jump · Fly to take off' : 'W A S D move · mouse look · Shift run · Space jump · C/Ctrl crouch · B fly';
+    this.hudEl.innerHTML = `<b>${escapeHtml(doing)}</b>, gravity ${g.toFixed(2)} m/s² (${(g / 9.80665).toFixed(2)} g) · ${motion}`
       + `<br><span style="opacity:.65">${how}</span>`;
   }
 
@@ -1163,7 +1297,7 @@ export class Walk {
       finite: Number.isFinite(eyeR) && Number.isFinite(b.pos.x), rocks: b.rocks.length, onRock: b.surface(up, this.ground) > this.ground(up) + 0.02, blocked: b.blocked,
       // the view stays upright: its right axis is horizontal (no roll)
       roll: new Vector3(1, 0, 0).applyQuaternion(this.app.rig.quat).dot(up.clone().applyMatrix3(this.R).normalize()),
-      pos: b.pos.toArray(),
+      pos: b.pos.toArray(), swim: b.swim, depth: b.depth,
     };
   }
 }
