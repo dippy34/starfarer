@@ -94,7 +94,7 @@ import { describe, distanceText, distanceTo, HOLES, moonWords, objectsOf, pictur
 import { Systems, wellStudied } from './Systems';
 import { VRSupport } from './VR';
 import { FreeFly } from './FreeFly';
-import { cannotWalkReason, Walk } from './Walk';
+import { cannotWalkReason, isGasWorld, Walk } from './Walk';
 import { PERF } from '../perf/Perf';
 
 /** a picture of a world being made, as the card takes it */
@@ -114,6 +114,8 @@ const starCap = (small: number, cssRadius: number) => small + (FACE_KEY - small)
 const ARRIVE = { world: 2.2, ringed: 3.2, star: 4, hole: 10 };
 /** a sun's reach, for what the camera stays on or goes along with (App.reachOf), in its radii: 100, half an AU for the Sun */
 const REACH_STAR = 100;
+/** floating over a giant's clouds: how high over them (in its radii), and how near the camera may come to them */
+const FLOAT_HEIGHT = 0.04, CLOUD_FLOOR = 0.005;
 /** a name a hair under the ground's horizon (radians: a tenth of a degree) still stands, as the limb's let off by a little */
 const HORIZON_LEEWAY = 0.1 * (Math.PI / 180);
 /** below this height over the ground (m) names are hidden by the ground's real horizon, bearing by bearing */
@@ -1036,7 +1038,12 @@ export class App {
   act(action: HudAction): void {
     switch (action) {
       // (at a world with ground, the card's button lands on it: "its own little go on to it", the owner, 28 Nov 2026)
-      case 'go': if (this.selection) { if (this.landsHere(this.selection)) this.walk.start(this.selection); else this.goTo(this.selection); } break;
+      case 'go':
+        if (!this.selection) break;
+        if (this.landsHere(this.selection)) this.walk.start(this.selection);
+        else if (this.floatsHere(this.selection)) this.floatOver(this.selection);
+        else this.goTo(this.selection);
+        break;
       case 'centre': if (this.selection) this.center(this.selection); break;
       // (on a phone the ship opens in the chase view: HANDOFF, "The ship's looks")
       case 'ship': this.game.setMode(this.game.active ? 'off' : this.input.touch ? 'chase' : 'cockpit'); break;
@@ -2440,6 +2447,54 @@ export class App {
     if (o !== this.rig.target || this.rig.autopilot || this.walk.active || this.game.active || this.vr.active || cannotWalkReason(o)) return false;
     if (o instanceof Body) return this.bodies.canLand(o);
     return o instanceof ExoPlanet && ROCKY_TYPES.has(PLANET_TYPE_ID[o.spec.type]);
+  }
+
+  /** Whether the card's main button floats over `o`: the camera is at a world of gas (no ground to land on), as for Land. */
+  floatsHere(o: SpaceObject): boolean {
+    return o === this.rig.target && !this.rig.autopilot && !this.walk.active && !this.game.active && !this.vr.active && isGasWorld(o);
+  }
+
+  /** a world of gas being floated down to (floatOver): on arrival the camera moves freely over its clouds */
+  private floatTo: SpaceObject | null = null;
+
+  /**
+   * Float over a giant's clouds (the owner, 28 Nov 2026: a gas giant, "float in its clouds"): down to a twenty-fifth of its
+   * radius over the cloud tops (Jupiter: 2,900 km), on its lit side, then moving freely, the stick flying the camera over
+   * them, looking out to the horizon. It has no ground: its gases just get denser and hotter below, so the camera is
+   * kept over the cloud tops (keepAboveClouds).
+   */
+  floatOver(o: SpaceObject): void {
+    const from = this.rig.upos.sub(o.upos, new Vector3());
+    const sun = o instanceof Body ? this.system.sunAt(o.pos) : null;
+    this.rig.flyTo(o, o.radius * (1 + FLOAT_HEIGHT), undefined, true, sun ? sunlitSide(from, sun.upos.sub(o.upos, new Vector3())) : undefined);
+    this.floatTo = o;
+    this.hud.toast(`Down to ${the(o.name)}'s clouds…`, 2);
+  }
+
+  /** Arrived over a giant's clouds (floatOver): look out to its horizon, and move freely. */
+  private floatArrived(): void {
+    const o = this.floatTo;
+    if (!o || this.rig.autopilot) return;
+    this.floatTo = null;
+    if (this.rig.target !== o) return;
+    const up = this.rig.upos.sub(o.upos, new Vector3()).normalize();
+    // the horizon lies below the level by the angle whose cosine is R / (R + h): look a little under it, at the clouds going away
+    const dip = Math.acos(1 / (1 + FLOAT_HEIGHT)) + 0.08;
+    const fwd = this.rig.forward(new Vector3());
+    let level = fwd.addScaledVector(up, -fwd.dot(up));
+    if (level.lengthSq() < 1e-8) level = new Vector3(0, 0, 1).cross(up);
+    level.normalize();
+    this.rig.lookAt(level.multiplyScalar(Math.cos(dip)).addScaledVector(up, -Math.sin(dip)).normalize(), up);
+    if (this.stay) this.toggleStay();
+    this.hud.toast(`Floating over ${the(o.name)}'s clouds: there is no ground, its gases just get denser and hotter below. ${this.input.touch ? 'The stick flies you' : 'W A S D fly you'}`, 5);
+  }
+
+  /** Over a world of gas the camera stays over its cloud tops (a fiftieth of its radius at least: it has nothing to stand on, and nothing to see inside). */
+  private keepAboveClouds(): void {
+    const o = this.rig.target ?? this.reachOf();
+    if (!o || !isGasWorld(o)) return;
+    const rel = this.rig.upos.sub(o.upos, new Vector3()), r = rel.length(), least = o.radius * (1 + CLOUD_FLOOR);
+    if (r < least && r > 0) this.rig.upos.addVec(rel.divideScalar(r), least - r);
   }
 
   goTo(obj: SpaceObject): void {
@@ -3934,6 +3989,8 @@ export class App {
       if (this.glide && !this.glide.step(dt)) this.glide = null;
       this.keepOutsideHorizons();
       this.keepAboveGround(dt);
+      this.keepAboveClouds();
+      if (this.floatTo) this.floatArrived();
     }
     this.camPc.set((this.rig.upos.xh + this.rig.upos.xl) / PC, (this.rig.upos.yh + this.rig.upos.yl) / PC, (this.rig.upos.zh + this.rig.upos.zl) / PC);
 
@@ -4206,7 +4263,7 @@ export class App {
       // (the body the powers act on: a world of the Solar System itself, or the one standing for another star or its planet)
       const pb = this.powerBody(sel, false);
       selection = {
-        key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot, land: this.landsHere(sel) ? 'Land' : null,
+        key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot, land: this.landsHere(sel) ? 'Land' : this.floatsHere(sel) ? 'Float' : null,
         powers: available, mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body && available.add.works ? canAdd(sel, this.made.length) : [],
       };
       // the powers over a world, when the one table says they work

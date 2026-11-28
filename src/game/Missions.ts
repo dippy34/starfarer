@@ -89,6 +89,14 @@ const DEFS: Def[] = [
     const o = over(a, 'Moon');
     return !!o && a.game?.landed?.name === 'Moon' && o.lat < -80;
   } },
+  // the big round's (28 Nov 2026, the owner: "a little more game to it"): what the new powers can do
+  { id: 'swim', title: 'Swim in a sea', detail: 'Walk into a sea, or Land on one, and swim', check: (a) => a.walk?.state === 'walk' && a.walk.body.swim },
+  { id: 'dive', title: 'Dive ten metres down', detail: 'Swimming, go down (Dive, or C) until the sea is 10 m over you', check: (a) => a.walk?.state === 'walk' && a.walk.body.swim && a.walk.body.depth >= 10 },
+  { id: 'madeground', title: 'Stand on a world you made', detail: 'Create a planet, Go there, and Land on it', check: (a) => a.walk?.state === 'walk' && !a.walk.body.swim && !!(a.walk.world as Body | null)?.meta?.madeAs },
+  { id: 'tostar', title: 'Turn a planet into a star', detail: 'Make a planet heavier and heavier, until hydrogen fuses in it', check: (a) => a.physics.log.some((e) => /hydrogen to fuse/.test(e.text)) },
+  { id: 'bighole', title: 'Make a monster black hole', detail: 'A black hole of your own of a billion Suns or more', check: (a) => a.made.some((b) => (b.meta.madeAs as { kind?: string; kg?: number } | undefined)?.kind === 'hole' && ((b.meta.madeAs as { kg: number }).kg ?? 0) >= 1e9 * 1.98847e30) },
+  { id: 'crash', title: 'Crash two worlds together', detail: 'Throw or move a world into another, and watch', check: (a) => a.physics.log.some((e) => / hit .+ is part of it now/.test(e.text)) },
+  { id: 'freesaturn', title: 'Fly freely round Saturn', detail: 'Tap the chip at the top to move freely, and fly within 10 of its radii', check: (a, near) => !a.stay && near(a.findByName('Saturn'), 10) },
   { id: 'stars', title: 'Visit five stars', detail: 'Come close to five different stars', check: () => false },
   { id: 'log', title: 'Explorer', detail: 'Log 25 discoveries', check: () => false },
 ];
