@@ -1,0 +1,6 @@
+# Started by Claude, 28 Nov 2026: the owner's big round, part 2: make anything with any numbers (four choices,
+# masses typed in Earths or Suns, a planet becoming a brown dwarf or a star by itself, its type a look, size by
+# hand). Claude reworks the camera, the top of the screen and the drawing at the same time: keep to the Add and
+# placing panels, the plans in WhatIf.ts and the saves.
+model: anthropic/claude-sonnet-5-5
+base: bf29ac7eb5ff4207caec85f14601755cfc60e9db
