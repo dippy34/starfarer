@@ -77,7 +77,9 @@ export class Awe {
     const star = sel instanceof CatalogStar || (sel instanceof Body && sel.kind === 'star');
     const sun = star ? sel : sel instanceof ExoPlanet ? sel.system.host : app.system.suns[0];
     const earth = app.system.bodies.find((b) => b.name === 'Earth' && b.kind === 'planet') ?? null;
-    if (sel && sun && app.labels.enabled && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth') {
+    // (and not from close over it, floating over a giant's clouds: there it stood on them, a disc named "Earth" on the clouds)
+    if (sel && sun && app.labels.enabled && !(sel instanceof BlackHole) && sel.radius > 2.5 * R_EARTH_M && sel.name !== 'Earth'
+      && sel.upos.sub(cam, new Vector3()).length() > 1.3 * sel.radius) {
       this.cues.updateEarth({
         rel: sel.upos.sub(cam, new Vector3()), radius: sel.radius, sunRel: sun.upos.sub(cam, new Vector3()),
         sunLum: sun instanceof CatalogStar ? 10 ** (-0.4 * (sun.absMag - SUN_ABS_MAG)) : sun instanceof Body ? app.system.brightness(sun) : 1,
