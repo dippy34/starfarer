@@ -194,6 +194,46 @@ need the OpenCode workspace's region set to Global.
 - **Don't touch:** the camera rig and the top chips, the round buttons, the card's layout outside its Add and
   placing panels, and `src/render` (Claude is reworking those at the same time); the comets' powers.
 
+### `task/exo-sandbox`: God mode round other stars, kept and added to
+
+- **Status:** open, after `task/hole-mass` (one run at a time). Large.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the fix list's #10: "God mode around other stars is missing extras. Share links and saves do not
+  keep changes made there, Add works only around the Sun, and the 'More science' numbers do not follow your
+  changes." Today a link made after a change round another star says "The changes round TRAPPIST-1 are not in it
+  yet" (`App.share`), Add is offered for the Sun's worlds only (`canAdd(b: Body, ...)` in `src/app/WhatIf.ts`), and
+  a planet of another star's worked-out numbers (`ofExoPlanet` in `src/app/Worked.ts`) come from its catalogue
+  entry, not from the mass or size it has now.
+- **How things work now:** live physics round another star is `App.exoSim` (`src/universe/PlanetarySim.ts` as the
+  source, `LivePhysics` over it: `massKnown`, `bodyOf`); the Sun's changed universe is kept by
+  `src/app/SceneWorld.ts` (its form, bytes and limits are described at its top; `WORLD_FORMAT`,
+  `WORLD_FORMAT_COMETS`), read and written by `src/app/SceneLink.ts` and `src/app/Saves.ts`.
+- **What to do,** in this order, each step whole before the next (if time runs short, stop after a whole one and say
+  what is left):
+  1. *Kept.* A save and a link keep a changed system of another star as they keep the Sun's: which star (by its
+     catalogue key), the simulation at that moment, the planets taken away, the masses and sizes changed, the date
+     it was left; opened, the same system is changed in the same way, at the same moment. A new form of the world
+     record, read only when present: links and saves written before read as ever. `App.share` no longer says the
+     changes are not in it.
+  2. *Added to.* Add round another star's planets (and round the star itself) offers what Add offers round the Sun's:
+     a moon for a planet; for the star, the made worlds of every kind and a second sun, placed in that system's live
+     physics as they are round the Sun (between you and it, on a circle, time waiting until Done). Kept by step 1.
+  3. *Worked out from what it is now.* A planet of another star whose mass or size was changed has its worked-out
+     numbers (surface gravity, density, escape speed, its year) from its mass and size now, the working showing
+     the new numbers, as the Sun's worlds already do.
+- **Done when:**
+  - Unit tests: a world record with a changed system of another star read back the same to the last bit; older
+    records read as ever (their bytes unchanged); the worked-out numbers of a planet at twice its mass.
+  - Browser checks in `scripts/live.mjs`, its `exo` block (phone and desk): at TRAPPIST-1 e, Mass to twice, a link
+    made and opened in a new page has TRAPPIST-1 e at twice its mass, simulated, at the same moment; a save the
+    same; Add at TRAPPIST-1 offers the made worlds and one is made and simulated; More science of TRAPPIST-1 e
+    says its surface gravity at the new mass. They fail on the code before the change.
+  - Run `LIVE_ONLY=exo,made` of `scripts/live.mjs` (phone and desk) and `scripts/share.mjs`; Claude runs the whole
+    set after. `npm run check` passes.
+- **Don't touch:** the Sun's own records and their bytes (only a new, optional part), the camera rig, the card's
+  layout, the chips and the Time panel, the drawing of planets (`src/render`). Never make up numbers: what changes
+  is worked out from what the explorer set.
+
 ### `task/hole-mass`: Mass on the real black holes (their shadow grows with it)
 
 - **Status:** open. Medium.
