@@ -370,18 +370,18 @@ for (const kind of kinds) {
   }
   // ------------------------------------------------------------------ a changed universe (live physics): shared, and opened again
   if (want('live')) live: {
-    // a change per kind: Mars sent at the Earth (phone), a planet like the Earth added through the card (on its side),
+    // a change per kind: Mars sent at the Earth (phone), a planet added through the card (on its side: rocky, the Earth's mass),
     // the Moon thrown out and many years run on (desk)
     const setup = { phone: 'target=Earth&dist=60', side: 'target=Sun&dist=4000', desk: 'target=Earth&dist=60' }[kind];
     const { ctx, page } = await open(kind, `${base}?menu=0&time=${START}&paused=1&${setup}`);
-    const subject = { phone: 'Mars', side: 'Earth 2', desk: 'Moon' }[kind];
+    const subject = { phone: 'Mars', side: 'New rocky world', desk: 'Moon' }[kind];
     if (kind === 'side') {
-      // Add, through the card of the Sun: a planet like the Earth, put in place where it starts, Done
+      // Add, through the card of the Sun: a planet (made rocky, of the Earth's mass), put in place where it starts, Done
       await page.evaluate(() => { const a = window.app; a.select(a.findByName('Sun')); });
       await page.waitForFunction(() => document.querySelector('#hud .card h2')?.textContent === 'Sun', null, { timeout: 20000 });
       await press(page, '#hud .card [data-power="add"]');
       await press(page, '#hud .card [data-act="add-planet"]');
-      await page.waitForFunction(() => window.app.selection?.name === 'Earth 2', null, { timeout: 20000 });
+      await page.waitForFunction(() => window.app.selection?.name === 'New rocky world', null, { timeout: 20000 });
       await press(page, '#hud .card [data-act="place-done"]');
     } else {
       // (setup, the change itself: as the powers make it, through LivePhysics, which the live suite drives with fingers)
