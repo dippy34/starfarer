@@ -24,7 +24,7 @@
 //     with two taps; with the storage full, and where the browser keeps nothing, it says so
 // Usage: node scripts/share.mjs [baseUrl] [outDir]
 //   (SHARE_ONLY=view,running,exo,broken,live,saves: those blocks alone; SHARE_KINDS=phone,side,desk)
-import { collectErrors, launchBrowser, openCard } from './lib/browser.mjs';
+import { collectErrors, launchBrowser, liveWay, openCard, undoOffered } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -94,7 +94,7 @@ async function find(page, name) {
 /** Ask for a rate of time with the Time sheet's buttons: `label` is what the clock chip then shows ("1 hour a second"); `pause`: then paused. */
 async function setTime(page, label, pause) {
   if (!(await shown(page, '#hud .sheet.time.on'))) await press(page, '#hud .hud-tabs [data-tab="time"]');
-  for (let i = 0; i < 16 && (await text(page, '#hud .chip.clock small')) !== label; i++) {
+  for (let i = 0; i < 16 && (await text(page, '#hud .time-rate')) !== label; i++) {
     await press(page, '#hud .transport [data-act="faster"]');
     await frames(page, 2);
   }

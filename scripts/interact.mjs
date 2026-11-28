@@ -277,6 +277,9 @@ check('click selects Jupiter', sel === 'Jupiter', `selected=${sel} at ${JSON.str
     }
     const det = document.querySelector('.card [data-details]');
     if (det.getAttribute('aria-expanded') !== 'true') det.click();
+    // (the facts are behind Info, on the card opened)
+    const inf = document.querySelector('.card [data-info]');
+    if (inf.getAttribute('aria-expanded') !== 'true') inf.click();
     // (the card as the app has drawn it for this star: its title, and its distance as the star itself states it;
     // on a slow machine the card is a frame or more behind the selection)
     const info = new Map(s.info());

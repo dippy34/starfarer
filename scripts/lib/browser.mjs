@@ -78,3 +78,23 @@ export function collectErrors(page, errors) {
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('response', (r) => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
 }
+
+/**
+ * Live physics' way back and Undo are in its own small sheet, which the pill at the top opens (src/ui/Hud.ts): `which` is
+ * 'undo' or 'back'. The sheet is opened, the button pressed with `tap` (the script's own way of pressing a selector) and the
+ * sheet put away again if it is still up. Just after the way back the pill itself is Undo.
+ */
+export async function liveWay(page, which, tap) {
+  const after = await page.evaluate(() => { const m = document.querySelector('#hud .live-mark'); return !!m && !m.hidden && m.classList.contains('after'); });
+  if (after) { if (which === 'undo') await tap('#hud .live-mark .live-what'); return; }
+  const up = () => page.evaluate(() => !!document.querySelector('#hud .sheet.live.on'));
+  if (!(await up())) await tap('#hud .live-mark .live-what');
+  await page.waitForFunction(() => !!document.querySelector('#hud .sheet.live.on'), null, { timeout: 60000 });
+  await tap(`#hud .sheet.live .live-${which === 'undo' ? 'undo' : 'back'}`);
+  await page.evaluate(() => document.querySelector('#hud .sheet.live.on [data-close]')?.click());
+}
+
+/** Undo is on offer in live physics (its button in the sheet is not hidden), or the pill is Undo just after the way back. */
+export function undoOffered(page) {
+  return page.evaluate(() => { const b = document.querySelector('#hud .live-undo'), m = document.querySelector('#hud .live-mark'); return (!!b && !b.hidden && !b.closest('[hidden]')) || (!!m && !m.hidden && m.classList.contains('after')); });
+}

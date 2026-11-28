@@ -46,7 +46,7 @@ cost $1.33 for 39 minutes of work: 290,000 tokens written to the cache, 1.9 mill
 it and 22,000 written by the model. At that rate the $200 is over 100 Sonnet runs a month. The
 night of 27 Nov ran four more on Sonnet: task/watch-button $1.28, task/make-anything $4.27 (the whole
 80 minutes, a large task), task/time-panel $1.34, task/name-it $1.67; the evening, task/comet-powers
-$1.76 (its first step of three) and $3.24 (the other two), task/plain-physics $1.66, task/hole-of-your-own $3.68, task/make-any-number $2.56. Each
+$1.76 (its first step of three) and $3.24 (the other two), task/plain-physics $1.66, task/hole-of-your-own $3.68, task/make-any-number $2.56, task/less-on-screen $3.89. Each
 run's `usage.txt` holds what it really used. When the credits run out, requests are refused until
 the next month's; nothing more is charged unless the owner adds paid credit. Which plan a task uses
 is Claude's call, written in its start note: Sonnet for the tasks that most need care, Haiku for

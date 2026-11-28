@@ -693,6 +693,16 @@ export function dayWords(jd: number, short = false): string {
   return `${c.day} ${short ? month.slice(0, 3) : month} ${c.year}`;
 }
 
+/**
+ * When live physics began, for the pill at the top: "" if it began today (`now`, ms since 1970, UTC), else "since 1 Oct"
+ * (the year only when it is not this year's: "since 1 Oct 2031").
+ */
+export function sinceWords(jd: number, now = Date.now()): string {
+  const c = jdToCalendar(tdbToUtc(jd)), t = new Date(now);
+  if (c.year === t.getUTCFullYear() && c.month === t.getUTCMonth() + 1 && c.day === t.getUTCDate()) return '';
+  return `since ${c.day} ${MONTHS[c.month - 1].slice(0, 3)}${c.year === t.getUTCFullYear() ? '' : ` ${c.year}`}`;
+}
+
 /** A rate of time (simulated seconds a second) in words: "3 days a second", "1,200 years a second". */
 export function rateWords(rate: number): string {
   const r = Math.abs(rate), DAY = 86_400, YEAR = 365.25 * DAY;
@@ -706,6 +716,21 @@ export function rateWords(rate: number): string {
 /** The speed of time as the clock at the top says it, short: "real time", "3 hours a second", "◀ 2 days a second" (backwards). */
 export function clockChipWords(rate: number): string {
   return `${rate < 0 ? '◀ ' : ''}${rateWords(rate)}`;
+}
+
+/** How many characters the clock chip's one line has on a phone: the date, then the speed ("1 Oct 2026 · 1 day a second"). */
+export const CLOCK_ROOM = 30;
+
+/**
+ * What the clock chip says after the date, on one line (`chip`: the speed as `clockChipWords` says it): nothing
+ * at real time, "paused", the speed in words, or, where the date and the speed together are more than `room`
+ * characters, "fast" ("slow" under real time; kept backwards: "◀ fast"). "1 d/s" is not plain, so it is not used.
+ */
+export function clockLine(date: string, chip: string, paused: boolean, room = CLOCK_ROOM): string {
+  if (paused) return 'paused';
+  if (chip === 'real time') return '';
+  if (date.length + 3 + chip.length <= room) return chip;
+  return `${chip.startsWith('◀ ') ? '◀ ' : ''}${/^(◀ )?0\./.test(chip) ? 'slow' : 'fast'}`;
 }
 
 /** The speed of time as the Time sheet says it: "Real time", "3 hours a second", "2 days a second, backwards". */

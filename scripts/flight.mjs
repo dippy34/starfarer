@@ -779,7 +779,8 @@ await simpleFlightControls();
   }
   await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); a.hud.notice('Night at Mount Everest: sunrise in 9 h 23 min', 'sunrise', 'Skip to sunrise'); });
   await f.frames(4);
-  await phone.evaluate(() => document.querySelector('.card [data-details]').click());
+  // (the card at its tallest: opened, with its facts under Info)
+  await phone.evaluate(() => { document.querySelector('.card [data-details]').click(); document.querySelector('.card [data-info]').click(); });
   const sizes = [[390, 844, 0], [390, 664, 0], [375, 667, 0], [360, 640, 0], [430, 932, 0], [844, 390, 0], [844, 280, 47], [667, 375, 0], [932, 430, 47], [740, 360, 0]];
   const bad = [];
   for (const [w, h, inset] of sizes) {
@@ -970,10 +971,14 @@ await simpleFlightControls();
   // the ship from a selected place: one button, it boards and flies there, the drive set for the trip
   await phone.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); });
   await f.frames(4);
-  const label = await phone.evaluate(() => document.querySelector('.ship-fab span').textContent);
-  await f.tap(await at('.ship-fab'));
+  // (the ship is the first row of More)
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(3);
+  await phone.waitForTimeout(400);
+  const label = await phone.evaluate(() => document.querySelector('.ship-row b').textContent);
+  await f.tap(await at('.ship-row'));
   await f.frames(4);
-  st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, drive: fl.ship.drive, g: fl.ship.driveAccel / 9.80665, refusal: fl.autopilotRefusal(), fab: getComputedStyle(document.querySelector('.ship-fab')).display }; });
+  st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, drive: fl.ship.drive, g: fl.ship.driveAccel / 9.80665, refusal: fl.autopilotRefusal(), fab: getComputedStyle(document.querySelector('.ship-row')).display }; });
   check('"Fly my ship there": one tap boards the ship and its autopilot flies there, the drive set strong enough', label === 'Fly my ship there' && st.mode === 'chase' && st.target === 'Moon' && st.drive === 'reactionless' && !st.refusal && st.fab === 'none', JSON.stringify({ label, ...st }));
   await phone.screenshot({ path: path.join(outDir, 'f23-phone-ship-there.png'), timeout: 180000 });
 
@@ -1019,7 +1024,10 @@ await simpleFlightControls();
   // down at Earth (the explorer at its surface), the Moon selected
   await phone.evaluate(() => { const a = window.app, e = a.findByName('Earth'); a.placeNear(e, e.radius + 2000, 40, 10); a.select(a.findByName('Moon')); });
   await f.frames(6);
-  const label = await phone.evaluate(() => document.querySelector('.ship-fab span').textContent);
+  await f.tap(await at('.hud-tabs [data-tab="more"]'));
+  await f.frames(3);
+  await phone.waitForTimeout(400);
+  const label = await phone.evaluate(() => document.querySelector('.ship-row b').textContent);
   // (watched every frame from here: the ship's place against what its speed allows between two frames)
   await phone.evaluate(() => {
     const fl = window.app.game.flight, w = (window.__climb = { d0: window.app.selection.upos.sub(window.app.rig.upos).length(), jump: -1e9, temp: 0, over: -1e9, prev: null, t0: null, phases: new Set(), glance: '' });
@@ -1042,7 +1050,7 @@ await simpleFlightControls();
     tick();
   });
   await phone.screenshot({ path: path.join(outDir, 'f25-phone-air-before.png'), timeout: 180000 });
-  await f.tap(await at('.ship-fab'));
+  await f.tap(await at('.ship-row'));
   await f.frames(4);
   st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, refusal: fl.autopilotRefusal(), alt: fl.readout.altitude, toast: document.querySelector('.hud-toast').textContent }; });
   check('"Fly my ship there" from the ground in Earth\'s air: the autopilot takes the trip, and says it climbs first', label === 'Fly my ship there' && st.mode === 'chase' && st.target === 'Moon' && !st.refusal && /climbing out of Earth's air first/.test(st.toast), JSON.stringify({ label, ...st }));

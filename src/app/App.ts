@@ -75,7 +75,7 @@ import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
-import { aheadWords, dayWords, farWords, listed, addedWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, clockChipWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, clockSpeedWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { aheadWords, dayWords, farWords, listed, addedWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, clockChipWords, sinceWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, clockSpeedWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { type PowerPlace, powersFor, type PowerTable } from './powersFor';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
@@ -4345,7 +4345,7 @@ export class App {
     // (the mark at the top has the room of a phone: while a change is watched its chip says the pace, and the watch slows
     // itself when the stepping falls behind)
     const where = this.physics === this.solar ? null : this.physics.system.sun.name;
-    const mark = kept && !this.watch.watching ? `only ${this.rateText(kept)}` : status ? (where ? `round ${where}` : `since ${dayWords(this.physics.live!.jd0, true)}`) : '';
+    const mark = kept && !this.watch.watching ? `only ${this.rateText(kept)}` : status ? (where ? `round ${where}` : sinceWords(this.physics.live!.jd0)) : '';
     // where the camera is: at its target (how high above it, or how far from it), or in open space
     const t = rig.target;
     let place = rig.anchor ? `Near ${rig.anchor.name}` : 'Open space';
@@ -4391,7 +4391,7 @@ export class App {
       undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0),
       realAgain: !this.physics.on && this.realAgain > 0 && this.history.size > 0,
       watch: this.watch.state === 'idle' ? null
-        : this.watch.state === 'offered' ? { text: 'See what it does', ended: false, offer: true }
+        : this.watch.state === 'offered' ? { text: 'Watch what it does', ended: false, offer: true }
         : this.watch.watching ? { text: slowed ? `Slowed: ${rateWords(runs)}` : `Watching: ${rateWords(this.watch.rate)}`, ended: false }
           : { text: `Watched: ${spanWords(this.watch.shown)}`, ended: true, replay: !!this.replayFrom },
       showMe: this.showMe,

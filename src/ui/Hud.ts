@@ -1,4 +1,5 @@
 import { CATEGORIES, type Category, type Destination, type Picture } from '../app/destinations';
+import { clockLine } from '../app/Powers';
 import type { PowerName, PowerTable } from '../app/powersFor';
 import type { Choice } from '../app/WhatIf';
 import { type Box, isClear, largestClear, worth } from '../core/clearArea';
@@ -213,7 +214,7 @@ export interface HudState {
 export interface ThumbSheet { url: string; cols: number; rows: number; bodies: Record<string, [number, number]> }
 
 /** (`flight`: the ship's full read-out, opened from its instruments on a touch screen) */
-type Sheet = 'explore' | 'time' | 'more' | 'flight';
+type Sheet = 'explore' | 'time' | 'more' | 'flight' | 'live';
 
 /**
  * the room kept for the selection's card above the tab bar, with its gap (px). Folded the card is a bar
@@ -282,9 +283,7 @@ const TEMPLATE = `
     </button>
   </header>
   <div class="live-mark" hidden>
-    <button class="live-what" type="button" data-live aria-label="Live physics: what is simulated, and what has happened">${ICON.live}<span><b>Live physics</b><small></small></span></button>
-    <button class="live-undo" type="button" data-act="undo" aria-label="Undo the last change">${ICON.undo}<span>Undo</span></button>
-    <button class="live-back" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
+    <button class="live-what" type="button" data-live aria-label="Live physics: what is simulated, and what has happened"><i class="live-dot"></i><span><b>Live</b><small></small></span></button>
   </div>
   <div class="hud-toast" role="status" aria-live="polite"></div>
   <div class="move-handle" hidden></div>
@@ -295,7 +294,6 @@ const TEMPLATE = `
   </svg>
   <div class="hud-dock">
     <div class="hud-fabs">
-      <button class="fab ship-fab" type="button" data-act="ship-go">${ICON.ship}<span>My ship</span></button>
       <button class="fab walk-fab touch-only" type="button" data-act="walk" hidden>${ICON.walk}<span>Land and walk</span></button>
     </div>
     <div class="hud-slot">
@@ -308,7 +306,7 @@ const TEMPLATE = `
       </div>
       <div class="hud-watch" role="status" hidden>
         <span class="watch-text"></span>
-        <button class="watch-start" type="button" data-act="watch-start">${ICON.play}Watch</button>
+        <button class="watch-start" type="button" data-act="watch-start">${ICON.play}<span>Watch what it does</span></button>
         <button class="watch-stop" type="button" data-act="watch-stop">${ICON.stop}Stop</button>
         <button class="watch-replay" type="button" data-act="replay">${ICON.replay}Replay</button>
         <button class="watch-close" type="button" data-act="watch-close" aria-label="Close">${ICON.close}</button>
@@ -318,11 +316,6 @@ const TEMPLATE = `
           <div class="card-title"><h2></h2><p></p><button class="card-more" type="button" data-details aria-expanded="false" aria-label="More about it">${ICON.chevron}</button></div>
           <button class="btn primary card-go" type="button" data-act="go">${ICON.go}<span>Go there</span></button>
           <button class="icon-btn" type="button" data-act="deselect" aria-label="Close">${ICON.close}</button>
-        </div>
-        <div class="card-actions">
-          <span class="thumb"></span>
-          <button class="btn" type="button" data-act="centre">${ICON.centre}<span>Look at</span></button>
-          <button class="btn" type="button" data-act="share">${ICON.share}<span>Share</span></button>
         </div>
         <div class="card-powers" hidden>
           <button class="power" type="button" data-power="mass" aria-expanded="false">${ICON.mass}<span>Mass</span></button>
@@ -387,6 +380,12 @@ const TEMPLATE = `
           <button class="row" type="button" data-act="add-hole" hidden>${ICON.hole}<span class="row-text"><b>A black hole</b><small>Heavier than the Sun, and no light: 1 Sun to 10 billion</small></span></button>
           <p class="power-hint">It starts between you and this world, with time waiting: put it where you want it, give it the mass you want, then Done. After that it is moved, made heavier and removed like any other.</p>
         </div>
+        <div class="card-actions">
+          <span class="thumb"></span>
+          <button class="btn" type="button" data-act="centre">${ICON.centre}<span>Look at</span></button>
+          <button class="btn" type="button" data-act="share">${ICON.share}<span>Share</span></button>
+          <button class="btn" type="button" data-info aria-expanded="false">${ICON.info}<span>Info</span></button>
+        </div>
         <div class="facts" hidden>
           <ul class="plain"></ul>
           <button class="science-toggle" type="button" data-science aria-expanded="false"><span>More science</span>${ICON.chevron}</button>
@@ -411,21 +410,25 @@ const TEMPLATE = `
         <div class="time-now"><div class="time-date"></div><div class="time-clock"></div><div class="time-rate"></div></div>
         <button class="btn time-today" type="button" data-act="now" hidden>${ICON.now}<span>Back to now</span></button>
         <div class="ship-time" hidden><dl></dl><p></p></div>
-        <div class="live-sheet" hidden>
-          <h3>Live physics</h3>
-          <div class="live-ways">
-            <button class="btn" type="button" data-act="undo">${ICON.undo}<span>Undo</span></button>
-            <button class="btn" type="button" data-act="reality">${ICON.back}<span>Back to reality</span></button>
-          </div>
-          <p class="live-about"></p>
-          <div class="live-log"></div>
-          <details class="live-left"><summary><span>What the simulation leaves out</span>${ICON.chevron}</summary><ul></ul></details>
-        </div>
         <div class="transport">
           <button type="button" data-act="reverse" aria-pressed="false">${ICON.reverse}<span>Reverse</span></button>
           <button type="button" data-act="slower">${ICON.slower}<span>Slower</span></button>
           <button type="button" class="big" data-act="pause" aria-label="Pause or resume time">${ICON.pause}${ICON.play}</button>
           <button type="button" data-act="faster">${ICON.faster}<span>Faster</span></button>
+        </div>
+      </section>
+      <section class="sheet live" data-sheet="live" aria-label="Live physics">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head"><h2>Live physics</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
+        <div class="live-sheet" hidden>
+          <p class="live-about"></p>
+          <div class="live-ways">
+            <button class="live-way live-undo" type="button" data-act="undo">${ICON.undo}<span><b>Undo</b><small>Takes back the last change</small></span></button>
+            <button class="live-way live-back" type="button" data-act="reality">${ICON.back}<span><b>Back to reality</b><small>Puts the real Solar System back, as it was</small></span></button>
+          </div>
+          <h3>What happened</h3>
+          <div class="live-log"></div>
+          <details class="live-left"><summary><span>What the simulation leaves out</span>${ICON.chevron}</summary><ul></ul></details>
         </div>
       </section>
       <section class="sheet flight" data-sheet="flight" aria-label="The ship's instruments">
@@ -437,6 +440,7 @@ const TEMPLATE = `
         <div class="sheet-grab"></div>
         <div class="sheet-head"><h2>${PRODUCT_NAME}</h2><button class="icon-btn" type="button" data-close aria-label="Close">${ICON.close}</button></div>
         <div class="list">
+          <button class="row ship-row" type="button" data-act="ship-go">${ICON.ship}<span class="row-text"><b>Fly my ship</b><small>Board it, and fly to what you chose</small></span></button>
           <button class="row" type="button" data-help>${ICON.help}<span class="row-text"><b>How to move</b><small class="touch-only">Every touch, in the ship too</small><small class="mouse-only">Every key and click</small></span>${ICON.chevron}</button>
           <button class="row" type="button" data-act="share">${ICON.share}<span class="row-text"><b>Share this view</b><small class="touch-only">A link that opens it as it is now</small><small class="mouse-only">Copies a link that opens it as it is now</small></span></button>
           <details class="missions"><summary>${ICON.flag}<span class="row-text"><b>Missions</b><small></small></span>${ICON.chevron}</summary><ul></ul></details>
@@ -494,7 +498,10 @@ export class Hud {
   private selectionKey: string | null = null;
   /** the selection whose facts were last shown */
   private factsKey: string | null = null;
+  /** the card is opened (its powers, and Look at, Share and Info); its facts are under Info (`info`) */
   private details = false;
+  /** the card's facts in plain words are unfolded (the Info button) */
+  private info = false;
   /** the line of the selection's temperature has folded away to make room (makeRoom), until another is chosen */
   private warmthFolded = false;
   /** the card's science (every fact as measured, and what is worked out from them) is unfolded under its plain lines */
@@ -857,11 +864,13 @@ export class Hud {
   makeRoom(): void {
     const card = this.$('.card'), wide = getComputedStyle(this.$('.hud-dock')).flexDirection !== 'column';
     const scrolls = () => card.scrollHeight > card.clientHeight + 1;
-    if (this.power !== null || this.details) {
+    if (this.power !== null || this.info) {
       // (the clear part as it is, however little: an open panel that leaves almost none is the most cramped of all)
       const free = this.freeBox(), cramped = !wide ? free.bottom - free.top < FOLD_BELOW * window.innerHeight : scrolls();
       if (!cramped) return;
       this.power = null;
+      this.info = false;
+      this.science = false;
       this.details = false;
       if (this.state) this.renderCard(this.state);
     }
@@ -991,9 +1000,10 @@ export class Hud {
     this.$('.place b').dataset.long = s.place.length > 26 ? '2' : s.place.length > 17 ? '1' : '';
     setText(this.$('.place small'), s.placeDetail);
     const [day, clock] = splitDate(s.date);
-    setText(this.$('.clock b'), `${shortDay(day)}, ${clock.slice(0, 5)}`);
     const ship = s.ship ?? null;
-    setText(this.$('.clock small'), s.paused ? 'paused' : ship ? ship.chip : s.rate);
+    // (one line: at real time only the date; otherwise the date and how fast time runs, in words, or "fast" where the line would not fit)
+    setText(this.$('.clock b'), shortDay(day));
+    setText(this.$('.clock small'), ship ? (s.paused ? 'paused' : ship.chip) : clockLine(shortDay(day), s.rate, s.paused));
     this.$('.clock').classList.toggle('paused', s.paused);
     setText(this.$('.time-date'), longDay(day));
     setText(this.$('.time-clock'), `${clock} UTC`);
@@ -1007,7 +1017,7 @@ export class Hud {
     for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['real-size', s.realSize], ['show-me', s.showMe], ['ship', s.mode === 'ship'], ['pilot-controls', s.pilotControls]] as const) {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
-    setText(this.$('.ship-fab span'), s.selection && !s.selection.here ? 'Fly my ship there' : 'My ship');
+    setText(this.$('.ship-row b'), s.selection && !s.selection.here ? 'Fly my ship there' : 'Fly my ship');
     const today = this.$('.time-today');
     today.hidden = !s.today;
     if (s.today) setText(today.querySelector('span')!, s.today);
@@ -1126,30 +1136,42 @@ export class Hud {
   }
 
   /**
-   * Live physics: the mark at the top, with Undo and the way back; in the Time sheet, what has
-   * happened and what is left out. Just after the real Solar System has come back, the mark says so
-   * for a moment, with Undo: the changed world can be had back.
+   * Live physics: a small pill at the top ("Live", and since when), which opens its own sheet: when it began, Undo, the way
+   * back, what has happened and what is left out. Just after the real Solar System has come back, the pill says so for a
+   * moment, and is Undo: the changed world can be had back.
    */
   private renderLive(s: HudState): void {
     const live = s.live, after = !live && s.realAgain;
     this.el.toggleAttribute('data-live', !!live || after);
-    const mark = this.$('.live-mark');
+    const mark = this.$('.live-mark'), what = this.$('.live-what');
     mark.hidden = !live && !after;
     mark.classList.toggle('after', after);
+    // (the pill is no wider than the chip of the place beside it: measured only while the pill is shown, a layout read)
+    if (!mark.hidden) {
+      const place = this.$('.chip.place').getBoundingClientRect().width;
+      if (place > 0 && place !== this.pillMax) { this.pillMax = place; mark.style.setProperty('--pill-max', `${place.toFixed(1)}px`); }
+    }
+    // (after: the pill is the Undo button itself)
+    what.toggleAttribute('data-live', !after);
+    if (after) what.dataset.act = 'undo'; else delete what.dataset.act;
     this.$('.live-undo').hidden = !s.undo;
     this.$('.live-back').hidden = !live;
-    this.$('.live-ways [data-act="undo"]').hidden = !s.undo;
     const sheet = this.$('.live-sheet');
     sheet.hidden = !live;
+    if (!live && this.sheet === 'live') this.closeSheet();
     if (after) {
-      setText(this.$('.live-what b'), 'Back to reality');
-      setText(this.$('.live-what small'), s.realWhat);
+      setText(this.$('.live-what b'), 'Undo');
+      setText(this.$('.live-what small'), 'real again');
+      this.$('.live-what small').hidden = false;
+      what.setAttribute('aria-label', `Undo: ${s.realWhat}, and the change is taken back`);
     }
     if (!live) return;
-    setText(this.$('.live-what b'), 'Live physics');
+    what.setAttribute('aria-label', 'Live physics: what is simulated, and what has happened');
+    setText(this.$('.live-what b'), 'Live');
     setText(this.$('.live-what small'), live.mark);
-    const what = live.where ? `${live.where} and its planets move under their own gravity: each pulls on every other, and none is on its catalogued orbit any more. Everything else stays real.` : 'everything here moves under its own gravity: each world pulls on every other, and nothing is on its catalogued path any more.';
-    setText(this.$('.live-about'), `Since ${live.since} ${what}${live.rails ? ` Carried on rails while time runs this fast: ${live.rails}.` : ''}`);
+    this.$('.live-what small').hidden = !live.mark;
+    const what2 = live.where ? `${live.where} and its planets move under their own gravity: each pulls on every other, and none is on its catalogued orbit any more. Everything else stays real.` : 'everything here moves under its own gravity: each world pulls on every other, and nothing is on its catalogued path any more.';
+    setText(this.$('.live-about'), `Since ${live.since} ${what2}${live.rails ? ` Carried on rails while time runs this fast: ${live.rails}.` : ''}`);
     const key = live.log.map((e) => `${e.day}\n${e.text}`).join('\n');
     if (key !== this.logKey) {
       this.logKey = key;
@@ -1163,6 +1185,8 @@ export class Hud {
       this.$('.live-left ul').innerHTML = live.leftOut.map((t) => `<li>${escapeHtml(t)}</li>`).join('');
     }
   }
+  /** the width the live pill was last given as its most (the place chip's) */
+  private pillMax = 0;
 
   private renderCard(s: HudState): void {
     const sel = s.selection;
@@ -1172,6 +1196,7 @@ export class Hud {
       // something new was chosen: its card takes the panel
       this.selectionKey = sel.key;
       this.details = false;
+      this.info = false;
       this.science = false;
       this.warmthFolded = false;
       this.power = null;
@@ -1185,6 +1210,7 @@ export class Hud {
       this.wantAdd = null;
       this.endMove();
       this.details = false;
+      this.info = false;
       // (and where nothing can be added now, it says why)
       if (sel.powers.add.works) { this.power = 'add'; this.powerReason = null; } else { this.power = null; this.powerReason = 'add'; }
     }
@@ -1224,7 +1250,7 @@ export class Hud {
     moveButton.setAttribute('aria-expanded', String(moving));
     // (one panel at a time: moving it takes the place of its mass, of what can be added and of its details)
     if (moving || (this.power === 'mass' && !sel.powers.mass.works) || (this.power === 'size' && !sel.powers.size.works) || (this.power === 'add' && !sel.powers.add.works)) this.power = null;
-    if (moving) this.details = false;
+    if (moving) { this.details = false; this.info = false; }
     massButton.setAttribute('aria-expanded', String(this.power === 'mass'));
     sizeButton.setAttribute('aria-expanded', String(this.power === 'size'));
     addButton.setAttribute('aria-expanded', String(this.power === 'add'));
@@ -1301,12 +1327,13 @@ export class Hud {
       if (!this.sizing && Math.abs(Number(this.sizeSlider.value) - sel.size.slider) > 0.002) this.sizeSlider.value = String(sel.size.slider);
     }
     const facts = card.querySelector<HTMLElement>('.facts')!;
-    facts.hidden = !this.details;
-    // (folded, the card is a bar: its name, a line, Go there. Everything else is a tap on it away)
-    const open = this.details || this.power !== null || this.powerReason !== null || moving;
+    facts.hidden = !this.info;
+    // (folded, the card is a bar: its name, a line, Go there. Opened: its powers, and Look at, Share and Info; the facts are under Info)
+    const open = this.details || this.info || this.power !== null || this.powerReason !== null || moving;
     card.classList.toggle('open', open);
     card.querySelector('[data-details]')!.setAttribute('aria-expanded', String(open));
-    if (!this.details) return;
+    card.querySelector('[data-info]')!.setAttribute('aria-expanded', String(this.info));
+    if (!this.info) return;
     // the plain lines first; every fact as measured under More science
     const plainKey = sel.plain.map((r) => r.join('\t')).join('\n');
     if (plainKey !== this.plainKey) {
@@ -1437,7 +1464,8 @@ export class Hud {
       if (!status.works) {
         this.endMove();
         this.power = null;
-        this.details = false;
+        this.details = true;
+        this.info = false;
         this.powerReason = requestedPower;
         this.renderCard(this.state);
         return;
@@ -1447,16 +1475,27 @@ export class Hud {
     else if (d.cat) { this.category = d.cat as Category; this.renderList(); }
     else if (d.tab) this.tab(d.tab);
     else if ('close' in d) this.closeSheet();
-    else if ('details' in d) { this.endMove(); this.details = !this.details; if (!this.details) this.science = false; this.power = null; this.powerReason = null; if (this.state) this.renderCard(this.state); }
+    else if ('details' in d) {
+      // (the name, or its chevron: opens the card, or folds whatever is open back to its bar)
+      const opened = this.$('.card').classList.contains('open');
+      this.endMove();
+      this.details = !opened;
+      this.info = false;
+      this.science = false;
+      this.power = null;
+      this.powerReason = null;
+      if (this.state) this.renderCard(this.state);
+    }
+    else if ('info' in d) { this.endMove(); this.info = !this.info; if (!this.info) this.science = false; this.power = null; this.powerReason = null; this.details = true; if (this.state) this.renderCard(this.state); }
     else if ('science' in d) { this.science = !this.science; if (this.state) this.renderCard(this.state); }
-    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'size' | 'add'); this.powerReason = null; this.details = false; if (this.state) this.renderCard(this.state); }
+    else if (d.power) { this.endMove(); this.power = this.power === d.power ? null : (d.power as 'mass' | 'size' | 'add'); this.powerReason = null; this.details = true; this.info = false; this.science = false; if (this.state) this.renderCard(this.state); }
     else if ('noticeClose' in d) this.clearNotice();
     else if ('impactClose' in d) this.impact(null);
     else if ('impactMore' in d) this.$('.hud-impact').classList.remove('brief');
     else if ('help' in d) this.$('.more .help-title').scrollIntoView({ block: 'start', behavior: 'smooth' });
     else if ('massReal' in d) { this.slider.value = '0'; this.host.massHeld(true); this.host.setMass(0); this.host.massHeld(false); }
     else if ('sizeReal' in d) { this.sizeSlider.value = '0'; this.host.sizeHeld(true); this.host.setSize(0); this.host.sizeHeld(false); }
-    else if ('live' in d) { if (this.state?.live) { this.openSheet('time'); this.$('.live-sheet').scrollIntoView({ block: 'start' }); } }
+    else if ('live' in d) { if (this.state?.live) { if (this.sheet === 'live') this.closeSheet(); else this.openSheet('live'); } }
     else if ('coach' in d) { this.coach.hidden = true; store('coached'); }
     else if (d.saveOpen) this.host.openSave(d.saveOpen);
     else if (d.saveDelete) {
@@ -1469,7 +1508,7 @@ export class Hud {
       if (d.act === 'move' || d.act === 'remove') this.powerReason = null;
       if (b.classList.contains('notice-act')) this.clearNotice();
       // (nothing is left open behind the picture, or the cockpit; a picture saved shows the view it saved)
-      if (d.act === 'photo' || d.act === 'ship' || d.act === 'screenshot' || d.act === 'free') this.closeSheet();
+      if (d.act === 'photo' || d.act === 'ship' || d.act === 'ship-go' || d.act === 'screenshot' || d.act === 'free') this.closeSheet();
       this.host.act(d.act as HudAction);
     }
   }

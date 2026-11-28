@@ -107,7 +107,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/less-on-screen`: less on the screen, a tap or two away
 
-- **Status:** open. Medium.
+- **Status:** done 28 Nov 2026: run 46134413271 on Claude Sonnet 5.5 ($3.89), reviewed by Claude (its changed checks follow the new
+  places, none loosened; the live pill measures its place chip only while it is shown). Medium.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the owner, 28 Nov 2026: "there's just so much UI and different buttons that it takes up way too
   much of the actual screen. So I would like to make it a little more sleek and maybe put things into more
