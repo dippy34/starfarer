@@ -52,6 +52,8 @@ export type HudAction =
   | 'add-hole'
   // Create (the tab bar): what can be made, on what is here (src/app/App.ts create)
   | 'create'
+  // the chip at the top: stay on what the camera is on, or move freely (src/app/App.ts toggleStay)
+  | 'stay'
   // the powers (src/app/LivePhysics.ts): take the selected world away; undo everything that was changed;
   // begin or end moving it with a finger, and what it is to do where it is left (or throw it); a world just made is in place
   | 'remove' | 'reality' | 'move' | 'move-keep' | 'move-circle' | 'move-throw' | 'place-done'
@@ -173,6 +175,8 @@ export interface HudState {
   look: boolean;
   /** flying freely by touch: a stick, Up and Down over the view (src/app/FreeFly.ts) */
   free?: boolean;
+  /** the camera stays on what it is on (the chip's name), or moves freely (the chip says so): the toggle the chip is */
+  stay?: boolean;
   /** every steering, side-thrust and drive control on the touch screen, rather than simple Engine controls */
   pilotControls: boolean;
   /** exploring, or in a mode that brings its own controls */
@@ -262,8 +266,8 @@ const KEY_HELP: [string, string][] = [
 
 const TEMPLATE = `
   <header class="hud-top">
-    <button class="chip place" type="button" data-act="home" aria-label="Where you are. Tap to look at it">
-      <span class="chip-icon">${ICON.centre}</span><span class="chip-text"><b></b><small></small></span>
+    <button class="chip place" type="button" data-act="stay" aria-pressed="true" aria-label="What the camera stays on. Tap to move freely">
+      <span class="chip-icon"><span class="stay-on">${ICON.centre}</span><span class="stay-off">${ICON.move}</span></span><span class="chip-text"><b></b><small></small></span>
     </button>
     <button class="chip clock" type="button" data-tab="time" aria-label="Date and time">
       <span class="chip-text"><b></b><small></small></span>
@@ -283,7 +287,6 @@ const TEMPLATE = `
   </svg>
   <div class="hud-dock">
     <div class="hud-fabs">
-      <button class="fab look-fab touch-only" type="button" data-act="look" aria-pressed="false" aria-label="What dragging one finger does now: turn round the world, or look around. Tap to change">${ICON.orbit}${ICON.look}<span></span></button>
       <button class="fab ship-fab" type="button" data-act="ship-go">${ICON.ship}<span>My ship</span></button>
       <button class="fab walk-fab touch-only" type="button" data-act="walk" hidden>${ICON.walk}<span>Land and walk</span></button>
     </div>
@@ -434,8 +437,6 @@ ${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" ty
           <button class="switch" type="button" role="switch" data-act="ship" aria-checked="false"><span><b>Spaceship</b><small>Physics all the way up: as fast as you like, never faster than light. Go there flies it</small></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="pilot-controls" aria-checked="false"><span><b>Pilot controls</b><small>Show every steering, side-thrust and drive setting; off keeps one Engine chip and Hold steering</small></span><i></i></button>
           <h3>Camera</h3>
-          <button class="switch touch-only" type="button" role="switch" data-act="free" aria-checked="false"><span><b>Fly freely</b><small>A stick moves you, Up and Down, drag to look: the keys' flight without a keyboard</small></span><i></i></button>
-          <button class="switch touch-only" type="button" role="switch" data-act="look" aria-checked="false"><span><b>One finger looks around</b><small>instead of turning round the world you are at</small></span><i></i></button>
           <button class="row" type="button" data-act="photo">${ICON.photo}<span class="row-text"><b>Photo mode</b><small class="touch-only">Hides everything; tap to bring it back</small><small class="mouse-only">Hides everything; U brings it back</small></span></button>
           <button class="row" type="button" data-act="screenshot">${ICON.camera}<span class="row-text"><b>Save a picture</b><small>The view as a PNG</small></span></button>
           <button class="row" type="button" data-fullscreen hidden>${ICON.fullscreen}<span class="row-text"><b>Full screen</b><small>Without the browser around it</small></span></button>
@@ -904,6 +905,11 @@ export class Hud {
     el.classList.toggle('touch', this.coarse || s.touch);
     el.dataset.mode = s.mode;
     el.toggleAttribute('data-free', !!s.free);
+    // (the chip at the top-left is the camera's toggle: Stay on it, or Move freely)
+    const chip = this.$('.chip.place'), staying = s.stay !== false;
+    chip.classList.toggle('free', !staying);
+    chip.setAttribute('aria-pressed', String(staying));
+    chip.setAttribute('aria-label', staying ? `Staying on ${s.place}. Tap to move freely` : 'Moving freely. Tap to stay on something');
     setText(this.$('.place b'), s.place);
     // (a long name gets a smaller letter before it gets cut: "Apollo 11 landing site" whole on a phone)
     this.$('.place b').dataset.long = s.place.length > 26 ? '2' : s.place.length > 17 ? '1' : '';
@@ -922,12 +928,9 @@ export class Hud {
     const flight = this.$('.hud-flight');
     flight.hidden = !s.flying;
     if (s.flying) setText(flight.firstElementChild as HTMLElement, `Flying to ${s.flying}`);
-    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['look', s.look], ['free', !!s.free], ['ship', s.mode === 'ship'], ['pilot-controls', s.pilotControls]] as const) {
+    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['ship', s.mode === 'ship'], ['pilot-controls', s.pilotControls]] as const) {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
-    this.$('.look-fab').setAttribute('aria-pressed', String(s.look));
-    // (the button says what dragging does now; a tap changes it)
-    setText(this.$('.look-fab span'), s.look ? 'Looking around' : 'Turning around it');
     setText(this.$('.ship-fab span'), s.selection && !s.selection.here ? 'Fly my ship there' : 'My ship');
     const today = this.$('.time-today');
     today.hidden = !s.today;

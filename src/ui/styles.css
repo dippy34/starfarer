@@ -136,6 +136,11 @@ body { position: fixed; inset: 0; -webkit-tap-highlight-color: transparent; }
   background: var(--glass); border: 1px solid var(--line);
 }
 .chip-icon { display: flex; color: var(--accent); }
+/* the camera's toggle: a target staying on something, four arrows moving freely */
+.chip.place .stay-off, .chip.place.free .stay-on { display: none; }
+.chip.place.free .stay-off { display: flex; }
+.chip.place .stay-on { display: flex; }
+#hud .chip.place.free { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .chip-text { min-width: 0; }
 .chip b { display: block; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip b[data-long='1'] { font-size: 13px; }

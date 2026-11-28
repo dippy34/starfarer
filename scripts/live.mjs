@@ -376,15 +376,15 @@ for (const kind of kinds) {
     const words = await markWords(page);
     check(on('the mark at the top says since when live physics is on, in words a phone has room for; the pace is the chip\'s to tell'),
       words.b === 'Live physics' && words.small === 'since 1 Oct 2026' && words.whole, `"${words.b}" / "${words.small}", whole: ${words.whole}`);
-    // the camera eases out until Jupiter's four great moons fit in what the interface leaves clear
-    await until(page, () => !window.app.glide, null, 60);
+    // the camera stays as the toggle has it (the owner, 28 Nov 2026): a watch runs time and does not move the camera, which
+    // stays on Jupiter, as far from it as it was
+    await frames(page, 3);
     const fit = await framing(page, 'Callisto', 'Jupiter');
-    const moons = await Promise.all(['Io', 'Europa', 'Ganymede', 'Callisto'].map((n) => framing(page, n, 'Jupiter')));
-    const inside = (p, r) => !!p && p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom;
+    const on1 = await page.evaluate(() => ({ glide: !!window.app.glide, stay: window.app.stay, anchor: window.app.rig.anchor?.name ?? null, target: window.app.rig.target?.name ?? null }));
     const mid = { x: (fit.free.left + fit.free.right) / 2, y: (fit.free.top + fit.free.bottom) / 2 };
-    check(on('the camera eases out to frame the moons the change matters to, Jupiter in the middle of the part of the view the interface leaves clear'),
-      fit.d > 1.5 * before.d && moons.every((m) => inside(m.at, fit.free)) && Math.hypot(fit.centreAt.x - mid.x, fit.centreAt.y - mid.y) < 8 && inside(fit.centreAt, fit.free),
-      `from ${(before.d / 1e9).toFixed(2)} to ${(fit.d / 1e9).toFixed(2)} million km; Jupiter ${Math.hypot(fit.centreAt.x - mid.x, fit.centreAt.y - mid.y).toFixed(1)} px from the middle of the clear part (${fit.free.left.toFixed(0)}-${fit.free.right.toFixed(0)} x ${fit.free.top.toFixed(0)}-${fit.free.bottom.toFixed(0)}); the moons ${moons.map((m) => `(${m.at?.x.toFixed(0)}, ${m.at?.y.toFixed(0)})`).join(' ')}`);
+    check(on('Watch does not move the camera: it stays on Jupiter, as far from it as it was, and nothing eases it anywhere'),
+      !on1.glide && on1.stay && on1.anchor === 'Jupiter' && on1.target === 'Jupiter' && Math.abs(fit.d / before.d - 1) < 0.01,
+      `${(before.d / 1e9).toFixed(3)} then ${(fit.d / 1e9).toFixed(3)} million km from Jupiter; ${JSON.stringify(on1)}`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-watch.png`) });
 
     // it has no end of its own: thirty seconds later it is still watching, at its pace, until Stop
@@ -409,15 +409,15 @@ for (const kind of kinds) {
     const again = await watching(page);
     check(on('Replay goes back to the moment just after the change and watches it again'),
       after !== null && again.state === 'watching' && again.jd - after < (again.rate * 5) / 86400 && again.jd >= after && again.chip && again.stop, `${((again.jd - after) * 24).toFixed(2)} h after the change, "${again.text}"`);
-    // a finger on the view takes the camera back at once (the camera was easing to the frame again), and time keeps the watch's pace
+    // Replay does not move the camera either, and a finger on the view leaves time at the watch's pace
     const easing = await page.evaluate(() => !!window.app.glide);
     if (touch) await touch.press({ x: mid.x - 60, y: mid.y });
     else { await page.mouse.move(mid.x - 60, mid.y); await page.mouse.down({ button: 'right' }); }
     const held = await page.evaluate(() => ({ glide: !!window.app.glide }));
     if (touch) { await touch.slide({ x: mid.x - 20, y: mid.y + 5 }); await touch.lift(); } else { await page.mouse.move(mid.x - 20, mid.y + 5, { steps: 3 }); await page.mouse.up({ button: 'right' }); }
     const kept = await watching(page);
-    check(on('a finger on the view takes the camera back at once, and time keeps the watch\'s pace'), easing && !held.glide && kept.state === 'watching' && kept.clock === kept.rate && !kept.paused,
-      `easing ${easing}, then ${held.glide ? 'still easing' : 'in the hand'}; ${kept.state} at ${(kept.clock / 60).toFixed(1)} min/s`);
+    check(on('Replay does not move the camera either, and a finger on the view leaves time at the watch\'s pace'), !easing && !held.glide && kept.state === 'watching' && kept.clock === kept.rate && !kept.paused,
+      `easing ${easing}, then ${held.glide ? 'easing' : 'in the hand'}; ${kept.state} at ${(kept.clock / 60).toFixed(1)} min/s`);
     await press(page, '#hud .hud-watch .watch-stop');
     await frames(page, 1);
 
@@ -1358,17 +1358,19 @@ for (const kind of kinds) {
     const thrownWatched = await watching(page);
     check(on('tap Watch, and the throw is watched: time runs at the pace of what follows'),
       thrownWatched.state === 'watching' && /^Watching: [\d.]+ days a second$/.test(thrownWatched.text) && !thrownWatched.paused && thrownWatched.clock === thrownWatched.rate, `"${thrownWatched.text}", paused ${thrownWatched.paused}`);
-    // days on, the frame still holds the Earth and the Moon: the camera rides with the Earth, which it frames from beyond
-    // the Earth's reach (riding with the Sun there, it would see the Earth leave the frame at days a second)
-    await until(page, () => !window.app.glide, null, 60);
+    // days on, the camera is where the toggle keeps it (the owner, 28 Nov 2026): still on the Earth (the flight to the Moon
+    // stopped half way leaves it on the world whose reach it is in, which the chip names), as far from it as it was; the
+    // watch moves nothing
+    const d0 = await page.evaluate(() => { const a = window.app, e = a.findByName('Earth'); return e.upos.sub(a.rig.upos, new (e.pos.constructor)()).length(); });
     const jd0 = await page.evaluate(() => window.app.clock.jdTdb);
     await until(page, (jd0) => window.app.clock.jdTdb > jd0 + 2 || window.app.watch.state !== 'watching', jd0, 120);
     const kept = await page.evaluate((jd0) => {
       const a = window.app, earth = a.findByName('Earth'), V = earth.pos.constructor, at = (b) => a.project(b.upos.sub(a.rig.upos, new V()));
-      return { earth: at(earth), moon: at(a.findByName('Moon')), free: a.hud.freeArea(), days: a.clock.jdTdb - jd0, anchor: a.rig.anchor?.name ?? null, watch: a.watch.state, log: a.physics.status()?.log.slice(0, 2).map((e) => e.text) ?? [] };
+      return { earth: at(earth), moon: at(a.findByName('Moon')), free: a.hud.freeArea(), days: a.clock.jdTdb - jd0, anchor: a.rig.anchor?.name ?? null, watch: a.watch.state, log: a.physics.status()?.log.slice(0, 2).map((e) => e.text) ?? [],
+        d: earth.upos.sub(a.rig.upos, new V()).length(), glide: !!a.glide, chip: document.querySelector('#hud .chip.place b').textContent };
     }, jd0);
-    check(on('days into the watch the frame still holds the Earth and the Moon: the camera rides with the Earth'),
-      kept.watch === 'watching' && kept.days > 2 && within(kept.earth, kept.free) && within(kept.moon, kept.free) && kept.anchor === 'Earth',
+    check(on('days into the watch the camera is still on the Earth, as far from it as it was, the chip naming it: the watch moved nothing'),
+      kept.watch === 'watching' && kept.days > 2 && within(kept.earth, kept.free) && kept.anchor === 'Earth' && kept.chip === 'Earth' && !kept.glide && Math.abs(kept.d / d0 - 1) < 0.01,
       `${kept.days.toFixed(1)} days on; the Earth at ${kept.earth ? `(${kept.earth.x.toFixed(0)}, ${kept.earth.y.toFixed(0)})` : 'nowhere'}, the Moon at ${kept.moon ? `(${kept.moon.x.toFixed(0)}, ${kept.moon.y.toFixed(0)})` : 'nowhere'} in ${kept.free.left.toFixed(0)}-${kept.free.right.toFixed(0)} x ${kept.free.top.toFixed(0)}-${kept.free.bottom.toFixed(0)}; riding with ${kept.anchor}${kept.anchor === 'Earth' ? '' : `; the log: ${kept.log.join(' / ')}`}`);
     const words = await markWords(page);
     check(on('while the throw is watched the mark at the top says since when, its words whole'), words.small === 'since 1 Oct 2026' && words.whole, `"${words.small}", whole: ${words.whole}`);
@@ -1699,8 +1701,8 @@ for (const kind of kinds) {
     check(on('let go and Watch tapped, Mars falls at the Earth, watched; as the two come near, time slows, and the chip says how slow, so that the last of the fall takes about three seconds'),
       slowed.phase === 'coming' && slowed.watch === 'watching' && slowed.cap < slowed.rate && /^Slowed: [\d.]+ (minutes|hours) a second$/.test(slowed.chip) && hit.t - slowed.t > 2500 && !hit.mars,
       `"${slowed.chip}" (the watch at ${(slowed.rate / 3600).toFixed(1)} h/s); the hit ${((hit.t - slowed.t) / 1000).toFixed(1)} s later`);
-    check(on('the camera frames the two, round the Earth, in the part of the view the interface leaves clear'),
-      (slowed.framed === 'Earth' || (within(slowed.earth, slowed.free) && within(slowed.mars, slowed.free))) && within(bright?.at, hit.free),
+    check(on('nothing moves the camera for the hit (the owner, 28 Nov 2026): staying on the Earth, it has the two in the clear part of the view as they come near, and the hit in sight'),
+      !slowed.framed && within(slowed.earth, slowed.free) && within(slowed.mars, slowed.free) && within(bright?.at, hit.free),
       `framed round ${slowed.framed}; at the hit the Earth at (${bright?.at.x.toFixed(0)}, ${bright?.at.y.toFixed(0)}) in ${hit.free.left.toFixed(0)}-${hit.free.right.toFixed(0)} x ${hit.free.top.toFixed(0)}-${hit.free.bottom.toFixed(0)}`);
     check(on('where they meet a flash shows: the screen round the Earth many times as bright'), !!dim && !!bright && bright.mean > 3 * dim.mean + 20, `${dim?.mean.toFixed(1)} before, ${bright?.mean.toFixed(1)} at the flash (of 255)`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-hit.png`) });

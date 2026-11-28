@@ -122,9 +122,9 @@ const centreOf = async (page, sel) => {
   check('the page is exactly the screen (nothing to scroll)', lay.scroll[0] <= lay.scroll[2] && lay.scroll[1] <= lay.scroll[3], JSON.stringify(lay.scroll));
   check('the chips are at the top, inside the screen, side by side', lay.place.l >= 0 && lay.clock.r <= W && lay.place.r < lay.clock.l && lay.place.t < 30, JSON.stringify([lay.place, lay.clock]));
   check('the tab bar is at the bottom, the card just above it', lay.tabs.b <= H && lay.tabs.b > H - 20 && lay.card.b <= lay.tabs.t && lay.card.b > lay.tabs.t - 20, JSON.stringify([lay.tabs, lay.card]));
-  const fabs = await page.evaluate(() => ({ look: document.querySelector('.look-fab span')?.textContent ?? '', ship: document.querySelector('.ship-fab span')?.textContent ?? '' }));
-  const bar = { h: Math.round(lay.tabs.b - lay.tabs.t), look: fabs.look, ship: fabs.ship };
-  check('the tab bar is slim, and the round buttons use plain words', bar.h <= 52 && !bar.look.includes('Drag:') && !bar.ship.includes('Drag:'), JSON.stringify(bar));
+  const fabs = await page.evaluate(() => ({ look: !!document.querySelector('.look-fab'), ship: document.querySelector('.ship-fab span')?.textContent ?? '', chip: document.querySelector('#hud .chip.place').getAttribute('aria-pressed') }));
+  const bar = { h: Math.round(lay.tabs.b - lay.tabs.t), look: fabs.look, ship: fabs.ship, chip: fabs.chip };
+  check('the tab bar is slim, the round buttons use plain words, and no button says what one finger does: the chip at the top is the camera\'s toggle, staying on what it is at to begin with', bar.h <= 52 && !bar.look && !bar.ship.includes('Drag:') && bar.chip === 'true', JSON.stringify(bar));
   check('upright, the view opens up (70 degrees) and the Earth fits across with room to spare', Math.abs(lay.fov - 70) < 0.5 && lay.radiusPx * 2 < W * 0.75 && lay.radiusPx * 2 > W * 0.45, `fov ${lay.fov.toFixed(1)}, disc ${(lay.radiusPx * 2).toFixed(0)} px of ${W}`);
   check('the Earth is clear of the chips and the card', lay.earth.y - lay.radiusPx > lay.place.b && lay.earth.y + lay.radiusPx < lay.card.t, JSON.stringify({ earth: lay.earth, r: lay.radiusPx, card: lay.card.t }));
   // (the room kept for the card is the card's opened to its buttons, 225 px over the tab bar, CARD_ROOM in src/ui/Hud.ts:
@@ -293,26 +293,23 @@ const centreOf = async (page, sel) => {
   const near = await page.evaluate((p) => ({ from: window.probe.from('Moon'), px: window.probe.drawn(p), flying: window.app.rig.autopilot }), held);
   check('a double tap on the world you are at comes six times closer to that spot', !near.flying && Math.abs(far.height / near.from.height - 6) < 0.05 && Math.hypot(near.px.x - spot.x, near.px.y - spot.y) < 3, JSON.stringify({ ratio: far.height / near.from.height, px: near.px }));
 
-  // one finger set to look
+  // the camera's toggle, the chip at the top (the owner, 28 Nov 2026): tapped, it moves freely and one finger looks around
   await page.evaluate(() => window.app.goTo(window.app.findByName('Moon')));
   await settle(page);
-  // (what the tap met, for the day it misses again, TASKS.md task/look-button: the clicks the round button got,
-  // what the finger came down on, and the button's box against the point tapped)
-  await page.evaluate(() => {
-    const seen = { clicks: 0, down: null };
-    window.__lookTap = seen;
-    document.querySelector('.look-fab').addEventListener('click', () => { seen.clicks++; });
-    document.addEventListener('touchstart', (e) => { const t = e.target; seen.down = t instanceof Element ? (t.closest('button')?.className ?? t.tagName) : String(t); }, { capture: true, once: true });
-  });
-  const lookAt = await centreOf(page, '.look-fab');
-  await f.tap(lookAt);
+  const chipAt = await centreOf(page, '#hud .chip.place');
+  await f.tap(chipAt);
   s0 = await state(page);
-  const lookTap = await page.evaluate(() => { const b = document.querySelector('.look-fab').getBoundingClientRect(); return { ...window.__lookTap, box: [b.left, b.top, b.width, b.height].map(Math.round) }; });
+  const freed = await page.evaluate(() => ({ stay: window.app.stay, anchor: window.app.rig.anchor?.name ?? null, chip: document.querySelector('#hud .chip.place b').textContent, pressed: document.querySelector('#hud .chip.place').getAttribute('aria-pressed'), pad: !document.querySelector('.free-pad').hidden }));
   await f.drag({ x: mid.x, y: 300 }, { x: mid.x + 70, y: 340 });
   s1 = await state(page);
-  check('set to "Look", one finger looks around instead', s0.touchDrag === 'look' && dist(s0.cam, s1.cam) < 1e-3 && Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) > 0.02,
-    JSON.stringify({ mode: s0.touchDrag, moved: dist(s0.cam, s1.cam), turned: Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]), tapped: [Math.round(lookAt.x), Math.round(lookAt.y)], ...lookTap }));
-  await f.tap(await centreOf(page, '.look-fab'));
+  check('the chip at the top tapped, the camera moves freely (it rides with nothing, the chip says so, the stick is up) and one finger looks around instead',
+    !freed.stay && freed.anchor === null && freed.chip === 'Moving freely' && freed.pressed === 'false' && freed.pad
+      && s0.touchDrag === 'look' && dist(s0.cam, s1.cam) < 1e-3 && Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]) > 0.02,
+    JSON.stringify({ ...freed, mode: s0.touchDrag, moved: dist(s0.cam, s1.cam), turned: Math.abs(s0.forward[0] - s1.forward[0]) + Math.abs(s0.forward[1] - s1.forward[1]), tapped: [Math.round(chipAt.x), Math.round(chipAt.y)] }));
+  await f.tap(await centreOf(page, '#hud .chip.place'));
+  await f.frames(2);
+  const stayed = await page.evaluate(() => ({ stay: window.app.stay, anchor: window.app.rig.anchor?.name ?? null, chip: document.querySelector('#hud .chip.place b').textContent, drag: window.app.rig.touchDrag, pad: !document.querySelector('.free-pad').hidden }));
+  check('tapped again, it stays on the Moon: riding with it, one finger turning round it, the stick gone', stayed.stay && stayed.anchor === 'Moon' && stayed.chip === 'Moon' && stayed.drag === 'orbit' && !stayed.pad, JSON.stringify(stayed));
   await page.close();
   await ctx.close();
 }
@@ -542,7 +539,7 @@ const centreOf = async (page, sel) => {
   await f.frames(2);
   const lay = await page.evaluate(() => {
     const box = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
-    return { tabs: box('.hud-tabs'), card: box('.sheet.card'), pill: box('.hud-flight'), place: box('.chip.place'), fab: box('.look-fab'), fov: window.app.rig.fovY, w: window.innerWidth, h: window.innerHeight };
+    return { tabs: box('.hud-tabs'), card: box('.sheet.card'), pill: box('.hud-flight'), place: box('.chip.place'), fab: box('.ship-fab'), fov: window.app.rig.fovY, w: window.innerWidth, h: window.innerHeight };
   });
   const apart = (a, b) => a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t;
   check('sideways: the tab bar stands at the left edge, the card beside it', lay.tabs.l < 20 && lay.tabs.r < 100 && lay.card.l >= lay.tabs.r && lay.card.b <= lay.h && lay.card.r < lay.w * 0.6, JSON.stringify([lay.tabs, lay.card]));
@@ -696,9 +693,10 @@ const centreOf = async (page, sel) => {
 }
 
 // ---------------------------------------------------------------- 15. flying freely by touch
-// (on a keyboard W A S D R F, Shift for ten times; speed in proportion to the height): More's "Fly freely"
-// brings a stick under the left thumb, Up and Down, and Done; one finger looks around meanwhile; tap,
-// double-tap and pinch are as they were; Done puts everything back. Upright and on its side.
+// (on a keyboard W A S D R F, Shift for ten times; speed in proportion to the height): the chip at the top,
+// the camera's toggle, tapped to move freely brings a stick under the left thumb, Up and Down; one finger looks
+// around meanwhile; tap, double-tap and pinch are as they were; the chip tapped again puts everything back.
+// Upright and on its side.
 const W_ = (l) => (l ? 844 : 390), H_ = (l) => (l ? 390 : 844);
 for (const landscape of [false, true]) {
   const ctx = await phoneContext(browser, { landscape });
@@ -720,30 +718,25 @@ for (const landscape of [false, true]) {
       W: innerWidth, H: innerHeight,
     };
   });
-  // the switch in More: touch only, off to begin with; touching it shuts the sheet and brings the controls
-  await f.tap(await centreOf(page, '.hud-tabs [data-tab="more"]'));
-  await f.frames(3);
-  await page.evaluate(() => document.querySelector('.switch[data-act="free"]')?.scrollIntoView({ block: 'center' }));
-  await page.waitForTimeout(300);
-  let st = await page.evaluate(() => { const b = document.querySelector('.switch[data-act="free"]'); return b ? { text: b.textContent.trim(), on: b.getAttribute('aria-checked'), seen: b.getBoundingClientRect().height > 0 } : null; });
-  check(`${tag}: More has a "Fly freely" switch, off to begin with`, !!st && /^Fly freely/.test(st.text) && st.on === 'false' && st.seen, JSON.stringify(st));
-  check(`${tag}: nothing of free flight is over the view before it is switched on`, !(await free()).shown, '');
-  if (!st) { await ctx.close(); continue; } // (an app without the switch fails above, once)
-  await f.tap(await centreOf(page, '.switch[data-act="free"]'));
+  // the chip at the top, the camera's toggle: staying to begin with; tapped, it moves freely and brings the controls
+  let st = await page.evaluate(() => { const b = document.querySelector('#hud .chip.place'); return { pressed: b.getAttribute('aria-pressed'), name: b.querySelector('b').textContent, seen: b.getBoundingClientRect().height >= 44, inMore: !!document.querySelector('.switch[data-act="free"], .switch[data-act="look"]') }; });
+  check(`${tag}: the chip at the top stays on what the camera is at to begin with, a thumb high; More has no switches for flying or looking any more`, st.pressed === 'true' && st.name === 'Earth' && st.seen && !st.inMore, JSON.stringify(st));
+  check(`${tag}: nothing of free flight is over the view before the chip is tapped`, !(await free()).shown, '');
+  await f.tap(await centreOf(page, '#hud .chip.place'));
   await f.frames(4);
   let fr = await free();
-  check(`${tag}: the switch shuts the sheet and brings a stick, Up, Down and Done, all on the screen and finger-sized; one finger now looks`,
-    fr.shown && fr.active && fr.attr && fr.drag === 'look' && ['card', undefined].includes(await page.evaluate(() => document.getElementById('hud').dataset.sheet))
+  const chipNow = await page.evaluate(() => ({ pressed: document.querySelector('#hud .chip.place').getAttribute('aria-pressed'), name: document.querySelector('#hud .chip.place b').textContent, small: document.querySelector('#hud .chip.place small').textContent }));
+  check(`${tag}: tapped, the chip says "Moving freely" and how to stay on the Earth again, and brings a stick, Up and Down, all on the screen and finger-sized; one finger now looks`,
+    fr.shown && fr.active && fr.attr && fr.drag === 'look' && chipNow.pressed === 'false' && chipNow.name === 'Moving freely' && chipNow.small === 'Tap to stay on Earth'
     && fr.stick.w >= 100 && fr.stick.l >= 0 && fr.stick.r <= fr.W && fr.stick.b <= fr.H
-    && fr.buttons.length === 3 && fr.buttons.every((b) => b.w >= 44 && b.h >= 44 && b.l >= 0 && b.r <= fr.W && b.b <= fr.H && b.t >= 0), JSON.stringify(fr));
-  // (in More the switch now says on)
+    && fr.buttons.length === 2 && fr.buttons.every((b) => b.w >= 44 && b.h >= 44 && b.l >= 0 && b.r <= fr.W && b.b <= fr.H && b.t >= 0), JSON.stringify({ ...fr, chipNow }));
+  // (with a sheet open, More, the stick is put away)
   await f.tap(await centreOf(page, '.hud-tabs [data-tab="more"]'));
   await f.frames(3);
-  const swOn = await page.evaluate(() => { const s = document.querySelector('.switch[data-act="free"]'); return s.getAttribute('aria-checked'); });
   const during = (await free()).shown;
   await f.tap(await centreOf(page, '.hud-tabs [data-tab="more"]'));
   await f.frames(3);
-  check(`${tag}: More shows it on, and with that sheet open the stick is put away`, swOn === 'true' && !during, JSON.stringify({ swOn, during }));
+  check(`${tag}: with More open the stick is put away`, !during, JSON.stringify({ during }));
   // the pad lies on nothing of the interface
   st = await page.evaluate(() => {
     const box = (e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
@@ -753,7 +746,7 @@ for (const landscape of [false, true]) {
     return { hits: mine.flatMap((m) => theirs.filter((o) => meet(m, o)).map((o) => `${m.what}/${o.what}`)), n: mine.length, theirs: theirs.length };
   });
   await f.frames(2);
-  check(`${tag}: the stick and buttons lie on no chip, tab, card or round button`, st.hits.length === 0 && st.n === 4, JSON.stringify(st));
+  check(`${tag}: the stick and buttons lie on no chip, tab, card or round button`, st.hits.length === 0 && st.n === 3, JSON.stringify(st));
   await page.screenshot({ path: path.join(outDir, `touch-15-free-${side}.png`), timeout: 300000 });
 
   // the stick moves the camera as the keys do: forward, in proportion to the height, ten times at the rim
@@ -867,16 +860,16 @@ for (const landscape of [false, true]) {
   await page.evaluate(() => window.app.game.setMode('off'));
   await f.frames(4);
 
-  // Done puts everything back: what one finger does, the interface's own buttons
-  await page.evaluate(() => window.app.act('free'));
+  // the chip tapped again puts everything back: what one finger does, what the camera rides with
+  await page.evaluate(() => window.app.act('stay'));
   await f.frames(3);
   fr = await free();
-  check(`${tag}: switched on again (after the ship), the controls are there`, fr.shown && fr.active, JSON.stringify({ shown: fr.shown }));
-  await f.tap(await centreOf(page, '.free-done'));
+  check(`${tag}: moving freely again (after the ship), the controls are there`, fr.shown && fr.active, JSON.stringify({ shown: fr.shown }));
+  await f.tap(await centreOf(page, '#hud .chip.place'));
   await f.frames(4);
   fr = await free();
-  const back2 = await page.evaluate(() => ({ fab: getComputedStyle(document.querySelector('.look-fab')).display, switch: document.querySelector('.switch[data-act="free"]').getAttribute('aria-checked') }));
-  check(`${tag}: Done puts the controls away and one finger does what it did (turn round the world)`, !fr.shown && !fr.active && !fr.attr && fr.drag === 'orbit' && back2.fab !== 'none', JSON.stringify({ shown: fr.shown, drag: fr.drag, back2 }));
+  const back2 = await page.evaluate(() => ({ stay: window.app.stay, anchor: window.app.rig.anchor?.name ?? null, pressed: document.querySelector('#hud .chip.place').getAttribute('aria-pressed') }));
+  check(`${tag}: the chip tapped again stays on the Earth: the controls go and one finger does what it did (turn round the world)`, !fr.shown && !fr.active && !fr.attr && fr.drag === 'orbit' && back2.stay && back2.anchor === 'Earth' && back2.pressed === 'true', JSON.stringify({ shown: fr.shown, drag: fr.drag, back2 }));
   const c0 = await state(page);
   await f.drag({ x: W_(landscape) / 2 - 40, y: H_(landscape) / 2 - 80 }, { x: W_(landscape) / 2 + 60, y: H_(landscape) / 2 - 60 });
   const c1 = await state(page);
