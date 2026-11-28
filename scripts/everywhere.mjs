@@ -27,8 +27,8 @@ const POWERS = {
   transiting: ['Mass', 'Size', 'Move', 'Remove'],
   exoplanet: ['Mass', 'Move', 'Remove'],
   host: ['Mass', 'Move', 'Remove'],
-  // a comet can be taken away (God mode on a comet, step 1: HANDOFF); moving one is not built yet
-  comet: ['Remove'],
+  // a comet can be taken away, moved and thrown (task/comet-powers); Mass, Size and Add stay off, each with its reason
+  comet: ['Move', 'Remove'],
   none: [],
 };
 

@@ -185,9 +185,8 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/comet-powers`: God mode on comets: throw one, move it, take it away
 
-- **Status:** step 1 (take it away) done 27 Nov 2026: run 46077593093 on Claude Sonnet 5.5 ($1.76), reviewed by
-  Claude. Steps 2 (move and throw) and 3 (kept in saves and links) are open: its report suggests a `Body`
-  stand-in of no mass started from `keplerState`, as `SimBody` is for the planets of other stars. Large.
+- **Status:** done 28 Nov 2026: step 1 (take it away) in run 46077593093 ($1.76), steps 2 (move and throw) and 3
+  (kept in saves and links) in run 46091450578 ($3.24), both on Claude Sonnet 5.5, reviewed by Claude. Large.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the fix list's #9 and its Tier 3 row ("God mode does not work on everything yet ... black
   holes, comets, belt asteroids ..."). A comet's card says "Comets and belt asteroids stay on their recorded

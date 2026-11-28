@@ -2,10 +2,12 @@ import type { SimClock } from '../core/time';
 import { AU, DAY } from '../core/units';
 import { LEFT_OUT, NBody, type NBodyBodies, type NBodySnapshot, type SimEvent } from '../sim/NBody';
 import { apply, capture, type Live, liveDate, release, riders, type SimSystem } from '../sim/SystemSim';
+import type { Comet } from '../render/SmallBodies';
 import type { Body, SpaceObject } from '../universe/Body';
 import type { BodyJson, Family } from '../universe/SolarSystem';
+import { COMET_FIRST_ID, CometBody } from './CometBody';
 import { dayWords, farWords, listed, type Met, type Orbit, orbitOf, orbitWords, speedWords, stretchWords, the } from './Powers';
-import { type LiveWorld, type MadeRecord, WORLD_LIMITS, WorldError } from './SceneWorld';
+import { COMET_NUMBER_MOST, type LiveWorld, type MadeRecord, WORLD_LIMITS, WorldError } from './SceneWorld';
 import { type Kind, MADE_FIRST_ID } from './WhatIf';
 
 /**
@@ -46,7 +48,7 @@ const ALSO_LEFT_OUT: readonly string[] = [
   'A moon too light to pull on anything, and a world whose mass is not known, keeps its real path round its planet until you change that planet or it.',
   'A world keeps its size whatever mass you give it, unless you change that too: with Size, or with Same density, which has it grow as a ball of rock would (R = R₀ (M / M₀)^⅓; a real giant planet stops growing above about a Jupiter\'s mass, squeezed by its own weight). Its face is drawn as it is, larger or smaller; what theory says a world of that mass would turn into is told, not shown. A sun you add is the exception: its size, colour and light follow its mass as a star of the main sequence, before Done and after.',
   'You cannot land on a world whose size you have changed: its ground is drawn as measured, for its real size. Its air keeps its measured depth over its new ground; Saturn\'s rings keep their measured size.',
-  'The 75,000 small asteroids of the belt and the comets cannot be simulated one by one: they keep their real paths while the Sun is as it was, and are left out once you change it or take it away. A comet can be taken away (it comes back with Undo); it cannot be moved or thrown yet, and a comet taken away is not kept in a link or a save yet. The real spacecraft are left out too: they flew their paths in the real Solar System.',
+  'The 75,000 small asteroids of the belt and the comets cannot be simulated one by one: they keep their real paths while the Sun is as it was, and are left out once you change it or take it away. A comet can be taken away, or moved or thrown: from then on the simulation carries it, with no mass (it is pulled and pulls nothing), from where its own orbit had it at that moment, and it comes back to its recorded path with Undo. A comet carried by the simulation is left out once you change the Sun or take it away, like the others. The real spacecraft are left out too: they flew their paths in the real Solar System.',
   'Run backwards, time undoes what gravity did, but two bodies that have become one stay one.',
   'A world you add is plain: a copy of the Earth, of Jupiter or of the Sun has the spin and face of the real one, but no air, clouds, rings or city lights, and its ground is made up. Its size follows the mass you give it by a rule, said in its details: rock as dense as the Earth, a giant as big as Jupiter, a star of the main sequence. A star made lighter than the Sun is drawn as if all its light were visible light: a red dwarf would look fainter.',
   'Where there are two suns, each world is lit by the one that is brighter in its sky, not by both.',
@@ -104,6 +106,8 @@ export interface LiveCheckpoint {
   readonly real: readonly [Body, Real][];
   /** the small things taken away */
   readonly away: readonly SpaceObject[];
+  /** the comets the simulation carries */
+  readonly comets: readonly CometBody[];
   readonly log: readonly { jd: number; text: string }[];
   /** the share of the time asked for that the stepping managed, the rate what is on rails was chosen for, the frames it has fallen short, the stage, the simulation's own word on crossing */
   readonly pace: readonly [number, number, number, number, number];
@@ -141,6 +145,16 @@ export class LivePhysics {
    * the simulation does not carry them): hidden by whoever draws them, until the return to reality.
    */
   readonly away = new Set<SpaceObject>();
+  /**
+   * The comets the simulation carries (moved or thrown), each by the stand-in of no mass it is
+   * there as (src/app/CometBody.ts), keyed by the comet it stands for. A third state beside a
+   * comet on its recorded path and one taken away.
+   */
+  readonly carried = new Map<SpaceObject, CometBody>();
+  /** every comet's stand-in made so far (carried or not): on its recorded path, it follows the comet's own orbit (`tend`) */
+  private stood = new Map<SpaceObject, CometBody>();
+  /** The comet of a number in the catalogue of comets (what a link or a save names it by), or none: set by whoever has the comets (src/app/App.ts). */
+  cometOf: (number: number) => Comet | undefined = () => undefined;
   /** how many changes have been made, ever: a gesture that changed nothing leaves it as it was */
   changes = 0;
   private news: string[] = [];
@@ -167,6 +181,7 @@ export class LivePhysics {
 
   /** Is this body's motion the simulation's now (and not the ephemeris's)? */
   simulated(b: Body): boolean {
+    if (b instanceof CometBody) return this.carried.get(b.shows) === b && !!this.live;
     return !!this.live && this.live.index.has(b);
   }
 
@@ -269,6 +284,13 @@ export class LivePhysics {
   move(b: Body, pos: ArrayLike<number>, vel: ArrayLike<number>, jd: number): void {
     const live = this.start(jd);
     this.changes++;
+    if (b instanceof CometBody) {
+      // (a comet: carried by the simulation from here on, from where its own orbit had it; nothing rides on it)
+      this.carry(live, b);
+      live.sim.setState(b.id, pos, vel);
+      this.settle(live);
+      return;
+    }
     release(live, this.system, b);
     const d = [pos[0] - b.pos.x, pos[1] - b.pos.y, pos[2] - b.pos.z], w = [vel[0] - b.vel.x, vel[1] - b.vel.y, vel[2] - b.vel.z];
     // (the simulated bodies that go round it, and round those; what rides on any of them follows by itself)
@@ -335,9 +357,41 @@ export class LivePhysics {
   removeSmall(o: SpaceObject, jd: number): void {
     const live = this.start(jd);
     this.changes++;
+    const b = this.carried.get(o);
+    if (b) {
+      if (live.sim.indexOf(b.id) >= 0) live.sim.remove(b.id);
+      this.carried.delete(o);
+    }
     this.away.add(o);
     this.tell(liveDate(live), `${o.name} is gone.`);
     this.settle(live);
+  }
+
+  /**
+   * The stand-in for a comet (made at its first asking: on its recorded path at `jd`), which the
+   * powers act on in its place (src/app/CometBody.ts).
+   */
+  standIn(c: Comet, jd: number): CometBody {
+    let b = this.stood.get(c);
+    if (!b) {
+      b = new CometBody(c);
+      this.stood.set(c, b);
+      b.onPath(jd, this.system.sun);
+    }
+    return b;
+  }
+
+  /** Each frame: the stand-ins of comets the simulation does not carry go where their own orbits have them at `jd`. */
+  tend(jd: number): void {
+    for (const [c, b] of this.stood) if (!this.carried.has(c)) b.onPath(jd, this.system.sun);
+  }
+
+  /** The simulation takes a comet on: from where its own orbit has it now, with no mass. */
+  private carry(live: Live, b: CometBody): void {
+    if (this.carried.get(b.shows) === b && live.sim.indexOf(b.id) >= 0) return;
+    b.onPath(liveDate(live), this.system.sun);
+    live.sim.add({ id: b.id, gm: 0, radius: b.radius, pos: [b.pos.x, b.pos.y, b.pos.z], vel: [b.vel.x, b.vel.y, b.vel.z] });
+    this.carried.set(b.shows, b);
   }
 
   // ------------------------------------------------------------------ each frame
@@ -384,6 +438,17 @@ export class LivePhysics {
       // (a moon keeps a face to what it goes round, wherever that is now)
       if (b.kind === 'moon') system.updateOrientation(b, jd);
     }
+    // the comets the simulation carries
+    const sim = live.sim;
+    for (const b of this.carried.values()) {
+      const i = sim.indexOf(b.id);
+      if (i < 0) continue;
+      const o = 3 * i, id = primaries[i];
+      b.pos.set(sim.pos[o], sim.pos[o + 1], sim.pos[o + 2]);
+      b.vel.set(sim.vel[o], sim.vel[o + 1], sim.vel[o + 2]);
+      b.upos.set(b.pos.x, b.pos.y, b.pos.z);
+      if (id !== -2) b.parent = id >= 0 ? system.byId.get(id) ?? null : null;
+    }
   }
 
   /** What has been said since the last call, oldest first. */
@@ -415,6 +480,7 @@ export class LivePhysics {
     for (const [b, r] of this.real) { b.gm = r.gm; b.systemGm = r.systemGm; b.radius = r.radius; b.radii = r.radii; }
     this.real.clear();
     this.away.clear();
+    this.carried.clear();
     this.system.settle();
     for (const b of this.made.splice(0).reverse()) this.drop(b);
     this.live = null;
@@ -443,6 +509,7 @@ export class LivePhysics {
       made: [...this.made],
       real: [...this.real].map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]),
       away: [...this.away],
+      comets: [...this.carried.values()],
       log: this.log.map((e) => ({ ...e })),
       pace: [this.share, this.rate, this.slowFor, this.stage, this.cross],
     };
@@ -473,6 +540,8 @@ export class LivePhysics {
     this.real = new Map(cp.real.map(([b, r]) => [b, { ...r, radii: [r.radii[0], r.radii[1], r.radii[2]] }]));
     this.away.clear();
     for (const o of cp.away) this.away.add(o);
+    this.carried.clear();
+    for (const b of cp.comets) this.carried.set(b.shows, b);
     this.log.splice(0, this.log.length, ...cp.log.map((e) => ({ ...e })));
     this.news = [];
     this.hits = [];
@@ -506,6 +575,9 @@ export class LivePhysics {
       };
     });
     const sim = live.sim.bodies();
+    // (the comets changed, by their numbers in the catalogue: those the simulation carries have their place and motion in `sim`)
+    const away = [...this.away].map((o) => (o as { row?: readonly unknown[] }).row?.[11]).filter((n): n is number => typeof n === 'number');
+    const comets = this.carried.size || away.length ? { carried: [...this.carried.values()].map((b) => b.id - COMET_FIRST_ID), away } : undefined;
     return {
       jd0: live.jd0, sim,
       asBody: sim.ids.map((id, i) => { const b = system.byId.get(id); return b ? (sim.gm[i] === b.gm ? 1 : 0) | (sim.radius[i] === b.radius ? 2 : 0) : 0; }),
@@ -514,6 +586,7 @@ export class LivePhysics {
       made, gone: system.bodies.filter((b) => system.isGone(b)).map((b) => b.id),
       changed: [...this.real].filter(([b, r]) => b.gm !== r.gm || b.radius !== r.radius).map(([b]) => [b.id, b.gm, b.radius]),
       log: this.log.slice(-lines).map((e) => ({ ...e })),
+      ...(comets ? { comets } : {}),
     };
   }
 
@@ -557,7 +630,17 @@ export class LivePhysics {
       if (!fits) bad('a world made in it was made for something it cannot be made for');
       made.set(m.id, m);
     }
-    const exists = (id: number) => made.has(id) || !!cat(id);
+    // the comets: each a comet of the catalogue, carried or taken away, never both
+    const carriedComets = new Set<number>(), awayComets = new Set<number>();
+    for (const n of w.comets?.carried ?? []) {
+      if (n >= COMET_NUMBER_MOST || !this.cometOf(n) || carriedComets.has(n)) bad('it carries a comet that is not here');
+      carriedComets.add(n);
+    }
+    for (const n of w.comets?.away ?? []) {
+      if (n >= COMET_NUMBER_MOST || !this.cometOf(n) || awayComets.has(n) || carriedComets.has(n)) bad('it takes away a comet that is not here');
+      awayComets.add(n);
+    }
+    const exists = (id: number) => made.has(id) || !!cat(id) || carriedComets.has(id - COMET_FIRST_ID);
     const gone = new Set<number>();
     for (const id of w.gone) {
       if (!exists(id) || gone.has(id)) bad('it takes away a body that is not here');
@@ -566,6 +649,7 @@ export class LivePhysics {
     const simulated = new Set(w.sim.ids);
     for (const id of simulated) if (!exists(id) || gone.has(id)) bad('its simulation has a body that is not here');
     for (const id of made.keys()) if (!gone.has(id) && !simulated.has(id)) bad('a world made in it is not in its simulation');
+    for (const n of carriedComets) if (!simulated.has(COMET_FIRST_ID + n)) bad('a comet carried in it is not in its simulation');
     const carried = new Set<number>();
     for (const [id, moons] of w.carried) {
       if (!simulated.has(id) || !cat(id)) bad('it has a family of moons for a body that is not simulated');
@@ -625,6 +709,10 @@ export class LivePhysics {
       index: new Map(), layout: -1, shift: new Float64Array(0),
     };
     this.live = live;
+    // the comets: those carried by the simulation (their place and motion are in it) and those taken away
+    this.carried.clear();
+    for (const n of w.comets?.carried ?? []) { const c = this.cometOf(n)!; this.carried.set(c, this.standIn(c, w.jd0)); }
+    for (const n of w.comets?.away ?? []) this.away.add(this.cometOf(n)!);
     this.log.splice(0, this.log.length, ...w.log.map((e) => ({ ...e })));
     this.news = [];
     this.hits = [];
@@ -666,6 +754,7 @@ export class LivePhysics {
   rows(b: Body): [string, string][] {
     const live = this.live;
     if (!live) return [];
+    if (b instanceof CometBody && !this.simulated(b)) return [['Live physics', 'not simulated: it keeps its recorded path round the Sun']];
     if (!this.simulated(b)) {
       const round = the(this.system.homeOf(b)?.name ?? 'Sun');
       return [['Live physics', `not simulated: it keeps its real path round ${round} (${b.gm > 0 ? `it is too light to matter until it or ${round} is changed` : 'its mass is not known'})`]];
@@ -750,6 +839,8 @@ export class LivePhysics {
     // Collisions first, and of those every body that is gone before anything else is looked at:
     // one the simulation no longer has must not be taken for one that rides along on its planet.
     const hits = events.filter((e) => e.kind === 'collision');
+    // (a comet that hit something: gone, as one taken away is; it has no mass to add to what it hit)
+    for (const e of hits) this.cometHit(e, when(e));
     const lost = hits.map((e) => this.absorbed(live, e));
     hits.forEach((e, k) => this.grown(live, e, lost[k], when(e)));
     for (const e of events) {
@@ -801,6 +892,16 @@ export class LivePhysics {
       else this.tell(when(e), w && !system.isGone(w) ? `${capital(the(b.name))} goes round ${the(p.name)} now, no longer round ${the(w.name)}.` : `${capital(the(b.name))} goes round ${the(p.name)} now.`);
     }
     if (moved.length > 3) this.tell(when(moved[3]), `${moved.length - 3} more worlds have changed what they go round.`);
+  }
+
+  /** A comet the simulation carried has hit something (or another comet): it is gone, hidden as one taken away is, until Undo or the return to reality. */
+  private cometHit(e: Extract<SimEvent, { kind: 'collision' }>, jd: number): void {
+    const c = [...this.carried.values()].find((b) => b.id === e.absorbed);
+    if (!c) return;
+    const into = this.system.byId.get(e.survivor) ?? [...this.carried.values()].find((b) => b.id === e.survivor);
+    this.carried.delete(c.shows);
+    this.away.add(c.shows);
+    this.tell(jd, `${c.name} hit ${into ? the(into.name) : 'something'} at ${speedWords(e.speed)} and is gone.`);
   }
 
   /** Two bodies have become one: the one absorbed leaves the scene, and what rode on it with it (there is nowhere to say where that would be by now). Returns how many rode on it. */

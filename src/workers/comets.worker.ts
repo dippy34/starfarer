@@ -1,8 +1,9 @@
 /// <reference lib="webworker" />
 import { Vector3 } from 'three';
-import { keplerState, type OrbitalElements } from '../astro/kepler';
+import { type CometRow, cometElements } from '../astro/comet';
+import { type OrbitalElements, keplerState } from '../astro/kepler';
 import { eclToEqu } from '../core/frames';
-import { AU, GM_SUN } from '../core/units';
+import { AU } from '../core/units';
 
 /**
  * Propagates every catalogued comet (JPL SBDB elements: q, e, i, node, peri, tp)
@@ -10,8 +11,6 @@ import { AU, GM_SUN } from '../core/units';
  * hyperbolic orbits are all handled by keplerState.
  * Output: heliocentric ICRF positions in AU (float32) and apparent total magnitudes.
  */
-type CometRow = [string, string, number, number, number, number, number, number, number | null, number | null, number | null, number];
-
 let elements: OrbitalElements[] = [];
 let m1: Float32Array = new Float32Array(0);
 let k1: Float32Array = new Float32Array(0);
@@ -20,7 +19,7 @@ self.onmessage = (ev: MessageEvent) => {
   const msg = ev.data;
   if (msg.type === 'init') {
     const rows = msg.comets as CometRow[];
-    elements = rows.map((r) => ({ q: r[3] * AU, e: r[2], i: r[4], node: r[5], peri: r[6], tp: r[7], mu: GM_SUN }));
+    elements = rows.map(cometElements);
     m1 = new Float32Array(rows.map((r) => (r[8] ?? NaN)));
     k1 = new Float32Array(rows.map((r) => (r[9] ?? 10)));
     return;

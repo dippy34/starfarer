@@ -189,12 +189,14 @@ describe('the powers beyond the Solar System', () => {
     expect(reason(powersFor(belt), 'move')).toMatch(/recorded paths/);
   });
 
-  it('a comet can be taken away; its mass, size and Add stay off, each with a plain reason', () => {
+  it('a comet can be taken away, moved and thrown; its mass, size and Add stay off, each with a plain reason', () => {
     const data = JSON.parse(readFileSync(new URL('../public/data/solar/comets.json', import.meta.url), 'utf8')) as { comets: ConstructorParameters<typeof Comet>[2][] };
     const row = data.comets.find((r) => r[0].includes('Halley')) ?? data.comets[0];
     const comet = new Comet('comet:test', row[0], row);
     const t = powersFor(comet);
     expect(t.remove).toEqual({ works: true });
+    // it can be moved or thrown: the simulation carries it from there, with no mass
+    expect(t.move).toEqual({ works: true });
     for (const name of ['mass', 'size', 'add'] as const) {
       expect(t[name].works).toBe(false);
       expect(reason(t, name).length).toBeLessThanOrEqual(60);

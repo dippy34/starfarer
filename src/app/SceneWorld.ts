@@ -28,6 +28,11 @@ import { isWorldKind, type Kind, MADE_FIRST_ID, MADE_MOST, WORLD_KINDS } from '.
  */
 
 export const WORLD_FORMAT = 1;
+/**
+ * The form of a changed universe in which comets were changed too (an optional part at the end of the structure, which a link
+ * written before does not have: those are of WORLD_FORMAT, and are read as ever; this one is written only when a comet was taken away or carried).
+ */
+export const WORLD_FORMAT_COMETS = 2;
 
 /** A world the explorer made, as it is made again: what it was made as, its name, what it was made for, its mass and size then, and a sun's colour and light. */
 export interface MadeRecord {
@@ -74,12 +79,21 @@ export interface LiveWorld {
    * bits on both. `decodeWorld` gives 0 for them in `sim`, and `adoptWorld` fills them in.
    */
   asBody: number[];
+  /**
+   * The comets changed (none: no comet was): each by its number in the catalogue of comets (the last number of its row in
+   * public/data/solar/comets.json). `carried`: the simulation carries it (with no mass: its place and motion are
+   * in `sim`, as the body of number COMET_FIRST_ID + its number); `away`: taken away (or hit something). The others are on their recorded paths.
+   */
+  comets?: { carried: number[]; away: number[] };
 }
 
 /** what a reading may hold at most: bodies, families and their moons, worlds made, lines of the log and their length, a made world's name */
-export const WORLD_LIMITS = { bodies: 1024, families: 64, family: 256, made: MADE_MOST, gone: 1024, changed: 1024, log: 12, line: 400, name: 40 } as const;
+export const WORLD_LIMITS = { bodies: 1024, families: 64, family: 256, made: MADE_MOST, gone: 1024, changed: 1024, comets: 1024, log: 12, line: 400, name: 40 } as const;
 /** a link's changed universe unpacks to at most this many bytes */
 export const WORLD_BYTES_MOST = 256 * 1024;
+
+/** a comet's number in the catalogue (its last number in public/data/solar/comets.json, from 1,000,001) is below this */
+export const COMET_NUMBER_MOST = 2_000_000;
 
 export class WorldError extends Error {}
 const bad = (why: string): never => { throw new WorldError(why); };
@@ -161,7 +175,7 @@ class Writer {
 /** The changed universe as bytes (before packing). */
 export function encodeWorld(w: LiveWorld): Uint8Array {
   const o = new Writer(), s = w.sim, n = s.ids.length;
-  o.u8(WORLD_FORMAT);
+  o.u8(w.comets ? WORLD_FORMAT_COMETS : WORLD_FORMAT);
   o.f64(w.jd0);
   o.f64(s.time);
   o.uint(s.nextId);
@@ -202,6 +216,12 @@ export function encodeWorld(w: LiveWorld): Uint8Array {
   for (const [id, gm, r] of w.changed) { o.uint(id); o.f64(gm); o.f64(r); }
   o.uint(w.log.length);
   for (const e of w.log) { o.f64(e.jd); o.text(e.text); }
+  if (w.comets) {
+    o.uint(w.comets.carried.length);
+    for (const n of w.comets.carried) o.uint(n);
+    o.uint(w.comets.away.length);
+    for (const n of w.comets.away) o.uint(n);
+  }
   return o.done();
 }
 
@@ -305,7 +325,8 @@ export function decodeWorld(bytes: Uint8Array): LiveWorld {
  */
 function walk(r: Reader, dry: boolean, doubles?: Reader): LiveWorld {
   const f = (lo: number, hi: number, what: string) => (dry ? 0 : within(doubles!.f64(), lo, hi, what));
-  if (r.u8() !== WORLD_FORMAT) bad('its changed universe is of a form this app does not know');
+  const form = r.u8();
+  if (form !== WORLD_FORMAT && form !== WORLD_FORMAT_COMETS) bad('its changed universe is of a form this app does not know');
   const jd0 = f(JD_RANGE[0], JD_RANGE[1], 'the date it left the real universe');
   const time = f(-TIME_MOST, TIME_MOST, 'the time of its simulation');
   const nextId = r.uint(2 ** 31);
@@ -368,8 +389,13 @@ function walk(r: Reader, dry: boolean, doubles?: Reader): LiveWorld {
     if (!plainLine(text)) bad('a line of what happened in it is not plain text');
     log.push({ jd, text });
   }
+  let comets: LiveWorld['comets'];
+  if (form === WORLD_FORMAT_COMETS) {
+    const list = () => { const n = r.uint(WORLD_LIMITS.comets), out: number[] = []; for (let k = 0; k < n; k++) out.push(r.uint(COMET_NUMBER_MOST)); return out; };
+    comets = { carried: list(), away: list() };
+  }
   if (!dry && doubles!.doublesLeft !== 0) bad('it has numbers left over');
-  return { jd0, sim, carried, made, gone, changed, log, asBody };
+  return { jd0, sim, carried, made, gone, changed, log, asBody, ...(comets ? { comets } : {}) };
 }
 
 // ---------------------------------------------------------------- base64url

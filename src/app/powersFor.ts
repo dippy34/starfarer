@@ -47,7 +47,6 @@ const INVALID = 'Its position is not known at this date';
 const SMALL = 'Belt asteroids stay on their recorded paths, so far';
 const COMET_MASS = 'No measured mass for comets in our data';
 const COMET_SIZE = "A comet's size is not changed here";
-const COMET_MOVE = 'Moving a comet is not built yet';
 const CRAFT = 'Spacecraft follow their own paths, not the live simulation';
 const PLACE = 'A place is a viewpoint, not an object that can be changed';
 const DEEP_MASS = 'No measured mass for galaxies and nebulae in our data';
@@ -104,13 +103,14 @@ export function powersFor(obj: SpaceObject, made = 0, where: PowerPlace = {}): P
 }
 
 /**
- * The powers over a comet: Remove, which hides it (live physics starts, as for any change); its
- * mass and size are not in the data and a comet pulls nothing, so Mass, Size and Add stay off.
+ * The powers over a comet: Remove, which hides it, and Move, which moves or throws it, the simulation
+ * carrying it from there with no mass (live physics starts, as for any change); its mass and size are
+ * not in the data and a comet pulls nothing, so Mass, Size and Add stay off.
  * Not while live physics runs in another star's system (one at a time).
  */
 function comet(_c: Comet, where: PowerPlace): PowerTable {
   if (where.live && where.live !== 'solar') return none(where.undo ? UNDO_ELSEWHERE : ONE_AT_A_TIME);
-  return table(no(COMET_MASS), no(COMET_SIZE), no(COMET_MOVE), no(ADD_KIND), WORKS);
+  return table(no(COMET_MASS), no(COMET_SIZE), WORKS, no(ADD_KIND), WORKS);
 }
 
 /**

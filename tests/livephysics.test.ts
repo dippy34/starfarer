@@ -2,10 +2,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { CometBody } from '../src/app/CometBody';
 import { LivePhysics } from '../src/app/LivePhysics';
 import { circularVelocity } from '../src/app/Powers';
 import { MADE_FIRST_ID, newMoon } from '../src/app/WhatIf';
+import { cometElements, type CometRow } from '../src/astro/comet';
+import { keplerState } from '../src/astro/kepler';
+import { eclToEqu } from '../src/core/frames';
 import { SimClock } from '../src/core/time';
+import { Comet } from '../src/render/SmallBodies';
+import { Vector3 } from 'three';
 import { liveDate } from '../src/sim/SystemSim';
 import type { Body } from '../src/universe/Body';
 import { SolarSystem } from '../src/universe/SolarSystem';
@@ -498,6 +504,97 @@ describe('undo and replay', () => {
     expect(physics.away.size).toBe(0);
     expect(physics.on).toBe(false);
   }, 60_000);
+
+  // ---- comets moved or thrown: the simulation carries them with no mass
+  const halley = (): Comet => {
+    const data = JSON.parse(readFileSync(join(PUBLIC, 'data/solar/comets.json'), 'utf8')) as { comets: CometRow[] };
+    const row = data.comets.find((r) => r[0].includes('Halley')) ?? data.comets[0];
+    return new Comet(`comet:${row[11]}`, row[0], row);
+  };
+
+  it('a comet\'s stand-in starts where, and as fast as, its own orbit has it (as the worker that moves every comet works it out)', async () => {
+    const { sys, physics } = await setup();
+    const comet = halley(), stand = physics.standIn(comet, JD);
+    expect(stand).toBeInstanceOf(CometBody);
+    expect(stand.gm).toBe(0);
+    // the worker: keplerState on the row's elements, turned from the ecliptic to the equator
+    const p = new Vector3(), v = new Vector3(), el = cometElements(comet.row);
+    keplerState(el, JD, p, v);
+    eclToEqu(p); eclToEqu(v);
+    expect(stand.pos.distanceTo(sys.sun.pos.clone().add(p))).toBeLessThan(1);
+    expect(stand.vel.distanceTo(sys.sun.vel.clone().add(v))).toBeLessThan(1e-6);
+    expect(stand.parent).toBe(sys.sun);
+    // not simulated, and nothing is live, until it is moved; it follows its own path as the date goes on
+    expect(physics.on).toBe(false);
+    expect(physics.simulated(stand)).toBe(false);
+    physics.tend(JD + 10);
+    keplerState(el, JD + 10, p, v);
+    eclToEqu(p);
+    expect(stand.pos.distanceTo(sys.sun.pos.clone().add(p))).toBeLessThan(1);
+  }, 60_000);
+
+  it('a comet moved is carried by the simulation with no mass, and comes back to its path with Undo, Replay and the return to reality', async () => {
+    const { sys, physics, clock, named, run } = await setup();
+    const comet = halley(), stand = physics.standIn(comet, JD);
+    const real = physics.checkpoint(clock.jdTdb);
+    expect(real.comets).toEqual([]);
+    const earth = state(named('Earth'));
+    const was = stand.pos.clone(), vel = stand.vel.clone();
+    // put 1 AU along the way it goes, going the way it was
+    physics.move(stand, was.clone().addScaledVector(vel.clone().normalize(), AU).toArray(), vel.toArray(), JD);
+    expect(physics.on).toBe(true);
+    expect(physics.carried.get(comet)).toBe(stand);
+    expect(physics.simulated(stand)).toBe(true);
+    expect(physics.live!.sim.indexOf(stand.id)).toBeGreaterThanOrEqual(0);
+    // (it has no mass: the planets are where they were)
+    state(named('Earth')).forEach((x, k) => expect(Math.abs(x - earth[k])).toBeLessThan(1e-2));
+    expect(stand.pos.distanceTo(was.clone().addScaledVector(vel.clone().normalize(), AU))).toBeLessThan(1);
+    const from = stand.pos.clone();
+    run(JD + 10);
+    // it goes on from there at the speed it has, pulled by the Sun a little
+    expect(stand.pos.distanceTo(from)).toBeGreaterThan(5 * 86_400 * vel.length());
+    expect(physics.rows(stand).map((r) => r[0])).toContain('Goes round');
+    const kept = physics.checkpoint(clock.jdTdb);
+    expect(kept.comets).toEqual([stand]);
+    // Undo: the real Solar System again, the comet on its path
+    physics.restore(real);
+    expect(physics.on).toBe(false);
+    expect(physics.carried.size).toBe(0);
+    // Replay: the checkpoint after the change has it carried again, where it was
+    physics.restore(kept);
+    expect(physics.carried.get(comet)).toBe(stand);
+    expect(stand.pos.distanceTo(from)).toBeGreaterThan(1e3);
+    const at = stand.pos.clone();
+    run(JD + 12);
+    physics.restore(kept);
+    expect(stand.pos.distanceTo(at)).toBeLessThan(1);
+    physics.backToReality(clock);
+    expect(physics.carried.size).toBe(0);
+    expect(physics.on).toBe(false);
+    expect(sys.sun.valid).toBe(true);
+  }, 120_000);
+
+  it('a comet thrown at the Earth hits it: it is gone, and the Earth is not changed by it', async () => {
+    const { physics, clock, named, run } = await setup();
+    const comet = halley(), stand = physics.standIn(comet, JD), earth = named('Earth');
+    const gm = earth.gm;
+    // 2 million km from the Earth, going at it at 20 km/s
+    const toward = new Vector3(1, 0, 0);
+    physics.move(stand, earth.pos.clone().addScaledVector(toward, 2e9).toArray(), earth.vel.clone().addScaledVector(toward, -2e4).toArray(), JD);
+    expect(physics.carried.has(comet)).toBe(true);
+    physics.takeNews();
+    const before = physics.checkpoint(clock.jdTdb);
+    run(JD + 3, 0.05);
+    expect(physics.carried.has(comet)).toBe(false);
+    expect(physics.away.has(comet)).toBe(true);
+    const news = physics.takeNews().join(' ');
+    expect(news).toMatch(/Halley hit Earth at [^ ]+ .*is gone/);
+    expect(earth.gm).toBe(gm);
+    // Replay (the checkpoint before the hit): it is carried again, and not away
+    physics.restore(before);
+    expect(physics.carried.has(comet)).toBe(true);
+    expect(physics.away.has(comet)).toBe(false);
+  }, 120_000);
 
   it('...after a collision: both come back, with the small moons that rode on the one absorbed', async () => {
     const { named, left } = await undone(({ physics, sys, named }) => {

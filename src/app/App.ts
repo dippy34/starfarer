@@ -30,6 +30,7 @@ import { ProceduralStarLayer } from '../render/ProceduralStarLayer';
 import { Renderer, type ViewInfo, VOLUMES } from '../render/Renderer';
 import { GLOBALS, LITE, depthK } from '../render/shaders/xr';
 import { SkyLayer } from '../render/Sky';
+import { CometBody } from './CometBody';
 import { Comet, SmallBodiesLayer } from '../render/SmallBodies';
 import { StarFieldLayer } from '../render/StarField';
 import { FACE_KEY } from '../render/StarLook';
@@ -366,6 +367,7 @@ export class App {
     this.labels = new Labels(labelRoot);
     this.clock = SimClock.now();
     this.physics = this.solar = new LivePhysics(system, { left: (b, into) => this.bodyLeft(b, into), dropped: (b) => this.bodies.changed(b) });
+    this.solar.cometOf = (n) => this.small?.cometObjects.find((c) => c.row[11] === n);
     this.mover = new Mover(this);
     orbits.simulated = (b) => this.solar.simulated(b);
     // (with the orbit lines: what hides them hides these)
@@ -1389,7 +1391,8 @@ export class App {
    * The camera stays with what it is at (rig.target) until it does.
    */
   select(obj: SpaceObject | null): void {
-    if (obj !== this.mover.body && (!obj || this.exoSim?.source.bodyOf(obj) !== this.mover.body)) this.mover.stop();
+    const moving = this.mover.body;
+    if (obj !== moving && (!obj || this.exoSim?.source.bodyOf(obj) !== moving) && !(moving instanceof CometBody && moving.shows === obj)) this.mover.stop();
     this.selection = obj;
     this.orbits.selected = obj instanceof Body ? obj : null;
     if (obj instanceof CatalogStar) { obj.resolve(this.named, () => undefined); obj.gradeDistance(() => undefined); obj.describeTemperature(() => undefined); }
@@ -1439,6 +1442,12 @@ export class App {
   powerBody(o: SpaceObject | null = this.selection, fresh = true): Body | null {
     if (!o) return null;
     if (o instanceof SimBody) return this.exoSim?.source.bodyOf(o.shows) === o ? o : null;
+    // (a comet: the stand-in of no mass that stands for it in live physics once it is moved or thrown, as for a planet of another star)
+    if (o instanceof Comet) {
+      if (this.exoSim && this.holds(this.exoSim.physics)) return null;
+      this.useLive(this.solar);
+      return this.solar.standIn(o, this.clock.jdTdb);
+    }
     // (a world of another system than the one whose turn it is has none: selecting it, which asks
     // here every frame, must not throw away that system's Undo)
     if (o instanceof Body) {
@@ -1502,6 +1511,10 @@ export class App {
 
   /** Where a body is drawn from the eye (m) and how many pixels its radius spans, for a finger to take hold of it (src/app/Mover.ts); undefined while it is not drawn. */
   viewOf(b: Body): { rel: Vector3; pixelRadius: number } | undefined {
+    if (b instanceof CometBody) {
+      const rel = b.shows.upos.sub(this.rig.upos, new Vector3()), d = rel.length();
+      return { rel, pixelRadius: Math.asin(Math.min(1, b.radius / Math.max(d, b.radius))) / this.view.pixelAngle };
+    }
     if (!(b instanceof SimBody)) return this.bodies.views.get(b);
     const o = b.shows;
     if (o instanceof ExoPlanet) return this.exo.views.find((v) => v.planet === o);
@@ -3592,9 +3605,11 @@ export class App {
       this.trails.record(this.physics.bodies());
       this.tellNews();
     }
+    this.solar.tend(jd);
     this.lookAhead(rawDt);
     this.small.present = this.solar.sunAsWas;
     this.small.hide(this.solar.away);
+    this.small.carry(this.solar.carried, this.rig.upos, this.system.sun);
     this.drawExo(jd);
     HITCH.lap('solarSystem');
     for (const h of this.blackHoles) h.update(jd);

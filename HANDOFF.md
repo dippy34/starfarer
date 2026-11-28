@@ -999,6 +999,19 @@ temperature, and size as well as mass.
   comet (a `Body` stand-in of no mass from its elements, as `SimBody` is for other stars' planets) and
   keeping a comet taken away in a save or a link (said in what live physics leaves out). Browser
   checks: `LIVE_ONLY=comet` of `scripts/live.mjs`.
+  *Steps 2 and 3, move it, throw it, keep it* (28 Nov 2026; the same task's second try, reviewed here):
+  Move works on a comet. `powerBody` gives it a stand-in, `CometBody` (`src/app/CometBody.ts`, a `Body`
+  of no mass, id `COMET_FIRST_ID` 600,000,000 plus its catalogue number, not one of the system's bodies),
+  kept on the comet's own path (`onPath`: `cometState` in `src/astro/comet.ts`, the worker's own sums)
+  until the simulation takes it on (`LivePhysics.carry`, gm 0: pulled, pulling nothing). From then on
+  `LivePhysics.carried` maps the comet to it, and each frame `SmallBodiesLayer.carry` puts its point
+  and brightness where the simulation has it, and gives `CometTails` the way it goes
+  (`Comet.carriedVelocity`). A carried comet that hits something is gone with a line in the log (no
+  impact card: with no mass the hit's energy is 0). Undo, Replay and Back to reality bring it back to
+  its recorded path. A save and a link keep the comets carried and taken away as an optional part at the
+  end, under the form byte `WORLD_FORMAT_COMETS` 2, written only when a comet was changed (links of form
+  1 read as ever); `checkWorld` refuses a comet not in the catalogue, listed twice, both carried and
+  away, or carried and not simulated. While the Sun is changed every comet is hidden, a carried one too.
 - *The camera rides with what a watch frames* (found in this part's pictures): the watch of a Moon
   thrown on a circle is framed round the Earth from about 4.4 million km, beyond the Earth's reach
   (its sphere of influence, some 0.9 million km). There the camera rode with the Sun
