@@ -1631,10 +1631,17 @@ only its family is enlarged (`homeOf`; the others come in as the eye leaves the 
 light (`view.own` = 1.6 over its lit ground, `Bodies.expose`, each world's own `uExposure` uniform now) and lets go of the
 eye's exposure (`bigShare`), its night side lit by `BIG_FILL` 6 % (`uFill` in BODY_FRAG and EXO_FRAG), its air shell not
 drawn; picking, labels and occlusion use the drawn size. "Real size" in More (`real-size`, remembered) turns it off;
-the exposure suite's scene `big-look` and the touch suite check it. Not yet: planets of other stars (`ExoPlanetLayer`).
+the exposure suite's scene `big-look` and the touch suite check it. Planets of other stars the same (`ExoPlanetLayer.bigScale`,
+`expose`, the same constants; at most 0.3 of the way to their star; from inside a planet's Hill sphere its neighbours come in
+as the eye leaves it; the scene `big-look` pins 51 Peg b from half an AU off).
 (b) Go there arrives close (`ARRIVE` in App.ts: a world 2.2 radii, ringed 3.2, a star 4, a black hole 10 horizon radii;
 galaxies 2, nebulae 1.9). (c) The far Sun: it held no exposure below 1.5 px and bloomed into a white blob on the owner's
-lowered resolution; it now holds it from 0.6 px as any lit disc (stars suite's far-Sun check pins the tight glare).
+lowered resolution; it now holds it from 0.6 px as any lit disc (stars suite's far-Sun check pins the tight glare). Smaller
+than that it let go at once: from 14 AU on a phone the Sun went from a dim dot on black to a great glare among all the stars
+in one step. A sun too small to be a disc now keeps a share of its hold (`pointHold` in App.ts), let go of evenly in the
+logarithm of its light until it is no brighter than the full Moon (`DARK_FROM_MAG` -12.7): on a phone the stars come out
+between some 80 and 400 AU from the Sun, its glare growing. Other suns flown to the same (from 1.5 px, and let go of near
+the edge of the near stars).
 Each of (a), (b), (c) is a commit of its own (`e6c8687`, `f311391`, `6adbb64`), revertable alone.
 *Part 3, land on any world (first steps done):* at a world with ground the card's main button says Land (`App.landsHere`,
 `HudState.selection.land`; it said Recentre) and lands (`Walk.start(target)`: the approach, then down). Made worlds of a solid
@@ -1644,9 +1651,8 @@ Earth's (`atmosphereFor`'s default). Seas are swum in (`WalkBody.swim`, `swimSte
 down to 40 m; a gentle shore is walked out onto. Under the water `src/render/Underwater.ts` draws the sea round the eye over the
 frame (Snell's window overhead, light shafts, dark below and at night; no sea floor: the open sea is too deep to see the bottom).
 At a world of gas the button says Float (`floatsHere`, `floatOver`, `floatArrived`): down to 0.04 of its radius over the clouds,
-looking at the horizon, moving freely; `keepAboveClouds` keeps the camera over them. Not yet: a sea floor and waves, clouds to
-fly through on a giant (its map is blurry that close), the looks of lava and ice ground up close, gas planets of other stars'
-floor. Seven challenges were added to the missions for these (`Missions.ts`: swim, dive, madeground, tostar, bighole, crash,
+looking at the horizon, moving freely; `keepAboveClouds` keeps the camera over them; a giant of another star the same, on its
+lit side. Not yet: a sea floor, clouds to fly through on a giant, the look of ice ground up close. Seven challenges were added to the missions for these (`Missions.ts`: swim, dive, madeground, tostar, bighole, crash,
 freesaturn). Up close only (each fades in as the pixels resolve it): waves on the sea (`shaders/sea.ts`, in BODY_FRAG and
 EXO_FRAG) and the sky they reflect; a lava world's crust cracked at the walker's scale and glowing (`groundGlow` in EXO_FRAG),
 its rocks black basalt (`Rocks.rockColour`); a giant's clouds with swirls finer than its map (`uGiant` in BODY_FRAG).

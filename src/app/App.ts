@@ -107,6 +107,21 @@ type HudPortrait = NonNullable<NonNullable<NonNullable<HudState['selection']>['p
  * pixels wide (shown brighter, a face is shown hotter: orange, yellow, white. StarLook: faceLight).
  */
 const starCap = (small: number, cssRadius: number) => small + (FACE_KEY - small) * smoothstep(12, 60, cssRadius);
+/** a sun no brighter than the full Moon (its apparent magnitude) holds the eye's exposure no more: pointHold */
+const DARK_FROM_MAG = -12.7;
+/**
+ * The share of its hold on the eye's exposure that a sun too small to be drawn as a disc keeps: all of it at the size
+ * (device px, `fromPx`) at which it stops being one, `px` now, and none once its light at the eye (`irr`) is no more than
+ * the full Moon's (DARK_FROM_MAG), let go of evenly in the logarithm of its light between. The eye opens to the dark as the
+ * sun goes off, the stars coming out a few at a time and its glare growing: it did at once as it stopped being a disc (from
+ * 14 AU on a phone the Sun was a dim dot on black, a step further a great glare among all the stars, 28 Nov 2026).
+ */
+const pointHold = (irr: number, px: number, fromPx: number): number => {
+  if (px >= fromPx) return 1;
+  const atDisc = irr * (fromPx / Math.max(px, 1e-12)) ** 2, dark = magToIrradiance(DARK_FROM_MAG);
+  if (!(irr > dark)) return 0;
+  return 1 - smoothstep(0, 1, Math.log(atDisc / irr) / Math.log(atDisc / dark));
+};
 /**
  * Where Go there arrives (in the radii of what it arrives at, in a wide view: App.goTo), close (the big look, 28 Nov 2026:
  * it was 3.5 for a world, 8 for a star, 30 for a black hole).
@@ -3285,7 +3300,13 @@ export class App {
     // open for the dark, and bloom into a ball of light (a moon of Jupiter from Jupiter; with the
     // worlds exposed for themselves beside a sun, a small planet next to its star).
     for (const v of this.bodies.views.values()) {
-      if (!v.resolved) continue;
+      if (!v.resolved) {
+        // (a sun too small to be a disc: its hold let go of as it goes off, pointHold)
+        const b = v.body;
+        const hold = b.kind === 'star' ? pointHold(sunIrradianceAt(v.rel.length(), this.system.brightness(b)), v.pixelRadius, 0.6) : 0;
+        if (hold > 0) limitLight(starCap(1.8, 0), (AU / SUN_RADIUS) ** 2, look(v.rel, b.radius).presence * this.inSight(v.rel, b.radius) * hold);
+        continue;
+      }
       const b = v.body;
       const s = look(v.rel, b.radius);
       if (b.kind === 'star') {
@@ -3386,8 +3407,11 @@ export class App {
       const shown = this.inSight(rel, st.radius);
       settle(s.coverage * shown, L, FACE_KEY);
       const px = s.size / this.view.pixelAngle;
-      if (px <= 1.5) continue;
-      limitLight(starCap(1.4, px / this.view.pixelRatio), L, s.presence * shown);
+      // (too small to be a disc, its hold let go of as it goes off, as the Sun's above: pointHold. A very bright one is let go
+      // of as it nears the edge of the near stars too, beyond which it is a point of the star field, holding nothing)
+      const hold = pointHold(magToIrradiance(st.absMag + 5 * Math.log10(d / PC) - 5), px, 1.5) * smoothstep(NEAR_STAR_RADIUS * PC, 0.6 * NEAR_STAR_RADIUS * PC, d);
+      if (hold <= 0) continue;
+      limitLight(starCap(1.4, px / this.view.pixelRatio), L, s.presence * shown * hold);
     }
     // under a daytime sky the eye adapts to the sky: the stars fade out, and the sky itself is a lit surface
     const sky = this.skyRadiance();
