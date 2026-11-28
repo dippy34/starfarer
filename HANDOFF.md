@@ -1647,7 +1647,9 @@ At a world of gas the button says Float (`floatsHere`, `floatOver`, `floatArrive
 looking at the horizon, moving freely; `keepAboveClouds` keeps the camera over them. Not yet: a sea floor and waves, clouds to
 fly through on a giant (its map is blurry that close), the looks of lava and ice ground up close, gas planets of other stars'
 floor. Seven challenges were added to the missions for these (`Missions.ts`: swim, dive, madeground, tostar, bighole, crash,
-freesaturn).
+freesaturn). Up close only (each fades in as the pixels resolve it): waves on the sea (`shaders/sea.ts`, in BODY_FRAG and
+EXO_FRAG) and the sky they reflect; a lava world's crust cracked at the walker's scale and glowing (`groundGlow` in EXO_FRAG),
+its rocks black basalt (`Rocks.rockColour`); a giant's clouds with swirls finer than its map (`uGiant` in BODY_FRAG).
 **The way back (the owner asked for one):** before any of it, the app was commit `a69ed99`, and that
 build stays at https://b4b8c1a5.starfarer.pages.dev (a Cloudflare deployment of its own, kept). The
 enlarging has its own switch in More, and its commits are kept apart so that they can be reverted.
