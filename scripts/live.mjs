@@ -643,7 +643,9 @@ for (const kind of kinds) {
       `${sheet.log.length} events; ${left.items.length} things left out`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-log.png`) });
 
-    // backwards: the date runs back, what merged stays merged
+    // backwards: the date runs back, what merged stays merged (in Time's own sheet: the pill's sheet is live physics', and is shut first)
+    await press(page, '#hud .sheet.live [data-close]');
+    if (!(await shown(page, '#hud .sheet.time.on'))) await press(page, '#hud .hud-tabs [data-tab="time"]');
     await press(page, '#hud .transport [data-act="reverse"]');
     const saidBack = await toast(page);
     const jdA = await page.evaluate(() => window.app.clock.jdTdb);

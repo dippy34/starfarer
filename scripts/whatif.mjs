@@ -41,6 +41,12 @@ const card = (page) => page.evaluate(() => {
   };
 });
 const details = async (page) => {
+  // (a world still being placed is let go first, as the card's chevron did before Info: its name or chevron ends the placing and
+  // folds the card; while placing, the card shows the placing and not Look at, Share and Info)
+  if (await page.evaluate(() => document.querySelector('#hud .card').classList.contains('making'))) {
+    await page.locator('#hud .card [data-details]').tap().catch(() => page.locator('#hud .card [data-details]').click());
+    await page.waitForFunction(() => !document.querySelector('#hud .card').classList.contains('making'), null, { timeout: 600000 });
+  }
   // (the facts are behind Info, on the card opened)
   if (await page.evaluate(() => document.querySelector('#hud .card .facts').hidden)) { await openCard(page); await page.locator('#hud .card [data-info]').tap().catch(() => page.locator('#hud .card [data-info]').click()); }
   await page.waitForSelector('#hud .card .facts:not([hidden])');
