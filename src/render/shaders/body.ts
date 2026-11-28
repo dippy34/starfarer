@@ -1,5 +1,6 @@
 import { CHAPMAN } from './atmosphere';
 import { MATERIAL_GLSL } from '../Materials';
+import { SEA_WAVES_GLSL } from './sea';
 import { CLOUD_GLSL } from '../CloudLayer';
 import { FIX_LOGDEPTH, OUTPUT_FRAGMENT, PROJECT_PARS } from './xr';
 /** Shaders for resolved Solar System bodies (Phase 1: textured ellipsoids). */
@@ -122,6 +123,8 @@ varying vec3 vGround;
 uniform vec4 uMatSel;          // ground materials (render/Materials.ts): flat A, flat B, steep, snow
 uniform float uMatMode;        // 0 airless regolith, 1 Earth (from the map's colour), 2 Mars, 3 ice
 ${MATERIAL_GLSL}
+${SEA_WAVES_GLSL}
+uniform float uTime;
 ${CHAPMAN}
 ${CLOUD_GLSL}
 vec3 srgbToLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
@@ -598,8 +601,17 @@ void main() {
 
   // Sun glint on open water (GGX, roughness of a wind-roughened sea seen from orbit)
   if (water > 0.0 && mu0g > 0.0) {
+    // (up close, on the landing terrain, the waves: src/render/shaders/sea.ts; and the sky they reflect, bright towards the horizon)
+    vec3 nS = nW;
+#ifdef TERRAIN
+    if (uTerrain > 0.5) {
+      nS = seaWaves(nW, vGround, uTime, mppT);
+      float fr = 0.02 + 0.98 * pow(1.0 - max(dot(nS, V), 0.02), 5.0);
+      radiance += uSunColor * (uSunIrr / 3.14159265) * vec3(0.18, 0.3, 0.5) * 0.35 * fr * water * (1.0 - cloud) * smoothstep(-0.1, 0.3, mu0g);
+    }
+#endif
     vec3 Hh = normalize(uSunDir + V);
-    float nh = max(dot(nW, Hh), 0.0);
+    float nh = max(dot(nS, Hh), 0.0);
     float a2 = 0.04;
     float dd = nh * nh * (a2 - 1.0) + 1.0;
     float D = a2 / (3.14159265 * dd * dd);
