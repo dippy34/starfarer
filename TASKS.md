@@ -194,6 +194,49 @@ need the OpenCode workspace's region set to Global.
 - **Don't touch:** the camera rig and the top chips, the round buttons, the card's layout outside its Add and
   placing panels, and `src/render` (Claude is reworking those at the same time); the comets' powers.
 
+### `task/hole-mass`: Mass on the real black holes (their shadow grows with it)
+
+- **Status:** open. Medium.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the fix list's #9, its last step (`docs/notes/ideas.md`, "God mode on more things"): "Mass on the
+  real black holes (their shadow grows with it)". Today a catalogue black hole's card (Sagittarius A*, M87*, Cygnus X-1
+  and the others in `src/universe/BlackHoles.ts`) has every power off: `powersFor.ts` returns `none(HOLE)`, "Live physics
+  does not take black holes yet". A black hole of your own already has Mass (`task/hole-of-your-own`).
+- **How things work now:** `BlackHole` (`src/universe/BlackHoles.ts`): `massSun` and `radius` (the Schwarzschild radius,
+  2GM/c², from which flight speed, picking and arrival scale), `diskInner`, `diskOuter` (from the data, or 600 radii for
+  a supermassive one: "illustrative"), the card's rows (`info()`: "Event horizon ... km radius"). `BlackHoleLayer`
+  (`src/render/BlackHoleLayer.ts`) draws its shadow, the sky bent round it and its disk each frame from `bh.radius`,
+  `bh.diskInner` and the rest (`uRs`, `uRin`, ...). The card's Mass panel and its slider, Real mass, Undo
+  (`History`), saves and links (`src/app/SceneWorld.ts`) as they work for a world of the Sun's.
+- **What to do,** in this order, each step whole before the next (if time runs short, stop after a whole one and say
+  what is left):
+  1. *Mass works on a catalogue hole.* Its card's Mass opens the mass panel as for a world: the slider from a tenth to
+     ten times its real mass (in Suns, or millions of Suns for a supermassive one: "4.3 million Suns"), Real mass
+     puts it back. Nothing else turns on: Size, Move, Add and Remove stay off with a plain reason each (Size: "a black
+     hole's size is set by its mass"; the others as today). It does not start live physics (nothing round it is
+     simulated); it changes the hole itself.
+  2. *What follows from the mass.* Its event horizon (2GM/c²) and so its shadow grow in proportion with it, drawn so
+     the next frame; the inner edge of its disk too (where it is set in radii); a disk set in metres by the data
+     (a companion's) stays where it is. The card's rows follow (mass, event horizon, and whatever else is worked out
+     from the mass); "More science" says the mass is changed from the measured one, and by how much.
+  3. *Kept.* Undo takes a change back; a save and a link keep it (a record of a new kind; links written before read
+     as ever).
+- **Done when:**
+  - Unit tests: the radius at twice the mass is twice the radius (Sagittarius A*: 4.3 million Suns, about 12.7 million
+    km; check against the worked number), the disk's inner edge follows and a disk in metres does not, Undo, the bytes
+    of a save with a changed hole (and older links unchanged).
+  - Browser checks in `scripts/live.mjs`, a new block `holemass` (phone and desk): at Sagittarius A* (and at Cygnus
+    X-1) the card's Mass works; at four times its mass the card's horizon reads four times as many km and the shadow
+    drawn from the same place is four times as wide in pixels (within 10 %); Real mass and Undo put it back; a link
+    keeps it. They fail on the code before the change.
+  - Pictures, upright at 390x844: Sagittarius A* from the same place at its real mass and at four times it, the card
+    with its Mass panel open.
+  - Run `LIVE_ONLY=holemass,hole` of `scripts/live.mjs` (phone and desk) and `scripts/share.mjs`; Claude runs the
+    whole set after. `npm run check` passes.
+- **Don't touch:** the catalogue's data files, a black hole of your own (its code paths and checks), the camera rig,
+  the chips, the Time panel and the card's layout (just changed: powers first, then Look at, Share and Info), the
+  lensing shader beyond what reads the new mass. Never make up numbers: what changes is worked out from the mass.
+
 ### `task/hole-of-your-own`: a black hole of your own
 
 - **Status:** done 28 Nov 2026: run 46098223277 on Claude Sonnet 5.5 ($3.68), reviewed by Claude. Large.
