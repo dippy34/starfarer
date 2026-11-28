@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { BlackHoleLayer } from '../src/render/BlackHoleLayer';
 import { jetShape } from '../src/render/Jets';
 import { UPos } from '../src/core/upos';
-import { BlackHole } from '../src/universe/BlackHoles';
+import { BlackHole, HOLE_FACTOR, schwarzschildOf } from '../src/universe/BlackHoles';
 
 const data = JSON.parse(readFileSync(new URL('../public/data/blackholes.json', import.meta.url), 'utf8')) as { blackholes: ConstructorParameters<typeof BlackHole>[1][] };
 const holes = data.blackholes.map((d, i) => new BlackHole(i, d));
@@ -116,5 +116,70 @@ describe('the jets of the holes that have them', () => {
     const m87 = jetShape(named('M87*'))!.glow, cyg = jetShape(named('Cygnus X-1'))!.glow;
     expect(m87.z).toBeGreaterThan(m87.x);
     expect(m87.x + m87.y + m87.z).toBeGreaterThan(2 * (cyg.x + cyg.y + cyg.z));
+  });
+});
+
+describe('a real black hole with a changed mass', () => {
+  /** a fresh hole from the data (not the shared `holes`, so a change here leaks nowhere) */
+  const fresh = (name: string) => {
+    const i = data.blackholes.findIndex((d) => d.name === name);
+    return new BlackHole(i, data.blackholes[i]);
+  };
+
+  it('Sagittarius A* is 4.297 million Suns, its horizon about 12.7 million km across the radius', () => {
+    const sgr = fresh('Sagittarius A*');
+    expect(sgr.massSun).toBeCloseTo(4.297e6, 6);
+    expect(sgr.factor).toBe(1);
+    expect(Math.abs(sgr.radius / 1.269e10 - 1)).toBeLessThan(0.005);
+  });
+
+  it('at twice its mass the horizon and the inner disk are twice as far out, and the outer disk too', () => {
+    const sgr = fresh('Sagittarius A*');
+    sgr.setFactor(2);
+    expect(sgr.radius / (2 * fresh('Sagittarius A*').radius)).toBeCloseTo(1, 12);
+    expect(sgr.diskInner).toBeCloseTo(3 * sgr.radius, 12);
+    expect(sgr.diskOuter).toBeCloseTo(600 * sgr.radius, 12);
+  });
+
+  it('back at factor 1 its radius, disk and mass are exactly what they were', () => {
+    const sgr = fresh('Sagittarius A*');
+    const radius = sgr.radius, diskInner = sgr.diskInner, diskOuter = sgr.diskOuter, massSun = sgr.massSun;
+    sgr.setFactor(2);
+    sgr.setFactor(1);
+    expect(sgr.radius).toBe(radius);
+    expect(sgr.diskInner).toBe(diskInner);
+    expect(sgr.diskOuter).toBe(diskOuter);
+    expect(sgr.massSun).toBe(massSun);
+  });
+
+  it('Cygnus X-1 at four times its mass: horizon four times, inner disk 3 radii, a disk in metres unchanged', () => {
+    const cyg = fresh('Cygnus X-1');
+    const radius = cyg.radius, diskOuter = cyg.diskOuter;
+    cyg.setFactor(4);
+    expect(cyg.radius / radius).toBeCloseTo(4, 12);
+    expect(cyg.diskInner).toBeCloseTo(3 * cyg.radius, 12);
+    expect(cyg.diskOuter).toBe(diskOuter);
+    expect(cyg.factor).toBeCloseTo(4, 12);
+  });
+
+  it('schwarzschildOf(10) is about 29.53 km', () => {
+    expect(Math.abs(schwarzschildOf(10) - 29_530)).toBeLessThan(10);
+  });
+
+  it('the factor may be a tenth to ten times the measured mass, and HOLE_FACTOR says so', () => {
+    expect([...HOLE_FACTOR]).toEqual([0.1, 10]);
+  });
+
+  it('a factor of zero, a negative one or NaN changes nothing', () => {
+    const cyg = fresh('Cygnus X-1');
+    const { radius, massSun, diskInner, diskOuter } = cyg;
+    for (const bad of [0, -1, NaN]) {
+      cyg.setFactor(bad);
+      expect(cyg.radius).toBe(radius);
+      expect(cyg.massSun).toBe(massSun);
+      expect(cyg.diskInner).toBe(diskInner);
+      expect(cyg.diskOuter).toBe(diskOuter);
+      expect(cyg.factor).toBe(1);
+    }
   });
 });

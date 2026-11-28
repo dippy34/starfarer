@@ -154,3 +154,50 @@ describe('a link to a scene (version 1: the real universe)', () => {
     expect(opened).toBeGreaterThan(1000);
   });
 });
+
+describe('a link to a scene with black holes whose mass was changed (h)', () => {
+  const withHoles = (holes: [string, number][]): SceneView => ({ ...moon, holes });
+  const base = encodeLink(moon);
+
+  it('writes h= after p=, with each name and factor, and reads them back', () => {
+    const f = encodeLink(withHoles([['Sagittarius A*', 4], ['Cygnus X-1', 0.5]]));
+    expect(f).toContain('&h=Sagittarius%20A*~4%7CCygnus%20X-1~0.5');
+    expect(f.endsWith('&p=1&h=Sagittarius%20A*~4%7CCygnus%20X-1~0.5')).toBe(true);
+    const d = decodeLink(f);
+    expect(d.ok).toBe(true);
+    if (!d.ok) return;
+    expect(d.view.holes).toEqual([['Sagittarius A*', 4], ['Cygnus X-1', 0.5]]);
+  });
+
+  it('a view without holes, or with none, writes no h= and reads back with holes undefined', () => {
+    for (const v of [moon, withHoles([])]) {
+      expect(encodeLink(v)).not.toContain('h=');
+      const d = decodeLink(encodeLink(v));
+      expect(d.ok && d.view.holes).toBeUndefined();
+    }
+  });
+
+  it('a link written before (no h=) reads exactly as before: the same fields, no holes', () => {
+    const d = decodeLink(base);
+    expect(d.ok).toBe(true);
+    if (!d.ok) return;
+    expect(d.view.holes).toBeUndefined();
+    expect(d.view).toMatchObject({ selected: moon.selected, at: moon.at, fov: 50, rate: 3600, paused: true, world: null });
+    d.view.camera.forEach((x, i) => expect(Math.abs(x - moon.camera[i])).toBeLessThan(0.01));
+  });
+
+  it('refuses a factor above ten, below a tenth, with no factor, a name twice, or not a number', () => {
+    const bad = [`${base}&h=A~11`, `${base}&h=A~0.05`, `${base}&h=A`, `${base}&h=A~2%7CA~3`, `${base}&h=A~x`];
+    for (const f of bad) {
+      const d = decodeLink(f);
+      expect(d.ok, f).toBe(false);
+    }
+  });
+
+  it('accepts a factor of exactly ten and exactly a tenth', () => {
+    for (const factor of [10, 0.1]) {
+      const d = decodeLink(`${base}&h=A~${factor}`);
+      expect(d.ok && d.view.holes).toEqual([['A', factor]]);
+    }
+  });
+});

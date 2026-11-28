@@ -53,6 +53,7 @@ const DEEP_MASS = 'No measured mass for galaxies and nebulae in our data';
 const UNKNOWN = 'This kind cannot join the live simulation yet';
 const HOLE_SIZE = 'Its size is its event horizon: set by its mass';
 const HOLE_ADD = 'Nothing is added to a black hole';
+const HOLE_SET = "A black hole's size is set by its mass";
 
 /**
  * Where an object is, as far as its powers go: for a star, its planetary system (null: it has
@@ -91,7 +92,8 @@ export function powersFor(obj: SpaceObject, made = 0, where: PowerPlace = {}): P
     );
   }
   if (obj instanceof ExoPlanet) return planetary(obj.system, obj, where);
-  if (obj instanceof BlackHole) return none(HOLE);
+  // (a black hole of the catalogue: its mass changes the hole itself, its horizon and its shadow with it; nothing round it is simulated)
+  if (obj instanceof BlackHole) return table(WORKS, no(HOLE_SET), no(HOLE), no(HOLE), no(HOLE));
   if (obj instanceof CatalogStar) {
     if (where.system) return planetary(where.system, null, where);
     return table(no(STAR_MASS), no(NO_PLANETS), no(NO_PLANETS), no(NO_PLANETS), no(NO_PLANETS));

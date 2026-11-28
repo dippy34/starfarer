@@ -1004,6 +1004,17 @@ temperature, and size as well as mass.
   links written before read as ever. Cost on a phone: only while the eye is within the region it bends
   (some 100,000 km for 30 km of horizon), the same as the catalogue's holes there. Browser checks:
   `LIVE_ONLY=hole` of `scripts/live.mjs`.
+- *Mass on the real black holes* (28 Nov 2026; the cheap team's task/hole-mass on Claude Sonnet, $3.43, reviewed
+  and its checks finished here; the fix list's #9 step 3): a catalogue hole's card has Mass (`powersFor`: Size says
+  "A black hole's size is set by its mass"; Move, Add, Remove as before). The slider runs from a tenth to ten times
+  the measured mass (`HOLE_FACTOR`); `BlackHole.setFactor` works out the horizon (`schwarzschildOf`, 2GM/c²), the
+  disk's inner edge (3 radii) and a supermassive hole's illustrative disk (600 radii) afresh; a disk the data gives
+  in metres (a companion's) stays. No live physics starts: the change is a `HoleStep` in the same Undo history
+  (`App.beginHoleChange`, `endHoleChange`; the pill is Undo for `HOLE_UNDO_MS` after), Real mass puts the measured
+  mass back exactly. `BlackHoleLayer.massChanged` and `Jets` drop what they cached from the old mass. Links keep it
+  in an optional `h=name~factor|...` (SceneLink.ts; older links have none and read as ever), and saves with them.
+  Browser checks: `LIVE_ONLY=holemass` of `scripts/live.mjs` (Sagittarius A* and Cygnus X-1, phone and desk: the
+  shadow is measured from 45 degrees over the disk, as straight down the axis the eye is in Cygnus X-1's jet).
 - *God mode on a comet, step 1: take it away* (27 Nov 2026, evening; the cheap team's task/comet-powers
   on Claude Sonnet, reviewed here): a comet's card offers Remove (Mass, Size, Move and Add off, each
   with a reason: `comet` in `powersFor.ts`). `App.removeComet` starts live physics as any change does

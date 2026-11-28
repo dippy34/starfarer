@@ -16,6 +16,14 @@ export interface BlackHoleData {
   massSun: number; companion?: CompanionData; diskOuterM?: number; ref: string;
 }
 
+/** The Schwarzschild radius (m) of a hole of `massSun` Suns: 2GM/c², the event horizon of one that does not turn. */
+export function schwarzschildOf(massSun: number): number {
+  return (2 * G * massSun * MSUN) / (C * C);
+}
+
+/** The explorer may give a real hole a tenth of its measured mass up to ten times it (the card's Mass slider, a link's `h`). */
+export const HOLE_FACTOR: readonly [number, number] = [0.1, 10];
+
 /**
  * A real black hole (pipeline/build_blackholes.py: BlackCAT, SIMBAD, published masses).
  * `radius` is the Schwarzschild radius, so flight speed, picking and arrival scale with it.
@@ -32,8 +40,8 @@ export class BlackHole implements SpaceObject {
   readonly supermassive: boolean;
   /** unit normal of the accretion disk / binary orbit plane (world frame) */
   readonly diskNormal: Vector3;
-  /** accretion disk outer radius (m); 0 = no disk (dormant) */
-  readonly diskOuter: number;
+  /** accretion disk outer radius (m); 0 = no disk (dormant). Set in radii of the horizon (600, a supermassive hole's illustrative disk) it follows a changed mass; set in metres by the data it does not. */
+  diskOuter: number;
   /** accretion disk inner edge (m): the innermost stable circular orbit of a non-spinning hole, 3 rs */
   diskInner: number;
   /** peak disk temperature (K) */
@@ -56,7 +64,7 @@ export class BlackHole implements SpaceObject {
     this.name = d.name;
     this.massSun = d.massSun;
     this.supermassive = d.kind === 'supermassive';
-    this.radius = (2 * G * d.massSun * MSUN) / (C * C);
+    this.radius = schwarzschildOf(d.massSun);
     const ra = (d.raDeg * Math.PI) / 180, dec = (d.decDeg * Math.PI) / 180;
     const dir = new Vector3(Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec));
     const posPc = dir.clone().multiplyScalar(d.distPc);
@@ -113,6 +121,23 @@ export class BlackHole implements SpaceObject {
    */
   static made(index: number, name: string, massSun: number): BlackHole {
     return new BlackHole(index, { name, aliases: [], kind: 'stellar', raDeg: 0, decDeg: 0, distPc: 1, massSun, ref: 'made by you' });
+  }
+
+  /**
+   * What the explorer made of a real hole's mass: `factor` times the measured one (`setFactor`; 1 is the measured mass).
+   * Everything that follows from the mass is worked out afresh from it: the event horizon, 2GM/c², and with it the inner
+   * edge of the disk (3 radii) and a supermassive hole's illustrative disk (600 radii); a disk the data gives in metres stays.
+   */
+  get factor(): number {
+    return this.massSun / this.data.massSun;
+  }
+
+  setFactor(factor: number): void {
+    if (!(factor > 0) || !Number.isFinite(factor)) return;
+    this.massSun = this.data.massSun * factor;
+    this.radius = schwarzschildOf(this.massSun);
+    this.diskInner = this.radius * 3;
+    if (this.data.diskOuterM === undefined && this.supermassive) this.diskOuter = this.radius * 600;
   }
 
   /** A hole the explorer made has `massSun` Suns now and an event horizon of `radius` m (the app's own, from the body that has it in the simulation). */

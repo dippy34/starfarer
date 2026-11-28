@@ -31,6 +31,16 @@ export class History<T> {
     return this.list.pop();
   }
 
+  /** The newest state kept, not taken off (undefined: none). */
+  last(): T | undefined {
+    return this.list[this.list.length - 1];
+  }
+
+  /** Let go of every state `keep` is false for, the others staying in their order. */
+  keepOnly(keep: (state: T) => boolean): void {
+    this.list = this.list.filter(keep);
+  }
+
   clear(): void {
     this.list.length = 0;
   }

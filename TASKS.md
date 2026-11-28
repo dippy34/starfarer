@@ -236,7 +236,9 @@ need the OpenCode workspace's region set to Global.
 
 ### `task/hole-mass`: Mass on the real black holes (their shadow grows with it)
 
-- **Status:** open. Medium.
+- **Status:** done 28 Nov 2026: run 46141970794 on Claude Sonnet 5.5 ($3.43; it ran out of time while still fixing its
+  own browser checks), reviewed by Claude, who finished the checks (the shadow measured from 45 degrees over the disk;
+  at Cygnus X-1 the drawn shadow at four times against its horizon). Medium.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the fix list's #9, its last step (`docs/notes/ideas.md`, "God mode on more things"): "Mass on the
   real black holes (their shadow grows with it)". Today a catalogue black hole's card (Sagittarius A*, M87*, Cygnus X-1

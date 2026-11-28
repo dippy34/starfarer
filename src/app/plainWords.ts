@@ -111,7 +111,7 @@ export function plainFacts(app: App, o: SpaceObject): [string, string][] {
     return rows;
   }
   if (o instanceof BlackHole) {
-    rows.push(['Mass', blackHoleMass(o.massSun)]);
+    rows.push(['Mass', blackHoleMass(o.massSun)], ['Event horizon', `${Number((o.radius / 1e3).toPrecision(3)).toLocaleString('en-US')} km in radius`]);
     return rows;
   }
   // (a black hole of your own: its mass in Suns, the size of its event horizon, and nothing of a ball's surface)
@@ -154,7 +154,7 @@ export function brightnessWords(lum: number): string {
 }
 
 /** a black hole's mass in Suns: "21.2 Suns", "4.3 million Suns" */
-function blackHoleMass(m: number): string {
+export function blackHoleMass(m: number): string {
   return m >= 1e6 ? `${sig(m / 1e6)} million Suns` : `${sig(m)} Suns`;
 }
 

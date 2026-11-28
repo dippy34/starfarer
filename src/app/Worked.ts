@@ -175,7 +175,13 @@ const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function ofBlackHole(bh: BlackHole): Worked[] {
   const mass = bh.massSun * M_SUN;
+  const f = bh.factor, changed: Worked[] = f === 1 ? [] : [{
+    label: 'Mass changed',
+    text: f > 1 ? `${num(f, 3)} times the measured mass` : `${num(f, 3)} of the measured mass`,
+    math: `Measured: ${num(bh.data.massSun)} Suns (${bh.data.ref}). Now: ${num(bh.massSun)} Suns = ${num(f, 3)} × the measured mass. The mass is changed from the measured one (the Mass slider), not measured: the lines below are worked from it`,
+  }];
   return [
+    ...changed,
     row('Event horizon', schwarzschildRadius(mass)),
     row('Light can circle at', photonSphere(mass)),
     row('Innermost stable orbit', isco(mass)),

@@ -174,12 +174,17 @@ describe('the powers beyond the Solar System', () => {
     expect(reason(table, 'mass')).toMatch(/No measured mass/);
   });
 
-  it('a black hole has a reason for every power although its mass is known', () => {
+  it("a catalogue black hole's mass works; Size, Move, Add and Remove each say why not", () => {
     const data = JSON.parse(readFileSync(new URL('../public/data/blackholes.json', import.meta.url), 'utf8')) as { blackholes: ConstructorParameters<typeof BlackHole>[1][] };
-    const hole = new BlackHole(0, data.blackholes.find((h) => h.name === 'Cygnus X-1')!);
-    expect(hole.massSun).toBeGreaterThan(0);
-    expectNoPowers(powersFor(hole));
-    expect(reason(powersFor(hole), 'mass')).toMatch(/black holes/);
+    for (const name of ['Cygnus X-1', 'Sagittarius A*', 'Gaia BH1']) {
+      const hole = new BlackHole(0, data.blackholes.find((h) => h.name === name)!);
+      expect(hole.massSun).toBeGreaterThan(0);
+      const table = powersFor(hole);
+      expect(working(table)).toEqual(['mass']);
+      for (const p of ['size', 'move', 'add', 'remove'] as const) expectPlainReason(table, p);
+      expect(reason(table, 'size')).toBe("A black hole's size is set by its mass");
+      for (const p of ['move', 'add', 'remove'] as const) expect(reason(table, p)).toBe('Live physics does not take black holes yet');
+    }
   });
 
   it('a belt asteroid stays on its recorded path', () => {

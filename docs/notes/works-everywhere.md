@@ -30,7 +30,7 @@ star with planets (real or generated) and its own powers; a star without planets
 |---|---|---|---|---|---|---|---|---|
 | Move | yes (S) | yes (S) | yes (L) | yes (L) | its star: yes (L) | no | no | no |
 | Throw | yes (C) | yes (C) | yes (C) | yes (C) | its star: yes (C) | no | no | no |
-| Mass | yes (S) | yes (S) | yes (L, U) | yes, marked generated (L) | its star: yes, marked as known (L) | no | no | no |
+| Mass | yes (S) | yes (S) | yes (L, U) | yes, marked generated (L) | its star: yes, marked as known (L) | yes, a tenth to ten times, no live physics (L, U) | no | no |
 | Size | yes where the radius is measured (S) | no, by design | measured in transit only (L) | no: generated | no, by design | no | no | no |
 | Add | a moon for planets and dwarfs only (S) | yes (S) | no, "round the Sun only" | no | no | no | no | no |
 | Remove | yes (S) | yes (S) | yes (U) | yes (C) | its star: yes (C) | no | no | no |

@@ -341,6 +341,15 @@ export class BlackHoleLayer {
   }
 
   /**
+   * The mass of `bh` was changed (BlackHole.setFactor: its horizon, its disk's inner edge and a supermassive hole's disk follow): what
+   * was worked out from the old ones, the light of its disk and the shape of its jets, is worked out again from the next frame.
+   */
+  massChanged(bh: BlackHole): void {
+    this.lights.delete(bh);
+    this.jets.delete(bh);
+  }
+
+  /**
    * Choose the holes worth drawing from `cam` and set up their meshes. `faintest`: the least
    * light from a far hole's disk (irradiance at the eye) that is worth a point in the frame.
    */

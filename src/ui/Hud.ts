@@ -121,7 +121,7 @@ export interface HudState {
      * in words, what changes with it (`says`), and what the textbook predicts of a body of that mass
      * ('' where it says nothing).
      */
-    mass: { slider: number; words: string; times: string; says: string; theory: string } | null;
+    mass: { slider: number; words: string; times: string; says: string; theory: string; /** the slider's reach, in powers of ten either side (none: 3; a real black hole's: 1, a tenth to ten times) */ decades?: number } | null;
     /**
      * Its size, where it has a measured one and a known mass (not a star's): where the slider stands,
      * the radius and its factor in words, and whether it follows the mass at the same density.
@@ -165,6 +165,8 @@ export interface HudState {
   undo: boolean;
   /** the real Solar System has just come back (Back to reality, or its first change undone): Undo is offered at the top for a moment */
   realAgain: boolean;
+  /** a real black hole's mass was just changed, with no live physics on: the pill at the top is Undo for a moment, as after Back to reality */
+  holeUndo: boolean;
   /**
    * Watching what a change does (src/app/Watch.ts): what the chip says, whether the watch is over,
    * and if so whether it can be watched again (Replay); `offer`: the watch can be started (Watch).
@@ -1141,7 +1143,7 @@ export class Hud {
    * moment, and is Undo: the changed world can be had back.
    */
   private renderLive(s: HudState): void {
-    const live = s.live, after = !live && s.realAgain;
+    const live = s.live, after = !live && (s.realAgain || s.holeUndo);
     this.el.toggleAttribute('data-live', !!live || after);
     const mark = this.$('.live-mark'), what = this.$('.live-what');
     mark.hidden = !live && !after;
@@ -1161,9 +1163,9 @@ export class Hud {
     if (!live && this.sheet === 'live') this.closeSheet();
     if (after) {
       setText(this.$('.live-what b'), 'Undo');
-      setText(this.$('.live-what small'), 'real again');
+      setText(this.$('.live-what small'), s.realAgain ? 'real again' : 'mass changed');
       this.$('.live-what small').hidden = false;
-      what.setAttribute('aria-label', `Undo: ${s.realWhat}, and the change is taken back`);
+      what.setAttribute('aria-label', s.realAgain ? `Undo: ${s.realWhat}, and the change is taken back` : "Undo: the change of a black hole's mass is taken back");
     }
     if (!live) return;
     what.setAttribute('aria-label', 'Live physics: what is simulated, and what has happened');
@@ -1312,6 +1314,15 @@ export class Hud {
       setText(panel.querySelector('.power-read b')!, sel.mass.words);
       setText(panel.querySelector('.power-read small')!, sel.mass.times);
       setText(panel.querySelector('.mass-says')!, sel.mass.says);
+      // (its reach: a thousand times either way, or a real black hole's tenth to ten times)
+      const reach = sel.mass.decades ?? 3, ends = panel.querySelectorAll<HTMLElement>('.slider-ends > span:not(.mass-says)');
+      if (this.slider.max !== String(reach)) {
+        this.slider.max = String(reach);
+        this.slider.min = String(-reach);
+        this.slider.setAttribute('aria-label', reach === 3 ? 'Its mass, from a thousandth of its real mass to a thousand times it' : 'Its mass, from a tenth of its measured mass to ten times it');
+        setText(ends[0], reach === 3 ? '÷ 1,000' : '÷ 10');
+        setText(ends[1], reach === 3 ? '× 1,000' : '× 10');
+      }
       if (!this.sliding && Math.abs(Number(this.slider.value) - sel.mass.slider) > 0.004) this.slider.value = String(sel.mass.slider);
       const theory = panel.querySelector<HTMLElement>('.theory')!;
       theory.hidden = !sel.mass.theory;

@@ -29,6 +29,8 @@ const POWERS = {
   host: ['Mass', 'Move', 'Remove'],
   // a comet can be taken away, moved and thrown (task/comet-powers); Mass, Size and Add stay off, each with its reason
   comet: ['Move', 'Remove'],
+  // a black hole of the catalogue: its Mass changes the hole itself (task/hole-mass); Size, Move, Add and Remove stay off, each with its reason
+  hole: ['Mass'],
   none: [],
 };
 
@@ -52,8 +54,8 @@ const PLACES = [
   // (a made-up planet: of a faint star far off, Gl 9848, 56 pc and magnitude 11; a star people know gets none, Vega included)
   { part: 'planets', label: 'Gl 9848 b (generated)', query: 'Gl 9848 b', rows: ['Gl 9848 b'], powers: POWERS.exoplanet },
   { part: 'deep', label: 'deep space', openSpace: true },
-  { part: 'deep', label: 'Sagittarius A*', query: 'Sagittarius A*', rows: ['Sagittarius A*'], powers: POWERS.none },
-  { part: 'deep', label: 'Cygnus X-1', query: 'Cygnus X-1', rows: ['Cygnus X-1'], detail: /^black hole$/, powers: POWERS.none },
+  { part: 'deep', label: 'Sagittarius A*', query: 'Sagittarius A*', rows: ['Sagittarius A*'], powers: POWERS.hole },
+  { part: 'deep', label: 'Cygnus X-1', query: 'Cygnus X-1', rows: ['Cygnus X-1'], detail: /^black hole$/, powers: POWERS.hole },
   { part: 'deep', label: 'inside the Orion Nebula', query: 'Orion Nebula', rows: ['Orion Nebula'], inside: true, powers: POWERS.none },
   { part: 'deep', label: 'beside Andromeda', query: 'Andromeda', rows: ['Andromeda Galaxy'], fallback: 'Andromeda Galaxy', powers: POWERS.none },
   { part: 'deep', label: 'Milky Way', query: 'Milky Way', rows: ['Milky Way'], powers: POWERS.none },
@@ -283,6 +285,8 @@ async function powersWorkAndReasons(page, place) {
 
 const bodyState = (page) => page.evaluate(() => {
   const a = window.app, b = window.__everywhereObject;
+  // a black hole of the catalogue: its mass and horizon are the state (no live physics: nothing round it is simulated)
+  if (b?.kind === 'black hole' && b.data) return { gm: b.massSun, radius: b.radius, pos: [], vel: [], jd: a.clock.jdTdb, on: false, hole: true };
   if (b?.pos) return { gm: b.gm, radius: b.radius, pos: b.pos.toArray(), vel: b.vel.toArray(), jd: a.clock.jdTdb, on: a.physics.on };
   // another star or its planet: the mass the powers act on (the body standing for it in its system, src/app/App.ts
   // powerBody), and where it is drawn, to the last bit of its place in the universe (it has no velocity of its own)
@@ -308,7 +312,9 @@ async function massAndUndo(page, touch) {
     const slider = page.locator('#hud .card [data-panel="mass"] .mass-slider');
     const box = await slider.boundingBox();
     if (!box || !before) throw new Error('no mass slider or body state');
-    const point = (value) => ({ x: box.x + 15 + ((value + 3) / 6) * (box.width - 30), y: box.y + box.height / 2 });
+    // (the slider reaches 3 powers of ten either side, a black hole's 1)
+    const reach = Number(await slider.getAttribute('max'));
+    const point = (value) => ({ x: box.x + 15 + ((value + reach) / (2 * reach)) * (box.width - 30), y: box.y + box.height / 2 });
     const from = point(Number(await slider.inputValue())), to = point(Math.log10(2));
     await touch.press(from);
     for (let i = 1; i <= 6; i++) await touch.slide({ x: from.x + ((to.x - from.x) * i) / 6, y: from.y });
@@ -316,7 +322,7 @@ async function massAndUndo(page, touch) {
     await frames(page, 2);
     changed = await bodyState(page);
     const factor = changed.gm / before.gm;
-    changedOk = changed.on && factor > 1.5 && factor < 2.5;
+    changedOk = (changed.on || changed.hole) && factor > 1.5 && factor < 2.5;
     undoShown = await undoOffered(page);
     if (undoShown) { await liveWay(page, 'undo', (sel) => press(page, sel)); await frames(page, 3); }
     detail = `mass ×${factor.toFixed(3)}, physics on ${changed.on}`;

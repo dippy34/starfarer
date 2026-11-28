@@ -1,4 +1,5 @@
 import { tdbToUtc, utcToTdb } from '../core/time';
+import { HOLE_FACTOR } from '../universe/BlackHoles';
 
 /**
  * A link that opens someone's exact scene: what is selected, where the camera is from what it is
@@ -24,6 +25,9 @@ import { tdbToUtc, utcToTdb } from '../core/time';
  *   r   the rate of time (simulated seconds a second; negative backwards)
  *   p   1: time paused
  *   w   live physics: the changed universe, packed (SceneWorld.ts); left out: the real universe
+ *   h   the real black holes whose mass was changed (not live physics: nothing round them is simulated), each as its
+ *       name, "~" and the factor on its measured mass (0.1 to 10), apart by "|": h=Sagittarius%20A*~4; left out: all
+ *       as measured. A link written before has none, and is read as ever.
  *
  * Readable on purpose: someone looking at a link that went wrong can see what it asked for. Numbers
  * carry 10 significant figures (the camera to a millimetre at the Earth's distance from it) and
@@ -67,6 +71,8 @@ export interface SceneView {
   /** the rate of time (simulated seconds a second) */
   rate: number;
   paused: boolean;
+  /** the real black holes whose mass was changed: name, and the factor on the measured mass (none, or left out: all as measured) */
+  holes?: [string, number][];
   /** the changed universe (SceneWorld.ts, packed and in base64url), or null: the real one */
   world: string | null;
 }
@@ -95,6 +101,7 @@ export function encodeLink(v: SceneView): string {
   if (v.fov !== 50) parts.push(`f=${short(v.fov, 6)}`);
   parts.push(`t=${isoOf(v.jd)}`, `r=${short(v.rate, 12)}`, `p=${v.paused ? 1 : 0}`);
   if (v.world) parts.push(`w=${v.world}`);
+  if (v.holes?.length) parts.push(`h=${encodeURIComponent(v.holes.map(([name, factor]) => `${name}~${short(factor, 6)}`).join('|'))}`);
   return parts.join('&');
 }
 
@@ -146,6 +153,25 @@ function idOf(s: string | undefined, what: string): number | null {
   if (s === undefined) return null;
   if (!/^\d{1,10}$/.test(s) || Number(s) > 2 ** 31 - 1) fail(`the number of ${what} is not one`);
   return Number(s);
+}
+
+/** at most this many black holes with a changed mass in a link */
+export const HOLES_MOST = 64;
+
+/** The black holes of a link's `h`: "name~factor|name~factor", each name once, each factor within what the card's slider gives (a hair over, for rounding). */
+function holesOf(s: string): [string, number][] {
+  const out: [string, number][] = [];
+  for (const part of s.split('|')) {
+    const at = part.lastIndexOf('~');
+    if (at < 0) fail('a black hole in it has no factor');
+    const name = nameOf(part.slice(0, at), 'a black hole with a changed mass');
+    const factor = numberOf(part.slice(at + 1), 'the mass of a black hole');
+    if (!(factor >= HOLE_FACTOR[0] * 0.999999 && factor <= HOLE_FACTOR[1] * 1.000001)) fail('the mass of a black hole in it is out of range');
+    if (out.some(([n]) => n === name)) fail('it changes a black hole twice');
+    if (out.length >= HOLES_MOST) fail('it changes too many black holes');
+    out.push([name, Math.min(HOLE_FACTOR[1], Math.max(HOLE_FACTOR[0], factor))]);
+  }
+  return out;
 }
 
 /** A number as a link writes it: digits, a point, a sign and an exponent, finite. */
@@ -222,5 +248,8 @@ function read(fragment: string): SceneView {
   const w = f.get('w');
   if (w !== undefined && !/^[A-Za-z0-9_-]+$/.test(w)) fail('its changed universe could not be read');
 
-  return { selected, at, camera: camera as [number, number, number], turn, fov, jd, rate, paused: p === '1', world: w ?? null };
+  const h = f.get('h');
+  const holes = h === undefined || h === '' ? [] : holesOf(h);
+
+  return { selected, at, camera: camera as [number, number, number], turn, fov, jd, rate, paused: p === '1', world: w ?? null, ...(holes.length ? { holes } : {}) };
 }

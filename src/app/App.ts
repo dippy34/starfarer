@@ -49,10 +49,10 @@ import { loadSpacecraft, Spacecraft } from '../universe/Spacecraft';
 import { aimStrokes, ringStrokes } from '../ui/aimShape';
 import { Hud, PORTRAIT_CSS, type HudAction, type HudState } from '../ui/Hud';
 
-import { BlackHole, loadBlackHoles } from '../universe/BlackHoles';
+import { BlackHole, HOLE_FACTOR, loadBlackHoles } from '../universe/BlackHoles';
 import { Awe } from './Awe';
 import { Body, type SpaceObject } from '../universe/Body';
-import { plainDistance, plainFacts, plainLine, plainSpeedWords } from './plainWords';
+import { blackHoleMass, plainDistance, plainFacts, plainLine, plainSpeedWords } from './plainWords';
 import { GALAXY, glowColumn } from '../universe/Galaxy';
 import { MilkyWay } from '../universe/MilkyWay';
 import { ExoPlanet, type PlanetarySystem } from '../universe/Planets';
@@ -187,6 +187,8 @@ const LIVE_RATE = 365250 * DAY;
 const WATCH_MOST_TOUCH = 10 * 365.25 * DAY, WATCH_MOST = 100 * 365.25 * DAY;
 /** after the return to reality, Undo is offered at the top for this long (ms); then what was undone is let go */
 const REAL_AGAIN_MS = 20_000;
+/** after a real black hole's mass is changed with no live physics, the pill at the top is Undo for this long (ms): a slow phone's frames take a while */
+const HOLE_UNDO_MS = 60_000;
 /** two worlds about to hit, in the clear part of the view and at least this far apart on the screen (px), are seen coming together where they are */
 const SEEN_APART = 40;
 const bad = (why: string): never => { throw new WorldError(why); };
@@ -204,6 +206,9 @@ const HOME_REACH = 30;
 interface Start { jd: number; rate: RateState; present: boolean }
 /** What Undo goes back to: the worlds (LivePhysics), the rate of time, and the moment the changes began; `what`: the change it undoes, in words. */
 interface Checkpoint { live: LiveCheckpoint; rate: RateState; present: boolean; begun: Start | null; what: string }
+/** A real black hole's mass before a change of it (Undo): the hole, the factor it had on its measured mass, and the change in words. It starts no live physics and is no checkpoint of the worlds. */
+interface HoleStep { hole: BlackHole; factor: number; what: string }
+const isHoleStep = (s: Checkpoint | HoleStep): s is HoleStep => 'hole' in s;
 /** A change under way: what kind, to which world (for an Add, the one added to), the state before it, how many changes there had been, the worlds as it found them (src/app/Watch.ts). */
 interface Pending { kind: ChangeKind; body: Body; before: Checkpoint; count: number; sample: Map<Body, Sampled> }
 
@@ -365,7 +370,10 @@ export class App {
   /** the camera on its way to a watch's frame */
   private glide: Glide | null = null;
   /** Undo: the state before each of the last changes (src/app/History.ts) */
-  private readonly history = new History<Checkpoint>();
+  private readonly history = new History<Checkpoint | HoleStep>();
+  /** a real black hole's mass is being changed (a finger on the slider, or a run of keys): its factor before, kept for Undo when the change ends */
+  private holeChange: { hole: BlackHole; before: number } | null = null;
+  private readonly holeRun = new Gesture();
   /** one change per gesture: a finger on the mass slider until it lifts, a world held, a run of keys */
   private readonly run = new Gesture();
   private pending: Pending | null = null;
@@ -375,6 +383,8 @@ export class App {
   private begun: Start | null = null;
   /** when the real Solar System came back (performance.now, ms), for the Undo offered just after; 0: not offered */
   private realAgain = 0;
+  /** when a real black hole's mass was last changed (performance.now; 0: not lately): Undo is offered at the top for HOLE_UNDO_MS after, with no live physics */
+  private holeAgain = 0;
   /**
    * A world just made is being put in place (src/app/Mover.ts: place): whether time was paused
    * before it was made (null: the explorer has set the time since, which then stays as they set
@@ -761,6 +771,7 @@ export class App {
    */
   sceneView(): SceneView {
     let world: string | null = null;
+    const holes = this.changedHoles();
     const w = this.solar.world();
     if (w) {
       // (what a world of a generated look is drawn from is kept with it: the simulation does not know it)
@@ -780,7 +791,13 @@ export class App {
       selected: sel ? this.nameOf(sel) : null, at: at ? this.nameOf(at) : null,
       camera: [cam.x, cam.y, cam.z], turn: [q.x, q.y, q.z, q.w], fov: this.rig.fov,
       jd: this.clock.jdTdb, rate: this.clock.rate, paused: this.clock.paused, world,
+      ...(holes.length ? { holes } : {}),
     };
+  }
+
+  /** The real black holes whose mass is not the measured one, as a link keeps them: name, factor on the measured mass. */
+  private changedHoles(): [string, number][] {
+    return this.blackHoles.filter((h) => h.factor !== 1).map((h): [string, number] => [h.name, h.factor]);
   }
 
   /** The link to the scene as it is now. */
@@ -811,7 +828,7 @@ export class App {
 
   /** More, Save this scene: kept on this device, in the list under it. */
   saveScene(): void {
-    const name = `${this.sceneWords(true)}${this.solar.on ? ', changed' : ''}`;
+    const name = `${this.sceneWords(true)}${this.solar.on || this.changedHoles().length ? ', changed' : ''}`;
     const how = saveScene(name, encodeLink(this.sceneView()), this.solar.on);
     const kept = this.notKept();
     if (how === 'kept') this.hud.toast(`Saved: ${name}${kept}`, kept ? 4 : undefined);
@@ -910,6 +927,8 @@ export class App {
       this.trails.clear();
       this.bodies.changed();
     }
+    // (the real black holes are as the scene has them: a mass changed here and not in it is the measured one again; what Undo kept of them is let go)
+    const holesMissing = this.takeHoles(v.holes ?? []);
     const jd = this.solar.live ? liveDate(this.solar.live) : v.jd;
     const [at, selected] = await Promise.all([v.at ? this.find(v.at) : null, v.selected ? this.find(v.selected) : null]);
     const missing = [v.at && !at ? v.at.name : null, v.selected && !selected && v.selected.name !== v.at?.name ? v.selected.name : null].filter((x): x is string => !!x);
@@ -944,8 +963,21 @@ export class App {
     const time = v.paused ? 'time paused' : v.rate === 1 ? 'time running' : `time at ${rateWords(v.rate)}${v.rate < 0 ? ', backwards' : ''}`;
     const what = selected ? the(selected.name) : at ? the(at.name) : 'open space';
     const lost = missing.length ? ` ${listed(missing.map((m) => `"${m}"`))} could not be found here.` : '';
+    const holesNote = (v.holes?.length ? ` Black hole mass changed: ${listed(v.holes.map(([n]) => n))}.` : '') + (holesMissing.length ? ` ${listed(holesMissing)} could not be found here.` : '');
     const changed = world ? ` Changed with live physics since ${dayWords(world.jd0)}.` : '';
-    this.hud.notice(`${world ? word.scene : word.view}: ${what}, ${when}, ${time}.${changed}${lost}`);
+    this.hud.notice(`${world ? word.scene : word.view}: ${what}, ${when}, ${time}.${changed}${holesNote}${lost}`);
+  }
+
+  /** The real black holes put as a scene has them (`list`: name, factor); the names it gives that are no hole here are returned. */
+  private takeHoles(list: readonly [string, number][]): string[] {
+    this.holeChange = null;
+    this.holeRun.end();
+    this.history.keepOnly((s) => !isHoleStep(s));
+    for (const h of this.blackHoles) {
+      const want = list.find(([n]) => n === h.name)?.[1] ?? 1;
+      if (h.factor !== want) this.giveHoleFactor(h, want);
+    }
+    return list.filter(([n]) => !this.blackHoles.some((h) => h.name === n)).map(([n]) => n);
   }
 
   /** A made world described again from a link or a save (src/app/WhatIf.ts: madeAgain): its look from what it is a copy of. */
@@ -1537,7 +1569,8 @@ export class App {
   private useLive(p: LivePhysics): void {
     if (this.physics === p) return;
     this.mover.stop();
-    this.history.clear();
+    // (a real black hole's mass is no part of any system: its Undo stays)
+    this.history.keepOnly(isHoleStep);
     this.begun = null;
     this.replayFrom = null;
     this.realAgain = 0;
@@ -1954,6 +1987,12 @@ export class App {
 
   /** A finger (or the pointer) has come down on the mass slider, or lifted from it: one change from the moment it comes down until it lifts. */
   massHeld(held: boolean): void {
+    // (a real black hole's mass: a change of the hole itself, no live physics)
+    if (!held) this.endHoleChange();
+    if (this.selection instanceof BlackHole) {
+      if (held && this.powersOf(this.selection).mass.works) this.beginHoleChange(this.selection, true);
+      return;
+    }
     const b = held ? this.powerBody() : null;
     if (held && b && this.powersOf(this.selection!).mass.works) this.beginChange('mass', b, true, `changing ${the(b.name)}'s mass`);
     else if (!held && this.pending?.kind === 'mass') this.endChange();
@@ -1964,8 +2003,15 @@ export class App {
     // (a world being put in place: its making ends, unwatched, and is what is undone)
     if (this.mover.placing) this.mover.stop();
     if (this.run.open) this.endChange();
+    this.endHoleChange();
     const cp = this.history.pop();
     if (!cp) return;
+    if (isHoleStep(cp)) {
+      this.giveHoleFactor(cp.hole, cp.factor);
+      this.holeAgain = this.hasHoleStep() ? performance.now() : 0;
+      this.hud.toast(`Undone: ${cp.what}`, 3);
+      return;
+    }
     this.restore(cp);
     this.realAgain = !cp.live.sim && this.history.size > 0 ? performance.now() : 0;
     this.hud.toast(`Undone: ${cp.what}${cp.live.sim ? '' : this.physics === this.solar ? '. The real Solar System again' : `. ${capital(the(this.physics.system.sun.name))} and its planets are real again`}`, 3);
@@ -2067,10 +2113,12 @@ export class App {
     if (what === 'slower') this.clock.rate = this.watch.rate;
     const now = performance.now();
     if (this.run.due(now)) this.endChange();
+    if (this.holeRun.due(now)) this.endHoleChange();
+    if (this.holeAgain && now - this.holeAgain > HOLE_UNDO_MS) this.holeAgain = 0;
     // (what was undone by the return to reality is let go once Undo is no longer offered)
     if (this.realAgain && now - this.realAgain > REAL_AGAIN_MS) {
       this.realAgain = 0;
-      if (!this.physics.on) this.history.clear();
+      if (!this.physics.on) this.history.keepOnly(isHoleStep);
     }
   }
 
@@ -2261,11 +2309,54 @@ export class App {
     if (news.length) this.hud.toast(news.join('\n'), 3 + 1.5 * news.length);
   }
 
+  // ------------------------------------------------------------------ the mass of a real black hole (no live physics)
+  /** Is the newest thing Undo has a real black hole's mass? (Then it is offered although no live physics runs.) */
+  private hasHoleStep(): boolean {
+    const last = this.history.last();
+    return !!last && isHoleStep(last);
+  }
+
+  /** A change of a real hole's mass begins (a finger on the slider, or the first of a run of keys): its factor now is what Undo goes back to. */
+  private beginHoleChange(hole: BlackHole, held: boolean): void {
+    if (this.holeChange && this.holeChange.hole !== hole) this.endHoleChange();
+    if (!this.holeRun.begin(performance.now(), held)) return;
+    this.holeChange = { hole, before: hole.factor };
+  }
+
+  /** The change is over (the finger lifted, a pause after the last key): kept for Undo if the mass is not what it was. */
+  private endHoleChange(): void {
+    if (!this.holeRun.end()) return;
+    const c = this.holeChange;
+    this.holeChange = null;
+    if (!c || c.hole.factor === c.before) return;
+    this.history.push({ hole: c.hole, factor: c.before, what: `changing ${the(c.hole.name)}'s mass` });
+    this.holeAgain = performance.now();
+  }
+
+  /** A real black hole has `factor` times its measured mass from now: its horizon, its shadow and its disk follow, drawn the next frame. */
+  private giveHoleFactor(hole: BlackHole, factor: number): void {
+    hole.setFactor(factor);
+    this.holes.massChanged(hole);
+    this.jets.massChanged(hole);
+    // (what is worked out for its card is worked afresh at once)
+    this.worked.at = 0;
+  }
+
+  /** The mass slider of a real black hole (from a tenth of its measured mass to ten times it) was moved. */
+  private setHoleMass(hole: BlackHole, slider: number): void {
+    if (!this.powersOf(hole).mass.works) return;
+    const factor = Math.max(HOLE_FACTOR[0], Math.min(HOLE_FACTOR[1], massFactor(slider)));
+    if (factor === hole.factor) return;
+    this.beginHoleChange(hole, false);
+    this.giveHoleFactor(hole, factor);
+  }
+
   /**
    * The mass slider of the selected world was moved: it has that many times its real mass from now
    * on. (Without a finger on the slider, its arrow keys: a run of them is one change.)
    */
   setMass(slider: number): void {
+    if (this.selection instanceof BlackHole) { this.setHoleMass(this.selection, slider); return; }
     const b = this.powerBody();
     if (!b || !this.powersOf(this.selection!).mass.works) return;
     const real = this.physics.realGm(b), sun = madeSun(b), hole = madeHole(b);
@@ -4307,6 +4398,11 @@ export class App {
         key: sel.key, name: sel.name, detail: plainLine(this, sel), plain: plainFacts(this, sel), rows, worked, warmth: warmth?.line ?? '', picture: pictureOf(sel), here: sel === rig.target && !rig.autopilot, land: this.landsHere(sel) ? 'Land' : this.floatsHere(sel) ? 'Float' : null,
         powers: available, mass: null, size: null, removable: false, move: null, place: null, add: sel instanceof Body && available.add.works ? canAdd(sel, this.made.length) : [],
       };
+      // a real black hole: its mass, from a tenth of the measured one to ten times it (no live physics: nothing round it is simulated)
+      if (sel instanceof BlackHole && available.mass.works) {
+        const factor = sel.factor;
+        selection.mass = { slider: Math.log10(factor), words: blackHoleMass(sel.massSun), times: timesWords(factor), says: 'Its event horizon and its shadow follow', theory: '', decades: 1 };
+      }
       // the powers over a world, when the one table says they work
       if (pb && available.move.works) {
         selection.rows.splice(1, 0, ...this.physics.rows(pb));
@@ -4396,8 +4492,9 @@ export class App {
       selection,
       live: status && { since: status.since, mark, slow, rails: status.rails, leftOut: status.leftOut, log: status.log, where },
       realWhat: where ? `${where}'s real orbits again` : 'the real Solar System again',
-      undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0),
+      undo: this.history.size > 0 && (this.physics.on || this.realAgain > 0 || this.hasHoleStep()),
       realAgain: !this.physics.on && this.realAgain > 0 && this.history.size > 0,
+      holeUndo: this.holeAgain > 0 && this.hasHoleStep(),
       watch: this.watch.state === 'idle' ? null
         : this.watch.state === 'offered' ? { text: 'Watch what it does', ended: false, offer: true }
         : this.watch.watching ? { text: slowed ? `Slowed: ${rateWords(runs)}` : `Watching: ${rateWords(this.watch.rate)}`, ended: false }

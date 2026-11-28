@@ -102,6 +102,29 @@ describe('what is worked out for a black hole', () => {
   });
 });
 
+describe('what is worked out for a black hole whose mass was changed', () => {
+  const make = () => new BlackHole(0, { name: 'Test', aliases: [], kind: 'stellar', raDeg: 0, decDeg: 0, distPc: 1000, massSun: 10, ref: 'test ref' } as never);
+  it('at the measured mass nothing says it was changed', () => {
+    expect(find(workedOut(make()), 'Mass changed')).toBeUndefined();
+  });
+  it('at four times it, the horizon is four times as large and More science says the mass was changed, and by how much', () => {
+    const bh = make();
+    bh.setFactor(4);
+    const r = workedOut(bh);
+    expect(find(r, 'Event horizon')!.text).toBe('118.1 km');
+    const said = find(r, 'Mass changed')!;
+    expect(said.text).toBe('4 times the measured mass');
+    expect(said.math).toContain('Measured: 10 Suns (test ref)');
+    expect(said.math).toContain('Now: 40 Suns');
+    expect(said.math).toContain('changed from the measured one');
+  });
+  it('at a quarter of it, it says so in the other direction', () => {
+    const bh = make();
+    bh.setFactor(0.25);
+    expect(find(workedOut(bh), 'Mass changed')!.text).toBe('0.25 of the measured mass');
+  });
+});
+
 describe('how long an orbit takes: the catalogue, or as it moves now', () => {
   const s = sun(), e = earth(s);
   // JPL's mean elements for the major planets, as shipped (the Earth's is the Earth-Moon barycentre's)

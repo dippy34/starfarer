@@ -33,6 +33,9 @@
 //     Mass makes it twice as heavy and live physics comes on round TRAPPIST-1 without moving it off its orbit; Undo gives
 //     back its real mass, exactly on its orbit; a finger moves it a third further from its star; time runs on, and Back
 //     to reality puts it on its orbit again, at the moment the first change was made
+//   - Mass on the real black holes (Sagittarius A*, Cygnus X-1): the card's Mass opens its panel, a tenth to ten times the measured mass;
+//     at four times it the card's horizon reads four times as many km and the shadow drawn from the same place is four times as wide
+//     in pixels; Real mass and Undo put it back; a link and a save keep it (block `holemass`)
 // Usage: node scripts/live.mjs [baseUrl] [outDir]   (LIVE_ONLY=watch,sun: those blocks alone; see `want`; LIVE_KINDS=desk: at a desk only)
 import { atRest, collectErrors, launchBrowser, liveWay, openCard, undoOffered } from './lib/browser.mjs';
 import { fingers, phoneContext } from './lib/touch.mjs';
@@ -343,7 +346,7 @@ async function quiet(page) {
   await frames(page, 2);
 }
 
-/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo, comet, create, hole); the rest are left out */
+/** some blocks only, by name (LIVE_ONLY=watch,jupiter: watch, jupiter, sun, moon, made, throw, open, warm, size, hit, side, place, exo, comet, create, hole, holemass); the rest are left out */
 const only = process.env.LIVE_ONLY ?? '';
 const want = (name) => !only || only.split(',').includes(name);
 /** on a phone and at a desk, or one of them (LIVE_KINDS=desk) */
@@ -2213,6 +2216,230 @@ for (const kind of kinds) {
         JSON.stringify({ before: before.suns, back }));
     });
     await ctx.close();
+  }
+
+  // ------------------------------------------------------------------ Mass on the real black holes (src/universe/BlackHoles.ts setFactor, src/app/App.ts setHoleMass)
+  if (want('holemass')) {
+    const step = async (name, fn) => { try { await fn(); } catch (e) { check(on(name), false, String(e).split('\n')[0]); } };
+    /** a real hole as the app has it: its mass, factor on the measured one, horizon (m), disk's inner edge, the renderer's view of it, and the card's rows */
+    const holeState = (page, name) => page.evaluate((name) => {
+      const a = window.app, h = a.findByName(name), view = a.holes.views.find((v) => v.bh === h);
+      const plain = [...document.querySelectorAll('#hud .card .facts .plain li')].map((li) => [li.querySelector('span').textContent, li.querySelector('b').textContent]);
+      const km = plain.find((r) => r[0] === 'Event horizon')?.[1];
+      return {
+        suns: h.massSun, factor: h.factor, radius: h.radius, inner: h.diskInner, outer: h.diskOuter, active: !!view, shadowPx: view?.shadowPx ?? 0,
+        cardKm: km ? Number(km.replace(/,/g, '').replace(/ km.*/, '')) : null, cardMass: plain.find((r) => r[0] === 'Mass')?.[1] ?? null,
+        cam: [a.rig.upos.xh + a.rig.upos.xl, a.rig.upos.yh + a.rig.upos.yl, a.rig.upos.zh + a.rig.upos.zl], selected: a.selection?.name ?? null,
+      };
+    }, name);
+    /** the width (px) of the dark shadow on the row through the hole's projected centre, from the picture the renderer made: the span about the centre darker than a third of the light a little way out */
+    const shadowOnce = (page, name) => page.evaluate(async (name) => {
+      const a = window.app, h = a.findByName(name), p = a.project(h.upos.sub(a.rig.upos));
+      const img = new Image();
+      img.src = a.renderer.screenshot();
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(img, 0, 0);
+      const k = img.width / innerWidth, W = img.width;
+      // (the darkest spot within 24 px of the projected centre: the shadow's own middle, which lensing may shift a little off it)
+      const near = 24 * k, x0 = Math.round(p.x * k), y0 = Math.round(p.y * k), x1 = Math.max(0, x0 - near), y1 = Math.max(0, y0 - near);
+      const box = g.getImageData(x1, y1, Math.min(W - x1, 2 * near), Math.min(img.height - y1, 2 * near));
+      const at = (i, j) => { const o = (j * box.width + i) * 4; return (box.data[o] + box.data[o + 1] + box.data[o + 2]) / 3; };
+      let seed = { v: 1e9, i: 0, j: 0 };
+      for (let j = 1; j < box.height - 1; j += 2) for (let i = 1; i < box.width - 1; i += 2) {
+        let t = 0;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) t += at(i + di, j + dj);
+        if (t / 9 < seed.v) seed = { v: t / 9, i, j };
+      }
+      const y = Math.round(y1 + seed.j), sx = Math.round(x1 + seed.i);
+      const row = g.getImageData(0, Math.max(0, y - 1), W, 3).data;
+      const lum = (x) => { let t = 0; for (let r = 0; r < 3; r++) { const o = (r * W + x) * 4; t += row[o] + row[o + 1] + row[o + 2]; } return t / 9; };
+      const dark = Math.max(20, seed.v * 4 + 12);
+      let l = sx, r = sx;
+      while (l > 0 && lum(l - 1) < dark) l--;
+      while (r < W - 1 && lum(r + 1) < dark) r++;
+      return { wide: (r - l + 1) / k, seed: seed.v, from: l / k, to: r / k, at: p.x };
+    }, name);
+    /** (the disk's gas moves with the clock of the page, so the shadow is measured five times, a few frames apart, and the middle width is the one taken) */
+    const shadowWide = async (page, name) => {
+      const all = [];
+      for (let i = 0; i < 5; i++) { all.push(await shadowOnce(page, name)); await frames(page, 6); }
+      all.sort((a, b) => a.wide - b.wide);
+      return { ...all[2], all: all.map((s) => s.wide) };
+    };
+    /** the mass slider put at `factor` as a finger or the pointer would put it: its own input event */
+    const setSlider = async (page, factor) => {
+      await massPanel(page);
+      await page.evaluate((f) => { const s = document.querySelector('#hud .card [data-panel="mass"] .mass-slider'); s.value = String(Math.log10(f)); s.dispatchEvent(new Event('input', { bubbles: true })); }, factor);
+      await frames(page, 3);
+    };
+    /** the knob of the hole's mass slider (a tenth to ten times: its track runs -1 to 1) dragged to `value`, a finger down on it all the way */
+    const dragHole = async (page, touch, value) => {
+      await massPanel(page);
+      const box = await page.locator('#hud .card [data-panel="mass"] .mass-slider').boundingBox();
+      const at = (v) => ({ x: box.x + 15 + ((v + 1) / 2) * (box.width - 30), y: box.y + box.height / 2 });
+      const from = at(Number(await page.locator('#hud .card [data-panel="mass"] .mass-slider').inputValue())), to = at(value);
+      if (touch) {
+        await touch.press(from);
+        for (let i = 1; i <= 6; i++) await touch.slide({ x: from.x + ((to.x - from.x) * i) / 6, y: from.y });
+        await touch.lift();
+      } else {
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 6 });
+        await page.mouse.up();
+      }
+      await frames(page, 3);
+    };
+    const infoOpen = async (page) => { await openCard(page); if (!(await shown(page, '#hud .card .facts .plain'))) await press(page, '#hud .card [data-info]'); await frames(page, 2); };
+    const facts = async (page, name) => { await infoOpen(page); await frames(page, 2); return holeState(page, name); };
+    const undoNow = async (page) => { await liveWay(page, 'undo', (sel) => press(page, sel)); await frames(page, 3); };
+    /** the app's own wait for a change to end: a run of keys ends by its pause */
+    const settle = (page) => page.waitForTimeout(900).then(() => frames(page, 3));
+
+    // (LIVE_HOLES=Cygnus X-1: that hole alone)
+    for (const hole of [{ name: 'Sagittarius A*', words: /^4\.3 million Suns$/, dist: 120 }, { name: 'Cygnus X-1', words: /^21\.2 Suns$/, dist: 120 }].filter((h) => !process.env.LIVE_HOLES || process.env.LIVE_HOLES.split(',').includes(h.name))) {
+      const tag = hole.name === 'Cygnus X-1' ? 'cyg' : 'sgr';
+      const { ctx, page, touch } = await open(kind, `target=${encodeURIComponent(hole.name)}&dist=${hole.dist}`);
+      await quiet(page);
+      await until(page, () => !window.app.rig.autopilot, null, 120);
+      await page.waitForFunction((n) => window.app.selection?.name === n && document.querySelector('#hud').dataset.sheet === 'card', hole.name, { timeout: 60000 });
+      await frames(page, 20);
+      let real = null, x4 = null;
+      await step(`${hole.name}: the card's Mass works, the rest say why not`, async () => {
+        await openCard(page);
+        const reasons = [];
+        for (const [power, sel] of [['size', '[data-power="size"]'], ['move', '[data-act="move"]'], ['add', '[data-power="add"]'], ['remove', '[data-act="remove"]']]) {
+          const off = await page.evaluate((sel) => document.querySelector(`#hud .card ${sel}`).getAttribute('aria-disabled') === 'true', sel);
+          await press(page, `#hud .card ${sel}`);
+          await frames(page, 1);
+          reasons.push([power, off, await text(page, '#hud .card .power-reason')]);
+        }
+        const massOn = await page.evaluate(() => document.querySelector('#hud .card [data-power="mass"]').getAttribute('aria-disabled') !== 'true');
+        await massPanel(page);
+        const panel = await page.evaluate(() => {
+          const p = document.querySelector('#hud .card [data-panel="mass"]'), s = p.querySelector('.mass-slider'), ends = [...p.querySelectorAll('.slider-ends > span:not(.mass-says)')].map((e) => e.textContent);
+          return { words: p.querySelector('.power-read b').textContent, times: p.querySelector('.power-read small').textContent, min: s.min, max: s.max, ends, real: p.querySelector('[data-mass-real]').getBoundingClientRect().height, slider: s.getBoundingClientRect().height };
+        });
+        const state = await facts(page, hole.name);
+        check(on(`${hole.name}: the card's Mass opens the mass panel (its mass in words, a slider from a tenth to ten times, Real mass a thumb high); Size, Move, Add and Remove are off, each saying why`),
+          massOn && hole.words.test(panel.words) && panel.times === 'its real mass' && panel.min === '-1' && panel.max === '1' && panel.ends.join() === '÷ 10,× 10' && panel.real >= 44
+          && reasons.every(([, off, why]) => off && why.length > 8 && why.length <= 60) && reasons[0][2] === "A black hole's size is set by its mass" && reasons.slice(1).every((r) => r[2] === 'Live physics does not take black holes yet')
+          && !(await page.evaluate(() => window.app.physics.on)),
+          JSON.stringify({ massOn, panel, reasons }));
+        real = state;
+        if (kind === 'phone' && tag === 'sgr') {
+          await press(page, '#hud .card [data-info]');
+          await massPanel(page);
+          await frames(page, 4);
+          await page.screenshot({ path: path.join(outDir, `live-${kind}-holemass-real.png`) });
+        }
+      });
+      await step(`${hole.name}: dragged with a finger, it changes and no live physics starts`, async () => {
+        await dragHole(page, touch, Math.log10(2));
+        const s = await holeState(page, hole.name);
+        const live = await page.evaluate(() => window.app.physics.on);
+        check(on(`${hole.name}: the slider dragged to about double: its mass and horizon follow (${s.factor.toFixed(3)} times), live physics is not started, and Undo is offered`),
+          s.factor > 1.7 && s.factor < 2.3 && Math.abs(s.radius / real.radius / s.factor - 1) < 1e-9 && !live && (await undoOffered(page)), JSON.stringify({ s, live }));
+        await settle(page);
+        await undoNow(page);
+        const back = await holeState(page, hole.name);
+        check(on(`${hole.name}: Undo puts the first change back exactly`), back.factor === 1 && back.radius === real.radius && back.suns === real.suns, JSON.stringify(back));
+      });
+      let shadow1 = null, shadow4 = null;
+      await step(`${hole.name}: at four times its mass`, async () => {
+        // (seen from 45 degrees over its disk, on the side it was seen from, at the same distance: the shadow a dark disc against
+        // the disk. Nearly edge-on, as Go there comes in, Cygnus X-1's bright disk crossed the row through its shadow and the
+        // darkest spot there was not dark: the whole row read as shadow; and straight down its axis the eye is in its jet, a
+        // glow over all the view, 28 Nov 2026)
+        const faceOn = await page.evaluate((name) => {
+          const a = window.app, h = a.findByName(name), V = a.rig.ray(0, 0).constructor;
+          const rel = h.upos.sub(a.rig.upos), d = rel.length(), n = h.diskNormal.clone().normalize();
+          const from = rel.clone().negate().normalize(), side = from.dot(n) < 0 ? -1 : 1;
+          const flat = from.clone().addScaledVector(n, -from.dot(n)).normalize();
+          const dir = flat.clone().addScaledVector(n, side).normalize();
+          a.rig.target = h;
+          a.rig.upos.copy(h.upos).addVec(dir, d);
+          a.rig.lookAt(dir.clone().negate(), n.clone().multiplyScalar(side));
+          return [a.rig.upos.xh + a.rig.upos.xl, a.rig.upos.yh + a.rig.upos.yl, a.rig.upos.zh + a.rig.upos.zl];
+        }, hole.name);
+        await frames(page, 6);
+        shadow1 = await shadowWide(page, hole.name);
+        await setSlider(page, 4);
+        await settle(page);
+        x4 = await facts(page, hole.name);
+        shadow4 = await shadowWide(page, hole.name);
+        const same = x4.cam.every((v, i) => v === faceOn[i]);
+        const cardRatio = x4.cardKm / real.cardKm, wideRatio = shadow4.wide / shadow1.wide, f = x4.factor;
+        check(on(`${hole.name}: at four times its mass the card's horizon reads ${f.toFixed(2)} times as many km (${real.cardKm.toLocaleString()} to ${x4.cardKm.toLocaleString()}), the mass in words follows, and its disk's inner edge is three radii`),
+          f > 3.9 && f < 4.1 && Math.abs(cardRatio / f - 1) < 0.01 && Math.abs(x4.radius / real.radius / f - 1) < 1e-9 && Math.abs(x4.inner / x4.radius - 3) < 1e-9 && x4.cardMass !== real.cardMass, JSON.stringify({ real, x4 }));
+        // (the shadow in the picture at four times its mass is as wide as the renderer's view of it says, and that is four times
+        // the width at its real mass. At Sagittarius A* the picture at its real mass is read too: four times as wide. Cygnus X-1's
+        // disk is bright and its light lies over its small shadow at its real mass from here (the darkest spot by it 54 of 255,
+        // 28 Nov 2026): that width is not read off the picture)
+        const drawn = Math.abs(shadow4.wide / (2 * x4.shadowPx) - 1) < 0.15;
+        const pictured = hole.name === 'Cygnus X-1' || (Math.abs(wideRatio / f - 1) < 0.1 && shadow1.wide > 15);
+        check(on(`${hole.name}: the shadow drawn from the same place grows with it: ${shadow4.wide.toFixed(0)} px wide at four times its mass, as wide as its horizon makes it (${(2 * x4.shadowPx).toFixed(0)}), four times what it makes at its real mass${hole.name === 'Cygnus X-1' ? '' : ` (in the pictures ${wideRatio.toFixed(2)} times as wide, ${shadow1.wide.toFixed(0)} to ${shadow4.wide.toFixed(0)}, within 10 % of four)`}`),
+          same && drawn && pictured && x4.active && Math.abs(x4.shadowPx / real.shadowPx / f - 1) < 0.05, JSON.stringify({ same, shadow1, shadow4, shadowPx: [real.shadowPx, x4.shadowPx] }));
+        if (kind === 'phone' && tag === 'sgr') {
+          await press(page, '#hud .card [data-info]');
+          await massPanel(page);
+          await frames(page, 4);
+          await page.screenshot({ path: path.join(outDir, `live-${kind}-holemass-x4.png`) });
+        }
+      });
+      await step(`${hole.name}: More science says it was changed`, async () => {
+        await infoOpen(page);
+        if (!(await shown(page, '#hud .card .science'))) await press(page, '#hud .card [data-science]');
+        await frames(page, 2);
+        const said = await page.evaluate(() => [...document.querySelectorAll('#hud .card .science details')].map((d) => [d.querySelector('summary span').textContent, d.querySelector('summary b').textContent, d.querySelector('code').textContent]).find((r) => r[0] === 'Mass changed') ?? null);
+        check(on(`${hole.name}: More science says the mass is changed from the measured one, and by how much`),
+          !!said && /^3\.9\d? times the measured mass$|^4 times the measured mass$/.test(said[1]) && /changed from the measured one/.test(said[2]), JSON.stringify(said));
+        await press(page, '#hud .card [data-science]');
+      });
+      await step(`${hole.name}: Real mass and Undo put it back`, async () => {
+        await press(page, '#hud .card [data-power="mass"]');
+        await massPanel(page);
+        await press(page, '#hud .card [data-mass-real]');
+        await settle(page);
+        await frames(page, 20);
+        const r = await holeState(page, hole.name);
+        const wide = await shadowWide(page, hole.name);
+        check(on(`${hole.name}: Real mass puts it back exactly (mass, horizon, disk) and the shadow is as wide as at first`),
+          r.factor === 1 && r.radius === real.radius && r.inner === real.inner && r.outer === real.outer && Math.abs(wide.wide / shadow1.wide - 1) < 0.1, JSON.stringify({ r, wide: wide.wide, first: shadow1.wide }));
+        await undoNow(page);
+        const u = await holeState(page, hole.name);
+        check(on(`${hole.name}: Undo takes Real mass back: four times again`), Math.abs(u.factor / x4.factor - 1) < 1e-9 && u.radius === x4.radius, JSON.stringify(u));
+      });
+      await step(`${hole.name}: a link and a save keep it`, async () => {
+        const link = await page.evaluate(() => window.app.sceneLink());
+        const frag = link.slice(link.indexOf('#') + 1);
+        await page.evaluate(() => { window.app.clock.paused = true; window.app.saveScene(); });
+        const id = await page.evaluate(() => JSON.parse(localStorage.getItem('starfarer-saves'))[0].id);
+        await press(page, '#hud .card [data-mass-real]');
+        await settle(page);
+        const reset = await holeState(page, hole.name);
+        const plain = await page.evaluate(() => window.app.sceneLink());
+        await page.evaluate((f) => window.app.openFragment(f), frag);
+        await until(page, (n) => Math.abs(window.app.findByName(n).factor - 1) > 0.5, hole.name, 60);
+        await frames(page, 4);
+        const opened = await holeState(page, hole.name);
+        await press(page, '#hud .card [data-mass-real]');
+        await settle(page);
+        await page.evaluate((id) => window.app.openSave(id), id);
+        await until(page, (n) => Math.abs(window.app.findByName(n).factor - 1) > 0.5, hole.name, 60);
+        await frames(page, 4);
+        const saved = await holeState(page, hole.name);
+        const enc = encodeURIComponent(hole.name).replace(/%2A/g, '*');
+        check(on(`${hole.name}: the link at four times says so (h=${hole.name}~...), the link at the real mass has no h, and opened again each brings the four times back (the link, then a save)`),
+          reset.factor === 1 && !/[&#]h=/.test(plain) && new RegExp(`&h=${enc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}~3\\.9\\d*$|&h=${enc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}~4$`).test(frag)
+          && Math.abs(opened.factor / x4.factor - 1) < 1e-5 && Math.abs(opened.radius / x4.radius - 1) < 1e-5 && Math.abs(saved.factor / x4.factor - 1) < 1e-5 && Math.abs(saved.radius / x4.radius - 1) < 1e-5,
+          JSON.stringify({ frag: frag.slice(-60), reset: reset.factor, opened: opened.factor, saved: saved.factor }));
+      });
+      await ctx.close();
+    }
   }
 
   // ------------------------------------------------------------------ comets: God mode on a comet (src/render/SmallBodies.ts, src/app/powersFor.ts)

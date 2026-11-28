@@ -60,3 +60,39 @@ describe('one change per gesture', () => {
     expect(g.begin(10, true)).toBe(true);
   });
 });
+
+describe('Undo of a real black hole\'s mass among the changes of the worlds', () => {
+  type Step = { world: string } | { hole: string; factor: number };
+  const isHole = (s: Step): s is { hole: string; factor: number } => 'hole' in s;
+
+  it('the newest step is readable without taking it off', () => {
+    const h = new History<Step>();
+    expect(h.last()).toBeUndefined();
+    h.push({ world: 'a' });
+    h.push({ hole: 'Sagittarius A*', factor: 1 });
+    expect(h.last()).toEqual({ hole: 'Sagittarius A*', factor: 1 });
+    expect(h.size).toBe(2);
+  });
+
+  it('what lets go of the worlds (Back to reality, another system) keeps the holes, in their order', () => {
+    const h = new History<Step>();
+    h.push({ world: 'a' });
+    h.push({ hole: 'Sagittarius A*', factor: 1 });
+    h.push({ world: 'b' });
+    h.push({ hole: 'Cygnus X-1', factor: 2 });
+    h.keepOnly(isHole);
+    expect(h.size).toBe(2);
+    expect(h.pop()).toEqual({ hole: 'Cygnus X-1', factor: 2 });
+    expect(h.pop()).toEqual({ hole: 'Sagittarius A*', factor: 1 });
+    expect(h.pop()).toBeUndefined();
+  });
+
+  it('what lets go of the holes (a scene opened) keeps the worlds', () => {
+    const h = new History<Step>();
+    h.push({ hole: 'Sagittarius A*', factor: 1 });
+    h.push({ world: 'a' });
+    h.keepOnly((s) => !isHole(s));
+    expect(h.pop()).toEqual({ world: 'a' });
+    expect(h.size).toBe(0);
+  });
+});

@@ -108,6 +108,21 @@ export class JetsLayer {
     }
   }
 
+  /**
+   * The mass of `bh` was changed (its horizon with it): its jets are drawn in horizon radii and are as long in metres as they were,
+   * so their shape in radii is worked out again, and their tube made again, from the next frame.
+   */
+  massChanged(bh: BlackHole): void {
+    const p = this.pairs.find((x) => x.bh === bh), jet = jetShape(bh);
+    if (!p || !jet) return;
+    p.mesh.geometry.dispose();
+    p.mesh.geometry = jetGeometry(jet.shape);
+    const u = (p.mesh.material as ShaderMaterial).uniforms;
+    u.uJet.value = jet.shape;
+    u.uJetGlow.value = jet.glow;
+    u.uRs.value = bh.radius;
+  }
+
   /** A pair of jets to compile the shader with before one is first needed. */
   warmupObjects(): Mesh[] {
     return this.pairs.length ? [this.pairs[0].mesh] : [];
