@@ -391,6 +391,35 @@ ${OUTPUT_FRAGMENT}
    * a program per output target (the linear HDR target or the page canvas), so compiling while the
    * canvas is bound would leave the variant actually drawn to compile on first use.
    */
+  /**
+   * Draw the scene once, `objects` among it whatever the camera sees of them (their culling off for the draw), into a
+   * target of the scene's own kind (its format, samples and depth) a few pixels across. WebKit (every browser on an
+   * iPhone) builds a material's GPU pipeline only when a draw first uses it, compiled or not: the ship's first boarding
+   * stood still for half a second while it did (484 ms in the owner's iPhone 13 benchmark, 27 Nov 2026). Drawn here at the
+   * start, while the loading screen waits for the shaders, it is built before anything needs it.
+   */
+  primeDraw(objects: Object3D[]): void {
+    if (this.presenting) return;
+    const gl = this.gl, t = this.hdr;
+    const tiny = new WebGLRenderTarget(4, 4, {
+      type: t.texture.type, format: RGBAFormat, samples: t.samples, depthBuffer: true, depthTexture: new DepthTexture(4, 4, FloatType),
+    });
+    const culled: Object3D[] = [];
+    for (const o of objects) o.traverse((c) => { if (c.frustumCulled) { c.frustumCulled = false; culled.push(c); } });
+    const was = gl.getRenderTarget();
+    try {
+      gl.setRenderTarget(tiny);
+      gl.setClearColor(0x000000, 1);
+      gl.clear(true, true, true);
+      gl.render(this.scene, this.camera);
+    } finally {
+      gl.setRenderTarget(was);
+      for (const c of culled) c.frustumCulled = true;
+      tiny.depthTexture?.dispose();
+      tiny.dispose();
+    }
+  }
+
   withSceneTarget<T>(fn: () => T): T {
     if (this.presenting) return fn();
     const was = this.gl.getRenderTarget();
