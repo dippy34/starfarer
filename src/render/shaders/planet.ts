@@ -1,4 +1,5 @@
 import { MATERIAL_GLSL } from '../Materials';
+import { SEA_WAVES_GLSL } from './sea';
 import { OUTPUT_FRAGMENT } from './xr';
 
 /**
@@ -105,6 +106,7 @@ varying vec3 vPosView;
 varying vec2 vUv;
 varying vec3 vGround;
 ${MATERIAL_GLSL}
+${SEA_WAVES_GLSL}
 ${RING_GLSL}
 
 float ph(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
@@ -726,9 +728,14 @@ void main() {
   vec3 radiance = albedo * sunL * light * shadow * limb;
   // sea glint: a rough-water microfacet lobe (Beckmann, rms slope ~0.2) and sky reflection
   if (spec > 0.0 && mu0 > 0.0) {
+    // (up close, on the landing terrain, the waves: src/render/shaders/sea.ts)
+    vec3 nS = nW;
+#ifdef TERRAIN
+    if (uTerrain > 0.5) nS = seaWaves(nW, vGround, uTime, length(fwidth(vPosView)));
+#endif
     vec3 Hh = normalize(uSunDir + V);
-    float nh = max(dot(nW, Hh), 1e-3);
-    float nv = max(dot(nW, V), 0.02);
+    float nh = max(dot(nS, Hh), 1e-3);
+    float nv = max(dot(nS, V), 0.02);
     float m2 = 0.04;
     float t2 = (1.0 - nh * nh) / (nh * nh);
     float D = exp(-t2 / m2) / (3.14159265 * m2 * nh * nh * nh * nh);
@@ -736,7 +743,8 @@ void main() {
     float brdf = D * F / (4.0 * nv * max(mu0, 0.02));
     radiance += sunL * 3.14159265 * brdf * mu0 * spec * (1.0 - cloud) * shadow * smoothstep(0.0, 0.05, mu0);
     float fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
-    radiance += uAtmoColor * sunL * fres * 0.05 * spec * (1.0 - cloud) * smoothstep(-0.1, 0.3, mu0);
+    // (the sky it reflects: faint seen from space, bright towards the horizon seen from the water itself)
+    radiance += uAtmoColor * sunL * fres * (uTerrain > 0.5 ? 0.35 : 0.05) * spec * (1.0 - cloud) * smoothstep(-0.1, 0.3, mu0);
   }
   // atmosphere: bright limb on the day side
   float mu = max(dot(nW, V), 0.0);
