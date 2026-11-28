@@ -1,0 +1,5 @@
+# Started by Claude, 28 Nov 2026: the fix list's #10, God mode round other stars kept and added to (TASKS.md task/exo-sandbox).
+# Claude works on other parts at the same time: keep to what the task names.
+model: anthropic/claude-sonnet-5-5
+base: f142b0531b55601ec662cc52b49bc6054815a314
+The card's layout (powers first, then Look at, Share and Info) and the live pill with its own sheet are new: keep them. Undo in the live tests goes through scripts/lib/browser.mjs liveWay.
