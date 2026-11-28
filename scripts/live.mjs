@@ -2017,13 +2017,22 @@ for (const kind of kinds) {
       await press(page, '#hud .card [data-act="move"]');
       await frames(page, 3);
       if (!view) throw new Error('no view of TRAPPIST-1 e with room to move it');
-      // (where the planet and the place a third further out are drawn now, from where the eye was put: the panel opened since,
-      // and Undo through the pill's sheet, can have moved the view's centre, as on a desk, 28 Nov 2026)
+      // (the eye put again with Move's panel open, as the setup put it, so that e and the place a third further out are clear of
+      // the card as it is now: opened, the card with Move's panel stood over e at a desk, 28 Nov 2026)
       const now = await page.evaluate(() => {
         const a = window.app, e = a.findByName('TRAPPIST-1 e'), star = e.system.host, V = e.rel.constructor;
-        return { from: a.project(e.upos.sub(a.rig.upos, new V())), to: a.project(star.upos.sub(a.rig.upos, new V()).add(e.rel.clone().multiplyScalar(4 / 3))) };
+        const walls = [...document.querySelectorAll('#hud .sheet.card, #hud .hud-tabs, #hud .chip, #hud .live-mark, #hud .fab')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0);
+        const open = (p) => !!p && p.x > 36 && p.x < innerWidth - 36 && p.y > 170 && p.y < innerHeight - 36 && walls.every((r) => p.x < r.left - 36 || p.x > r.right + 36 || p.y < r.top - 36 || p.y > r.bottom + 36);
+        for (const k of [2.5, 3.5, 5]) for (let az = 0; az < 360; az += 30) {
+          a.placeNear(star, k * e.spec.aM, az, 70);
+          a.frame();
+          const from = a.project(e.upos.sub(a.rig.upos, new V())), to = a.project(star.upos.sub(a.rig.upos, new V()).add(e.rel.clone().multiplyScalar(4 / 3)));
+          if (open(from) && open(to)) return { from, to };
+        }
+        return null;
       });
-      const { from, to } = now.from && now.to ? now : view;
+      await frames(page, 3);
+      const { from, to } = now ?? view;
       await hand.press(from);
       for (let i = 1; i <= 10; i++) await hand.slide({ x: from.x + ((to.x - from.x) * i) / 10, y: from.y + ((to.y - from.y) * i) / 10 });
       await frames(page, 3);
