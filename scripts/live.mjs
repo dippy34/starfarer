@@ -642,7 +642,7 @@ for (const kind of kinds) {
     const facts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#hud .card .facts dl div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd').textContent])));
     check(on("Ganymede's details say it is simulated and since when, what it goes round and the orbit it is on now"),
       // (its two ends in one unit, "371,296 to 695,409 km", or each in its own, "357,954 km to 1.072 million km")
-      facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'Jupiter' && /^(an oval|a long oval), [\d,]+( km)? to [\d.,]+ (million )?km · [\d.]+ (d|h)$/.test(facts['Its orbit'] ?? '') && /^0\.\d\d \(0 is a circle, 1 and more an open path\)$/.test(facts['How stretched'] ?? ''),
+      facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'Jupiter' && /^(an oval|a long oval), [\d,]+( km)? to [\d.,]+ (million )?km, once round in [\d.]+ (hours|days)$/.test(facts['Its orbit'] ?? '') && /^0\.\d\d \(0 is a circle, 1 and more an open path\)$/.test(facts['How stretched'] ?? ''),
       `${facts['Live physics']}; round ${facts['Goes round']}; ${facts['Its orbit']}; ${facts['How stretched']}`);
 
     // back to reality: every body exactly where a system that was never touched has it at that date
@@ -821,7 +821,7 @@ for (const kind of kinds) {
     // (twice as far out with the speed of its old orbit it is about at the speed of escape: on a long oval round the
     // Earth still, or let go of and on an orbit of its own round the Sun, as the date has it)
     check(on('while it is held the card says what orbit it would be on from there, and the line of that orbit is drawn'),
-      /^Now round (Earth|the Sun): (a circle .+ out|(nearly a circle|a slightly stretched circle|an oval|a long oval), .+ to .+) · [\d,.]+ (d|h)\.$/.test(held.now) && held.line, `"${held.now}"`);
+      /^Now round (Earth|the Sun): (a circle .+ out|(nearly a circle|a slightly stretched circle|an oval|a long oval), .+ to .+), once round in [\d,.]+ (hours|days)\.$/.test(held.now) && held.line, `"${held.now}"`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-move.png`) });
     if (touch) await touch.lift(); else await page.mouse.up();
     await frames(page, 3);
@@ -836,7 +836,7 @@ for (const kind of kinds) {
       return { e: o.e, period: o.period, law: 2 * Math.PI * Math.sqrt(r ** 3 / (earth.gm + moon.gm)), was: view.period, parent: moon.parent?.name, now: document.querySelector('#hud .power-now').textContent, jd: a.clock.jdTdb, dir: moon.pos.clone().sub(earth.pos).normalize().toArray() };
     }, view);
     check(on('lifted, time runs on; asked to go in a circle there, the Moon is on one round the Earth, and its month is the one Kepler\'s law gives: about 2.8 of the old'),
-      let_[4] === false && circle.e < 1e-3 && circle.parent === 'Earth' && Math.abs(circle.period / circle.law - 1) < 1e-6 && circle.period / circle.was > 2.4 && circle.period / circle.was < 3.2 && /^Now round Earth: a circle [\d,]+ km out · [\d.]+ d\.$/.test(circle.now),
+      let_[4] === false && circle.e < 1e-3 && circle.parent === 'Earth' && Math.abs(circle.period / circle.law - 1) < 1e-6 && circle.period / circle.was > 2.4 && circle.period / circle.was < 3.2 && /^Now round Earth: a circle [\d,]+ km out, once round in [\d.]+ days\.$/.test(circle.now),
       `${(circle.period / 86400).toFixed(1)} d (it was ${(circle.was / 86400).toFixed(1)} d: ${(circle.period / circle.was).toFixed(2)} times); "${circle.now}"`);
     // ...and so it goes, at first: about a tenth of that month on, as far round as Kepler has it. (Not for long. Half
     // way to the edge of the Earth's reach the Sun pulls hard: within three weeks the Moon is 4 % ahead, within ten
@@ -893,7 +893,7 @@ for (const kind of kinds) {
       made.name === 'Jupiter 2' && made.card === 'Jupiter 2' && made.kind === 'planet' && made.on && made.simulated && made.made === 1 && made.parent === 'Sun' && made.gm === 1 && made.radius === 1 && made.drawn && /Live physics is on/.test(made.toast),
       `${made.name}, ${made.gm} of Jupiter's mass, round ${made.parent}`);
     check(on('it is on the orbit promised: a circle round the Sun in the plane of the planets, the way they go, 0.55 of the way to the eye, and that is said'),
-      Math.abs(made.far - 0.55) < 1e-6 && made.side > 0.7 && made.tilt < 0.03 && Math.abs(made.speed - 1) < 1e-6 && made.way > 0.999 && made.e < 1e-6 && new RegExp(`Jupiter 2 is new: ${Number(made.au.toPrecision(3))} AU from the Sun, once round in [\\d.]+ (d|yr)\\.`).test(made.toast),
+      Math.abs(made.far - 0.55) < 1e-6 && made.side > 0.7 && made.tilt < 0.03 && Math.abs(made.speed - 1) < 1e-6 && made.way > 0.999 && made.e < 1e-6 && new RegExp(`Jupiter 2 is new: ${Number((made.au * 149.5978707).toPrecision(3)).toLocaleString('en-US')} million km from the Sun, once round in [\\d.]+ (days|years)\\.`).test(made.toast),
       `${made.au.toFixed(3)} AU out (${made.far.toFixed(6)} of the eye's distance), ${(Math.asin(made.tilt) * 57.3).toFixed(2)} deg from the Earth's plane, ${made.speed.toFixed(6)} of the circular speed; "${made.toast.split('\n').pop()}"`);
     check(on('it can be changed like any world: its card has Mass, Size, Move, Add and Remove'), made.powers === 'Mass,Size,Move,Add,Remove', made.powers);
     await press(page, '#hud .card [data-power="mass"]');
@@ -903,7 +903,7 @@ for (const kind of kinds) {
     await frames(page, 2);
     const facts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#hud .card .facts dl div')].map((d) => [d.querySelector('dt').textContent, d.querySelector('dd').textContent])));
     check(on('its mass reads 1 Jupiter, and its details say it was made, is simulated, and what it goes round'),
-      mass === '1 Jupiter' && facts.Type === 'Planet (made by you)' && facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'the Sun' && /^(a circle [\d.]+ AU out|nearly a circle, [\d.]+ to [\d.]+ AU) · /.test(facts['Its orbit'] ?? ''),
+      mass === '1 Jupiter' && facts.Type === 'Planet (made by you)' && facts['Live physics'] === 'simulated since 1 October 2026' && facts['Goes round'] === 'the Sun' && /^(a circle [\d.,]+ million km out|nearly a circle, [\d.,]+ to [\d.,]+ million km), once round in [\d.]+ (days|years)$/.test(facts['Its orbit'] ?? ''),
       `${mass}; ${facts.Type}; ${facts['Live physics']}; round ${facts['Goes round']}; ${facts['Its orbit']}`);
     await page.screenshot({ path: path.join(outDir, `live-${kind}-jupiter2.png`) });
     await press(page, '#hud .hud-tabs [data-tab="explore"]');
@@ -960,7 +960,7 @@ for (const kind of kinds) {
     const pair = (two.parents[0] === 'Sun' && two.parents[1] === null) || (two.parents[0] === null && two.parents[1] === 'Sun 2' && two.told.includes('The Sun and Sun 2 go round each other now.'));
     check(on('a second sun is made the same way: a star of the system that shines; the two go round each other, with no ring in what goes round what'),
       two.name === 'Sun 2' && two.kind === 'star' && two.suns === 'Sun,Sun 2' && two.far >= 0.3 - 1e-9 && pair && !two.ring && two.rows[0] === 'each other, with the Sun' && two.rows[1] === 'each other, with Sun 2'
-        && two.shines && two.type === 'Star (made by you)' && /^(Sun 2 is new: .+ AU from the Sun, once round in .+\.)$/m.test(two.toast),
+        && two.shines && two.type === 'Star (made by you)' && /^Sun 2 is new: [\d.,]+ (million|billion) km from the Sun, once round in [\d.,]+ (minutes|hours|days|years)\.$/m.test(two.toast),
       `${two.name} at ${two.far.toFixed(2)} AU, ${two.parents[0] ? 'going round the Sun' : 'the Sun going round it'}; "${two.toast.split('\n').find((l) => /is new/.test(l))}"; goes round: ${two.rows.join(' / ')}`);
     check(on('each world is lit by the sun that is brighter in its sky'), two.light, `by the new one: ${two.byTwin.join(', ') || 'none yet'}`);
     await frames(page, 6);
@@ -1260,7 +1260,7 @@ for (const kind of kinds) {
       !!view && circle.shown && circle.labels === 'circle,escape' && circle.paused && !!circle.aim && Math.abs(circle.aim.ux * view.ux + circle.aim.uy * view.uy - 1) < 1e-3,
       `the arrow ${circle.aim ? `(${circle.aim.ux.toFixed(3)}, ${circle.aim.uy.toFixed(3)})` : 'none'}, the way ahead (${view?.ux.toFixed(3)}, ${view?.uy.toFixed(3)})`);
     check(on('near the mark of a circle it is the speed of a circle: the mark lights, and the card and the orbit line show a circle round the Earth before it is let go'),
-      circle.lit === 'circle' && circle.aim?.length === 110 && circle.e < 1e-6 && circle.parent === 'Earth' && circle.line && /^Now round Earth: a circle [\d,]+ km out · [\d.]+ d\.$/.test(circle.now), `"${circle.now}", e ${circle.e.toExponential(1)}`);
+      circle.lit === 'circle' && circle.aim?.length === 110 && circle.e < 1e-6 && circle.parent === 'Earth' && circle.line && /^Now round Earth: a circle [\d,]+ km out, once round in [\d.]+ days\.$/.test(circle.now), `"${circle.now}", e ${circle.e.toExponential(1)}`);
     // the simulation run ahead, every pull counted: a dashed path from the Moon, and on the card how long it goes on so
     await until(page, () => !window.app.ahead || window.app.ahead.done, null, 60);
     await frames(page, 2);
@@ -1287,7 +1287,7 @@ for (const kind of kinds) {
     await frames(page, 2);
     const escape = await aimed();
     check(on('pulled on to the mark of escape it is the speed of escape: the card says it will not come back'),
-      escape.lit === 'escape' && Math.abs(escape.aim?.length - 110 * Math.SQRT2) < 1e-9 && /^Now on an open path past Earth: it passes at .+, then leaves\.$/.test(escape.now), `"${escape.now}"`);
+      escape.lit === 'escape' && Math.abs(escape.aim?.length - 110 * Math.SQRT2) < 1e-9 && /^Now on an open path past Earth: it passes at [\d.,]+( million)? km, then leaves\.$/.test(escape.now), `"${escape.now}"`);
     // its orbit line at the speed of escape: a parabola about the Earth (r (1 + cos ν) the same all along), drawn from the
     // Moon outwards, through where it is on the screen (before, an open path was left out: no line at all)
     const parabola = await drawnPath(page, 'Moon', 'Earth', { ux: view.ux, uy: view.uy });
@@ -1449,7 +1449,7 @@ for (const kind of kinds) {
     const out = await drawnPath(page, 'Earth', 'Sun', { ux: view.ux, uy: view.uy });
     const card = await page.evaluate(() => ({ now: document.querySelector('#hud .power-now').textContent, parent: window.app.findByName('Earth').parent?.name ?? null }));
     check(on('the Earth aimed at 1.6 times the speed of a circle round the Sun would leave it: the card says so, and its orbit line is drawn, a hyperbola about the Sun from the Earth outwards, starting where it is on the screen'),
-      !!view && card.parent === null && /^Now on an open path past the Sun: it passes at 1 AU, then leaves\.$/.test(card.now) && out.drawn && out.first < 1 && out.reach > 100 && Math.abs(out.e - 1.56) < 0.01 && out.off < 1e-3,
+      !!view && card.parent === null && /^Now on an open path past the Sun: it passes at 150 million km, then leaves\.$/.test(card.now) && out.drawn && out.first < 1 && out.reach > 100 && Math.abs(out.e - 1.56) < 0.01 && out.off < 1e-3,
       out.drawn ? `"${card.now}"; ${out.n} points from ${out.first.toFixed(2)} px off the Earth out to ${out.reach.toFixed(0)} px; e ${out.e.toFixed(4)} (all within ${out.off.toExponential(1)})` : `"${card.now}"; no line`);
     await until(page, () => !window.app.ahead || window.app.ahead.done, null, 60);
     await frames(page, 2);

@@ -112,7 +112,7 @@ for (const kind of ['phone', 'desk']) {
   check(on('taking the offer makes one: it is a body of the system, and selected'), made.bodies === before.bodies + 1 && made.moons === before.moons + 1 && made.made === 1 && made.name === "Earth's new moon" && c.title === made.name,
     `${made.name}; ${made.bodies} bodies (${before.bodies} before); the card: ${c.title}`);
   check(on('making it is a change like any other: physics is live from then on, and the moon is simulated'), !before.live && made.live && made.simulated && /Live physics is on/.test(c.toast));
-  check(on('it says what was made'), /new moon is new: .+ up, once round in .+ (h|d)\./.test(c.toast), c.toast);
+  check(on('it says what was made'), /new moon is new: [\d,.]+( million)? km up, once round in [\d.,]+ (hours|days)\./.test(c.toast), c.toast);
   check(on('it is between the Earth and the eye, on a circular orbit'), Math.abs(made.orbit - 0.55 * made.eye) < 0.02 && made.towardsEye > 0.9 && Math.abs(made.speed / made.circular - 1) < 1e-3,
     `${made.orbit.toFixed(2)} radii out (the eye at ${made.eye.toFixed(2)}), ${(Math.acos(Math.min(1, made.towardsEye)) * 57.3).toFixed(1)} deg from the eye's direction, ${(made.speed / 1000).toFixed(3)} km/s (circular: ${(made.circular / 1000).toFixed(3)})`);
   check(on('it is drawn, in the frame'), made.resolved && made.px > 4 && !!made.at && made.at.x > 0 && made.at.x < made.size[0] && made.at.y > 0 && made.at.y < made.size[1],

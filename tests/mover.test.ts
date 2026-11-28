@@ -108,7 +108,7 @@ describe('moving a world with a finger', () => {
     expect(now.clone().normalize().dot(r.clone().normalize())).toBeCloseTo(1, 9);
     expect(moon.vel.distanceTo(v)).toBeLessThan(1e-6);
     // twice as far out with the speed of its old orbit: about escape speed there, and the card says what it is on now
-    expect(mover.describe(moon).orbit).toMatch(/^Now (round Earth: a long oval, .* to .* · .*\.|on an open path past Earth: it passes at .*, then leaves\.)$/);
+    expect(mover.describe(moon).orbit).toMatch(/^Now (round Earth: a long oval, .* to .* km, once round in [\d.,]+ (hours|days|years)\.|on an open path past Earth: it passes at .* km, then leaves\.)$/);
   });
 
   it('left on a circle, it goes round what holds sway where it was put, the way it was going; asked back, it has its own velocity again', async () => {
@@ -130,7 +130,7 @@ describe('moving a world with a finger', () => {
     expect(o.period / (2 * Math.PI * Math.sqrt((2 * r.length()) ** 3 / (earth.gm + moon.gm)))).toBeCloseTo(1, 6);
     expect(moon.pos.clone().sub(earth.pos).cross(moon.vel.clone().sub(earth.vel)).normalize().dot(turning)).toBeCloseTo(1, 9);
     // (its two ends come out the same: a circle, so far out)
-    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [78]\d\d,\d\d\d km out · [78]\d(\.\d+)? d\.$/);
+    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [78]\d\d,\d\d\d km out, once round in [78]\d(\.\d+)? days\.$/);
     mover.leave('keep');
     expect(moon.vel.distanceTo(v)).toBeLessThan(1e-6);
     expect(mover.describe(moon).how).toBe('keep');
@@ -202,7 +202,7 @@ describe('throwing a world', () => {
     expect(o.bound && o.e < 1e-9).toBe(true);
     expect(o.peri / r.length()).toBeCloseTo(1, 9);
     expect(moon.pos.clone().sub(earth.pos).cross(moon.vel.clone().sub(earth.vel)).normalize().dot(turning)).toBeCloseTo(1, 9);
-    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [\d,]+ km out · /);
+    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [\d,]+ km out, once round in [\d.]+ days\./);
     expect(gestures()).toEqual([1, 1]);
   });
 
@@ -280,7 +280,7 @@ describe('throwing a world', () => {
     // ahead, at the speed of a circle (taken for a flick it would have gone backwards, at 0.83 of it)
     expect(rel.length() / Math.sqrt((earth.gm + moon.gm) / moon.pos.distanceTo(earth.pos))).toBeCloseTo(1, 12);
     expect(moon.pos.clone().sub(earth.pos).cross(rel).normalize().dot(turning)).toBeCloseTo(1, 9);
-    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [\d,]+ km out · /);
+    expect(mover.describe(moon).orbit).toMatch(/^Now round Earth: a circle [\d,]+ km out, once round in [\d.]+ days\./);
   });
 });
 
@@ -351,7 +351,7 @@ describe('a world thrown with its moons', () => {
       expect(Math.abs(o.e - 1)).toBeLessThan(1e-8);
       // and Mars itself is on an open path all the same, on its card as in its line
       expect(o.bound).toBe(false);
-      expect(s.mover.describe(mars).orbit).toMatch(/^Now on an open path past the Sun: it passes at [\d.]+ AU, then leaves\.$/);
+      expect(s.mover.describe(mars).orbit).toMatch(/^Now on an open path past the Sun: it passes at [\d.]+ million km, then leaves\.$/);
     }
   });
 });
@@ -370,7 +370,7 @@ describe('a world thrown out', () => {
     expect(o.bound).toBe(false);
     expect(o.e).toBeCloseTo(1.56, 2);
     mover.toggle(earth);
-    expect(mover.describe(earth).orbit).toBe(`Now on an open path past the Sun: it passes at ${(o.peri / 149_597_870_700).toPrecision(3).replace(/0+$/, '').replace(/\.$/, '')} AU, then leaves.`);
+    expect(mover.describe(earth).orbit).toBe(`Now on an open path past the Sun: it passes at ${Number((o.peri / 1e9).toPrecision(3))} million km, then leaves.`);
     // the Sun itself goes round nothing, and is on no path
     mover.toggle(sun);
     expect(mover.describe(sun).orbit).toBe('Now it goes round nothing.');

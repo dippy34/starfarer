@@ -6,7 +6,7 @@ import { setUploadRenderer, uploadTexture, UPLOADS } from '../render/Uploads';
 import { blackbodyRGB, irradianceToMag, luminance, magToIrradiance, sunIrradianceAt } from '../astro/photometry';
 import { formatUtc, SimClock, utcToTdb, dateToJdUtc } from '../core/time';
 import { AU, DAY, formatDistance, PC, SUN_RADIUS } from '../core/units';
-import { fmtDuration, G, L_SUN, luminosity } from '../sim/physics';
+import { G, L_SUN, luminosity } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
 import { BodiesLayer, makeSphere } from '../render/Bodies';
@@ -72,7 +72,7 @@ import { AHEAD_MOST, Foresight } from './Foresight';
 import { SlowMotion, ZONE } from './Impacts';
 import { type Hit, type LiveCheckpoint, LivePhysics, PLANETARY_LEFT_OUT, weighty } from './LivePhysics';
 import { type Aim, Mover } from './Mover';
-import { aheadWords, dayWords, farWords, listed, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, clockChipWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, clockSpeedWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
+import { aheadWords, dayWords, farWords, listed, addedWords, FRAME_MARGIN, frameDistance, impactWords, massFactor, massOf, massSlider, massTheory, massWords, type Meeting, radiusWords, rateWords, clockChipWords, sameDensity, sizeFactor, sizeSlider, sizeTimesWords, soonestContact, spanWords, clockSpeedWords, starMassWords, the, timesWords, viewFrame, whenWords } from './Powers';
 import { type PowerPlace, powersFor, type PowerTable } from './powersFor';
 import { Gesture, History } from './History';
 import { type ChangeKind, Glide, planChange, type RateState, sample, type Sampled, Watch, type WatchFrame } from './Watch';
@@ -1530,11 +1530,11 @@ export class App {
       : isWorldKind(kind)
         ? newWorld(kind, to, eye, this.made.filter((m) => (m.meta.madeAs as BodyJson['madeAs'])?.kind === kind).length, id, seed, this.lookOf(kind, seed))
         : newMoon(to, eye, sun ? to.pos.distanceTo(sun.pos) : Infinity, this.made.filter((m) => this.system.homeOf(m) === to).length, id);
-    const where = to.kind === 'star' ? `${farWords(plan.orbit)} from ${the(to.name)}` : `${formatDistance(plan.orbit - to.radius)} up`;
+    const where = to.kind === 'star' ? `${farWords(plan.orbit)} from ${the(to.name)}` : `${plainDistance(plan.orbit - to.radius)} up`;
     this.beginChange('add', to, true, `making ${plan.json.name}`);
     const wasOn = this.physics.on;
     const made = this.physics.make(plan.json, to, plan.pos, plan.vel, this.clock.jdTdb,
-      `${plan.json.name} is new: ${where}, once round in ${fmtDuration(plan.periodDays * DAY)}.`);
+      addedWords(plan.json.name, where, plan.periodDays * DAY));
     this.bodies.changed();
     this.select(made);
     this.tellNews(wasOn);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  affected, aheadWords, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
-  FRAME_MARGIN, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, starMassWords,
+  addedWords, affected, aheadWords, AIM_PER_CIRCLE, aimFactor, circularVelocity, contactTimes, dayWords, dragPlane, fingerVelocity, FLICK_PER_CIRCLE, FLICK_SLOWEST, flickFactor, flickOf, impactWords,
+  FRAME_MARGIN, farWords, frameDistance, frameRadius, listed, MASS_DECADES, massFactor, massSlider, massTheory, massWords, onPlane, orbitOf, rateWords, starMassWords,
   orbitWords, powerWords, radiusWords, sameDensity, SIZE_DECADES, sizeFactor, sizeSlider, sizeTimesWords, snapThrow, soonestContact, spanWords, squareThrow, stretchWords, the, THROW_MOST, THROW_SQUARE, throwVelocity, timesWords, viewFrame, WATCH_SECONDS,
   WATCH_SLOWEST, watchPlan, watchRate, clockSpeedWords, clockChipWords,
 } from '../src/app/Powers';
@@ -164,7 +164,7 @@ describe('the orbit a body is on', () => {
     expect(o.apo / AU).toBeCloseTo(1, 7);
     expect(o.period / year).toBeCloseTo(1, 12);
     // (its two ends come out the same: a circle, so far out, without a number to puzzle over)
-    expect(orbitWords(o)).toBe('a circle 1 AU out · 365.3 d');
+    expect(orbitWords(o)).toBe('a circle 150 million km out, once round in 365 days');
     expect(stretchWords(o)).toBe('0 (0 is a circle, 1 and more an open path)');
   });
 
@@ -175,13 +175,13 @@ describe('the orbit a body is on', () => {
     const gm = 3.986004418e14 * (1 + 1 / 81.3), r = 738_670_400, v = Math.sqrt(gm / r);
     for (const k of [1, 1.0000007, 1.000002, 1.0002]) {
       const o = orbitOf([r, 0, 0], [0, v * k, 0], gm);
-      expect(orbitWords(o)).toMatch(/^a circle 738,\d{3} km out · 72\.\d+ d$/);
+      expect(orbitWords(o)).toMatch(/^a circle 738,\d{3} km out, once round in 72\.\d+ days$/);
       expect(stretchWords(o)).toBe('0 (0 is a circle, 1 and more an open path)');
     }
     // a little more stretch than the details call 0 is a stretched circle, with its two ends
     const o = orbitOf([r, 0, 0], [0, v * 1.001, 0], gm);
     expect(o.e).toBeGreaterThan(0.0005);
-    expect(orbitWords(o)).toMatch(/^nearly a circle, 738,\d{3} to 7\d\d,\d{3} km · /);
+    expect(orbitWords(o)).toMatch(/^nearly a circle, 738,\d{3} to 7\d\d,\d{3} km, once round in /);
   });
 
   it('an oval: from the nearest point, in any plane', () => {
@@ -193,7 +193,7 @@ describe('the orbit a body is on', () => {
     expect(o.apo / AU).toBeCloseTo(1.5, 10);
     expect(o.period / year).toBeCloseTo(1, 10);
     // (the unit said once where both ends have it)
-    expect(orbitWords(o)).toBe('an oval, 0.5 to 1.5 AU · 365.3 d');
+    expect(orbitWords(o)).toBe('an oval, 74.8 to 224 million km, once round in 365 days');
     expect(stretchWords(o)).toBe('0.50 (0 is a circle, 1 and more an open path)');
   });
 
@@ -201,11 +201,11 @@ describe('the orbit a body is on', () => {
     // the Moon after a throw a little off the speed of a circle: 365,709 to 382,840 km
     const gm = 3.986004418e14 * (1 + 1 / 81.3), peri = 365_709e3, apo = 382_840e3, a = (peri + apo) / 2;
     const o = orbitOf([peri, 0, 0], [0, Math.sqrt(gm * (2 / peri - 1 / a)), 0], gm);
-    expect(orbitWords(o)).toBe('a slightly stretched circle, 365,709 to 382,840 km · 26.21 d');
+    expect(orbitWords(o)).toBe('a slightly stretched circle, 365,709 to 382,840 km, once round in 26.2 days');
     expect(stretchWords(o)).toBe('0.023 (0 is a circle, 1 and more an open path)');
     // a world's orbit with its ends in different units says both
     const sun = orbitOf([1e9, 0, 0], [0, Math.sqrt(GM_SUN * (2 / 1e9 - 1 / (0.5 * (1e9 + 0.05 * AU)))), 0], GM_SUN);
-    expect(orbitWords(sun)).toBe('a long oval, 1.000 million km to 0.05 AU · 41.83 h');
+    expect(orbitWords(sun)).toBe('a long oval, 1 to 7.48 million km, once round in 41.8 hours');
   });
 
   it('faster than escape: open, and it does not come back', () => {
@@ -215,14 +215,44 @@ describe('the orbit a body is on', () => {
     expect(o.apo).toBe(Infinity);
     expect(o.period).toBe(Infinity);
     expect(o.peri / AU).toBeCloseTo(1, 9);
-    expect(orbitWords(o)).toBe('an open path: it passes at 1 AU, then leaves');
+    expect(orbitWords(o)).toBe('an open path: it passes at 150 million km, then leaves');
     expect(stretchWords(o)).toBe('3.50 (0 is a circle, 1 and more an open path)');
   });
 
   it('a moon: kilometres and days', () => {
     const gm = 3.986004418e14 * (1 + 1 / 81.3), r = 384_400e3;
     const o = orbitOf([r, 0, 0], [0, Math.sqrt(gm / r), 0], gm);
-    expect(orbitWords(o)).toBe('a circle 384,400 km out · 27.28 d');
+    expect(orbitWords(o)).toBe('a circle 384,400 km out, once round in 27.3 days');
+  });
+
+  it('no line of an orbit, or of the toast of Add, says AU or a bare unit letter', () => {
+    const moonGm = 3.986004418e14 * (1 + 1 / 81.3), moonR = 384_400e3;
+    const circle = (r: number, gm: number) => orbitOf([r, 0, 0], [0, Math.sqrt(gm / r), 0], gm);
+    const orbits = [
+      { o: circle(AU, mu), bound: true },
+      { o: circle(30 * AU, mu), bound: true },
+      { o: orbitOf([AU, 0, 0], [0, 0.8 * Math.sqrt(mu / AU), 0], mu), bound: true },
+      { o: orbitOf([AU, 0, 0], [0, 0.3 * Math.sqrt(mu / AU), 0], mu), bound: true },
+      { o: orbitOf([AU, 0, 0], [0, 1.5 * Math.sqrt((2 * mu) / AU), 0], mu), bound: false },
+      { o: circle(moonR, moonGm), bound: true },
+    ];
+    const lines = [addedWords('New rocky world', `${farWords(1.21 * AU)} from the Sun`, 486 * DAY), addedWords("Earth's new moon", `${farWords(5e7)} up`, 3.2 * DAY)];
+    for (const { o, bound } of orbits) {
+      for (const text of [orbitWords(o), `Now round the Sun: ${orbitWords(o)}.`]) {
+        expect(text).not.toMatch(/\bAU\b/);
+        expect(text).not.toMatch(/\d\s?(d|h|s|yr|min)\b/);
+        expect(text).not.toMatch(/·/);
+      }
+      if (bound) expect(orbitWords(o)).toMatch(/once round in [\d.,]+ (seconds?|minutes?|hours?|days?|years?)$/);
+      else expect(orbitWords(o)).toMatch(/^an open path: it passes at [\d.,]+ (million|billion)? ?km, then leaves$/);
+    }
+    for (const text of lines) {
+      expect(text).not.toMatch(/\bAU\b/);
+      expect(text).not.toMatch(/\d\s?(d|h|s|yr|min)\b/);
+      expect(text).not.toMatch(/·/);
+    }
+    expect(addedWords('New rocky world', `${farWords(1.21 * AU)} from the Sun`, 486 * DAY)).toBe('New rocky world is new: 181 million km from the Sun, once round in 486 days.');
+    expect(addedWords("Earth's new moon", `${farWords(5e7)} up`, 3.2 * DAY)).toBe("Earth's new moon is new: 50,000 km up, once round in 3.2 days.");
   });
 });
 
