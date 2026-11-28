@@ -9,7 +9,7 @@ import { AU, DAY, formatDistance, PC, SUN_RADIUS } from '../core/units';
 import { G, L_SUN, luminosity, M_SUN } from '../sim/physics';
 import { AtmospheresLayer, type AtmosphereData } from '../render/Atmospheres';
 import { BlackHoleLayer } from '../render/BlackHoleLayer';
-import { BodiesLayer, makeSphere } from '../render/Bodies';
+import { bigShare, BodiesLayer, makeSphere } from '../render/Bodies';
 import { generatedLook, madeLook } from '../render/PlanetLook';
 import { PlanetPortrait } from '../render/PlanetPortrait';
 import { PlanetTerrain } from '../render/PlanetTerrain';
@@ -464,6 +464,7 @@ export class App {
     const starField = new StarFieldLayer(catalog);
     const starFields = [starField, ...catalogs.slice(1).map((c) => new StarFieldLayer(c, starField.psf))];
     const bodies = new BodiesLayer(system, manifest, `${DATA}/textures`, starField.psf, rings);
+    bodies.bigLook = recall('real-size') !== '1';
     const orbits = new OrbitsLayer(system);
     const small = new SmallBodiesLayer(system, starField.psf);
     const near = new NearStarsLayer(starField.psf, bodies.lightExposure);
@@ -1068,6 +1069,11 @@ export class App {
       case 'labels': this.labels.enabled = !this.labels.enabled; this.hud.toast(`Names ${this.labels.enabled ? 'on' : 'off'}`); break;
       case 'orbits': this.orbits.enabled = !this.orbits.enabled; this.hud.toast(`Orbits ${this.orbits.enabled ? 'on' : 'off'}`); break;
       case 'minor': this.orbits.showMinor = !this.orbits.showMinor; this.hud.toast(`Orbits of asteroids and comets ${this.orbits.showMinor ? 'on' : 'off'}`); break;
+      case 'real-size':
+        this.bodies.bigLook = !this.bodies.bigLook;
+        remember('real-size', this.bodies.bigLook ? '0' : '1');
+        this.hud.toast(this.bodies.bigLook ? 'Far planets and moons drawn bigger, so you can see them' : 'Real size: far planets and moons as small as they really look');
+        break;
       case 'look':
         this.rig.touchDrag = this.rig.touchDrag === 'look' ? 'orbit' : 'look';
         this.hud.toast(this.rig.touchDrag === 'look' ? 'One finger looks around' : 'One finger turns round where you are');
@@ -3078,9 +3084,14 @@ export class App {
       const sunRel = v.sun && this.bodies.views.get(v.sun)?.rel;
       const night = rings > 0 || !sunRel ? 1 : 1 + (NIGHT - 1) * hidden(sunRel, SUN_RADIUS, v.rel, b.radius);
       // (in a system without a sun a world is seen by its own lights, if it has any)
-      const L = v.sun ? (litBy(v.sun, b.pos.distanceTo(v.sun.pos), Math.min(1, 1.5 * this.surfaceAlbedo(b))) * (this.bodies.sunlit.get(b) ?? 1)) / night : this.bodies.ownLight(b);
+      const lit = v.sun ? litBy(v.sun, b.pos.distanceTo(v.sun.pos), Math.min(1, 1.5 * this.surfaceAlbedo(b))) / night : this.bodies.ownLight(b);
+      const L = v.sun ? lit * (this.bodies.sunlit.get(b) ?? 1) : lit;
       if (v.pixelRadius >= 2) settle(s.coverage, L, 0.45);
-      limitSurface(1.6, L, rings > 0 ? Math.max(s.presence, look(v.rel, rings).presence) : s.presence);
+      // Drawn larger than it is, far off (the big look: BodiesLayer.bigScale), a world is shown by its own light, as it
+      // is with the eye on it, and lets go of the eye's exposure for everything else: the stars stay out round the little
+      // discs, and a dim world beside a bright one is seen too. (Its own is that of its uneclipsed face: in a shadow it is dark.)
+      v.own = lit > 0 ? 1.6 / lit : Infinity;
+      limitSurface(1.6, L, (1 - bigShare(v.scale)) * (rings > 0 ? Math.max(s.presence, look(v.rel, rings).presence) : s.presence));
     }
     for (const cv of this.craft.views) {
       if (cv.pixelRadius <= 0.6) continue;
@@ -3217,7 +3228,7 @@ export class App {
     const mLim = this.lastMLim;
     for (const v of this.bodies.views.values()) {
       if (!v.resolved && v.apparentMag > mLim + 1.5 && !this.namedInTheDark(v)) continue;
-      consider(v.body, this.project(v.rel), v.pixelRadius / this.view.pixelRatio, v.resolved ? -6 : -3);
+      consider(v.body, this.project(v.rel), (v.pixelRadius * v.scale) / this.view.pixelRatio, v.resolved ? -6 : -3);
     }
     const rel = new Vector3();
     for (const c of this.small.cometObjects) {
@@ -3304,7 +3315,7 @@ export class App {
     const mLim = this.lastMLim;
     for (const v of this.bodies.views.values()) {
       if (!v.resolved && v.apparentMag > mLim + 1.5) continue;
-      consider(v.body, v.rel, v.body.radius, v.resolved ? -1 : -0.3);
+      consider(v.body, v.rel, v.body.radius * v.scale, v.resolved ? -1 : -0.3);
     }
     const rel = new Vector3();
     for (const c of this.small.cometObjects) {
@@ -3362,7 +3373,8 @@ export class App {
       if (!v.resolved) continue;
       oc.copy(origin).sub(v.rel);
       const b = oc.dot(d);
-      const c = oc.lengthSq() - v.body.radius * v.body.radius;
+      const r = v.body.radius * v.scale;
+      const c = oc.lengthSq() - r * r;
       const disc = b * b - c;
       if (disc < 0) continue;
       const t = -b - Math.sqrt(disc);
@@ -3405,7 +3417,7 @@ export class App {
     for (const v of this.bodies.views.values()) {
       if (!v.resolved && v.apparentMag > mLim + 1.5) continue;
       if (this.occluded(v.rel, v.body)) continue;
-      consider(v.body, v.rel, v.body.radius, v.resolved ? -1 : -0.3);
+      consider(v.body, v.rel, v.body.radius * v.scale, v.resolved ? -1 : -0.3);
     }
     const rel = new Vector3();
     for (const c of this.small.cometObjects) {
@@ -3529,7 +3541,7 @@ export class App {
     const out: LabelCandidate[] = [];
     this.occluders = [];
     for (const v of this.bodies.views.values()) {
-      if (v.resolved && v.pixelRadius > 2) this.occluders.push({ body: v.body, rel: v.rel, dist: v.dist, radius: v.body.radius });
+      if (v.resolved && v.pixelRadius * v.scale > 2) this.occluders.push({ body: v.body, rel: v.rel, dist: v.dist, radius: v.body.radius * v.scale });
     }
     // on the landing terrain: the horizon is that of the ground below (a sphere through it, a little
     // lower so labels just above the horizon stay), and planets of other stars occlude too
@@ -3565,7 +3577,7 @@ export class App {
       if (!show) continue;
       const p = this.project(v.rel);
       if (!p || this.occluded(v.rel, b)) continue;
-      out.push({ rel: v.rel.clone(), key: b.key, text: b.name, x: p.x, y: p.y, radius: v.pixelRadius / dpr, priority: isSel ? 1e4 : prio, cls: isSel ? 'selected' : b.kind });
+      out.push({ rel: v.rel.clone(), key: b.key, text: b.name, x: p.x, y: p.y, radius: (v.pixelRadius * v.scale) / dpr, priority: isSel ? 1e4 : prio, cls: isSel ? 'selected' : b.kind });
     }
     const rel = new Vector3();
     for (const c of this.small.cometObjects) {
@@ -3815,6 +3827,7 @@ export class App {
     // (the world a flight is on its way to, the camera's or the ship's: its full maps on the way)
     const bound = this.rig.autopilot ? this.rig.target : this.game.flight.autopilot?.target;
     if (bound instanceof Body) this.bodies.keepWanted(bound);
+    this.bodies.pixelRatio = this.view.pixelRatio;
     this.bodies.update(this.rig.upos, pixelAngle, dt, this.view.quat);
     HITCH.lap('bodies');
     this.bodies.updateDetail(this.renderer.gl, this.tiles, pixelAngle, new Vector3(0, 0, -1).applyQuaternion(this.view.quat));
@@ -3895,6 +3908,7 @@ export class App {
     psf.uMinSigma.value = this.vr.active ? 0.8 : 0.5 / dpr;
     psf.uPointLight.value = this.vr.active ? 1.41 : 0.79;
     this.bodies.surfaceExposure.value = xSurf;
+    this.bodies.expose();
     this.bodies.lightExposure.value = xLight;
     for (const c of this.catalogs) c.update(this.camPc, mLim, this.fieldMinDistPc);
     HITCH.lap('catalogs');
@@ -4121,6 +4135,7 @@ export class App {
         : this.watch.watching ? { text: slowed ? `Slowed: ${rateWords(runs)}` : `Watching: ${rateWords(this.watch.rate)}`, ended: false }
           : { text: `Watched: ${spanWords(this.watch.shown)}`, ended: true, replay: !!this.replayFrom },
       showMe: this.showMe,
+      realSize: !this.bodies.bigLook,
       flying: rig.autopilot && t ? t.name : null,
       labels: this.labels.enabled,
       orbits: this.orbits.enabled,

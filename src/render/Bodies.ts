@@ -45,6 +45,26 @@ interface TextureManifest {
   maps: Record<string, MapInfo>;
 }
 
+/**
+ * The big look (the owner's ask, 28 Nov 2026: "dramatically large, but the more accurate the better"). A world smaller
+ * on the screen than its least size is drawn at that size, where it really is, lit as it is: a little disc with its own
+ * look, not a point of light. Its least size (CSS px, in radius) grows gently with its real size, as its radius to the
+ * quarter power: Jupiter BIG_PX, Earth 4.4, the Moon 3.2, Ceres 2.3, Mimas 1.9; a world too small to be round (BIG_LEAST_RADIUS) is
+ * drawn as it is, a point of light from afar. It reaches at most
+ * BIG_ROOM of the way to what it goes round, so that a moon is not drawn over its planet, nor a planet over its sun;
+ * and it is drawn so out in space (from the ground or in a world's orbit the other planets are the points they are).
+ * "Real size" in More turns it off (BodiesLayer.bigLook).
+ */
+const BIG_PX = 8;
+const BIG_ROOM = 0.3;
+/** worlds smaller than this (m, in radius) are drawn their real size: only round worlds are drawn larger (not the swarms of small moons and asteroids) */
+const BIG_LEAST_RADIUS = 180e3;
+/** the night side of a world drawn larger than it is: lit by this share of its sunlight from all round, dim, not a black hole in the sky */
+const BIG_FILL = 0.06;
+const JUPITER_RADIUS = 71492e3;
+/** how much a world drawn `scale` times its size has left the eye's exposure to its own (App.updateExposure) */
+export const bigShare = (scale: number): number => smoothstep(1, 1.5, scale);
+
 /** pixel radius above which the high-resolution map is wanted, and below which it may be released */
 const HI_WANT_PX = 260;
 const HI_KEEP_PX = 140;
@@ -162,6 +182,10 @@ export interface BodyView {
   resolved: boolean;
   /** the sun that lights it (the brightest in its sky), or null: there is none, or it is one itself */
   sun: Body | null;
+  /** how many times its size it is drawn (the big look: 1, as it is) */
+  scale: number;
+  /** drawn larger than it is, the most exposure it is shown with (App.updateExposure; Infinity: none of its own) */
+  own: number;
 }
 
 export class BodiesLayer {
@@ -224,6 +248,12 @@ export class BodiesLayer {
   readonly maxSprites: number;
   /** exposure for resolved surfaces (point sprites use the shared PSF exposure) */
   readonly surfaceExposure = { value: 1 };
+  /** each world's own exposure: the surfaces', or, drawn larger than it is, no more than its own (`expose`) */
+  private exposures = new Map<Body, { value: number }>();
+  /** the big look on (far worlds drawn at a least size: BIG_PX); off, every world is drawn its real size */
+  bigLook = true;
+  /** render pixels to a CSS pixel (set by the app each frame) */
+  pixelRatio = 1;
   /**
    * The exposure a sun's own face is drawn with (its corona and its glare too): the surfaces',
    * or less while a sun's disc is in view, which is held at the level a sun is shown at whatever
@@ -594,7 +624,7 @@ export class BodiesLayer {
   /** The mesh of a world made with a generated look: the material of the made-up planets of other stars (src/render/ExoPlanetLayer.ts), from the same look (PlanetLook.ts), and its ring if it has one. */
   private createLooked(b: Body, type: PlanetType, seed: number, rings: boolean, hue: number): Mesh {
     const spec = madeLook(type, seed, b.radius, rings, hue), look = generatedLook(spec);
-    const mat = new ShaderMaterial({ name: 'generated-look', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: lookUniforms(spec, look, this.surfaceExposure) });
+    const mat = new ShaderMaterial({ name: 'generated-look', vertexShader: BODY_VERT, fragmentShader: EXO_FRAG, uniforms: { ...lookUniforms(spec, look, this.exposureOf(b)), uFill: { value: 0 } } });
     const mesh = new Mesh(this.sphere(-180), mat);
     mesh.matrixAutoUpdate = false;
     mesh.frustumCulled = false;
@@ -632,13 +662,14 @@ export class BodiesLayer {
     } else u.uSunIrr.value = 0;
     const ring = this.lookedRings.get(b);
     if (ring) {
-      // in its equator's plane (the body's XY plane), lit and seen in that frame, in the planet's radii
+      // in its equator's plane (the body's XY plane), lit and seen in that frame, in the planet's radii (as drawn)
+      const r = b.radius * view.scale;
       ring.visible = true;
-      ring.matrix.copy(b.orientation).scale(new Vector3(b.radius, b.radius, b.radius)).setPosition(view.rel);
+      ring.matrix.copy(b.orientation).scale(new Vector3(r, r, r)).setPosition(view.rel);
       ring.matrixWorldNeedsUpdate = true;
       const inv = rot3.clone().transpose();
-      lightRing(ring, ((u.uSunIrr.value as number) / Math.PI) * this.surfaceExposure.value,
-        new Vector3().copy(u.uSunDir.value as Vector3).applyMatrix3(inv), new Vector3().copy(view.rel).negate().divideScalar(b.radius).applyMatrix3(inv));
+      lightRing(ring, ((u.uSunIrr.value as number) / Math.PI) * this.exposureOf(b).value,
+        new Vector3().copy(u.uSunDir.value as Vector3).applyMatrix3(inv), new Vector3().copy(view.rel).negate().divideScalar(r).applyMatrix3(inv));
     }
   }
 
@@ -678,7 +709,7 @@ export class BodiesLayer {
         uSunDir: { value: new Vector3(1, 0, 0) },
         uSunIrr: { value: Math.PI },
         uSunColor: { value: new Vector3(...this.sunColor) },
-        uExposure: isStar ? this.lightExposure : this.surfaceExposure,
+        uExposure: isStar ? this.lightExposure : this.exposureOf(b), uFill: { value: 0 },
         uBodyToWorld: { value: new Matrix3() },
         uBodyCenter: { value: new Vector3() },
         uOcc: { value: [new Vector4(), new Vector4(), new Vector4(), new Vector4()] }, uOccRed: { value: new Vector4() }, uOccN: { value: 0 },
@@ -844,7 +875,7 @@ export class BodiesLayer {
       uniforms: {
         uRingTex: { value: this.ringTex }, uRingRadii: { value: new Vector3(inner, outer, 0) },
         uColor: { value: new Vector3(...b.color) }, uSunDirBF: { value: new Vector3() }, uViewDirBF: { value: new Vector3() },
-        uSunIrr: { value: Math.PI }, uExposure: this.surfaceExposure, uPlanetRadius: { value: 1 }, uPolar: { value: b.radii[2] / b.radii[0] },
+        uSunIrr: { value: Math.PI }, uExposure: this.exposureOf(b), uPlanetRadius: { value: 1 }, uPolar: { value: b.radii[2] / b.radii[0] },
         uCamBF: { value: new Vector3() }, uReqKm: { value: req / 1e3 }, uShine: { value: 0.02 },
         uPullIn: GLOBALS.uPullIn, uDepthK: GLOBALS.uDepthK,
       },
@@ -875,6 +906,7 @@ export class BodiesLayer {
     // each sun from the eye
     const suns = this.system.suns;
     for (let k = 0; k < suns.length; k++) suns[k].upos.sub(cam, this.sunRels[k] ??= new Vector3());
+    const home = this.bigLook ? this.homeOf(cam) : null;
     let n = 0;
     const m4 = new Matrix4();
     const rot3 = new Matrix3();
@@ -890,7 +922,7 @@ export class BodiesLayer {
         if (this.ringParticles && b === this.ringParticlesBody) this.ringParticles.update(null, b.orientation, b.radius, new Vector3(), 0);
         continue;
       }
-      const view = this.views.get(b) ?? { body: b, rel: new Vector3(), dist: 0, pixelRadius: 0, irradiance: 0, apparentMag: 99, resolved: false, sun: null };
+      const view = this.views.get(b) ?? { body: b, rel: new Vector3(), dist: 0, pixelRadius: 0, irradiance: 0, apparentMag: 99, resolved: false, sun: null, scale: 1, own: Infinity };
       b.upos.sub(cam, view.rel);
       const dist = view.rel.length();
       view.dist = dist;
@@ -918,7 +950,8 @@ export class BodiesLayer {
       }
       view.irradiance = irr;
       view.apparentMag = irr > 0 ? -26.74 - 2.5 * Math.log10(irr / Math.PI) : 99;
-      view.resolved = view.pixelRadius > 0.6;
+      view.scale = this.bigScale(b, view.pixelRadius, home);
+      view.resolved = view.pixelRadius * view.scale > 0.6;
       this.views.set(b, view);
       // (a black hole of your own gives no light and is no ball: BlackHoleLayer draws its shadow and the sky bent round it)
       if ((b.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') {
@@ -928,7 +961,7 @@ export class BodiesLayer {
       }
 
       // Point sprite (fades out as the disk becomes resolved)
-      const fade = 1 - smoothstep(0.6, 1.8, view.pixelRadius);
+      const fade = 1 - smoothstep(0.6, 1.8, view.pixelRadius * view.scale);
       if (fade > 0 && n < this.maxSprites) {
         this.spritePos[n * 3] = view.rel.x; this.spritePos[n * 3 + 1] = view.rel.y; this.spritePos[n * 3 + 2] = view.rel.z;
         this.spriteIrr[n] = irr * fade;
@@ -941,10 +974,12 @@ export class BodiesLayer {
       if (view.resolved) {
         mesh = mesh ?? this.createMesh(b);
         mesh.visible = true;
-        m4.copy(b.orientation).scale(tmp.set(b.radii[0], b.radii[1], b.radii[2])).setPosition(view.rel);
+        const k = view.scale;
+        m4.copy(b.orientation).scale(tmp.set(b.radii[0] * k, b.radii[1] * k, b.radii[2] * k)).setPosition(view.rel);
         mesh.matrix.copy(m4);
         mesh.matrixWorldNeedsUpdate = true;
         const u = (mesh.material as ShaderMaterial).uniforms;
+        if (u.uFill) u.uFill.value = BIG_FILL * bigShare(k);
         if (this.looked.has(b)) { this.shineLooked(b, u, view, sunRel, sunLight, rot3); continue; }
         this.updateMaps(b, u, view.pixelRadius, now);
         rot3.setFromMatrix4(b.orientation);
@@ -979,13 +1014,13 @@ export class BodiesLayer {
         const ring = this.rings.get(b);
         if (ring) {
           ring.visible = true;
-          ring.matrix.copy(b.orientation).scale(tmp.set(b.radii[0], b.radii[0], b.radii[0])).setPosition(view.rel);
+          ring.matrix.copy(b.orientation).scale(tmp.set(b.radii[0] * k, b.radii[0] * k, b.radii[0] * k)).setPosition(view.rel);
           ring.matrixWorldNeedsUpdate = true;
           const ru = (ring.material as ShaderMaterial).uniforms;
           const inv = rot3.clone().transpose();
           ru.uSunDirBF.value.copy(u.uSunDir.value).applyMatrix3(inv);
           ru.uViewDirBF.value.copy(view.rel).negate().normalize().applyMatrix3(inv);
-          ru.uCamBF.value.copy(view.rel).negate().applyMatrix3(inv).divideScalar(b.radii[0]);
+          ru.uCamBF.value.copy(view.rel).negate().applyMatrix3(inv).divideScalar(b.radii[0] * k);
           ru.uSunIrr.value = u.uSunIrr.value;
         }
         if (this.ringParticles && b === this.ringParticlesBody) {
@@ -1017,6 +1052,54 @@ export class BodiesLayer {
    * The list of bodies has changed (the explorer has made a moon, or taken one away:
    * src/app/WhatIf.ts): `gone` leaves the scene, and what can cast a shadow is listed afresh.
    */
+  /**
+   * The planet (or dwarf, or world made round a sun) whose reach the eye is in, and how far out of it the eye is: 0
+   * well inside it (on its ground, in its orbit, among its moons), 1 at its edge. Null in open space.
+   */
+  private homeOf(cam: UPos): { planet: Body; out: number } | null {
+    const rel = new Vector3();
+    for (const b of this.system.bodies) {
+      if (!b.valid || b.kind === 'star' || (b.parent && b.parent.kind !== 'star')) continue;
+      const soi = b.soiRadius(), d = b.upos.sub(cam, rel).length();
+      if (d < soi) return { planet: b, out: smoothstep(0.3, 1, d / soi) };
+    }
+    return null;
+  }
+
+  /**
+   * How many times its size a world is drawn (the big look: BIG_PX). 1, as it is, unless it is smaller on the
+   * screen than its least size. From inside a planet's reach only its own family is drawn so: the other planets come in
+   * as the eye leaves the reach, and in open space all of them.
+   */
+  private bigScale(b: Body, pixelRadius: number, home: { planet: Body; out: number } | null): number {
+    if (!this.bigLook || b.kind === 'star' || b.kind === 'comet' || b.radius < BIG_LEAST_RADIUS || (b.meta.madeAs as { kind?: string } | undefined)?.kind === 'hole') return 1;
+    let least = BIG_PX * Math.pow(b.radius / JUPITER_RADIUS, 0.25) * this.pixelRatio;
+    if (home && familyOf(b) !== home.planet) least *= home.out;
+    if (pixelRadius >= least) return 1;
+    const host = b.parent ?? this.system.sunAt(b.pos);
+    const room = host && host !== b ? (BIG_ROOM * b.pos.distanceTo(host.pos)) / b.radius : Infinity;
+    return Math.max(1, Math.min(least / Math.max(pixelRadius, 1e-12), room));
+  }
+
+  /** A world's own exposure uniform (its surface, its ring): the surfaces' to begin with. */
+  private exposureOf(b: Body): { value: number } {
+    let e = this.exposures.get(b);
+    if (!e) this.exposures.set(b, (e = { value: this.surfaceExposure.value }));
+    return e;
+  }
+
+  /**
+   * Each world's exposure this frame, once the app has set the surfaces' (`surfaceExposure`) and each view's `own`:
+   * the surfaces', and no more than its own while it is drawn larger than it is.
+   */
+  expose(): void {
+    const x = this.surfaceExposure.value;
+    for (const [b, e] of this.exposures) {
+      const v = this.views.get(b);
+      e.value = v && v.scale > 1 ? Math.min(x, v.own) : x;
+    }
+  }
+
   changed(gone?: Body): void {
     this.occluders = null;
     if (!gone) return;
@@ -1028,6 +1111,7 @@ export class BodiesLayer {
       this.meshes.delete(gone);
     }
     this.views.delete(gone);
+    this.exposures.delete(gone);
     this.sunlit.delete(gone);
     this.sunLooks.delete(gone);
     this.looked.delete(gone);
@@ -1267,6 +1351,13 @@ export class BodiesLayer {
     g.matrix.compose(v.rel.clone().multiplyScalar(k), viewQuat, new Vector3(half * k, half * k, half * k));
     g.matrixWorldNeedsUpdate = true;
   }
+}
+
+/** The planet (or dwarf, or world round a sun) a world belongs to: itself, or what its parents go round a sun. */
+function familyOf(b: Body): Body {
+  let f = b;
+  while (f.parent && f.parent.kind !== 'star') f = f.parent;
+  return f;
 }
 
 function smoothstep(a: number, b: number, x: number): number {

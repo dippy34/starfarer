@@ -37,7 +37,7 @@ const WORLD_ROWS = [
 export type HudAction =
   | 'go' | 'centre' | 'deselect' | 'stop' | 'home'
   | 'pause' | 'faster' | 'slower' | 'reverse' | 'now'
-  | 'labels' | 'orbits' | 'minor' | 'look' | 'photo' | 'screenshot'
+  | 'labels' | 'orbits' | 'minor' | 'real-size' | 'look' | 'photo' | 'screenshot'
   // board the ship (src/game/Game.ts) or leave it; board it and fly to the selection in it; simple or pilot controls
   | 'ship' | 'ship-go' | 'pilot-controls'
   // back to today's date; back to the title screen
@@ -166,6 +166,8 @@ export interface HudState {
   watch: { text: string; ended: boolean; replay?: boolean; offer?: boolean } | null;
   /** a change starts its watch by itself: time speeds up and the camera frames what follows (the switch in More) */
   showMe: boolean;
+  /** far worlds drawn their real size (the switch in More): off, the big look draws them larger (src/render/Bodies.ts) */
+  realSize: boolean;
   /** the destination of the flight in progress */
   flying: string | null;
   labels: boolean;
@@ -432,6 +434,7 @@ ${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" ty
           <button class="switch" type="button" role="switch" data-act="labels" aria-checked="true"><span><b>Names</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="orbits" aria-checked="true"><span><b>Orbits</b></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="minor" aria-checked="false"><span><b>Orbits of asteroids and comets</b></span><i></i></button>
+          <button class="switch" type="button" role="switch" data-act="real-size" aria-checked="false"><span><b>Real size</b><small>Far planets and moons as small as they really look. Off, they are drawn bigger, in their real places, so you can see them</small></span><i></i></button>
           <button class="switch" type="button" role="switch" data-act="show-me" aria-checked="false"><span><b>Show me what happens</b><small>After you change a world, the watch starts by itself: time speeds up and the view frames what follows, until you stop it</small></span><i></i></button>
           <h3>Travel</h3>
           <button class="switch" type="button" role="switch" data-act="ship" aria-checked="false"><span><b>Spaceship</b><small>Physics all the way up: as fast as you like, never faster than light. Go there flies it</small></span><i></i></button>
@@ -928,7 +931,7 @@ export class Hud {
     const flight = this.$('.hud-flight');
     flight.hidden = !s.flying;
     if (s.flying) setText(flight.firstElementChild as HTMLElement, `Flying to ${s.flying}`);
-    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['show-me', s.showMe], ['ship', s.mode === 'ship'], ['pilot-controls', s.pilotControls]] as const) {
+    for (const [name, on] of [['labels', s.labels], ['orbits', s.orbits], ['minor', s.minor], ['real-size', s.realSize], ['show-me', s.showMe], ['ship', s.mode === 'ship'], ['pilot-controls', s.pilotControls]] as const) {
       this.$(`.switch[data-act="${name}"]`).setAttribute('aria-checked', String(on));
     }
     setText(this.$('.ship-fab span'), s.selection && !s.selection.here ? 'Fly my ship there' : 'My ship');
