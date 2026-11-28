@@ -868,10 +868,11 @@ await simpleFlightControls();
   // the chip at the top says what the camera stays on (the camera's toggle: no button for what one finger does any more)
   st = await phone.evaluate(() => ({ name: document.querySelector('#hud .chip.place b').textContent, pressed: document.querySelector('#hud .chip.place').getAttribute('aria-pressed'), look: !!document.querySelector('.look-fab') }));
   check('the chip at the top says what the camera stays on, and is its toggle', st.name === 'Earth' && st.pressed === 'true' && !st.look, JSON.stringify(st));
-  // More: How to move at the top, the missions with their count, the start menu
+  // More: the ship's row at the top, How to move next (the round ship button went into More, 28 Nov 2026), the missions with
+  // their count, the start menu
   await f.tap(await at('.hud-tabs [data-tab="more"]'));
   await f.frames(2);
-  const more = await phone.evaluate(() => ({ first: document.querySelector('.more .list').firstElementChild.textContent.trim(), missions: document.querySelector('.more .missions summary').textContent, items: document.querySelectorAll('.more .missions li').length }));
+  const more = await phone.evaluate(() => { const l = document.querySelector('.more .list'); return { first: l.firstElementChild.textContent.trim(), second: l.firstElementChild.nextElementSibling.textContent.trim(), missions: document.querySelector('.more .missions summary').textContent, items: document.querySelectorAll('.more .missions li').length }; });
   await f.tap(await at('.more .missions summary'));
   await f.frames(2);
   const open = await phone.evaluate(() => document.querySelector('.more .missions').open);
@@ -887,7 +888,7 @@ await simpleFlightControls();
     return t.top >= l.top - 1 && t.bottom <= l.bottom && w.still >= 2;
   }, null, { timeout: 60000, polling: 'raf' }).catch(() => undefined);
   const help = await phone.evaluate(() => { const t = document.querySelector('.more .help-title').getBoundingClientRect(), l = document.querySelector('.more .list').getBoundingClientRect(); return t.top >= l.top - 1 && t.bottom <= l.bottom; });
-  check('More: How to move first (and it scrolls to the help), the missions with their count', /^How to move/.test(more.first) && /\d+ of \d+ done/.test(more.missions) && more.items >= 20 && open && help, JSON.stringify({ ...more, open, help }));
+  check('More: the ship\'s row first, How to move next (and it scrolls to the help), the missions with their count', /^Fly my ship/.test(more.first) && /^How to move/.test(more.second) && /\d+ of \d+ done/.test(more.missions) && more.items >= 20 && open && help, JSON.stringify({ ...more, open, help }));
   await phone.evaluate(() => document.querySelector('.more [data-act="menu"]').scrollIntoView({ block: 'center' }));
   await phone.waitForTimeout(300);
   await f.tap(await at('.more [data-act="menu"]'));
@@ -976,6 +977,9 @@ await simpleFlightControls();
   await f.frames(3);
   await phone.waitForTimeout(400);
   const label = await phone.evaluate(() => document.querySelector('.ship-row b').textContent);
+  // (More keeps where its list was scrolled to: the row is brought into sight first, as the Spaceship switch is below)
+  await phone.evaluate(() => document.querySelector('.ship-row').scrollIntoView({ block: 'center' }));
+  await phone.waitForTimeout(300);
   await f.tap(await at('.ship-row'));
   await f.frames(4);
   st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, drive: fl.ship.drive, g: fl.ship.driveAccel / 9.80665, refusal: fl.autopilotRefusal(), fab: getComputedStyle(document.querySelector('.ship-row')).display }; });
@@ -1050,6 +1054,9 @@ await simpleFlightControls();
     tick();
   });
   await phone.screenshot({ path: path.join(outDir, 'f25-phone-air-before.png'), timeout: 180000 });
+  // (More keeps where its list was scrolled to: the row is brought into sight first, as the Spaceship switch is below)
+  await phone.evaluate(() => document.querySelector('.ship-row').scrollIntoView({ block: 'center' }));
+  await phone.waitForTimeout(300);
   await f.tap(await at('.ship-row'));
   await f.frames(4);
   st = await phone.evaluate(() => { const g = window.app.game, fl = g.flight; return { mode: g.mode, target: fl.autopilot?.target.name ?? null, refusal: fl.autopilotRefusal(), alt: fl.readout.altitude, toast: document.querySelector('.hud-toast').textContent }; });

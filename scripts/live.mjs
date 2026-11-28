@@ -510,7 +510,11 @@ for (const kind of kinds) {
       await liveWay(page, 'undo', (sel) => press(page, sel));
       await frames(page, 2);
       await find(page, 'Jupiter');
-      await press(page, '#hud .hud-flight [data-act="stop"]').catch(() => undefined);
+      // (the search flies there: it arrives, so that what is checked starts from Jupiter framed beside the card, not from
+      // wherever a flight stopped half way left it: on a runner the Stop came at 975,243 km, Jupiter at the screen's edge,
+      // 28 Nov 2026)
+      await until(page, () => !window.app.rig.autopilot, null, 600);
+      await frames(page, 3);
       await slideMass(page, touch, Math.log10(10));
       const was = await framing(page, 'Jupiter', 'Jupiter');
       await watchIt(page);
