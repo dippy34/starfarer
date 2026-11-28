@@ -499,18 +499,21 @@ for (const kind of kinds) {
       await find(page, 'Jupiter');
       await press(page, '#hud .hud-flight [data-act="stop"]').catch(() => undefined);
       await slideMass(page, touch, Math.log10(10));
+      const was = await framing(page, 'Jupiter', 'Jupiter');
       await watchIt(page);
       await until(page, () => window.app.watch.watching && !window.app.glide, null, 60);
-      const side = await Promise.all(['Io', 'Europa', 'Ganymede', 'Callisto'].map((n) => framing(page, n, 'Jupiter')));
-      const f = side[0].free, centre = { x: (f.left + f.right) / 2, y: (f.top + f.bottom) / 2 };
+      await frames(page, 3);
+      const side = [await framing(page, 'Jupiter', 'Jupiter')];
+      const f = side[0].free;
       // (and the card is whole beside it, the chip above it clear of the top's mark and of the news)
       const fits = await page.evaluate(() => {
         const card = document.querySelector('#hud .card'), chip = document.querySelector('#hud .hud-watch').getBoundingClientRect(), mark = document.querySelector('#hud .live-mark').getBoundingClientRect();
         return { whole: card.scrollHeight <= card.clientHeight + 1 && card.getBoundingClientRect().bottom <= innerHeight, chipTop: chip.top, markBottom: mark.bottom, words: document.querySelector('#hud .live-what b').scrollWidth <= document.querySelector('#hud .live-what b').clientWidth + 1 };
       });
-      check(on('held sideways, the watch frames the moons right of the panel, Jupiter in the middle of what is clear; the card is whole beside it'),
-        f.left > 300 && Math.hypot(side[0].centreAt.x - centre.x, side[0].centreAt.y - centre.y) < 8 && side.every((m) => inside(m.at, f)) && fits.whole && fits.chipTop > fits.markBottom + 40 && fits.words,
-        `the clear part ${f.left.toFixed(0)}-${f.right.toFixed(0)} x ${f.top.toFixed(0)}-${f.bottom.toFixed(0)}; Jupiter ${Math.hypot(side[0].centreAt.x - centre.x, side[0].centreAt.y - centre.y).toFixed(1)} px from its middle; card whole ${fits.whole}, the chip ${(fits.chipTop - fits.markBottom).toFixed(0)} px below the mark, "Live physics" whole ${fits.words}`);
+      // (Watch moves nothing, the camera's toggle of 28 Nov 2026: it framed the moons. It folds the card's open panel away)
+      check(on('held sideways, Watch moves nothing: Jupiter as far as it was, in the part of the view right of the panel; the card folds to its bar, whole beside it'),
+        f.left > 300 && Math.abs(side[0].d / was.d - 1) < 0.01 && within(side[0].at, f) && fits.whole && fits.chipTop > fits.markBottom + 40 && fits.words,
+        `the clear part ${f.left.toFixed(0)}-${f.right.toFixed(0)} x ${f.top.toFixed(0)}-${f.bottom.toFixed(0)}; Jupiter at ${side[0].at ? `(${side[0].at.x.toFixed(0)}, ${side[0].at.y.toFixed(0)})` : 'nowhere'}, ${(side[0].d / was.d).toFixed(4)} of its distance; card whole ${fits.whole}, the chip ${(fits.chipTop - fits.markBottom).toFixed(0)} px below the mark, "Live physics" whole ${fits.words}`);
       await page.screenshot({ path: path.join(outDir, `live-${kind}-watch-sideways.png`) });
       await press(page, '#hud .hud-watch .watch-stop');
       await page.setViewportSize({ width: 390, height: 844 });
