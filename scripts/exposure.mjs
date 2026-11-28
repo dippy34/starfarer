@@ -23,7 +23,8 @@
 //
 // The big look (scene 'big-look'): far worlds drawn larger than they are, in their real places. From open space Jupiter
 // is a lit disc in its colours, not burnt out, and the eye's exposure is the same as with Real size on (a point there);
-// from the Earth's neighbourhood the other planets are the points they are.
+// from the Earth's neighbourhood the other planets are the points they are. The planets of other stars too: 51 Peg b
+// from half an AU off its star is a lit disc, a point with Real size on.
 // Usage: node scripts/exposure.mjs [baseUrl] [outDir] [scene...]   (frames are saved to outDir/<scene>)
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
@@ -481,6 +482,39 @@ if (!only.length || only.includes('big-look')) {
     `${real.lit.toFixed(0)} px bright round it; exposure x${(real.x / open.x).toFixed(2)} of the big look's`);
   check('the big look: from the Earth\'s neighbourhood the other planets are the points they are',
     home.scale === 1 && home.scales.Mars === 1 && home.scales.Saturn === 1, JSON.stringify(home.scales));
+  // The planets of other stars too (src/render/ExoPlanetLayer.ts: bigScale): 51 Peg b from half an AU off its star.
+  await page.goto(`${base}?menu=0&time=2026-10-01T20:00:00Z&target=51%20Peg%20b`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 });
+  await page.evaluate(() => { const a = window.app; a.renderer.gl.setAnimationLoop(null); a.hud.setHidden(true); a.labels.enabled = false; a.orbits.enabled = false; });
+  const exoLook = (big) => page.evaluate(async (big) => {
+    const a = window.app, p = a.selection;
+    a.bodies.bigLook = a.exo.bigLook = big;
+    a.placeNear(p.system.host, 0.5 * 1.495978707e11, 30, 35);
+    a.center(p);
+    for (let i = 0; i < 60; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
+    const v = a.exo.views.find((e) => e.planet === p), at = a.project(v.rel);
+    const gl = a.renderer.gl.domElement, k = gl.width / innerWidth;
+    const c = Object.assign(document.createElement('canvas'), { width: gl.width, height: gl.height });
+    const g = c.getContext('2d');
+    g.drawImage(gl, 0, 0);
+    const x0 = Math.round((at.x - 20) * k), y0 = Math.round((at.y - 20) * k), n = Math.round(41 * k);
+    const d = g.getImageData(x0, y0, n, n).data;
+    let lit = 0, white = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.max(d[i], d[i + 1], d[i + 2]) > 100) lit++;
+      if (Math.min(d[i], d[i + 1], d[i + 2]) > 250) white++;
+    }
+    const least = 8 * Math.pow(p.radius / 71492e3, 0.25);
+    return { name: p.name, scale: v.scale, drawn: (v.pixelRadius * v.scale) / a.view.pixelRatio, least, lit: lit / (k * k), white: white / (k * k), x: a.bodies.surfaceExposure.value };
+  }, big);
+  const exoBig = await exoLook(true);
+  await page.screenshot({ path: path.join(outDir, 'exposure-big-look-51peg.png') });
+  const exoReal = await exoLook(false);
+  console.log(JSON.stringify({ exoBig, exoReal }));
+  check('the big look: a planet of another star (51 Peg b) from half an AU off is a lit disc its least size, not burnt out; Real size a point',
+    exoBig.name === '51 Peg b' && exoBig.scale > 1 && Math.abs(exoBig.drawn - exoBig.least) < 0.5 && exoBig.lit > 100 && exoBig.white <= 10
+      && exoReal.scale === 1 && exoReal.lit < exoBig.lit / 4 && exoReal.x / exoBig.x > 0.8 && exoReal.x / exoBig.x < 1.25,
+    `drawn ${exoBig.drawn.toFixed(1)} px (x${exoBig.scale.toFixed(0)}, least ${exoBig.least.toFixed(1)}): ${exoBig.lit.toFixed(0)} px bright, ${exoBig.white.toFixed(0)} white; real size ${exoReal.lit.toFixed(0)} px bright, exposure x${(exoReal.x / exoBig.x).toFixed(2)}`);
   await page.close();
 }
 

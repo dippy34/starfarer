@@ -510,6 +510,7 @@ export class App {
     app.galaxy = new GalaxyGlow();
     app.procStars = new ProceduralStarLayer(starField.psf, starField.colorLut, lean);
     app.exo = new ExoPlanetLayer(starField.psf, bodies.surfaceExposure);
+    app.exo.bigLook = bodies.bigLook;
     app.exo.gl = renderer.gl;
     app.tiles = new TileDetail(`${DATA}/tiles`, lean);
     app.rocks = new Rocks(app.terrain, lean);
@@ -1096,6 +1097,7 @@ export class App {
       case 'minor': this.orbits.showMinor = !this.orbits.showMinor; this.hud.toast(`Orbits of asteroids and comets ${this.orbits.showMinor ? 'on' : 'off'}`); break;
       case 'real-size':
         this.bodies.bigLook = !this.bodies.bigLook;
+        this.exo.bigLook = this.bodies.bigLook;
         remember('real-size', this.bodies.bigLook ? '0' : '1');
         this.hud.toast(this.bodies.bigLook ? 'Far planets and moons drawn bigger, so you can see them' : 'Real size: far planets and moons as small as they really look');
         break;
@@ -3147,7 +3149,7 @@ export class App {
 
   /** A planet is labelled/pickable once resolved, or while the explorer is inside its system. */
   private exoShown(ev: ExoView): boolean {
-    if (ev.pixelRadius >= 0.8 || ev.planet === this.selection) return true;
+    if (ev.pixelRadius * ev.scale >= 0.8 || ev.planet === this.selection) return true;
     const host = ev.planet.system.host;
     const dHost = host.upos.sub(this.rig.upos, new Vector3()).length();
     return dHost < Math.max(400 * AU, ev.planet.spec.aM * 25);
@@ -3328,10 +3330,13 @@ export class App {
       limitSurface(1.0, nucleus.radiance, s.presence);
     }
     for (const ev of this.exo.views) {
-      if (ev.pixelRadius <= 0.8 || ev.radiance <= 0) continue;
+      if (ev.radiance <= 0) continue;
+      // (drawn larger than it is, far off, shown by its own light: as a world of the Sun's, above)
+      ev.own = 1.6 / ev.radiance;
+      if (ev.pixelRadius <= 0.8) continue;
       const s = look(ev.rel, ev.planet.radius);
       if (ev.pixelRadius >= 2) settle(s.coverage, ev.radiance, 0.45);
-      limitSurface(1.6, ev.radiance, ev.planet.spec.rings ? Math.max(s.presence, look(ev.rel, ev.planet.radius * EXO_RING_REACH).presence) : s.presence);
+      limitSurface(1.6, ev.radiance, (1 - bigShare(ev.scale)) * (ev.planet.spec.rings ? Math.max(s.presence, look(ev.rel, ev.planet.radius * EXO_RING_REACH).presence) : s.presence));
     }
     // inside Saturn's rings the ice around the explorer is a lit surface filling much of the view
     const ringL = this.ringRadiance();
@@ -3454,7 +3459,7 @@ export class App {
       if (c.apparentMag > mLim) continue;
       consider(c, this.project(c.upos.sub(this.rig.upos, rel)), 0, 0);
     }
-    for (const ev of this.exo.views) if (this.exoShown(ev)) consider(ev.planet, this.project(ev.rel), ev.pixelRadius / this.view.pixelRatio, ev.pixelRadius > 2 ? -6 : -3);
+    for (const ev of this.exo.views) if (this.exoShown(ev)) consider(ev.planet, this.project(ev.rel), (ev.pixelRadius * ev.scale) / this.view.pixelRatio, ev.pixelRadius * ev.scale > 2 ? -6 : -3);
     for (const cv of this.craft.views) if (this.craftShown(cv)) consider(cv.craft, this.project(cv.rel), cv.pixelRadius / this.view.pixelRatio, -5);
     for (const gv of this.galaxies.views) if (gv.pixelRadius >= 2.5) considerGalaxy(gv.galaxy, this.project(gv.rel), gv.pixelRadius / this.view.pixelRatio);
     if (this.mwVolume.mesh.visible) {
@@ -3541,7 +3546,7 @@ export class App {
       if (c.apparentMag > mLim) continue;
       consider(c, c.upos.sub(this.rig.upos, rel).clone(), c.radius, 0);
     }
-    for (const ev of this.exo.views) if (this.exoShown(ev)) consider(ev.planet, ev.rel, ev.planet.radius, ev.pixelRadius > 2 ? -1 : -0.3);
+    for (const ev of this.exo.views) if (this.exoShown(ev)) consider(ev.planet, ev.rel, ev.planet.radius * ev.scale, ev.pixelRadius * ev.scale > 2 ? -1 : -0.3);
     for (const cv of this.craft.views) if (this.craftShown(cv)) consider(cv.craft, cv.rel, cv.craft.radius, -0.6);
     for (const gv of this.galaxies.views) if (gv.pixelRadius >= 2.5) consider(gv.galaxy, gv.rel, gv.galaxy.radius * 0.5, 0.5);
     for (const dv of this.deepSky.views) if (dv.pixelRadius >= 3 && dv.dist > dv.obj.radius) consider(dv.obj, dv.rel, dv.obj.radius * 0.6, 0.4);
@@ -3600,10 +3605,11 @@ export class App {
       if (t > 0 && t < bestT) { bestT = t; best = v.body; }
     }
     for (const ev of this.exo.views) {
-      if (ev.pixelRadius < 0.8) continue;
+      if (ev.pixelRadius * ev.scale < 0.8) continue;
       oc.copy(origin).sub(ev.rel);
       const b = oc.dot(d);
-      const disc = b * b - (oc.lengthSq() - ev.planet.radius * ev.planet.radius);
+      const r = ev.planet.radius * ev.scale;
+      const disc = b * b - (oc.lengthSq() - r * r);
       if (disc < 0) continue;
       const t = -b - Math.sqrt(disc);
       if (t > 0 && t < bestT) { bestT = t; best = ev.planet; }
@@ -3643,7 +3649,7 @@ export class App {
       if (c.apparentMag > mLim) continue;
       consider(c, c.upos.sub(this.rig.upos, rel).clone(), c.radius, 0);
     }
-    for (const ev of this.exo.views) if (this.exoShown(ev)) consider(ev.planet, ev.rel, ev.planet.radius, ev.pixelRadius > 2 ? -1 : -0.3);
+    for (const ev of this.exo.views) if (this.exoShown(ev)) consider(ev.planet, ev.rel, ev.planet.radius * ev.scale, ev.pixelRadius * ev.scale > 2 ? -1 : -0.3);
     for (const cv of this.craft.views) if (this.craftShown(cv)) consider(cv.craft, cv.rel, cv.craft.radius, -0.6);
     for (const gv of this.galaxies.views) if (gv.pixelRadius >= 2.5) consider(gv.galaxy, gv.rel, gv.galaxy.radius * 0.5, 0.5);
     for (const dv of this.deepSky.views) if (dv.pixelRadius >= 3 && dv.dist > dv.obj.radius) consider(dv.obj, dv.rel, dv.obj.radius * 0.6, 0.4);
@@ -3839,7 +3845,7 @@ export class App {
       const p = this.project(ev.rel);
       if (p && !this.occluded(ev.rel, null)) {
         const isSel = ev.planet === sel;
-        out.push({ rel: ev.rel.clone(), key: ev.planet.key, text: ev.planet.name, x: p.x, y: p.y, radius: ev.pixelRadius / dpr, priority: isSel ? 1e4 : 470 + Math.min(ev.pixelRadius, 20), cls: isSel ? 'selected' : 'exoplanet' });
+        out.push({ rel: ev.rel.clone(), key: ev.planet.key, text: ev.planet.name, x: p.x, y: p.y, radius: (ev.pixelRadius * ev.scale) / dpr, priority: isSel ? 1e4 : 470 + Math.min(ev.pixelRadius * ev.scale, 20), cls: isSel ? 'selected' : 'exoplanet' });
       }
     }
     for (const { bh, rel: r, shadowPx, diskPx } of this.labelledHoles()) {
@@ -4061,6 +4067,7 @@ export class App {
     this.updateActiveSystems();
     HITCH.lap('systems');
     this.exo.showOrbits = this.orbits.enabled;
+    this.exo.pixelRatio = this.view.pixelRatio;
     this.exo.update(this.rig.upos, pixelAngle, this.activeSystems, jd, now / 1000);
     this.atmospheres.updateExo(this.exo.atmospheres());
     HITCH.lap('exo');
@@ -4130,6 +4137,7 @@ export class App {
     psf.uPointLight.value = this.vr.active ? 1.41 : 0.79;
     this.bodies.surfaceExposure.value = xSurf;
     this.bodies.expose();
+    this.exo.expose(xSurf);
     this.underwater.update(this.walk.underwater(), this.renderer.camera, xSurf, now / 1000);
     this.bodies.lightExposure.value = xLight;
     for (const c of this.catalogs) c.update(this.camPc, mLim, this.fieldMinDistPc);
