@@ -257,7 +257,8 @@ for (const kind of kinds) {
     if (from === 'more') {
       await press(page, '#hud .hud-tabs [data-tab="more"]');
       await frames(page, 2);
-      check(on('Share is at the top of More, under How to move, in sight'), await page.evaluate(() => [...document.querySelectorAll('#hud .sheet.more .list > .row')].slice(0, 2).some((r) => r.dataset.act === 'share')) && await reachable(page, '#hud .sheet.more [data-act="share"]'));
+      // (More's first row is the ship's since 28 Nov 2026, the round button gone into it: then How to move, then Share)
+      check(on('Share is at the top of More, under the ship\'s row and How to move, in sight'), await page.evaluate(() => { const r = [...document.querySelectorAll('#hud .sheet.more .list > .row')]; return r[0]?.dataset.act === 'ship-go' && r[1]?.dataset.help !== undefined && r[2]?.dataset.act === 'share'; }) && await reachable(page, '#hud .sheet.more [data-act="share"]'));
       await page.screenshot({ path: path.join(outDir, `share-${kind}-more.png`) });
       await press(page, '#hud .sheet.more [data-close]');
       await page.evaluate(() => { const a = window.app; a.select(a.findByName('Moon')); });
