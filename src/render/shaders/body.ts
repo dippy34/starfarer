@@ -69,6 +69,7 @@ uniform vec3 uColor;          // base colour (linear) for map-less bodies
 uniform float uAlbedoScale;   // multiplies texture (linear) to obtain reflectance
 uniform float uAirless;       // 1 = Lommel-Seeliger, 0 = Lambert
 uniform float uBands;         // 1 = procedural gas-giant banding
+uniform float uGiant;         // 1 = a giant of gas (its clouds get detail beyond its map from close: floating over them)
 uniform float uSeed;
 uniform float uProc;          // 1 = procedural surface (bodies without a map)
 uniform float uIcy;           // 0 rock .. 1 ice (bright, cracked, fresh crater rays)
@@ -430,6 +431,19 @@ void main() {
     float lat = asin(clamp(vNormalBF.z, -1.0, 1.0));
     float b = noise1(lat * 18.0 + uSeed) * 0.6 + noise1(lat * 45.0 + uSeed * 1.7) * 0.4;
     albedo *= 0.86 + 0.24 * b;
+  }
+  // A giant's clouds from close (floating over them, App.floatOver): its map's texels spread over many pixels, a blur; the
+  // cloud structure finer than the map, swirls drawn out along the bands (stretched three to one east-west, warped), at a
+  // few hundred to some tens of kilometres, fading in only as the pixels come to be finer than the map: from afar the
+  // giant is as its map has it.
+  if (uGiant > 0.5) {
+    float near = smoothstep(4e-4, 6e-5, length(fwidth(nB)));
+    if (near > 0.0) {
+      vec3 q = nB * vec3(700.0, 700.0, 2100.0) + uSeed * 0.37;
+      vec3 w = vec3(bfbm(q * 0.45), bfbm(q * 0.45 + 7.3), bfbm(q * 0.45 + 13.1)) - 0.5;
+      float c = bfbm(q + 2.6 * w) * 0.7 + bfbm(q * 3.1 + 1.7 * w) * 0.3;
+      albedo *= 1.0 + near * 1.1 * (c - 0.5);
+    }
   }
   // close-up ground: scanned materials (regolith, rock, sand, soil, snow, forest floor) as detail
   // around the world's own colour, and their grain in the lighting
