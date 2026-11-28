@@ -296,8 +296,8 @@ function within(x: number, lo: number, hi: number, what: string): number {
   return x;
 }
 
-/** the ranges of what a body may be: G x mass up to that of 10⁴ Suns (m³/s²), radius up to 70 AU (m), a place within 10⁵ light years (m), a speed below light's (m/s), J₂R² (m²) */
-const GM_MOST = 1.33e24, RADIUS_MOST = 1e13, PLACE_MOST = 1e21, SPEED_MOST = 299_792_458, ZON_MOST = 1e18;
+/** the ranges of what a body may be: G x mass up to that of ten billion Suns (m³/s²: the heaviest black hole made), radius up to 670 AU (m: its horizon is 200 AU), a place within 10⁵ light years (m), a speed below light's (m/s), J₂R² (m²) */
+const GM_MOST = 1.4e30, RADIUS_MOST = 1e14, PLACE_MOST = 1e21, SPEED_MOST = 299_792_458, ZON_MOST = 1e18;
 /** dates: within a hundred million years of J2000 (TDB Julian), and a simulation's time within that (s) */
 const JD_RANGE: readonly [number, number] = [2451545 - 3.7e10, 2451545 + 3.7e10];
 const TIME_MOST = 3.2e15;

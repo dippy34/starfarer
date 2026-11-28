@@ -105,9 +105,52 @@ need the OpenCode workspace's region set to Global.
     live physics); Claude runs the rest. `npm run check` passes.
 - **Don't touch:** the clock and its rates (`src/core/time.ts`), the top chip, the watch.
 
+### `task/less-on-screen`: less on the screen, a tap or two away
+
+- **Status:** open. Medium.
+- **Model:** `anthropic/claude-sonnet-5-5`
+- **The problem:** the owner, 28 Nov 2026: "there's just so much UI and different buttons that it takes up way too
+  much of the actual screen. So I would like to make it a little more sleek and maybe put things into more
+  categories, like have a couple more clicks". On an upright phone (390x844) today: the two chips at the top, the
+  round "My ship" button over the view (bottom right; "Fly my ship there" when a far world is selected), the
+  card's bar, the tab bar; with live physics on, a wide bar at the top ("Live physics since ...", Undo, "Back to
+  reality"); after a change, the watch chip ("See what it does", Watch, a cross); the card opened shows Look at,
+  Share, the five powers and the facts in plain words at once.
+- **What to do:** (read `HANDOFF.md` "The big round" first; all of this is `src/ui/Hud.ts`, `src/ui/styles.css`
+  and the few lines of `src/app/App.ts` that feed them)
+  1. *The ship's round button goes.* "My ship" moves to More, as the first row of its list ("Fly my ship": it
+     boards the ship, as the round button did; with a far world selected, "Fly my ship there" as today). The
+     Spaceship switch under Travel stays. Nothing else is over the view's lower right.
+  2. *Live physics, a small pill.* The wide bar becomes a pill at the top, under the chips' line or in it where
+     there is room: a dot and "Live" (and "since 1 Oct" when the date is not today), no wider than the place chip.
+     Tapped, it opens a small sheet: when it began, Undo, "Back to reality" (each a thumb high, with what they do
+     in a plain line), and the log of what happened (`physics.status().log`). Undo and Back to reality do just
+     what they do now.
+  3. *The watch chip, one button.* "See what it does" and Watch become one button, "▶ Watch what it does", with its
+     cross beside it; while watching, as today ("Watching: 1 day a second", Stop).
+  4. *The card opened: powers first, facts behind Info.* Opened, the card shows its powers row and a row with
+     Look at, Share and "Info"; the facts in plain words (and More science under them) unfold under Info, one
+     tap more. The card's height opened on an upright phone at most 45 % of the screen.
+  5. *The clock chip, one line.* At real time it reads only the date; when time runs otherwise, the date and the
+     speed in words ("1 day a second") on one line, shortened to fit ("1 d/s" is not plain: say "fast" if it
+     must). Tapped, Time opens as now.
+- **Done when:**
+  - Browser checks in `scripts/touch.mjs` (upright, on its side, a desktop size): no round ship button; More's
+    first row boards the ship; the live pill is at most 44 px high and no wider than the place chip, and opens its
+    sheet with Undo and Back to reality working; the watch button; the card opened under 45 % of the height with
+    the facts behind Info; nothing overlaps on every phone size the touch suite already tries. Checks that pinned
+    the old layout pin the new one exactly (changed on purpose, none loosened); `scripts/live.mjs` presses of
+    `.live-back`, `.live-undo`, the watch chip and the card's facts follow the new places.
+  - Pictures, upright at 390x844: at rest, a card opened, live physics on with its sheet open, the watch button.
+  - Run `scripts/touch.mjs`, and `LIVE_ONLY=watch,made LIVE_KINDS=phone` of `scripts/live.mjs`; Claude runs the
+    whole set after. `npm run check` passes.
+- **Don't touch:** `src/render` and `src/app/Walk.ts`, the camera rig, the place chip's toggle (Stay on it / Moving
+  freely), the Add and placing panels (just changed), the ship's own instruments.
+
 ### `task/make-any-number`: make anything, with any numbers
 
-- **Status:** open. Large.
+- **Status:** done 28 Nov 2026: run 46125570414 on Claude Sonnet 5.5 ($2.56), reviewed by Claude (its old `made`, `place` and
+  `create` checks rewritten to the new flow by Claude). Large.
 - **Model:** `anthropic/claude-sonnet-5-5`
 - **The problem:** the owner, 28 Nov 2026, after playing: "What's the point of making a planet like Earth or like
   Jupiter? It would be so much easier if you just added make a planet and you could put however many Earths it

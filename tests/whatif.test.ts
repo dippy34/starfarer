@@ -55,7 +55,7 @@ describe('what can be added to a world', () => {
     const { named } = await setup();
     expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
     expect(canAdd(named('Pluto'), 0)).toEqual(['moon']);
-    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS, 'hole']);
+    expect(canAdd(named('Sun'), 0)).toEqual(['planet', 'star', 'hole']);
     expect(canAdd(named('Moon'), 0)).toEqual([]);   // a moon of a moon: not yet
     expect(canAdd(named('Earth'), MADE_MOST)).toEqual([]);
     expect(canAdd(named('Sun'), MADE_MOST)).toEqual([]);
@@ -341,12 +341,12 @@ describe('the size of what is made, from its mass', () => {
     expect(madeWords('moon', 1e20, true).what).toMatch(/^Ice and rock, 25\d km in radius$/);
   });
 
-  it('its slider runs from a small moon to two suns across the four kinds, even in the logarithm, and finds the mass Add made near it', () => {
-    expect(MADE_MASS.moon[0]).toBeCloseTo(7.346e16, -12);
-    expect(MADE_MASS.sun[1]).toBe(2 * M_SUN);
-    expect(MADE_MASS.earth[1]).toBe(MADE_MASS.jupiter[0]);
-    expect(MADE_MASS.jupiter[1]).toBe(MADE_MASS.sun[0]);
+  it('its slider runs over the whole range of its kind (a millionth of an Earth to 10,000 Earths; 0.08 to 150 Suns), even in the logarithm, and finds the mass Add made near it', () => {
+    expect(MADE_MASS.moon).toEqual([1e-6 * M_EARTH, 1e4 * M_EARTH]);
+    expect(MADE_MASS.sun).toEqual([0.08 * M_SUN, 150 * M_SUN]);
     expect(MADE_MASS.sun[0]).toBe(STAR_FROM);
+    expect(MADE_MASS.hole).toEqual([M_SUN, 1e10 * M_SUN]);
+    for (const kind of ['moon', 'earth', 'jupiter', ...WORLD_KINDS] as const) expect(MADE_MASS[kind]).toEqual([1e-6 * M_EARTH, 1e4 * M_EARTH]);
     for (const kind of ['moon', 'earth', 'jupiter', 'sun'] as const) {
       const [lo, hi] = MADE_MASS[kind], base = Math.sqrt(lo * hi) * 1.7;
       expect(madeMassAt(kind, 0, base) / lo).toBeCloseTo(1, 12);
@@ -378,26 +378,17 @@ describe('worlds of a generated look', () => {
   const off = (a: number, b: number) => Math.abs(a / b - 1);
   const ROCKY = ['terran', 'ocean', 'desert', 'lava'] as const;
 
-  it('have the masses they are made with: rock, ocean, desert and lava from a twentieth of the Earth to ten Earths; ice from a thousandth to 5; ice giants from 5 to 50; gas giants from 10 Earths to 13 Jupiters', () => {
-    for (const kind of ROCKY) {
+  it('have the masses of a planet: from a millionth of an Earth to 10,000 Earths on the slider, whatever their look', () => {
+    for (const kind of WORLD_KINDS) {
       const [lo, hi] = MADE_MASS[kind];
-      expect(off(lo, 0.05 * M_EARTH)).toBeLessThan(1e-12);
-      expect(off(hi, 10 * M_EARTH)).toBeLessThan(1e-12);
+      expect(off(lo, 1e-6 * M_EARTH)).toBeLessThan(1e-12);
+      expect(off(hi, 1e4 * M_EARTH)).toBeLessThan(1e-12);
     }
-    const [ilo, ihi] = MADE_MASS.ice;
-    expect(off(ilo, 0.001 * M_EARTH)).toBeLessThan(1e-12);
-    expect(off(ihi, 5 * M_EARTH)).toBeLessThan(1e-12);
-    const [glo, ghi] = MADE_MASS.icegiant;
-    expect(off(glo, 5 * M_EARTH)).toBeLessThan(1e-12);
-    expect(off(ghi, 50 * M_EARTH)).toBeLessThan(1e-12);
-    const [gilo, gihi] = MADE_MASS.giant;
-    expect(off(gilo, 10 * M_EARTH)).toBeLessThan(1e-12);
-    expect(off(gihi, 13 * M_JUPITER)).toBeLessThan(1e-12);
   });
 
   it('of rock, ocean, desert and lava: as measured rocky worlds are (Chen & Kipping 2017), R = R⊕ (M / M⊕)^0.279, at the bottom, at 1 Earth and at the top of their mass', () => {
     for (const kind of ROCKY) {
-      const [lo, hi] = MADE_MASS[kind];
+      const lo = MADE_MASS[kind][0], hi = 10 * M_EARTH;
       for (const kg of [lo, M_EARTH, hi]) {
         const s = madeSize(kind, kg, false);
         expect(s.rule).toBe('terran');
@@ -413,7 +404,7 @@ describe('worlds of a generated look', () => {
   });
 
   it('of ice: a ball of ice and rock (1,500 kg/m³), the rule \'ice\', at the bottom, middle and top of its mass', () => {
-    const [lo, hi] = MADE_MASS.ice, mid = Math.sqrt(lo * hi);
+    const lo = 0.001 * M_EARTH, hi = 5 * M_EARTH, mid = Math.sqrt(lo * hi);
     for (const kg of [lo, mid, hi]) {
       const s = madeSize('ice', kg, false);
       expect(s.rule).toBe('ice');
@@ -458,13 +449,16 @@ describe('worlds of a generated look', () => {
   it('each kind has a finite positive radius at both ends of its mass, and is named in words: "A" or "An", and its plain name', () => {
     for (const kind of WORLD_KINDS) {
       const [lo, hi] = MADE_MASS[kind];
-      for (const kg of [lo, hi]) {
+      for (const kg of [lo, 3 * M_EARTH]) {
         const r = madeSize(kind, kg, false).radius;
         expect(Number.isFinite(r) && r > 0).toBe(true);
         const w = madeWords(kind, kg, false).what;
         expect(w.startsWith('A ') || w.startsWith('An ')).toBe(true);
         expect(w).toContain(WORLD_NAME[kind]);
       }
+      // (at the top of the slider every look is a brown dwarf: 10,000 Earths is 31 Jupiters)
+      expect(madeSize(kind, hi, false)).toEqual({ radius: R_JUPITER, rule: 'brown dwarf' });
+      expect(madeWords(kind, hi, false).what).toBe("A brown dwarf, Jupiter's size");
     }
     expect(WORLD_NAME).toEqual({
       terran: 'rocky world', ocean: 'ocean world', desert: 'desert world', lava: 'lava world', ice: 'icy world', giant: 'gas giant', icegiant: 'ice giant',
@@ -473,7 +467,7 @@ describe('worlds of a generated look', () => {
 
   it('can be added to a star, and to nothing else but a planet or dwarf planet to a moon', async () => {
     const { named } = await setup();
-    expect(canAdd(named('Sun'), 0)).toEqual(['earth', 'jupiter', 'sun', ...WORLD_KINDS, 'hole']);
+    expect(canAdd(named('Sun'), 0)).toEqual(['planet', 'star', 'hole']);
     expect(canAdd(named('Earth'), 0)).toEqual(['moon']);
   });
 

@@ -1,6 +1,6 @@
 import { CATEGORIES, type Category, type Destination, type Picture } from '../app/destinations';
 import type { PowerName, PowerTable } from '../app/powersFor';
-import type { Kind } from '../app/WhatIf';
+import type { Choice } from '../app/WhatIf';
 import { type Box, isClear, largestClear, worth } from '../core/clearArea';
 import { touchFirst } from '../core/device';
 import { PRODUCT_NAME, STORAGE_PREFIX } from '../core/product';
@@ -8,18 +8,12 @@ import { type AimView, aimShape } from './aimShape';
 import { ICON } from './icons';
 import { OfflinePanel } from './OfflinePanel';
 
-/** The worlds Add makes with a generated look (src/app/WhatIf.ts: WORLD_KINDS), in order: the kind, its icon, its name, and what it is. */
 /** the picture of a world being made, beside its look's controls (CSS px): the app draws it at this size times the screen's density */
 export const PORTRAIT_CSS = { width: 128, height: 96 } as const;
 
-const WORLD_ROWS = [
-  ['terran', ICON.rocky, 'A rocky world', 'Land, seas and clouds, with a look of its own'],
-  ['ocean', ICON.rocky, 'An ocean world', 'Water almost everywhere, with a little land'],
-  ['desert', ICON.rocky, 'A desert world', 'Dry and dusty, like Mars'],
-  ['lava', ICON.rocky, 'A lava world', 'Scorched rock, glowing where it is hottest'],
-  ['ice', ICON.rocky, 'An icy world', 'Ice over rock, from a small icy moon to a few Earths'],
-  ['giant', ICON.giant, 'A gas giant', 'Banded clouds and storms, from 10 Earths to 13 Jupiters'],
-  ['icegiant', ICON.giant, 'An ice giant', 'Cloudy and blue-green, like Uranus and Neptune'],
+/** the types a planet can be given (src/app/WhatIf.ts: WORLD_KINDS; its look, src/render/PlanetLook.ts), in order, in words */
+const TYPES = [
+  ['terran', 'Rocky'], ['ocean', 'Ocean'], ['desert', 'Desert'], ['lava', 'Lava'], ['ice', 'Icy'], ['giant', 'Gas giant'], ['icegiant', 'Ice giant'],
 ] as const;
 
 /**
@@ -45,10 +39,10 @@ export type HudAction =
   // night at a place: on to its sunrise; land and walk here (src/app/Walk.ts); fly freely by touch, or stop (src/app/FreeFly.ts)
   | 'sunrise' | 'walk' | 'free'
   // what if (src/app/WhatIf.ts): give the selected world a moon; the selected star a planet like the Earth, one like Jupiter, another sun
-  | 'add-moon' | 'add-earth' | 'add-jupiter' | 'add-sun'
-  // a made world of a generated look (src/app/WhatIf.ts: WORLD_KINDS), and another look for the one being put in place
-  | 'add-terran' | 'add-ocean' | 'add-desert' | 'add-lava' | 'add-ice' | 'add-giant' | 'add-icegiant' | 'new-look' | 'rings'
-  // a black hole of your own (1 to 20 Suns)
+  | 'add-moon' | 'add-planet' | 'add-star'
+  // another look for the world being put in place, and its rings
+  | 'new-look' | 'rings'
+  // a black hole of your own (1 Sun to 10 billion)
   | 'add-hole'
   // Create (the tab bar): what can be made, on what is here (src/app/App.ts create)
   | 'create'
@@ -84,6 +78,12 @@ export interface HudHost {
   setMadeMass(s: number): void;
   /** the Colour slider of a world of a generated look being put in place: its colours turned `s` of a turn (0 to 1) */
   setMadeHue(s: number): void;
+  /** the Mass field of a world being put in place was left, or Enter pressed: null if `typed` is its mass now (Earths for a planet or a moon, Suns for a star or a black hole), else why not (plain words) */
+  typeMadeMass(typed: string): string | null;
+  /** the Type of a planet being put in place was chosen (a kind of src/app/WhatIf.ts: WORLD_KINDS) */
+  setMadeType(type: string): void;
+  /** "Set size" of a world being put in place: its radius typed in Earth radii (null: "Size from mass"); null if taken, else why not */
+  setMadeSize(typed: string | null): string | null;
   /** the Name field of a world being put in place was left, or Enter pressed: null if `typed` is its name now, else why not (plain words) */
   renameMade(typed: string): string | null;
   /** a saved scene was chosen from More's list (src/app/Saves.ts), or its Delete tapped twice */
@@ -112,7 +112,7 @@ export interface HudState {
     /** every power: whether it works here, or the short reason it does not (src/app/powersFor.ts) */
     powers: PowerTable;
     /** what can be added to it (src/app/WhatIf.ts); nothing: an empty list */
-    add: readonly Kind[];
+    add: readonly Choice[];
     /**
      * Its mass, where it has a known one to change: where the slider stands, the mass and its factor
      * in words, what changes with it (`says`), and what the textbook predicts of a body of that mass
@@ -140,6 +140,10 @@ export interface HudState {
       /** it has a generated look that New look changes */ newLook: boolean;
       /** whether it has rings (Add rings, Remove rings), or null: it cannot have them (it is not of a generated look) */ rings: boolean | null;
       /** how far its colours are turned (the Colour slider, 0 to 1), or null: it has no such colours */ hue: number | null;
+      /** its mass as the field shows it, and the unit (Earths for a planet or a moon, Suns for a star or a black hole) */ unit: 'Earths' | 'Suns'; amount: string;
+      /** its type (a planet: the look it has), or null: it has none to choose */ type: string | null;
+      /** the radius the explorer set by hand, in Earth radii as the field shows it, or null: its size follows its mass; and whether its size can be set (not a star's or a black hole's) */ sizeByHand: string | null; canSize: boolean;
+      /** its radius as it is now, in Earth radii as the field shows it */ radius: string;
       /** a picture of it as it looks now (src/render/PlanetPortrait.ts), and what it is a picture of; null: none (it is not of a generated look) */
       portrait: { key: string; width: number; height: number; pixels: Uint8Array } | null;
     } | null;
@@ -343,7 +347,9 @@ const TEMPLATE = `
             <div class="power-read"><span><b></b><small></small></span><button class="place-done" type="button" data-act="place-done">Done</button></div>
             <label class="name-row"><span>Name</span><input class="name-field" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" aria-describedby="name-says"/></label>
             <p class="name-says" id="name-says" role="status" hidden></p>
-            <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass"/>
+            <label class="name-row"><span>Mass</span><input class="mass-field" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" enterkeyhint="done" aria-describedby="mass-says" aria-label="Its mass, typed"/><span class="mass-unit"></span></label>
+            <p class="name-says mass-says" id="mass-says" role="status" hidden></p>
+            <input class="slider" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Its mass, on a slider from the lightest to the heaviest"/>
             <div class="look-box">
               <div class="look-controls">
                 <div class="look-row"><button class="new-look" type="button" data-act="new-look" hidden>New look</button><button class="made-rings" type="button" data-act="rings" aria-pressed="false" hidden>Add rings</button></div>
@@ -351,6 +357,12 @@ const TEMPLATE = `
               </div>
               <canvas class="portrait" role="img" aria-label="How it looks" style="width:${PORTRAIT_CSS.width}px;height:${PORTRAIT_CSS.height}px" hidden></canvas>
             </div>
+            <div class="name-row kind-row">
+              <label class="type-row" hidden><span>Type</span><select class="type-select" aria-label="Its type: the look it is drawn with">${TYPES.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></label>
+              <span class="size-row" hidden><button class="size-hand" type="button" aria-pressed="false">Set size</button></span>
+            </div>
+            <label class="name-row size-by" hidden><input class="size-field" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" enterkeyhint="done" aria-describedby="size-says" aria-label="Its radius in Earth radii"/><span>Earth radii</span></label>
+            <p class="name-says size-says" id="size-says" role="status" hidden></p>
           </div>
           <p class="power-hint">
             <span class="hint-move"><span class="touch-only">Put a finger on it and drag it to where you want it.</span><span class="mouse-only">Drag it to where you want it.</span> Time waits while you hold it.</span>
@@ -368,12 +380,9 @@ const TEMPLATE = `
         </div>
         <div class="power-panel" data-panel="add" hidden>
           <button class="row" type="button" data-act="add-moon">${ICON.moon}<span class="row-text"><b>A moon</b><small>A new one, on a circle round it, between you and it</small></span></button>
-          <button class="row" type="button" data-act="add-earth">${ICON.rocky}<span class="row-text"><b>A planet like Earth</b><small>Its size and mass, on a circle round this star</small></span></button>
-          <button class="row" type="button" data-act="add-jupiter">${ICON.giant}<span class="row-text"><b>A planet like Jupiter</b><small>318 Earths: heavy enough to throw worlds out</small></span></button>
-          <button class="row" type="button" data-act="add-sun">${ICON.sun}<span class="row-text"><b>A second sun</b><small>A star like the Sun: they go round each other</small></span></button>
-          <p class="power-hint add-worlds-head" hidden>Or a world of your own, with a look of its own:</p>
-${WORLD_ROWS.map(([kind, icon, name, line]) => `          <button class="row" type="button" data-act="add-${kind}" hidden>${icon}<span class="row-text"><b>${name}</b><small>${line}</small></span></button>`).join('\n')}
-          <button class="row" type="button" data-act="add-hole" hidden>${ICON.hole}<span class="row-text"><b>A black hole</b><small>Heavier than the Sun, and no light: 1 to 20 Suns</small></span></button>
+          <button class="row" type="button" data-act="add-planet" hidden>${ICON.rocky}<span class="row-text"><b>A planet</b><small>Rocky, icy or gas: you give it any mass, from a speck to a giant</small></span></button>
+          <button class="row" type="button" data-act="add-star" hidden>${ICON.sun}<span class="row-text"><b>A star</b><small>It shines by itself: 0.08 to 150 Suns</small></span></button>
+          <button class="row" type="button" data-act="add-hole" hidden>${ICON.hole}<span class="row-text"><b>A black hole</b><small>Heavier than the Sun, and no light: 1 Sun to 10 billion</small></span></button>
           <p class="power-hint">It starts between you and this world, with time waiting: put it where you want it, give it the mass you want, then Done. After that it is moved, made heavier and removed like any other.</p>
         </div>
         <div class="facts" hidden>
@@ -530,6 +539,11 @@ export class Hud {
   private readonly placeSlider: HTMLInputElement;
   private readonly hueSlider: HTMLInputElement;
   private readonly nameField: HTMLInputElement;
+  private readonly massField: HTMLInputElement;
+  private readonly sizeField: HTMLInputElement;
+  private massing = false;
+  private sizing2 = false;
+  private sizeOpen = false;
   /** the Name field has the focus: what is typed in it is not written over */
   private naming = false;
   private readonly cats: HTMLElement;
@@ -551,6 +565,8 @@ export class Hud {
     this.placeSlider = el.querySelector<HTMLInputElement>('.card .placing .slider')!;
     this.hueSlider = el.querySelector<HTMLInputElement>('.card .placing .hue-slider')!;
     this.nameField = el.querySelector<HTMLInputElement>('.card .placing .name-field')!;
+    this.massField = el.querySelector<HTMLInputElement>('.card .placing .mass-field')!;
+    this.sizeField = el.querySelector<HTMLInputElement>('.card .placing .size-field')!;
     this.cats = this.$('.cats');
     this.list = this.$('.explore .list');
     this.toastEl = this.$('.hud-toast');
@@ -607,6 +623,30 @@ export class Hud {
       if (e.key === 'Enter') { e.preventDefault(); this.nameField.blur(); }
       else if (e.key === 'Escape') { this.nameField.value = this.nameWas; this.nameField.blur(); }
     });
+    // its mass, typed: taken when the field is left or Enter is pressed; every key typed in it is its own
+    this.massField.addEventListener('focus', () => { this.massing = true; });
+    this.massField.addEventListener('input', () => this.sayMass(''));
+    this.massField.addEventListener('blur', () => { this.massing = false; this.takeMass(); });
+    this.massField.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); this.massField.blur(); }
+      else if (e.key === 'Escape') { this.massField.value = this.massWas; this.sayMass(''); this.massField.blur(); }
+    });
+    // its type, and its size set by hand
+    const typeSelect = el.querySelector<HTMLSelectElement>('.card .type-select')!;
+    typeSelect.addEventListener('change', () => this.host.setMadeType(typeSelect.value));
+    typeSelect.addEventListener('keydown', (e) => e.stopPropagation());
+    el.querySelector<HTMLElement>('.card .size-hand')!.addEventListener('click', () => {
+      if (this.sizeOpen || this.sizeSet) { this.sizeOpen = false; this.sayLine('.size-says', ''); this.host.setMadeSize(null); } else { this.sizeOpen = true; this.sizeField.focus(); }
+    });
+    this.sizeField.addEventListener('focus', () => { this.sizing2 = true; });
+    this.sizeField.addEventListener('input', () => this.sayLine('.size-says', ''));
+    this.sizeField.addEventListener('blur', () => { this.sizing2 = false; this.takeSize(); });
+    this.sizeField.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); this.sizeField.blur(); }
+      else if (e.key === 'Escape') { this.sizeField.value = this.sizeWas; this.sayLine('.size-says', ''); this.sizeField.blur(); }
+    });
     for (const s of el.querySelectorAll<HTMLElement>('.sheet')) this.swipeToClose(s);
     // full screen, where the browser offers it (an iPhone does not; there the app is added to the home screen)
     const full = this.$('[data-fullscreen]');
@@ -614,6 +654,37 @@ export class Hud {
     document.addEventListener('fullscreenchange', () => setText(full.querySelector('b')!, document.fullscreenElement ? 'Leave full screen' : 'Full screen'));
     this.trackKeyboard();
     this.showSlot();
+  }
+
+  /** what the Mass and Size fields were last given by the app (Escape puts it back; a field left as it was changes nothing) */
+  private massWas = '';
+  private sizeWas = '';
+  private sizeSet = false;
+
+  /** The Mass field was left: the app takes the number, or says why not (the field keeps what was typed, with the line under it) and the mass stays. */
+  private takeMass(): void {
+    const typed = this.massField.value.trim();
+    if (typed === this.massWas) { this.sayMass(''); return; }
+    const why = this.host.typeMadeMass(typed);
+    this.sayMass(why ?? '');
+    if (!why) this.massWas = '';
+  }
+
+  private sayMass(why: string): void { this.sayLine('.mass-says', why); }
+
+  private sayLine(selector: string, why: string): void {
+    const line = this.el.querySelector<HTMLElement>(`.card ${selector}`)!;
+    setText(line, why);
+    line.hidden = !why;
+  }
+
+  /** The Size field was left: the app takes the radius, or says why not. */
+  private takeSize(): void {
+    const typed = this.sizeField.value.trim();
+    if (typed === this.sizeWas || !typed) { this.sayLine('.size-says', ''); return; }
+    const why = this.host.setMadeSize(typed);
+    this.sayLine('.size-says', why ?? '');
+    if (!why) this.sizeWas = '';
   }
 
   /** the name the Name field was last given by the app (Escape puts it back) */
@@ -1158,8 +1229,7 @@ export class Hud {
     const addPanel = card.querySelector<HTMLElement>('[data-panel="add"]')!;
     addPanel.hidden = this.power !== 'add';
     if (this.power === 'add') {
-      for (const kind of ['moon', 'earth', 'jupiter', 'sun', ...WORLD_ROWS.map((r) => r[0]), 'hole'] as const) addPanel.querySelector<HTMLElement>(`[data-act="add-${kind}"]`)!.hidden = !sel.add.includes(kind);
-      addPanel.querySelector<HTMLElement>('.add-worlds-head')!.hidden = !WORLD_ROWS.some((r) => sel.add.includes(r[0])) && !sel.add.includes('hole');
+      for (const kind of ['moon', 'planet', 'star', 'hole'] as const) addPanel.querySelector<HTMLElement>(`[data-act="add-${kind}"]`)!.hidden = !sel.add.includes(kind);
     }
     const movePanel = card.querySelector<HTMLElement>('[data-panel="move"]')!;
     movePanel.hidden = !moving;
@@ -1176,13 +1246,25 @@ export class Hud {
       for (const h of ['keep', 'circle', 'throw'] as const) movePanel.querySelector(`[data-act="move-${h}"]`)!.setAttribute('aria-pressed', String(how === h));
       const place = movePanel.querySelector<HTMLElement>('.placing')!;
       place.hidden = !sel.place;
-      if (!sel.place) this.sayName('');
+      if (!sel.place) { this.sayName(''); this.sayMass(''); this.sayLine('.size-says', ''); this.sizeOpen = false; }
       if (sel.place) {
         // (the name it has, unless the field is being typed in or the line under it is saying why the last was refused)
         if (!this.naming && !place.querySelector<HTMLElement>('.name-says')!.textContent && this.nameField.value !== sel.place.name) this.nameField.value = sel.place.name;
         if (!this.naming && !place.querySelector<HTMLElement>('.name-says')!.textContent) this.nameWas = sel.place.name;
         setText(place.querySelector('.power-read b')!, sel.place.mass);
         setText(place.querySelector('.power-read small')!, sel.place.what);
+        // (its mass as a number, in the unit of what it is, unless it is being typed or the line under it says why the last was refused)
+        if (!this.massing && !place.querySelector<HTMLElement>('.mass-says')!.textContent) { this.massField.value = sel.place.amount; this.massWas = sel.place.amount; }
+        setText(place.querySelector('.mass-unit')!, sel.place.unit);
+        place.querySelector<HTMLElement>('.type-row')!.hidden = sel.place.type === null;
+        if (sel.place.type !== null) place.querySelector<HTMLSelectElement>('.type-select')!.value = sel.place.type;
+        place.querySelector<HTMLElement>('.size-row')!.hidden = !sel.place.canSize;
+        this.sizeSet = sel.place.sizeByHand !== null;
+        const by = place.querySelector<HTMLElement>('.size-by')!, hand = place.querySelector<HTMLElement>('.size-hand')!;
+        by.hidden = !(this.sizeOpen || this.sizeSet);
+        setText(hand, this.sizeOpen || this.sizeSet ? 'Size from mass' : 'Set size');
+        hand.setAttribute('aria-pressed', String(this.sizeOpen || this.sizeSet));
+        if (!this.sizing2 && !place.querySelector<HTMLElement>('.size-says')!.textContent) { this.sizeField.value = sel.place.sizeByHand ?? sel.place.radius; this.sizeWas = this.sizeField.value; }
         place.querySelector<HTMLElement>('.new-look')!.hidden = !sel.place.newLook;
         const rings = place.querySelector<HTMLElement>('.made-rings')!;
         rings.hidden = sel.place.rings === null;
