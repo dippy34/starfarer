@@ -2000,10 +2000,10 @@ export class App {
     this.watch.start(f.rate, this.rateState());
     this.clock.rate = f.rate;
     this.clock.paused = false;
-    // (the chip and the mark are drawn first, and an open panel of the card makes room on an upright
-    // screen: the frame is fitted to what they leave clear)
+    // (an open panel of the card folds away, giving the view room to watch in; the camera stays as the toggle has it: a watch
+    // only runs time, the owner, 28 Nov 2026)
+    this.hud.makeRoom();
     this.updateHud();
-    // (the camera stays as the toggle has it: a watch only runs time; the owner, 28 Nov 2026)
     this.framed = null;
   }
 
