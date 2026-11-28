@@ -110,6 +110,8 @@ const starCap = (small: number, cssRadius: number) => small + (FACE_KEY - small)
  * it was 3.5 for a world, 8 for a star, 30 for a black hole).
  */
 const ARRIVE = { world: 2.2, ringed: 3.2, star: 4, hole: 10 };
+/** a sun's reach, for what the camera stays on or goes along with (App.reachOf), in its radii: 100, half an AU for the Sun */
+const REACH_STAR = 100;
 /** a name a hair under the ground's horizon (radians: a tenth of a degree) still stands, as the limb's let off by a little */
 const HORIZON_LEEWAY = 0.1 * (Math.PI / 180);
 /** below this height over the ground (m) names are hidden by the ground's real horizon, bearing by bearing */
@@ -2274,7 +2276,7 @@ export class App {
     }
     if (this.stay) {
       this.stay = false;
-      this.rig.setAnchor(null);
+      this.rig.setAnchor(this.reachOf());
       this.glide = null;
       if (this.input.touch) this.free.start();
       else this.hud.toast('Moving freely: W A S D to fly, R and F up and down, drag to look. Tap the chip at the top to stay on something', 4);
@@ -2649,20 +2651,23 @@ export class App {
     this.meterView.quat.copy(this.view.quat);
   }
 
-  /** The world whose reach (sphere of influence) the camera is in, the smallest of them: none in open space. */
+  /**
+   * The world whose reach (sphere of influence) the camera is in, the smallest of them: none in open space. (A sun's reach is
+   * all its system: between the planets is open space, and a sun is only reached within REACH_STAR of its radii.)
+   */
   private reachOf(): Body | null {
     let best: Body | null = null, bestSoi = Infinity;
     const rel = new Vector3();
     for (const b of this.system.bodies) {
       if (!b.valid || this.system.isGone(b)) continue;
-      const soi = b.soiRadius();
+      const soi = b.kind === 'star' ? b.radius * REACH_STAR : b.soiRadius();
       if (soi < bestSoi && b.upos.sub(this.rig.upos, rel).length() < soi) { best = b; bestSoi = soi; }
     }
     return best;
   }
 
   private chooseAnchor(): void {
-    // (the toggle decides, and nothing else: staying, what the camera is on; moving freely, nothing. The ship keeps its own way)
+    // (the toggle decides, and nothing else: staying, what the camera is on. The ship keeps its own way)
     if (!this.game.active) {
       let t = this.rig.target;
       // (staying, with nothing to stay on, as when a flight is stopped half way: the world whose reach the camera is in, which
@@ -2671,7 +2676,10 @@ export class App {
         const near = this.reachOf();
         if (near) this.rig.target = t = near;
       }
-      this.rig.setAnchor(this.stay && t ? this.anchorFor(t) : null);
+      // (moving freely, the camera turns round nothing and nothing frames it, but it goes along with the world whose reach it is
+      // in, as anything let go there would: it is not left behind at the speed the world goes round its sun, the world
+      // running off at 30 km/s, a day a second in an instant. In open space it is still)
+      this.rig.setAnchor(this.stay ? (t ? this.anchorFor(t) : null) : this.reachOf());
       return;
     }
     // (a watch's frame, or a new world's while it is put in place, rides with what it is framed round)
