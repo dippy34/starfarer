@@ -3061,11 +3061,12 @@ export class App {
       const b = v.body;
       const s = look(v.rel, b.radius);
       if (b.kind === 'star') {
-        if (v.pixelRadius <= 1.5) continue;
         const L = (AU / SUN_RADIUS) ** 2;
         const shown = this.inSight(v.rel, b.radius);
         if (v.pixelRadius >= 2) settle(s.coverage * shown, L, FACE_KEY);
-        // (a small Sun is shown glaring)
+        // (a small Sun is shown glaring: from the size at which it is drawn as a disc at all, as a planet's is, or a disc a pixel
+        // wide is drawn with the eye open for the dark and blooms into a ball of light over the inner planets. It did, from 1.5 px
+        // down to 0.6: on the owner's iPhone, its resolution lowered, the Sun from 2 AU was a white blob, 28 Nov 2026)
         limitLight(starCap(1.8, v.pixelRadius / this.view.pixelRatio), L, s.presence * shown);
         continue;
       }

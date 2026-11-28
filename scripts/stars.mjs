@@ -248,26 +248,41 @@ const rgb = (p) => `(${p.join(', ')})`;
 
 // ----------------------------------------------------------------- a sun too small to show a face
 {
-  // from among the planets (2.8 AU: its disk is a pixel or two wide) the Sun is a glare of white
-  // light, as bright as it is: not a dot at the top of its face's colours
+  // from among the planets (2.8 AU: its disk a pixel or so wide) the Sun is a small light, near white, with a tight glare:
+  // the brightest thing in view, and the same at whatever resolution the phone draws at. Not a ball of light over the
+  // inner planets: it was, drawn a pixel wide with the eye open for the dark (a quarter of this frame lit, and on the
+  // owner's iPhone, its resolution lowered, a white blob from 2 AU, 28 Nov 2026)
   const page = await open('Sun', 600);
-  const far = await page.evaluate(() => {
-    const a = window.app;
-    a.frame();
-    const gl = a.renderer.gl.domElement, c = Object.assign(document.createElement('canvas'), { width: gl.width, height: gl.height });
-    const g = c.getContext('2d');
-    g.drawImage(gl, 0, 0);
-    const d = g.getImageData(0, 0, c.width, c.height).data;
-    let white = 0, lit = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      if (Math.min(d[i], d[i + 1], d[i + 2]) > 235) white++;
-      if (Math.min(d[i], d[i + 1], d[i + 2]) > 60) lit++;
+  const seen = [];
+  for (const scale of [1, 0.7, 0.4]) {
+    if (scale !== 1) {
+      await page.evaluate((s) => { const r = window.app.renderer; r.renderScale = s; r.allocate(); }, scale);
+      await settle(page, 25);
     }
-    return { white: white / (d.length / 4), lit: lit / (d.length / 4), px: a.bodies.views.get(a.system.sun).pixelRadius };
-  });
-  await page.screenshot({ path: path.join(outDir, 'stars-sun-far.png') });
-  check('from among the planets the Sun, a pixel or two wide, is a glare of white light and not a dot', far.white > 0.001 && far.lit > 0.01,
-    `its disk ${far.px.toFixed(1)} px in radius; burnt out white over ${(far.white * 100).toFixed(2)} % of the frame, lit over ${(far.lit * 100).toFixed(1)} %`);
+    seen.push(await page.evaluate(() => {
+      const a = window.app;
+      a.frame();
+      const gl = a.renderer.gl.domElement, c = Object.assign(document.createElement('canvas'), { width: gl.width, height: gl.height });
+      const g = c.getContext('2d');
+      g.drawImage(gl, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let lit = 0, top = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) {
+        if (Math.min(d[i], d[i + 1], d[i + 2]) > 60) lit++;
+        if (d[i] + d[i + 1] + d[i + 2] > top[0] + top[1] + top[2]) top = [d[i], d[i + 1], d[i + 2]];
+      }
+      return { scale: a.renderer.renderScale, lit: lit / (d.length / 4), top, px: a.bodies.views.get(a.system.sun).pixelRadius, light: a.logLight };
+    }));
+    if (scale === 1) await page.screenshot({ path: path.join(outDir, 'stars-sun-far.png') });
+  }
+  // (drawn as a disc, from 0.6 px, it holds the eye's exposure for its light as any lit disc does, the same at any
+  // resolution; smaller it is a point of light whose glare is capped, as a star's)
+  const disc = seen.filter((s) => s.px > 0.6);
+  check('from among the planets the Sun, a pixel or so wide, is a near-white light with a tight glare, not a ball of light, at any resolution',
+    disc.length === 2 && seen.every((s) => s.lit > 2e-4 && s.lit < (s.px > 0.6 ? 0.003 : 0.015) && Math.min(...s.top) > 180 && Math.max(...s.top) > 230) &&
+      Math.abs(disc[1].light - disc[0].light) < Math.log(1.2),
+    seen.map((s) => `drawn at ${s.scale}: its disk ${s.px.toFixed(1)} px in radius, lit over ${(s.lit * 100).toFixed(2)} % of the frame, brightest ${rgb(s.top)}` +
+      (s.px > 0.6 ? `, exposure x${Math.exp(s.light - disc[0].light).toFixed(2)}` : '')).join('; '));
   await page.close();
 }
 
