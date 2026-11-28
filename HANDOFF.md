@@ -979,7 +979,10 @@ temperature, and size as well as mass.
   worlds it goes round that can (a planet takes a moon, a star worlds of every kind and a second sun),
   anywhere else the Sun, selects it, and `Hud.openAdd` opens its card at Add once the card is of it
   (or, where nothing can be added now, with the reason). Browser checks: `LIVE_ONLY=create` of
-  `scripts/live.mjs` (at the Moon: the Earth's Add; at the Sun; at Sirius: the Sun's).
+  `scripts/live.mjs` (at the Moon: the Earth's Add; at the Sun; at Sirius: the Sun's). On a phone on
+  its side with little height (the flight suite's 844 x 280 with bars), five tabs a thumb high do not
+  fit the column beside the card: `Hud.fitTabs` hides Create there (measured when the view's size
+  changes; each card keeps its Add).
 - *God mode on a comet, step 1: take it away* (27 Nov 2026, evening; the cheap team's task/comet-powers
   on Claude Sonnet, reviewed here): a comet's card offers Remove (Mass, Size, Move and Add off, each
   with a reason: `comet` in `powersFor.ts`). `App.removeComet` starts live physics as any change does
