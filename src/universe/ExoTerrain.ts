@@ -128,7 +128,7 @@ export class ExoGround implements Ground {
 
   /** `craters`: crater density (EXO_FRAG uCraters; 0 = none) */
   /** `hMid`, `hSpan`: median and 10-90 % spread of the terrain function (EXO_FRAG uHMid, uHSpan) */
-  constructor(readonly owner: ExoPlanet, private type: number, private seed: number, private seaLevel: number, private craters = 0,
+  constructor(readonly owner: ExoPlanet | { readonly name: string; readonly radius: number }, private type: number, private seed: number, private seaLevel: number, private craters = 0,
     private hMid = 0.4, private hSpan = 0.15) {
     this.name = owner.name;
     this.radius = owner.radius;

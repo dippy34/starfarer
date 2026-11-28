@@ -589,15 +589,16 @@ export class Rocks {
     const t = this.terrain;
     const dir = new Vector3(), up = new Vector3(), e1 = new Vector3(), e2 = new Vector3(), tmp = new Vector3();
     const lon0 = (lonLeftDeg * Math.PI) / 180;
-    const seaWorld = t.current?.material.uniforms.uMatMode?.value === 1;
     let m = 0;
     for (let i = 0; i < n; i++) {
       const hs = (j: number) => hash(x, y, z, seed + 13 * i + j);
       dir.set((x + hs(1)) * s, (y + hs(2)) * s, (z + hs(3)) * s).normalize();
       const gr = t.groundRadius(dir);
       if (!(gr > 0)) continue;
-      // none on a sea (flat at the reference surface on a world with oceans)
-      if (seaWorld && gr - baseRadius(t.current!.ground, dir) < 0.02) continue;
+      // none on a sea (the ground flat at the water level: Earth's seas and lakes, and a generated world's, where they were
+      // strewn over the water up to 7 m across)
+      const lvl = t.waterLevel(dir);
+      if (lvl !== null && gr - baseRadius(t.current!.ground, dir) < lvl + 0.02) continue;
       // truncated power law: most small, a few large
       const lo = Math.pow(tier.min, -tier.slope), hi = Math.pow(tier.max, -tier.slope);
       const size = Math.pow(lo + (hi - lo) * hs(4), -1 / tier.slope);
