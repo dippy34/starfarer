@@ -500,6 +500,14 @@ const centreOf = async (page, sel) => {
   await page.screenshot({ path: path.join(outDir, 'touch-10-more.png'), timeout: 300000 });
   await tapOn('.more [data-act="labels"]');
   await tapOn('.more [data-act="orbits"]');
+  // (Real size: far worlds drawn their size, not larger: src/render/Bodies.ts, the big look)
+  const realSize = async () => {
+    await page.evaluate(() => document.querySelector('.more [data-act="real-size"]').scrollIntoView({ block: 'center' }));
+    await tapOn('.more [data-act="real-size"]');
+    return page.evaluate(() => ({ big: window.app.bodies.bigLook, on: document.querySelector('.more [data-act="real-size"]').getAttribute('aria-checked') }));
+  };
+  const real = await realSize(), bigAgain = await realSize();
+  check('Real size in More draws far worlds as small as they are, and off again bigger', !real.big && real.on === 'true' && bigAgain.big && bigAgain.on === 'false', JSON.stringify({ real, bigAgain }));
   const photoRow = await page.evaluate(() => { const b = document.querySelector('.more [data-act="photo"]'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
   await f.tap(photoRow);
   await f.frames(2);

@@ -92,6 +92,7 @@ uniform vec3 uSunDir;         // world-space unit vector body -> Sun
 uniform float uSunIrr;        // solar irradiance at the body (PI at 1 AU)
 uniform vec3 uSunColor;
 uniform float uExposure;
+uniform float uFill;          // a share of the sunlight from all round: a far world drawn larger than it is (the big look) shows its night side dimly
 uniform mat3 uBodyToWorld;    // rotation part (unit) body-fixed -> world
 uniform vec3 uBodyCenter;     // camera-relative centre (m)
 // eclipses: up to four bodies that can stand between this one and the Sun
@@ -614,6 +615,7 @@ void main() {
     vec3 lights = srgbToLinear(texture2D(uNight, vUv).rgb);
     radiance += lights * lights * vec3(1.0, 0.8, 0.55) * 0.02 * night * (1.0 - cloud);
   }
+  radiance += albedo * uSunColor * (uSunIrr / 3.14159265) * uFill;
   gl_FragColor = vec4(min(radiance * uExposure, vec3(6.0e4)), 1.0);
 ${OUTPUT_FRAGMENT}
   #include <logdepthbuf_fragment>

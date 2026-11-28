@@ -20,6 +20,10 @@
 //   - it is a matter of where the eye is: the same going away, fast, as it was coming
 //   - its colour holds
 //   - from far outside (M87* from round its galaxy), where it is a point alone, it has the same light
+//
+// The big look (scene 'big-look'): far worlds drawn larger than they are, in their real places. From open space Jupiter
+// is a lit disc in its colours, not burnt out, and the eye's exposure is the same as with Real size on (a point there);
+// from the Earth's neighbourhood the other planets are the points they are.
 // Usage: node scripts/exposure.mjs [baseUrl] [outDir] [scene...]   (frames are saved to outDir/<scene>)
 import { collectErrors, launchBrowser } from './lib/browser.mjs';
 import fs from 'node:fs';
@@ -426,6 +430,57 @@ if (!only.length || only.includes('cygnus-slow')) {
   }
   check('Cygnus X-1 come up to slowly: the frame never changes by more than 5 % from one frame to the next', worst.by < Math.log(1.05),
     `largest change x${Math.exp(worst.by).toFixed(3)} at ${worst.at.toFixed(0)} radii`);
+  await page.close();
+}
+
+// ------------------------------------------------------------------------------- the big look
+// Far worlds are drawn larger than they are, in their real places, lit as they are (src/render/Bodies.ts: bigScale; the
+// owner's ask, 28 Nov 2026): from open space the planets are little lit discs, not points, each shown by its own light (not
+// burnt out), and the eye's exposure for the rest is what it is without them. From a world's own neighbourhood the other
+// planets are the points they are. "Real size" in More draws every world its size.
+if (!only.length || only.includes('big-look')) {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  collectErrors(page, errors);
+  await page.goto(`${base}?menu=0&time=2026-10-01T20:00:00Z&target=Jupiter&dist=10`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.app && window.app.frameCount > 30 && !document.getElementById('boot'), null, { timeout: 600000 });
+  await page.evaluate(() => { const a = window.app; a.renderer.gl.setAnimationLoop(null); a.hud.setHidden(true); a.labels.enabled = false; a.orbits.enabled = false; });
+  const look = (big, near) => page.evaluate(async ([big, near]) => {
+    const a = window.app, sun = a.system.sun, jupiter = a.findByName('Jupiter');
+    a.bodies.bigLook = big;
+    if (near) a.placeNear(a.findByName('Earth'), 30 * 6371e3, 35, 15);
+    else a.placeNear(sun, 2500 * sun.radius, 30, 35);
+    a.center(jupiter);
+    for (let i = 0; i < 60; i++) { await new Promise((res) => setTimeout(res, 105)); a.frame(); }
+    const v = a.bodies.views.get(jupiter), p = a.project(v.rel);
+    const gl = a.renderer.gl.domElement, k = gl.width / innerWidth;
+    const c = Object.assign(document.createElement('canvas'), { width: gl.width, height: gl.height });
+    const g = c.getContext('2d');
+    g.drawImage(gl, 0, 0);
+    // (a box 41 CSS px wide round where Jupiter is)
+    const x0 = Math.round((p.x - 20) * k), y0 = Math.round((p.y - 20) * k), n = Math.round(41 * k);
+    const d = g.getImageData(x0, y0, n, n).data;
+    let lit = 0, white = 0, r = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.max(d[i], d[i + 1], d[i + 2]) > 100) { lit++; r += d[i]; b += d[i + 2]; }
+      if (Math.min(d[i], d[i + 1], d[i + 2]) > 250) white++;
+    }
+    const scales = Object.fromEntries(['Mars', 'Saturn', 'Earth'].map((name) => [name, a.bodies.views.get(a.findByName(name)).scale]));
+    return { scale: v.scale, drawn: (v.pixelRadius * v.scale) / a.view.pixelRatio, lit: lit / (k * k), white: white / (k * k), red: r / Math.max(lit, 1), blue: b / Math.max(lit, 1), x: a.bodies.surfaceExposure.value, scales };
+  }, [big, near]);
+  const open = await look(true, false);
+  await page.screenshot({ path: path.join(outDir, 'exposure-big-look.png') });
+  const real = await look(false, false);
+  await page.screenshot({ path: path.join(outDir, 'exposure-big-look-real-size.png') });
+  const home = await look(true, true);
+  console.log(JSON.stringify({ open, real, home }));
+  check('the big look: from open space Jupiter is a lit disc 8 px in radius, in its colours, not burnt out',
+    open.scale > 1 && Math.abs(open.drawn - 8) < 0.5 && open.lit > 100 && open.white <= 10 && open.red > open.blue && open.scales.Saturn > 1 && open.scales.Mars > 1,
+    `drawn ${open.drawn.toFixed(1)} px (x${open.scale.toFixed(0)}): ${open.lit.toFixed(0)} px bright round it, ${open.white.toFixed(0)} white, red ${open.red.toFixed(0)} blue ${open.blue.toFixed(0)}`);
+  check('the big look: Real size draws it as it is, a point; the eye\'s exposure is the same either way',
+    real.scale === 1 && real.lit < open.lit / 4 && real.x / open.x > 0.8 && real.x / open.x < 1.25,
+    `${real.lit.toFixed(0)} px bright round it; exposure x${(real.x / open.x).toFixed(2)} of the big look's`);
+  check('the big look: from the Earth\'s neighbourhood the other planets are the points they are',
+    home.scale === 1 && home.scales.Mars === 1 && home.scales.Saturn === 1, JSON.stringify(home.scales));
   await page.close();
 }
 
