@@ -1673,14 +1673,13 @@ enlarging has its own switch in More, and its commits are kept apart so that the
 
 ## Next
 
-0. (28 Nov 2026; the owner's fix list is the order) Waiting on the owner: the "release" (the owner's word
-   for: copy the developers' site to the testers'). On the developers' site since 27 Nov: the phones' looks
-   first, a picture of a world while it is made, the chips and the live-physics lines in plain words,
-   Create in the tab bar, Remove on a comet (and, once its checks pass, Move and Throw on a comet, kept
-   in saves and links). Being built by the cheap team: a black hole of your own (TASKS.md
-   task/hole-of-your-own; #9 step 2). Then: Mass on the catalogue's black holes (#9 step 3); the
-   sandbox's next steps (size set by hand, an empty universe: `docs/notes/ideas.md`); the half-second
-   freeze the first time the ship is boarded on an iPhone (`docs/notes/phone-speed.md`). The offline
+0. (28 Nov 2026, midday; the owner's fix list is the order) Waiting on the owner: the "release" (the owner's
+   word for: copy the developers' site to the testers'), and what they make of the big round ("The big round"
+   above; the way back is there). Being built by the cheap team: Mass on the catalogue's black holes (TASKS.md
+   task/hole-mass; #9 step 3). To confirm on the owner's iPhone: the ship's first boarding no longer stands
+   still (`Renderer.primeDraw`, `docs/notes/phone-speed.md`). Then: the sandbox's next steps (size set by hand,
+   an empty universe: `docs/notes/ideas.md`); a sea floor where the sea is shallow (the landing terrain draws
+   the sea flat at its level: there is no floor under it to see); clouds to fly through on a giant. The offline
    suite's two-tab flake: its other tab no longer runs the app (docs/notes/testing.md, "offline").
 1. Quest performance pass on a real headset (cockpit, planet/galaxy/nebula shaders, tile atlas size,
    black hole steps).
